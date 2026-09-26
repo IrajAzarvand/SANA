@@ -37,7 +37,8 @@ export default function JalaliDatePicker({
   required = false,
   error,
   className = '',
-  minDate = null,       // ← حداقل تاریخ (میلادی YYYY-MM-DD)
+  minDate = null,       // حداقل تاریخ (میلادی YYYY-MM-DD)
+  maxDate = null,       // حداکثر تاریخ (میلادی YYYY-MM-DD)
 }) {
   const [open, setOpen] = useState(false);
   const [displayValue, setDisplayValue] = useState('');
@@ -154,10 +155,8 @@ export default function JalaliDatePicker({
     const jalaliStr = `${viewYear}/${String(viewMonth).padStart(2, '0')}/${String(day).padStart(2, '0')}`;
     const g = toGregorian(jalaliStr);
     if (g) {
-      // چک: تاریخ انتخاب‌شده باید >= minDate باشه
-      if (minDate && !jalaliCompare(g, minDate)) {
-        return; // نادیده بگیر
-      }
+      if (minDate && !jalaliCompare(g, minDate)) return;
+      if (maxDate && g > maxDate) return;
       onChange(g);
       setOpen(false);
     }
@@ -166,9 +165,8 @@ export default function JalaliDatePicker({
   const handleToday = () => {
     const g = toGregorian(`${today.jy}/${String(today.jm).padStart(2, '0')}/${String(today.jd).padStart(2, '0')}`);
     if (g) {
-      if (minDate && !jalaliCompare(g, minDate)) {
-        return; // امروز قبل از minDate هست، نادیده بگیر
-      }
+      if (minDate && !jalaliCompare(g, minDate)) return;
+      if (maxDate && g > maxDate) return;
       onChange(g);
       setOpen(false);
     }
@@ -274,7 +272,7 @@ export default function JalaliDatePicker({
               const gregorianDay = toGregorian(
                 `${viewYear}/${String(viewMonth).padStart(2, '0')}/${String(day).padStart(2, '0')}`
               );
-              const isDisabled = minDate && gregorianDay && !jalaliCompare(gregorianDay, minDate);
+              const isDisabled = (minDate && gregorianDay && !jalaliCompare(gregorianDay, minDate)) || (maxDate && gregorianDay && gregorianDay > maxDate);
 
               return (
                 <button
