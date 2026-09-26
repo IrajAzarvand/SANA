@@ -158,7 +158,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         """ساخت قرارداد با Wizard"""
-        serializer = SubscriptionWizardSerializer(data=request.data)
+        serializer = SubscriptionWizardSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         subscription = serializer.save()
 
