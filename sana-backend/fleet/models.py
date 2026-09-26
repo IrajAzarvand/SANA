@@ -174,8 +174,11 @@ class Device(models.Model):
 
     @property
     def is_in_warehouse(self):
-        """آیا توی انباره؟"""
-        return self.active_subscription_link is None
+        """آیا این دستگاه واقعاً در انبار است؟"""
+        return (
+            self.management_status == 'warehouse'
+            and self.active_subscription_link is None
+        )
 
     @property
     def is_data_active(self):
