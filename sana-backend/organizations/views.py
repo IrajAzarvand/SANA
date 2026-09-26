@@ -58,7 +58,7 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         return Organization.objects.none()
 
     def get_permissions(self):
-        if self.action in ['create', 'destroy', 'renew']:
+        if self.action in ['create', 'destroy']:
             return [IsSiteAdmin()]
         return super().get_permissions()
 
@@ -152,7 +152,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         return qs
 
     def get_permissions(self):
-        if self.action in ['create', 'destroy']:
+        if self.action in ['create', 'destroy', 'renew']:
             return [IsSiteAdmin()]
         return super().get_permissions()
 
