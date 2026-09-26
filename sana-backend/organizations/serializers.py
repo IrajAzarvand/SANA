@@ -122,12 +122,24 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     'device': f'دستگاه {device.imei} در قرارداد فعال دیگری است'
                 })
-        # چک تاریخ
+        # چک ترتیب تاریخ‌ها
         if data.get('start_date') and data.get('end_date'):
             if data['start_date'] > data['end_date']:
                 raise serializers.ValidationError({
                     'end_date': 'تاریخ پایان باید بعد از تاریخ شروع باشد'
                 })
+
+        # هر دستگاه قرارداد باید کاملاً داخل بازه قرارداد باشد.
+        if subscription and data.get('start_date') and data.get('end_date'):
+            if data['start_date'] < subscription.start_date:
+                raise serializers.ValidationError({
+                    'start_date': 'تاریخ شروع دستگاه نمی‌تواند قبل از شروع قرارداد باشد'
+                })
+            if data['end_date'] > subscription.end_date:
+                raise serializers.ValidationError({
+                    'end_date': 'تاریخ پایان دستگاه نمی‌تواند بعد از پایان قرارداد باشد'
+                })
+
         return data
 
     def create(self, validated_data):
