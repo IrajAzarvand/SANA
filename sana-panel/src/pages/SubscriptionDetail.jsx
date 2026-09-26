@@ -430,16 +430,16 @@ export default function SubscriptionDetail() {
         </div>
       </Card>
 
-      {/* تاریخچه تمدیدها */}
-      {subscription.renewals && subscription.renewals.length > 0 && (
+      {/* تاریخچه عملیات قرارداد */}
+      {subscription.operations && subscription.operations.length > 0 && (
         <Card
-          title={`تاریخچه تمدیدها (${subscription.renewals.length})`}
-          subtitle="سابقه تمدیدهای این قرارداد"
+          title={`تاریخچه عملیات قرارداد (${subscription.operations.length})`}
+          subtitle="تمام تغییرات مهم قرارداد، نه فقط تمدید"
         >
           <div className="space-y-3">
-            {subscription.renewals.map((renewal) => (
+            {subscription.operations.map((operation) => (
               <div
-                key={renewal.id}
+                key={operation.id}
                 className="p-4 bg-bg-base border border-border-base rounded-field"
               >
                 <div className="flex items-start justify-between gap-4 mb-3">
@@ -449,43 +449,57 @@ export default function SubscriptionDetail() {
                     </div>
                     <div>
                       <div className="text-sm font-medium text-text-primary">
-                        تمدید قرارداد
+                        {operation.operation_type_display || operation.operation_type}
                       </div>
                       <div className="text-[10px] text-text-muted font-mono mt-0.5">
-                        {renewal.renewed_at
-                          ? new Date(renewal.renewed_at).toLocaleString('fa-IR')
+                        {operation.performed_at
+                          ? new Date(operation.performed_at).toLocaleString('fa-IR')
                           : '—'}
                       </div>
                     </div>
                   </div>
-                  {renewal.renewed_by_name && (
+                  {operation.performed_by_name && (
                     <div className="text-[10px] text-text-muted">
-                      توسط: <span className="text-text-secondary">{renewal.renewed_by_name}</span>
+                      توسط: <span className="text-text-secondary">{operation.performed_by_name}</span>
                     </div>
                   )}
                 </div>
 
-                {/* تغییر بازه */}
-                <div className="flex items-center gap-3 mb-3 p-3 bg-bg-elevated rounded-field">
-                  <div className="flex-1 text-center">
-                    <div className="text-[10px] text-text-muted mb-1">تاریخ پایان قبلی</div>
-                    <div className="text-sm font-mono text-text-secondary">
-                      {toJalali(renewal.old_end_date)}
+                {(operation.old_end_date || operation.new_end_date) && (
+                  <div className="flex items-center gap-3 mb-3 p-3 bg-bg-elevated rounded-field">
+                    <div className="flex-1 text-center">
+                      <div className="text-[10px] text-text-muted mb-1">پایان قبلی</div>
+                      <div className="text-sm font-mono text-text-secondary">
+                        {toJalali(operation.old_end_date)}
+                      </div>
+                    </div>
+                    <ArrowRight size={16} className="text-brand-400 flex-shrink-0 rotate-180" />
+                    <div className="flex-1 text-center">
+                      <div className="text-[10px] text-text-muted mb-1">پایان جدید</div>
+                      <div className="text-sm font-mono text-brand-400 font-medium">
+                        {toJalali(operation.new_end_date)}
+                      </div>
                     </div>
                   </div>
-                  <ArrowRight size={16} className="text-brand-400 flex-shrink-0 rotate-180" />
-                  <div className="flex-1 text-center">
-                    <div className="text-[10px] text-text-muted mb-1">تاریخ پایان جدید</div>
-                    <div className="text-sm font-mono text-brand-400 font-medium">
-                      {toJalali(renewal.new_end_date)}
-                    </div>
-                  </div>
-                </div>
+                )}
 
-                {renewal.notes && (
+                {operation.changes?.length > 0 && (
+                  <div className="space-y-1 mb-2">
+                    {operation.changes.map((change) => (
+                      <div key={change.id} className="text-xs text-text-secondary">
+                        <span className="text-text-muted">{change.entity_type}.{change.field_name}: </span>
+                        <span>{change.old_value || '—'}</span>
+                        <span className="mx-1">←</span>
+                        <span>{change.new_value || '—'}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {operation.notes && (
                   <div className="text-xs text-text-secondary">
                     <span className="text-text-muted">یادداشت: </span>
-                    {renewal.notes}
+                    {operation.notes}
                   </div>
                 )}
               </div>
