@@ -30,6 +30,11 @@ export const subscriptionsAPI = {
     return response.data;
   },
 
+  operations: async (id) => {
+    const response = await apiClient.get(`/subscriptions/${id}/operations/`);
+    return response.data;
+  },
+
   suspend: async (id) => {
     const response = await apiClient.post(`/subscriptions/${id}/suspend/`);
     return response.data;
