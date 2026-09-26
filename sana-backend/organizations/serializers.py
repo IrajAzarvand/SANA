@@ -554,26 +554,3 @@ class SubscriptionWizardSerializer(serializers.Serializer):
             return subscription
 
 
-class SubscriptionRenewSerializer(serializers.Serializer):
-    """سریالایزر تمدید قرارداد"""
-    new_end_date = serializers.DateField()
-    notes = serializers.CharField(required=False, allow_blank=True)
-
-    def validate_new_end_date(self, value):
-        # چک ۱: تاریخ باید در آینده باشه
-        if value <= timezone.now().date():
-            raise serializers.ValidationError('تاریخ جدید باید در آینده باشد')
-        return value
-
-    def validate(self, data):
-        subscription = self.context.get('subscription')
-        new_end_date = data.get('new_end_date')
-
-        # چک ۲: تاریخ جدید باید بعد از تاریخ پایان فعلی قرارداد باشه
-        if subscription and new_end_date:
-            if new_end_date <= subscription.end_date:
-                raise serializers.ValidationError({
-                    'new_end_date': f'تاریخ پایان جدید ({new_end_date}) باید بعد از تاریخ پایان فعلی ({subscription.end_date}) باشد'
-                })
-
-        return data
