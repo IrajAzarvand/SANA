@@ -146,7 +146,10 @@ class DeviceViewSet(viewsets.ModelViewSet):
             )
             qs = qs.annotate(
                 has_active_link=Exists(active_links)
-            ).filter(has_active_link=False)
+            ).filter(
+                management_status='warehouse',
+                has_active_link=False,
+            )
 
             
         # فیلتر «فقط فعال» — دستگاه‌هایی که یه اتصال فعال به قرارداد دارن
