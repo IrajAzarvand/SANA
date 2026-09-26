@@ -182,6 +182,9 @@ class SubscriptionOperationSerializer(serializers.ModelSerializer):
     operation_type_display = serializers.CharField(source='get_operation_type_display', read_only=True)
     performed_by_name = serializers.SerializerMethodField()
     changes = SubscriptionOperationChangeSerializer(many=True, read_only=True)
+    added_device_ids = serializers.SerializerMethodField()
+    removed_device_ids = serializers.SerializerMethodField()
+    payment_ids = serializers.SerializerMethodField()
 
     class Meta:
         model = SubscriptionOperation
@@ -189,9 +192,18 @@ class SubscriptionOperationSerializer(serializers.ModelSerializer):
             'id', 'subscription', 'operation_type', 'operation_type_display',
             'performed_at', 'performed_by', 'performed_by_name',
             'old_start_date', 'new_start_date', 'old_end_date', 'new_end_date',
-            'old_status', 'new_status', 'notes', 'changes',
+            'old_status', 'new_status', 'notes', 'changes', 'added_device_ids', 'removed_device_ids', 'payment_ids',
         ]
         read_only_fields = ['id', 'performed_at', 'performed_by']
+
+    def get_added_device_ids(self, obj):
+        return list(obj.added_devices.values_list('device_id', flat=True))
+
+    def get_removed_device_ids(self, obj):
+        return list(obj.removed_devices.values_list('device_id', flat=True))
+
+    def get_payment_ids(self, obj):
+        return list(obj.payments.values_list('id', flat=True))
 
     def get_performed_by_name(self, obj):
         if not obj.performed_by:
