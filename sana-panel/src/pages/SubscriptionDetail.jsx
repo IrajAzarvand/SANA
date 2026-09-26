@@ -18,6 +18,7 @@ import ErrorState from '../components/ErrorState';
 import JalaliDatePicker from '../components/JalaliDatePicker';
 import { useAuth } from '../context/AuthContext';
 import { subscriptionsAPI, subscriptionDevicesAPI, subscriptionPaymentsAPI } from '../api/services/subscriptions';
+import { organizationsAPI } from '../api/services/organizations';
 import { devicesAPI } from '../api/services/fleet';
 import { usersAPI } from '../api/services/fleet';
 import { useApi } from '../hooks/useApi';
@@ -51,6 +52,10 @@ export default function SubscriptionDetail() {
       setRenewForm({
         new_end_date: subscription.end_date,
         notes: '',
+        add_devices: [],
+        remove_device_ids: [],
+        payments: [],
+        customer_changes: {},
       });
       setRenewModalOpen(true);
       // پاک کردن query string
@@ -60,7 +65,27 @@ export default function SubscriptionDetail() {
 
   // ═══ State مودال‌ها ═══
   const [renewModalOpen, setRenewModalOpen] = useState(false);
-  const [renewForm, setRenewForm] = useState({ new_end_date: '', notes: '' });
+  const [renewForm, setRenewForm] = useState({
+    new_end_date: '',
+    notes: '',
+    add_devices: [],
+    remove_device_ids: [],
+    payments: [],
+    customer_changes: {},
+  });
+  const [renewCustomer, setRenewCustomer] = useState({});
+  const [renewCustomerLoading, setRenewCustomerLoading] = useState(false);
+  const [renewNewDevice, setRenewNewDevice] = useState({
+    device_id: '',
+    start_date: '',
+    end_date: '',
+  });
+  const [renewPaymentDraft, setRenewPaymentDraft] = useState({
+    amount: '',
+    payment_date: todayGregorian(),
+    device_count: 0,
+    description: '',
+  });
 
   const [deviceModalOpen, setDeviceModalOpen] = useState(false);
   const [deviceForm, setDeviceForm] = useState({
@@ -84,12 +109,12 @@ export default function SubscriptionDetail() {
 
   // ═══ لیست دستگاه‌های انبار ═══
   const fetchWarehouseDevices = useCallback(async () => {
-    if (!deviceModalOpen) return [];
+    if (!deviceModalOpen && !renewModalOpen) return [];
     const result = await devicesAPI.list({ in_warehouse: 'true' });
     return Array.isArray(result) ? result : result.results || [];
-  }, [deviceModalOpen]);
+  }, [deviceModalOpen, renewModalOpen]);
 
-  const { data: warehouseDevices } = useApi(fetchWarehouseDevices, [deviceModalOpen]);
+  const { data: warehouseDevices } = useApi(fetchWarehouseDevices, [deviceModalOpen, renewModalOpen]);
 
   const warehouseOptions = useMemo(() => {
     return (warehouseDevices || []).map((d) => ({
@@ -99,14 +124,124 @@ export default function SubscriptionDetail() {
   }, [warehouseDevices]);
 
   // ═══ تمدید ═══
+  const openRenewModal = async () => {
+    const customerDefaults = isOrg
+      ? {
+          name: subscription.organization_name || '',
+          code: subscription.organization_code || '',
+          registration_number: '',
+          economy_code: '',
+          phone: subscription.organization_phone || '',
+          email: subscription.organization_email || '',
+          address: '',
+          website: '',
+        }
+      : {
+          first_name: '',
+          last_name: '',
+          mobile: '',
+          national_id: '',
+          address: '',
+        };
+
+    setRenewForm({
+      new_end_date: subscription.end_date,
+      notes: '',
+      add_devices: [],
+      remove_device_ids: [],
+      payments: [],
+      customer_changes: {},
+    });
+    setRenewCustomer(customerDefaults);
+    setRenewNewDevice({
+      device_id: '',
+      start_date: subscription.end_date,
+      end_date: subscription.end_date,
+    });
+    setRenewPaymentDraft({
+      amount: '',
+      payment_date: todayGregorian(),
+      device_count: subscription.device_count || 0,
+      description: '',
+    });
+    setActionError('');
+    setRenewCustomerLoading(true);
+    setRenewModalOpen(true);
+
+    try {
+      if (isOrg && subscription.organization) {
+        const org = await organizationsAPI.get(subscription.organization);
+        setRenewCustomer({
+          name: org.name || '',
+          code: org.code || '',
+          registration_number: org.registration_number || '',
+          economy_code: org.economy_code || '',
+          phone: org.phone || '',
+          email: org.email || '',
+          address: org.address || '',
+          website: org.website || '',
+        });
+      } else if (!isOrg && subscription.user) {
+        const user = await usersAPI.get(subscription.user);
+        setRenewCustomer({
+          first_name: user.first_name || '',
+          last_name: user.last_name || '',
+          mobile: user.mobile || '',
+          national_id: user.national_id || '',
+          address: user.address || '',
+        });
+      }
+    } catch (err) {
+      console.error('Error loading customer details for renewal:', err);
+      setActionError('اطلاعات کامل مشتری برای ویرایش بارگذاری نشد. سایر بخش‌های تمدید قابل استفاده هستند.');
+    } finally {
+      setRenewCustomerLoading(false);
+    }
+  };
+
   const handleRenew = async (e) => {
     e.preventDefault();
+
+    if (!renewForm.new_end_date || renewForm.new_end_date <= subscription.end_date) {
+      setActionError('تاریخ پایان جدید باید بعد از تاریخ پایان فعلی باشد.');
+      return;
+    }
+
     setSaving(true);
     setActionError('');
     try {
-      await subscriptionsAPI.renew(id, renewForm);
+      const customer_changes = isOrg
+        ? {
+            name: renewCustomer.name || '',
+            code: renewCustomer.code || '',
+            registration_number: renewCustomer.registration_number || '',
+            economy_code: renewCustomer.economy_code || '',
+            phone: renewCustomer.phone || '',
+            email: renewCustomer.email || '',
+            address: renewCustomer.address || '',
+            website: renewCustomer.website || '',
+          }
+        : {
+            first_name: renewCustomer.first_name || '',
+            last_name: renewCustomer.last_name || '',
+            mobile: renewCustomer.mobile || '',
+            national_id: renewCustomer.national_id || '',
+            address: renewCustomer.address || '',
+          };
+
+      await subscriptionsAPI.renew(id, {
+        ...renewForm,
+        customer_changes,
+      });
       setRenewModalOpen(false);
-      setRenewForm({ new_end_date: '', notes: '' });
+      setRenewForm({
+        new_end_date: '',
+        notes: '',
+        add_devices: [],
+        remove_device_ids: [],
+        payments: [],
+        customer_changes: {},
+      });
       refetch();
     } catch (err) {
       console.error('Error renewing:', err);
@@ -117,6 +252,64 @@ export default function SubscriptionDetail() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const toggleRenewDeviceRemoval = (linkId) => {
+    setRenewForm((prev) => ({
+      ...prev,
+      remove_device_ids: prev.remove_device_ids.includes(linkId)
+        ? prev.remove_device_ids.filter((id) => id !== linkId)
+        : [...prev.remove_device_ids, linkId],
+    }));
+  };
+
+  const addRenewDevice = () => {
+    if (!renewNewDevice.device_id) {
+      setActionError('برای افزودن دستگاه، یک دستگاه انتخاب کنید.');
+      return;
+    }
+
+    const alreadyAdded = renewForm.add_devices.some(
+      (item) => Number(item.device_id) === Number(renewNewDevice.device_id)
+    );
+    if (alreadyAdded) {
+      setActionError('این دستگاه قبلاً برای تمدید انتخاب شده است.');
+      return;
+    }
+
+    setRenewForm((prev) => ({
+      ...prev,
+      add_devices: [...prev.add_devices, { ...renewNewDevice, device_id: Number(renewNewDevice.device_id) }],
+    }));
+    setRenewNewDevice({
+      device_id: '',
+      start_date: subscription.end_date,
+      end_date: renewForm.new_end_date || subscription.end_date,
+    });
+    setActionError('');
+  };
+
+  const addRenewPayment = () => {
+    if (!renewPaymentDraft.amount || Number(renewPaymentDraft.amount) <= 0) {
+      setActionError('مبلغ پرداخت باید بیشتر از صفر باشد.');
+      return;
+    }
+
+    setRenewForm((prev) => ({
+      ...prev,
+      payments: [...prev.payments, {
+        ...renewPaymentDraft,
+        amount: Number(renewPaymentDraft.amount),
+        device_count: Number(renewPaymentDraft.device_count) || 0,
+      }],
+    }));
+    setRenewPaymentDraft({
+      amount: '',
+      payment_date: todayGregorian(),
+      device_count: subscription.device_count || 0,
+      description: '',
+    });
+    setActionError('');
   };
 
   // ═══ تغییر وضعیت ═══
@@ -286,14 +479,7 @@ export default function SubscriptionDetail() {
             <Button
               variant="secondary"
               icon={RotateCw}
-              onClick={() => {
-                setRenewForm({
-                  new_end_date: subscription.end_date,
-                  notes: '',
-                });
-                setActionError('');
-                setRenewModalOpen(true);
-              }}
+              onClick={openRenewModal}
             >
               تمدید
             </Button>
@@ -698,31 +884,232 @@ export default function SubscriptionDetail() {
             <Button variant="secondary" onClick={() => setRenewModalOpen(false)} disabled={saving}>
               انصراف
             </Button>
-            <Button type="submit" form="renew-form" disabled={saving}>
-              {saving ? 'در حال ذخیره...' : 'تمدید'}
+            <Button type="submit" form="renew-form" disabled={saving || renewCustomerLoading}>
+              {saving ? 'در حال ذخیره...' : 'ثبت تمدید'}
             </Button>
           </>
         }
       >
-        <form id="renew-form" onSubmit={handleRenew} className="space-y-4">
+        <form id="renew-form" onSubmit={handleRenew} className="space-y-5 max-h-[75vh] overflow-y-auto pl-1">
           {actionError && (
             <div className="bg-danger/10 border border-danger/30 rounded-field p-3">
               <p className="text-xs text-danger whitespace-pre-line">{actionError}</p>
             </div>
           )}
-          <JalaliDatePicker
-            label="تاریخ پایان جدید"
-            value={renewForm.new_end_date}
-            onChange={(val) => setRenewForm({ ...renewForm, new_end_date: val })}
-            minDate={subscription.end_date}
-            required
-          />
-          <Input
-            label="یادداشت (اختیاری)"
-            value={renewForm.notes}
-            onChange={(e) => setRenewForm({ ...renewForm, notes: e.target.value })}
-            placeholder="مثلاً تمدید یک‌ساله"
-          />
+
+          <div className="border border-border-base rounded-card p-4 space-y-4">
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">اطلاعات تمدید</h3>
+              <p className="text-[11px] text-text-muted mt-1">تاریخ پایان قرارداد و توضیحات عملیات</p>
+            </div>
+            <JalaliDatePicker
+              label="تاریخ پایان جدید"
+              value={renewForm.new_end_date}
+              onChange={(val) => {
+                setRenewForm({ ...renewForm, new_end_date: val });
+                setRenewNewDevice((prev) => ({
+                  ...prev,
+                  end_date: prev.end_date === subscription.end_date ? val : prev.end_date,
+                }));
+              }}
+              minDate={subscription.end_date}
+              required
+            />
+            <Input
+              label="یادداشت (اختیاری)"
+              value={renewForm.notes}
+              onChange={(e) => setRenewForm({ ...renewForm, notes: e.target.value })}
+              placeholder="مثلاً تمدید یک‌ساله همراه با افزایش سرویس"
+            />
+          </div>
+
+          <div className="border border-border-base rounded-card p-4 space-y-4">
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">اطلاعات مشتری</h3>
+              <p className="text-[11px] text-text-muted mt-1">هر تغییری که اینجا ثبت شود داخل تاریخچه همین عملیات ذخیره می‌شود.</p>
+            </div>
+
+            {renewCustomerLoading ? (
+              <LoadingSpinner />
+            ) : isOrg ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Input label="نام سازمان" value={renewCustomer.name || ''} onChange={(e) => setRenewCustomer({ ...renewCustomer, name: e.target.value })} />
+                <Input label="کد سازمان" value={renewCustomer.code || ''} onChange={(e) => setRenewCustomer({ ...renewCustomer, code: e.target.value })} />
+                <Input label="شماره ثبت" value={renewCustomer.registration_number || ''} onChange={(e) => setRenewCustomer({ ...renewCustomer, registration_number: e.target.value })} />
+                <Input label="کد اقتصادی" value={renewCustomer.economy_code || ''} onChange={(e) => setRenewCustomer({ ...renewCustomer, economy_code: e.target.value })} />
+                <Input label="تلفن" value={renewCustomer.phone || ''} onChange={(e) => setRenewCustomer({ ...renewCustomer, phone: e.target.value })} />
+                <Input label="ایمیل" type="email" value={renewCustomer.email || ''} onChange={(e) => setRenewCustomer({ ...renewCustomer, email: e.target.value })} />
+                <Input label="وبسایت" value={renewCustomer.website || ''} onChange={(e) => setRenewCustomer({ ...renewCustomer, website: e.target.value })} />
+                <Input label="آدرس" value={renewCustomer.address || ''} onChange={(e) => setRenewCustomer({ ...renewCustomer, address: e.target.value })} />
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Input label="نام" value={renewCustomer.first_name || ''} onChange={(e) => setRenewCustomer({ ...renewCustomer, first_name: e.target.value })} />
+                <Input label="نام خانوادگی" value={renewCustomer.last_name || ''} onChange={(e) => setRenewCustomer({ ...renewCustomer, last_name: e.target.value })} />
+                <Input label="موبایل" value={renewCustomer.mobile || ''} onChange={(e) => setRenewCustomer({ ...renewCustomer, mobile: e.target.value })} />
+                <Input label="کد ملی" value={renewCustomer.national_id || ''} onChange={(e) => setRenewCustomer({ ...renewCustomer, national_id: e.target.value })} />
+                <Input label="آدرس" value={renewCustomer.address || ''} onChange={(e) => setRenewCustomer({ ...renewCustomer, address: e.target.value })} />
+              </div>
+            )}
+          </div>
+
+          <div className="border border-border-base rounded-card p-4 space-y-4">
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">دستگاه‌های قرارداد</h3>
+              <p className="text-[11px] text-text-muted mt-1">می‌توانید هم‌زمان دستگاه اضافه یا از قرارداد خارج کنید.</p>
+            </div>
+
+            {(subscription.devices || []).length > 0 ? (
+              <div className="space-y-2">
+                {subscription.devices.map((d) => {
+                  const marked = renewForm.remove_device_ids.includes(d.id);
+                  return (
+                    <label key={d.id} className={`flex items-center gap-3 p-3 rounded-field border ${marked ? 'border-danger/40 bg-danger/5' : 'border-border-base bg-bg-base'} cursor-pointer`}>
+                      <input
+                        type="checkbox"
+                        checked={marked}
+                        onChange={() => toggleRenewDeviceRemoval(d.id)}
+                        className="accent-danger"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs font-mono text-text-primary">{d.device_imei}</div>
+                        <div className="text-[10px] text-text-muted">{d.device_model || '—'} · پایان {toJalali(d.end_date)}</div>
+                      </div>
+                      <span className={`text-[10px] ${marked ? 'text-danger' : 'text-text-muted'}`}>
+                        {marked ? 'حذف می‌شود' : 'باقی می‌ماند'}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-xs text-text-muted">این قرارداد در حال حاضر دستگاه فعالی ندارد.</p>
+            )}
+
+            <div className="p-3 bg-bg-base border border-border-base rounded-field space-y-3">
+              <div className="text-xs font-medium text-text-secondary">افزودن دستگاه از انبار</div>
+              <Select
+                label="دستگاه"
+                placeholder="انتخاب دستگاه انبار..."
+                value={renewNewDevice.device_id}
+                onChange={(e) => setRenewNewDevice({ ...renewNewDevice, device_id: e.target.value })}
+                options={warehouseOptions.filter((option) => !renewForm.add_devices.some((item) => Number(item.device_id) === Number(option.value)))}
+              />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <JalaliDatePicker
+                  label="شروع دستگاه"
+                  value={renewNewDevice.start_date}
+                  onChange={(val) => setRenewNewDevice({ ...renewNewDevice, start_date: val })}
+                  required
+                />
+                <JalaliDatePicker
+                  label="پایان دستگاه"
+                  value={renewNewDevice.end_date}
+                  onChange={(val) => setRenewNewDevice({ ...renewNewDevice, end_date: val })}
+                  required
+                />
+              </div>
+              <Button type="button" size="sm" variant="secondary" icon={Plus} onClick={addRenewDevice}>
+                افزودن به تمدید
+              </Button>
+            </div>
+
+            {renewForm.add_devices.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs font-medium text-text-secondary">دستگاه‌های انتخاب‌شده برای افزودن</div>
+                {renewForm.add_devices.map((item, index) => {
+                  const device = (warehouseDevices || []).find((d) => Number(d.id) === Number(item.device_id));
+                  return (
+                    <div key={`${item.device_id}-${index}`} className="flex items-center gap-3 p-3 bg-bg-base border border-border-base rounded-field">
+                      <div className="flex-1">
+                        <div className="text-xs font-mono">{device?.imei || item.device_id}</div>
+                        <div className="text-[10px] text-text-muted">{toJalali(item.start_date)} تا {toJalali(item.end_date)}</div>
+                      </div>
+                      <button
+                        type="button"
+                        className="p-1.5 text-text-muted hover:text-danger"
+                        onClick={() => setRenewForm((prev) => ({
+                          ...prev,
+                          add_devices: prev.add_devices.filter((_, i) => i !== index),
+                        }))}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="border border-border-base rounded-card p-4 space-y-4">
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">پرداخت‌های این تمدید</h3>
+              <p className="text-[11px] text-text-muted mt-1">تمام پرداخت‌های اضافه‌شده با همین عملیات تمدید مرتبط می‌شوند.</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Input
+                type="number"
+                label="مبلغ (ریال)"
+                value={renewPaymentDraft.amount}
+                onChange={(e) => setRenewPaymentDraft({ ...renewPaymentDraft, amount: e.target.value })}
+                placeholder="مثلاً 50000000"
+              />
+              <JalaliDatePicker
+                label="تاریخ پرداخت"
+                value={renewPaymentDraft.payment_date}
+                onChange={(val) => setRenewPaymentDraft({ ...renewPaymentDraft, payment_date: val })}
+              />
+              <Input
+                type="number"
+                label="تعداد دستگاه"
+                value={renewPaymentDraft.device_count}
+                onChange={(e) => setRenewPaymentDraft({ ...renewPaymentDraft, device_count: e.target.value })}
+              />
+              <Input
+                label="توضیحات پرداخت"
+                value={renewPaymentDraft.description}
+                onChange={(e) => setRenewPaymentDraft({ ...renewPaymentDraft, description: e.target.value })}
+                placeholder="مثلاً پرداخت تمدید دو دستگاه"
+              />
+            </div>
+
+            <Button type="button" size="sm" variant="secondary" icon={Plus} onClick={addRenewPayment}>
+              افزودن پرداخت به تمدید
+            </Button>
+
+            {renewForm.payments.length > 0 && (
+              <div className="space-y-2">
+                {renewForm.payments.map((payment, index) => (
+                  <div key={index} className="flex items-center gap-3 p-3 bg-bg-base border border-border-base rounded-field">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-mono">{Number(payment.amount).toLocaleString('fa-IR')} ریال</div>
+                      <div className="text-[10px] text-text-muted">
+                        {toJalali(payment.payment_date)} · {payment.device_count || 0} دستگاه
+                        {payment.description ? ` · ${payment.description}` : ''}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      className="p-1.5 text-text-muted hover:text-danger"
+                      onClick={() => setRenewForm((prev) => ({
+                        ...prev,
+                        payments: prev.payments.filter((_, i) => i !== index),
+                      }))}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="text-[10px] text-text-muted leading-relaxed px-1">
+            هر چیزی که در این فرم تغییر دهید در قالب یک <strong>عملیات تمدید</strong> ثبت می‌شود؛
+            یعنی تاریخ، اطلاعات مشتری، دستگاه‌های افزوده/حذف‌شده و پرداخت‌ها همگی به یک رویداد واحد متصل خواهند بود.
+          </div>
         </form>
       </Modal>
 
