@@ -6,7 +6,8 @@ from .models import (
     Subscription,
     SubscriptionDevice,
     SubscriptionPayment,
-    SubscriptionRenewal,
+    SubscriptionOperation,
+    SubscriptionOperationChange,
 )
 
 
@@ -160,36 +161,44 @@ class SubscriptionPaymentSerializer(serializers.ModelSerializer):
         model = SubscriptionPayment
         fields = [
             'id', 'subscription',
-            'amount', 'payment_date', 'device_count', 'description',
+            'amount', 'payment_date', 'device_count', 'description', 'operation',
             'created_at',
         ]
         read_only_fields = ['id', 'created_at']
 
 
 # ═══════════════════════════════════════════════
-# SubscriptionRenewal
+# SubscriptionOperation
 # ═══════════════════════════════════════════════
 
-class SubscriptionRenewalSerializer(serializers.ModelSerializer):
-    renewed_by_name = serializers.SerializerMethodField()
+class SubscriptionOperationChangeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SubscriptionOperationChange
+        fields = ['id', 'entity_type', 'field_name', 'old_value', 'new_value']
+        read_only_fields = ['id']
+
+
+class SubscriptionOperationSerializer(serializers.ModelSerializer):
+    operation_type_display = serializers.CharField(source='get_operation_type_display', read_only=True)
+    performed_by_name = serializers.SerializerMethodField()
+    changes = SubscriptionOperationChangeSerializer(many=True, read_only=True)
 
     class Meta:
-        model = SubscriptionRenewal
+        model = SubscriptionOperation
         fields = [
-            'id', 'subscription',
-            'old_end_date', 'new_end_date',
-            'notes',
-            'renewed_at', 'renewed_by', 'renewed_by_name',
+            'id', 'subscription', 'operation_type', 'operation_type_display',
+            'performed_at', 'performed_by', 'performed_by_name',
+            'old_start_date', 'new_start_date', 'old_end_date', 'new_end_date',
+            'old_status', 'new_status', 'notes', 'changes',
         ]
-        read_only_fields = ['id', 'renewed_at', 'renewed_by']
+        read_only_fields = ['id', 'performed_at', 'performed_by']
 
-    def get_renewed_by_name(self, obj):
-        if not obj.renewed_by:
+    def get_performed_by_name(self, obj):
+        if not obj.performed_by:
             return None
-        return obj.renewed_by.full_name or obj.renewed_by.username
+        return obj.performed_by.full_name or obj.performed_by.username
 
 
-# ═══════════════════════════════════════════════
 # Subscription
 # ═══════════════════════════════════════════════
 
@@ -212,7 +221,7 @@ class SubscriptionSerializer(serializers.ModelSerializer):
     # فقط دستگاه‌های فعال (unassigned_at=None)
     devices = serializers.SerializerMethodField()
     payments = SubscriptionPaymentSerializer(many=True, read_only=True)
-    renewals = SubscriptionRenewalSerializer(many=True, read_only=True)
+    operations = SubscriptionOperationSerializer(many=True, read_only=True)
 
     device_count = serializers.SerializerMethodField()
 
@@ -230,7 +239,7 @@ class SubscriptionSerializer(serializers.ModelSerializer):
             'price', 'status', 'notes',
             'days_until_expiry', 'is_active', 'is_expiring_soon',
             'device_count',
-            'devices', 'payments', 'renewals',
+            'devices', 'payments', 'operations',
             'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
