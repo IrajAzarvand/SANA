@@ -275,6 +275,172 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
 
         return Response(SubscriptionSerializer(subscription).data)
 
+    @action(detail=True, methods=['post'])
+    def modify(self, request, pk=None):
+        """ویرایش قرارداد به‌عنوان یک SubscriptionOperation اتمیک."""
+        subscription = self.get_object()
+
+        contract_changes = request.data.get('contract_changes', {})
+        customer_changes = request.data.get('customer_changes', {})
+        payment_changes = request.data.get('payment_changes', [])
+        add_devices = request.data.get('add_devices', [])
+        remove_device_ids = request.data.get('remove_device_ids', [])
+        notes = request.data.get('notes', '')
+
+        allowed_contract = {'start_date', 'end_date', 'notes'}
+        if any(field not in allowed_contract for field in contract_changes):
+            raise serializers.ValidationError({'contract_changes': 'فقط start_date، end_date و notes قابل ویرایش هستند'})
+
+        from datetime import date
+        parsed_contract = {}
+        for field, value in contract_changes.items():
+            if field in {'start_date', 'end_date'}:
+                try:
+                    parsed_contract[field] = date.fromisoformat(value) if value else None
+                except (TypeError, ValueError):
+                    raise serializers.ValidationError({field: 'فرمت تاریخ نامعتبر است'})
+            else:
+                parsed_contract[field] = value
+
+        new_start = parsed_contract.get('start_date', subscription.start_date)
+        new_end = parsed_contract.get('end_date', subscription.end_date)
+        if new_start > new_end:
+            raise serializers.ValidationError({'contract_changes': 'تاریخ شروع قرارداد باید قبل از تاریخ پایان باشد'})
+
+        allowed_customer = {
+            'organization': {'name', 'code', 'registration_number', 'economy_code', 'phone', 'email', 'address', 'website'},
+            'personal': {'first_name', 'last_name', 'mobile', 'national_id', 'address'},
+        }[subscription.customer_type]
+        if any(field not in allowed_customer for field in customer_changes):
+            raise serializers.ValidationError({'customer_changes': 'فیلد اطلاعات مشتری قابل ویرایش نیست'})
+
+        payment_objects = {}
+        for item in payment_changes:
+            payment_id = item.get('id')
+            if not payment_id:
+                raise serializers.ValidationError({'payment_changes': 'شناسه پرداخت الزامی است'})
+            payment = subscription.payments.filter(id=payment_id).first()
+            if not payment:
+                raise serializers.ValidationError({'payment_changes': f'پرداخت {payment_id} یافت نشد'})
+            payment_objects[payment_id] = (payment, item)
+
+        with transaction.atomic():
+            operation = SubscriptionOperation.objects.create(
+                subscription=subscription,
+                operation_type='modify',
+                performed_by=request.user,
+                old_start_date=subscription.start_date,
+                new_start_date=new_start,
+                old_end_date=subscription.end_date,
+                new_end_date=new_end,
+                old_status=subscription.status,
+                new_status=subscription.status,
+                notes=notes,
+            )
+
+            # تغییرات قرارداد
+            for field, new_value in parsed_contract.items():
+                old_value = getattr(subscription, field)
+                if str(old_value) != str(new_value):
+                    SubscriptionOperationChange.objects.create(
+                        operation=operation,
+                        entity_type='Subscription',
+                        field_name=field,
+                        old_value='' if old_value is None else str(old_value),
+                        new_value='' if new_value is None else str(new_value),
+                    )
+                    setattr(subscription, field, new_value)
+
+            # اگر بازه قرارداد تغییر کرده، دستگاه‌های فعال باید همچنان داخل آن باشند.
+            for link in subscription.subscription_devices.filter(unassigned_at__isnull=True):
+                if link.start_date < new_start or link.end_date > new_end:
+                    raise serializers.ValidationError({
+                        'contract_changes': 'بازه جدید قرارداد با تاریخ یکی از دستگاه‌های فعال سازگار نیست'
+                    })
+
+            subscription.save()
+
+            # دستگاه‌های جدید
+            for item in add_devices:
+                device_id = item.get('device_id')
+                if not device_id:
+                    raise serializers.ValidationError({'add_devices': 'device_id الزامی است'})
+                device_serializer = SubscriptionDeviceSerializer(
+                    data={
+                        'subscription': subscription.id,
+                        'device': device_id,
+                        'start_date': item.get('start_date', new_start),
+                        'end_date': item.get('end_date', new_end),
+                    }
+                )
+                device_serializer.is_valid(raise_exception=True)
+                link = device_serializer.save()
+                link.added_by_operation = operation
+                link.save(update_fields=['added_by_operation'])
+
+            # دستگاه‌های حذف‌شده؛ رکورد تاریخی حفظ می‌شود.
+            for link_id in remove_device_ids:
+                link = subscription.subscription_devices.filter(
+                    id=link_id, unassigned_at__isnull=True
+                ).first()
+                if not link:
+                    raise serializers.ValidationError(
+                        {'remove_device_ids': f'دستگاه قرارداد با شناسه {link_id} یافت نشد'}
+                    )
+                link.unassigned_at = timezone.now()
+                link.removed_by_operation = operation
+                link.save(update_fields=['unassigned_at', 'removed_by_operation'])
+
+            # تغییر اطلاعات مشتری
+            if customer_changes:
+                target = subscription.organization if subscription.customer_type == 'organization' else subscription.user
+                if target is None:
+                    raise serializers.ValidationError({'customer_changes': 'مشتری قرارداد یافت نشد'})
+                for field, new_value in customer_changes.items():
+                    old_value = getattr(target, field)
+                    if str(old_value) == str(new_value):
+                        continue
+                    SubscriptionOperationChange.objects.create(
+                        operation=operation,
+                        entity_type=target.__class__.__name__,
+                        field_name=field,
+                        old_value='' if old_value is None else str(old_value),
+                        new_value='' if new_value is None else str(new_value),
+                    )
+                    setattr(target, field, new_value)
+                target.save()
+
+            # اصلاح پرداخت‌ها؛ هر اصلاح هم در همان عملیات ثبت می‌شود.
+            payment_fields = {'amount', 'payment_date', 'device_count', 'description'}
+            for payment, item in payment_objects.values():
+                for field in payment_fields:
+                    if field not in item:
+                        continue
+                    new_value = item[field]
+                    if field == 'amount':
+                        new_value = int(new_value)
+                    elif field == 'device_count':
+                        new_value = int(new_value)
+                    elif field == 'payment_date':
+                        try:
+                            new_value = date.fromisoformat(new_value)
+                        except (TypeError, ValueError):
+                            raise serializers.ValidationError({'payment_changes': 'فرمت تاریخ پرداخت نامعتبر است'})
+                    old_value = getattr(payment, field)
+                    if str(old_value) == str(new_value):
+                        continue
+                    SubscriptionOperationChange.objects.create(
+                        operation=operation,
+                        entity_type='SubscriptionPayment',
+                        field_name=field,
+                        old_value='' if old_value is None else str(old_value),
+                        new_value='' if new_value is None else str(new_value),
+                    )
+                    setattr(payment, field, new_value)
+                payment.save()
+
+        return Response(SubscriptionSerializer(subscription).data)
+
     @action(detail=True, methods=['get'])
     def operations(self, request, pk=None):
         subscription = self.get_object()
