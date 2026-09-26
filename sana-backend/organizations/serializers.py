@@ -490,6 +490,20 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                 status='active',
             )
 
+            # ایجاد قرارداد خودش یک عملیات قابل حسابرسی است.
+            operation = SubscriptionOperation.objects.create(
+                subscription=subscription,
+                operation_type='create',
+                performed_by=self.context.get('request').user if self.context.get('request') else None,
+                old_start_date=None,
+                new_start_date=subscription.start_date,
+                old_end_date=None,
+                new_end_date=subscription.end_date,
+                old_status='',
+                new_status=subscription.status,
+                notes=subscription.notes,
+            )
+
             # ─── ۴. اضافه کردن دستگاه‌ها ───
             for device_data in devices_data:
                 try:
@@ -513,6 +527,7 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                     device=device,
                     start_date=device_data['start_date'],
                     end_date=device_data['end_date'],
+                    added_by_operation=operation,
                 )
 
                 # تخصیص مالکیت دستگاه
@@ -533,6 +548,7 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                     payment_date=payment_data['payment_date'],
                     device_count=payment_data.get('device_count', 0),
                     description=payment_data.get('description', ''),
+                    operation=operation,
                 )
 
             return subscription
