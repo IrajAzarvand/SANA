@@ -412,24 +412,47 @@ class SubscriptionDeviceViewSet(viewsets.ModelViewSet):
             return [IsSiteAdmin()]
         return super().get_permissions()
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        subscription = serializer.validated_data['subscription']
+        with transaction.atomic():
+            operation = SubscriptionOperation.objects.create(
+                subscription=subscription,
+                operation_type='add_device',
+                performed_by=request.user,
+                old_end_date=subscription.end_date,
+                new_end_date=subscription.end_date,
+            )
+            instance = serializer.save(added_by_operation=operation)
+        return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED)
+
     def destroy(self, request, *args, **kwargs):
-        """قبل از حذف، unassigned_at رو ست کن"""
+        """خروج دستگاه از قرارداد به‌عنوان یک عملیات حسابرسی‌شده."""
         instance = self.get_object()
-        from django.utils import timezone
-        instance.unassigned_at = timezone.now()
-        instance.save()
+        subscription = instance.subscription
+        with transaction.atomic():
+            operation = SubscriptionOperation.objects.create(
+                subscription=subscription,
+                operation_type='remove_device',
+                performed_by=request.user,
+                old_end_date=subscription.end_date,
+                new_end_date=subscription.end_date,
+            )
+            instance.unassigned_at = timezone.now()
+            instance.removed_by_operation = operation
+            instance.save(update_fields=['unassigned_at', 'removed_by_operation'])
 
-        # برگرداندن دستگاه به انبار
-        device = instance.device
-        # اگه هیچ اتصال فعال دیگه‌ای نداره، برگردون به انبار
-        other_active = device.subscription_links.filter(unassigned_at__isnull=True).exclude(id=instance.id).exists()
-        if not other_active:
-            device.organization = None
-            device.owner_user = None
-            device.branch = None
-            device.management_status = 'warehouse'
-            device.save()
-
+            device = instance.device
+            other_active = device.subscription_links.filter(
+                unassigned_at__isnull=True
+            ).exclude(id=instance.id).exists()
+            if not other_active:
+                device.organization = None
+                device.owner_user = None
+                device.branch = None
+                device.management_status = 'warehouse'
+                device.save()
         return Response(status=status.HTTP_204_NO_CONTENT)
 # ═══════════════════════════════════════════════
 # SubscriptionPayment
@@ -458,6 +481,21 @@ class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
             qs = qs.filter(subscription_id=subscription)
 
         return qs
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        subscription = serializer.validated_data['subscription']
+        with transaction.atomic():
+            operation = SubscriptionOperation.objects.create(
+                subscription=subscription,
+                operation_type='payment',
+                performed_by=request.user,
+                old_end_date=subscription.end_date,
+                new_end_date=subscription.end_date,
+            )
+            instance = serializer.save(operation=operation)
+        return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED)
 
     def get_permissions(self):
         if self.action in ['create', 'destroy', 'update', 'partial_update']:
