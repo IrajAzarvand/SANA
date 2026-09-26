@@ -248,6 +248,60 @@ class Subscription(models.Model):
         # فرمت 4 رقمی
         return f'{prefix}-{jalali_year}-{next_num:04d}'
 
+class SubscriptionOperation(models.Model):
+    """یک رویداد تجاری/عملیاتی روی قرارداد؛ تمدید یکی از انواع آن است."""
+
+    OPERATION_TYPE_CHOICES = [
+        ('create', 'ایجاد قرارداد'), ('renew', 'تمدید'), ('modify', 'ویرایش'),
+        ('payment', 'پرداخت'), ('add_device', 'افزودن دستگاه'),
+        ('remove_device', 'حذف دستگاه'), ('suspend', 'تعلیق'),
+        ('activate', 'فعال‌سازی'), ('cancel', 'لغو'),
+    ]
+
+    subscription = models.ForeignKey(Subscription, on_delete=models.CASCADE,
+        related_name='operations', verbose_name='قرارداد')
+    operation_type = models.CharField(max_length=30, choices=OPERATION_TYPE_CHOICES,
+        verbose_name='نوع عملیات')
+    performed_at = models.DateTimeField(auto_now_add=True, verbose_name='زمان عملیات')
+    performed_by = models.ForeignKey('accounts.User', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='subscription_operations',
+        verbose_name='انجام‌دهنده')
+    old_start_date = models.DateField(null=True, blank=True, verbose_name='شروع قبلی')
+    new_start_date = models.DateField(null=True, blank=True, verbose_name='شروع جدید')
+    old_end_date = models.DateField(null=True, blank=True, verbose_name='پایان قبلی')
+    new_end_date = models.DateField(null=True, blank=True, verbose_name='پایان جدید')
+    old_status = models.CharField(max_length=20, blank=True, verbose_name='وضعیت قبلی')
+    new_status = models.CharField(max_length=20, blank=True, verbose_name='وضعیت جدید')
+    notes = models.TextField(blank=True, verbose_name='یادداشت')
+
+    class Meta:
+        verbose_name = 'عملیات قرارداد'
+        verbose_name_plural = 'عملیات قرارداد'
+        ordering = ['-performed_at']
+
+    def __str__(self):
+        return f'{self.subscription.contract_number} — {self.get_operation_type_display()}'
+
+
+class SubscriptionOperationChange(models.Model):
+    """ثبت تغییرات فیلدی مشتری/قرارداد در یک عملیات."""
+
+    operation = models.ForeignKey(SubscriptionOperation, on_delete=models.CASCADE,
+        related_name='changes', verbose_name='عملیات')
+    entity_type = models.CharField(max_length=50, verbose_name='نوع موجودیت')
+    field_name = models.CharField(max_length=100, verbose_name='فیلد')
+    old_value = models.TextField(blank=True, verbose_name='مقدار قبلی')
+    new_value = models.TextField(blank=True, verbose_name='مقدار جدید')
+
+    class Meta:
+        verbose_name = 'تغییر عملیات'
+        verbose_name_plural = 'تغییرات عملیات'
+        ordering = ['id']
+
+    def __str__(self):
+        return f'{self.entity_type}.{self.field_name}'
+
+
 class SubscriptionDevice(models.Model):
     """اتصال تاریخی دستگاه به قرارداد"""
 
@@ -271,6 +325,11 @@ class SubscriptionDevice(models.Model):
     # تاریخ‌های فنی
     assigned_at = models.DateTimeField(auto_now_add=True, verbose_name='تاریخ اتصال')
     unassigned_at = models.DateTimeField(null=True, blank=True, verbose_name='تاریخ جدا شدن')
+
+    added_by_operation = models.ForeignKey(SubscriptionOperation, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='added_devices', verbose_name='عملیات افزودن')
+    removed_by_operation = models.ForeignKey(SubscriptionOperation, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='removed_devices', verbose_name='عملیات حذف')
 
     class Meta:
         verbose_name = 'دستگاه قرارداد'
@@ -335,6 +394,9 @@ class SubscriptionPayment(models.Model):
     )
     description = models.TextField(blank=True, verbose_name='توضیحات')
 
+    operation = models.ForeignKey(SubscriptionOperation, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='payments', verbose_name='عملیات')
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -351,34 +413,3 @@ class SubscriptionPayment(models.Model):
         self.subscription.recalculate_price()
 
 
-class SubscriptionRenewal(models.Model):
-    """تاریخچه تمدیدهای قرارداد"""
-
-    subscription = models.ForeignKey(
-        Subscription,
-        on_delete=models.CASCADE,
-        related_name='renewals',
-        verbose_name='قرارداد'
-    )
-
-    old_end_date = models.DateField(verbose_name='تاریخ پایان قبلی')
-    new_end_date = models.DateField(verbose_name='تاریخ پایان جدید')
-
-    notes = models.TextField(blank=True, verbose_name='یادداشت تمدید')
-
-    renewed_at = models.DateTimeField(auto_now_add=True, verbose_name='تاریخ تمدید')
-    renewed_by = models.ForeignKey(
-        'accounts.User',
-        on_delete=models.SET_NULL,
-        null=True, blank=True,
-        related_name='renewals',
-        verbose_name='تمدیدکننده'
-    )
-
-    class Meta:
-        verbose_name = 'تمدید قرارداد'
-        verbose_name_plural = 'تمدیدهای قرارداد'
-        ordering = ['-renewed_at']
-
-    def __str__(self):
-        return f'{self.subscription.contract_number} — {self.old_end_date} → {self.new_end_date}'
