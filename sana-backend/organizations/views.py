@@ -1,4 +1,5 @@
 from django.utils import timezone
+from django.db import transaction
 from datetime import timedelta
 from rest_framework import viewsets, filters, status
 from rest_framework.decorators import action
@@ -14,7 +15,8 @@ from .models import (
     Subscription,
     SubscriptionDevice,
     SubscriptionPayment,
-    SubscriptionRenewal,
+    SubscriptionOperation,
+    SubscriptionOperationChange,
 )
 from .serializers import (
     OrganizationSerializer,
@@ -26,7 +28,7 @@ from .serializers import (
     SubscriptionWizardSerializer,
     SubscriptionDeviceSerializer,
     SubscriptionPaymentSerializer,
-    SubscriptionRenewSerializer,
+    SubscriptionOperationSerializer,
 )
 from accounts.permissions import IsSiteAdmin
 
@@ -166,33 +168,118 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def renew(self, request, pk=None):
-        """تمدید قرارداد — بدون تغییر notes قرارداد، با ثبت تاریخچه"""
+        """تمدید قرارداد به‌عنوان یک SubscriptionOperation اتمیک."""
         subscription = self.get_object()
+        new_end_date = request.data.get('new_end_date')
+        notes = request.data.get('notes', '')
+        if not new_end_date:
+            return Response({'new_end_date': 'این فیلد الزامی است'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # پاس دادن subscription به serializer برای validation
-        serializer = SubscriptionRenewSerializer(
-            data=request.data,
-            context={'subscription': subscription}
-        )
-        serializer.is_valid(raise_exception=True)
+        from datetime import date
+        try:
+            new_end_date = date.fromisoformat(new_end_date)
+        except ValueError:
+            return Response({'new_end_date': 'فرمت تاریخ نامعتبر است'}, status=status.HTTP_400_BAD_REQUEST)
 
-        old_end_date = subscription.end_date
-        new_end_date = serializer.validated_data['new_end_date']
+        if new_end_date <= timezone.now().date() or new_end_date <= subscription.end_date:
+            return Response(
+                {'new_end_date': 'تاریخ پایان جدید باید بعد از تاریخ پایان فعلی و در آینده باشد'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
-        # ۱. آپدیت قرارداد (فقط end_date)
-        subscription.end_date = new_end_date
-        subscription.save()
+        with transaction.atomic():
+            operation = SubscriptionOperation.objects.create(
+                subscription=subscription,
+                operation_type='renew',
+                performed_by=request.user,
+                old_start_date=subscription.start_date,
+                new_start_date=subscription.start_date,
+                old_end_date=subscription.end_date,
+                new_end_date=new_end_date,
+                old_status=subscription.status,
+                new_status=subscription.status,
+                notes=notes,
+            )
 
-        # ۲. ذخیره تاریخچه تمدید
-        SubscriptionRenewal.objects.create(
-            subscription=subscription,
-            old_end_date=old_end_date,
-            new_end_date=new_end_date,
-            notes=serializer.validated_data.get('notes', ''),
-            renewed_by=request.user if request.user.is_authenticated else None,
-        )
+            subscription.end_date = new_end_date
+            subscription.save(update_fields=['end_date', 'updated_at'])
+
+            # دستگاه‌های جدید
+            for item in request.data.get('add_devices', []):
+                device_id = item.get('device_id')
+                if not device_id:
+                    raise serializers.ValidationError({'add_devices': 'device_id الزامی است'})
+                device_serializer = SubscriptionDeviceSerializer(
+                    data={
+                        'subscription': subscription.id,
+                        'device': device_id,
+                        'start_date': item.get('start_date', subscription.start_date),
+                        'end_date': item.get('end_date', new_end_date),
+                    }
+                )
+                device_serializer.is_valid(raise_exception=True)
+                link = device_serializer.save()
+                link.added_by_operation = operation
+                link.save(update_fields=['added_by_operation'])
+
+            # دستگاه‌های حذف‌شده
+            for link_id in request.data.get('remove_device_ids', []):
+                link = subscription.subscription_devices.filter(
+                    id=link_id, unassigned_at__isnull=True
+                ).first()
+                if not link:
+                    raise serializers.ValidationError(
+                        {'remove_device_ids': f'دستگاه قرارداد با شناسه {link_id} یافت نشد'}
+                    )
+                link.unassigned_at = timezone.now()
+                link.removed_by_operation = operation
+                link.save(update_fields=['unassigned_at', 'removed_by_operation'])
+
+            # پرداخت‌های مربوط به همین تمدید
+            for item in request.data.get('payments', []):
+                payment_serializer = SubscriptionPaymentSerializer(
+                    data={**item, 'subscription': subscription.id, 'operation': operation.id}
+                )
+                payment_serializer.is_valid(raise_exception=True)
+                payment_serializer.save()
+
+            # تغییر اطلاعات مشتری
+            customer_changes = request.data.get('customer_changes', {})
+            if customer_changes:
+                target = subscription.organization if subscription.customer_type == 'organization' else subscription.user
+                if target is None:
+                    raise serializers.ValidationError({'customer_changes': 'مشتری قرارداد یافت نشد'})
+
+                allowed = {
+                    'organization': {'name', 'code', 'registration_number', 'economy_code', 'phone', 'email', 'address', 'website'},
+                    'personal': {'first_name', 'last_name', 'mobile', 'national_id', 'address'},
+                }[subscription.customer_type]
+
+                for field, new_value in customer_changes.items():
+                    if field not in allowed or not hasattr(target, field):
+                        raise serializers.ValidationError(
+                            {'customer_changes': f'فیلد {field} قابل تغییر نیست'}
+                        )
+                    old_value = getattr(target, field)
+                    if str(old_value) == str(new_value):
+                        continue
+                    SubscriptionOperationChange.objects.create(
+                        operation=operation,
+                        entity_type=target.__class__.__name__,
+                        field_name=field,
+                        old_value='' if old_value is None else str(old_value),
+                        new_value='' if new_value is None else str(new_value),
+                    )
+                    setattr(target, field, new_value)
+                target.save()
 
         return Response(SubscriptionSerializer(subscription).data)
+
+    @action(detail=True, methods=['get'])
+    def operations(self, request, pk=None):
+        subscription = self.get_object()
+        qs = subscription.operations.select_related('performed_by').prefetch_related('changes')
+        return Response(SubscriptionOperationSerializer(qs, many=True).data)
 
     
 
@@ -200,24 +287,39 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
     def suspend(self, request, pk=None):
         """تعلیق قرارداد"""
         subscription = self.get_object()
-        subscription.status = 'suspended'
-        subscription.save()
+        with transaction.atomic():
+            operation = SubscriptionOperation.objects.create(
+                subscription=subscription, operation_type='suspend',
+                performed_by=request.user, old_status=subscription.status, new_status='suspended'
+            )
+            subscription.status = 'suspended'
+            subscription.save(update_fields=['status', 'updated_at'])
         return Response(SubscriptionSerializer(subscription).data)
 
     @action(detail=True, methods=['post'])
     def activate(self, request, pk=None):
         """فعال‌سازی مجدد قرارداد"""
         subscription = self.get_object()
-        subscription.status = 'active'
-        subscription.save()
+        with transaction.atomic():
+            operation = SubscriptionOperation.objects.create(
+                subscription=subscription, operation_type='activate',
+                performed_by=request.user, old_status=subscription.status, new_status='active'
+            )
+            subscription.status = 'active'
+            subscription.save(update_fields=['status', 'updated_at'])
         return Response(SubscriptionSerializer(subscription).data)
 
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
         """لغو قرارداد"""
         subscription = self.get_object()
-        subscription.status = 'cancelled'
-        subscription.save()
+        with transaction.atomic():
+            operation = SubscriptionOperation.objects.create(
+                subscription=subscription, operation_type='cancel',
+                performed_by=request.user, old_status=subscription.status, new_status='cancelled'
+            )
+            subscription.status = 'cancelled'
+            subscription.save(update_fields=['status', 'updated_at'])
         return Response(SubscriptionSerializer(subscription).data)
 
     @action(detail=False, methods=['get'])
