@@ -64,6 +64,11 @@ export default function SubscriptionDetail() {
   }, [subscription, searchParams, setSearchParams]);
 
   // ═══ State مودال‌ها ═══
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editForm, setEditForm] = useState({ start_date: '', end_date: '', notes: '', remove_device_ids: [], add_devices: [], payment_changes: {} });
+  const [editCustomer, setEditCustomer] = useState({});
+  const [editNewDevice, setEditNewDevice] = useState({ device_id: '', start_date: '', end_date: '' });
+  const [editCustomerLoading, setEditCustomerLoading] = useState(false);
   const [renewModalOpen, setRenewModalOpen] = useState(false);
   const [renewForm, setRenewForm] = useState({
     new_end_date: '',
@@ -119,10 +124,10 @@ export default function SubscriptionDetail() {
 
   // ═══ لیست دستگاه‌های انبار ═══
   const fetchWarehouseDevices = useCallback(async () => {
-    if (!deviceModalOpen && !renewModalOpen) return [];
+    if (!deviceModalOpen && !renewModalOpen && !editModalOpen) return [];
     const result = await devicesAPI.list({ in_warehouse: 'true' });
     return Array.isArray(result) ? result : result.results || [];
-  }, [deviceModalOpen, renewModalOpen]);
+  }, [deviceModalOpen, renewModalOpen, editModalOpen]);
 
   const { data: warehouseDevices } = useApi(fetchWarehouseDevices, [deviceModalOpen, renewModalOpen]);
 
@@ -134,6 +139,134 @@ export default function SubscriptionDetail() {
   }, [warehouseDevices]);
 
   // ═══ تمدید ═══
+  const openEditModal = async () => {
+    const customerDefaults = isOrg
+      ? { name: '', code: '', registration_number: '', economy_code: '', phone: '', email: '', address: '', website: '' }
+      : { first_name: '', last_name: '', mobile: '', national_id: '', address: '' };
+
+    setEditForm({
+      start_date: subscription.start_date,
+      end_date: subscription.end_date,
+      notes: subscription.notes || '',
+      remove_device_ids: [],
+      add_devices: [],
+      payment_changes: Object.fromEntries((subscription.payments || []).map((p) => [p.id, {
+        amount: p.amount,
+        payment_date: p.payment_date,
+        device_count: p.device_count,
+        description: p.description || '',
+      }])),
+    });
+    setEditCustomer(customerDefaults);
+    setEditNewDevice({ device_id: '', start_date: subscription.start_date, end_date: subscription.end_date });
+    setActionError('');
+    setEditCustomerLoading(true);
+    setEditModalOpen(true);
+
+    try {
+      if (isOrg && subscription.organization) {
+        const org = await organizationsAPI.get(subscription.organization);
+        setEditCustomer({
+          name: org.name || '', code: org.code || '', registration_number: org.registration_number || '',
+          economy_code: org.economy_code || '', phone: org.phone || '', email: org.email || '',
+          address: org.address || '', website: org.website || '',
+        });
+      } else if (!isOrg && subscription.user) {
+        const user = await usersAPI.get(subscription.user);
+        setEditCustomer({
+          first_name: user.first_name || '', last_name: user.last_name || '', mobile: user.mobile || '',
+          national_id: user.national_id || '', address: user.address || '',
+        });
+      }
+    } catch (err) {
+      console.error('Error loading customer details for edit:', err);
+      setActionError('اطلاعات مشتری برای ویرایش کامل بارگذاری نشد.');
+    } finally {
+      setEditCustomerLoading(false);
+    }
+  };
+
+  const handleModify = async (e) => {
+    e.preventDefault();
+    if (!editForm.start_date || !editForm.end_date || editForm.start_date > editForm.end_date) {
+      setActionError('بازه تاریخ قرارداد نامعتبر است.');
+      return;
+    }
+
+    const customer_changes = isOrg
+      ? editCustomer
+      : editCustomer;
+
+    const payment_changes = Object.entries(editForm.payment_changes).map(([paymentId, payment]) => ({
+      id: Number(paymentId),
+      ...payment,
+      amount: Number(payment.amount),
+      device_count: Number(payment.device_count) || 0,
+    }));
+
+    setSaving(true);
+    setActionError('');
+    try {
+      await subscriptionsAPI.modify(id, {
+        contract_changes: {
+          start_date: editForm.start_date,
+          end_date: editForm.end_date,
+          notes: editForm.notes,
+        },
+        customer_changes,
+        remove_device_ids: editForm.remove_device_ids,
+        add_devices: editForm.add_devices,
+        payment_changes,
+      });
+      setEditModalOpen(false);
+      refetch();
+    } catch (err) {
+      console.error('Error modifying contract:', err);
+      const msg = err.response?.data
+        ? Object.entries(err.response.data).map(([k, v]) => `${k}: ${Array.isArray(v) ? v[0] : v}`).join('\n')
+        : 'خطا در ویرایش قرارداد';
+      setActionError(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleEditDeviceRemoval = (linkId) => {
+    setEditForm((prev) => ({
+      ...prev,
+      remove_device_ids: prev.remove_device_ids.includes(linkId)
+        ? prev.remove_device_ids.filter((id) => id !== linkId)
+        : [...prev.remove_device_ids, linkId],
+    }));
+  };
+
+  const addEditDevice = () => {
+    if (!editNewDevice.device_id) {
+      setActionError('برای افزودن دستگاه، یک دستگاه انتخاب کنید.');
+      return;
+    }
+    if (editNewDevice.start_date < editForm.start_date || editNewDevice.end_date > editForm.end_date) {
+      setActionError('تاریخ دستگاه باید داخل بازه قرارداد باشد.');
+      return;
+    }
+    setEditForm((prev) => ({
+      ...prev,
+      add_devices: [...prev.add_devices, { ...editNewDevice, device_id: Number(editNewDevice.device_id) }],
+    }));
+    setEditNewDevice({ device_id: '', start_date: editForm.start_date, end_date: editForm.end_date });
+    setActionError('');
+  };
+
+  const updateEditPayment = (paymentId, field, value) => {
+    setEditForm((prev) => ({
+      ...prev,
+      payment_changes: {
+        ...prev.payment_changes,
+        [paymentId]: { ...prev.payment_changes[paymentId], [field]: value },
+      },
+    }));
+  };
+
   const openRenewModal = async () => {
     const customerDefaults = isOrg
       ? {
@@ -487,6 +620,13 @@ export default function SubscriptionDetail() {
 
         {isSiteAdmin && !isCancelled && (
           <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              variant="secondary"
+              icon={Pencil}
+              onClick={openEditModal}
+            >
+              ویرایش قرارداد
+            </Button>
             <Button
               variant="secondary"
               icon={RotateCw}
@@ -884,6 +1024,100 @@ export default function SubscriptionDetail() {
           </div>
         )}
       </Card>
+
+      {/* ═══ مودال ویرایش قرارداد ═══ */}
+      <Modal
+        open={editModalOpen}
+        onClose={() => setEditModalOpen(false)}
+        title="ویرایش قرارداد"
+        size="xl"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditModalOpen(false)} disabled={saving}>انصراف</Button>
+            <Button type="submit" form="edit-form" disabled={saving || editCustomerLoading}>
+              {saving ? 'در حال ذخیره...' : 'ذخیره تغییرات'}
+            </Button>
+          </>
+        }
+      >
+        <form id="edit-form" onSubmit={handleModify} className="space-y-4 pl-1">
+          {actionError && <div className="bg-danger/10 border border-danger/30 rounded-field p-3"><p className="text-xs text-danger whitespace-pre-line">{actionError}</p></div>}
+
+          <div className="border border-border-base rounded-card p-4 space-y-4">
+            <h3 className="text-sm font-semibold text-text-primary">اطلاعات قرارداد</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <JalaliDatePicker label="تاریخ شروع قرارداد" value={editForm.start_date} onChange={(val) => setEditForm({...editForm, start_date: val})} required />
+              <JalaliDatePicker label="تاریخ پایان قرارداد" value={editForm.end_date} minDate={editForm.start_date} onChange={(val) => setEditForm({...editForm, end_date: val})} required />
+            </div>
+            <Input label="یادداشت قرارداد" value={editForm.notes} onChange={(e) => setEditForm({...editForm, notes: e.target.value})} />
+          </div>
+
+          <div className="border border-border-base rounded-card p-4 space-y-4">
+            <h3 className="text-sm font-semibold text-text-primary">اطلاعات مشتری</h3>
+            {isOrg ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <Input label="نام سازمان" value={editCustomer.name || ''} onChange={(e) => setEditCustomer({...editCustomer,name:e.target.value})} />
+                <Input label="کد سازمان" value={editCustomer.code || ''} onChange={(e) => setEditCustomer({...editCustomer,code:e.target.value})} />
+                <Input label="شماره ثبت" value={editCustomer.registration_number || ''} onChange={(e) => setEditCustomer({...editCustomer,registration_number:e.target.value})} />
+                <Input label="کد اقتصادی" value={editCustomer.economy_code || ''} onChange={(e) => setEditCustomer({...editCustomer,economy_code:e.target.value})} />
+                <Input label="تلفن" value={editCustomer.phone || ''} onChange={(e) => setEditCustomer({...editCustomer,phone:e.target.value})} />
+                <Input label="ایمیل" value={editCustomer.email || ''} onChange={(e) => setEditCustomer({...editCustomer,email:e.target.value})} />
+                <Input label="آدرس" value={editCustomer.address || ''} onChange={(e) => setEditCustomer({...editCustomer,address:e.target.value})} />
+                <Input label="وبسایت" value={editCustomer.website || ''} onChange={(e) => setEditCustomer({...editCustomer,website:e.target.value})} />
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <Input label="نام" value={editCustomer.first_name || ''} onChange={(e) => setEditCustomer({...editCustomer,first_name:e.target.value})} />
+                <Input label="نام خانوادگی" value={editCustomer.last_name || ''} onChange={(e) => setEditCustomer({...editCustomer,last_name:e.target.value})} />
+                <Input label="موبایل" value={editCustomer.mobile || ''} onChange={(e) => setEditCustomer({...editCustomer,mobile:e.target.value})} />
+                <Input label="کد ملی" value={editCustomer.national_id || ''} onChange={(e) => setEditCustomer({...editCustomer,national_id:e.target.value})} />
+                <Input label="آدرس" value={editCustomer.address || ''} onChange={(e) => setEditCustomer({...editCustomer,address:e.target.value})} />
+              </div>
+            )}
+          </div>
+
+          <div className="border border-border-base rounded-card p-4 space-y-4">
+            <h3 className="text-sm font-semibold text-text-primary">دستگاه‌های قرارداد</h3>
+            {(subscription.devices || []).map((d) => {
+              const marked = editForm.remove_device_ids.includes(d.id);
+              return <label key={d.id} className={`flex items-center gap-3 p-3 rounded-field border ${marked ? 'border-danger/40 bg-danger/5' : 'border-border-base bg-bg-base'} cursor-pointer`}>
+                <input type="checkbox" checked={marked} onChange={() => toggleEditDeviceRemoval(d.id)} className="accent-danger" />
+                <div className="flex-1"><div className="text-xs font-mono">{d.device_imei}</div><div className="text-[10px] text-text-muted">شروع {toJalali(d.start_date)} · پایان {toJalali(d.end_date)}</div></div>
+                <span className={`text-[10px] ${marked ? 'text-danger' : 'text-text-muted'}`}>{marked ? 'حذف می‌شود' : 'باقی می‌ماند'}</span>
+              </label>;
+            })}
+            <div className="p-3 bg-bg-base border border-border-base rounded-field space-y-3">
+              <div className="text-xs font-medium text-text-secondary">افزودن دستگاه</div>
+              <Select label="دستگاه" placeholder="انتخاب دستگاه انبار..." value={editNewDevice.device_id} onChange={(e) => setEditNewDevice({...editNewDevice,device_id:e.target.value})} options={warehouseOptions} />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <JalaliDatePicker label="شروع دستگاه" value={editNewDevice.start_date} minDate={editForm.start_date} maxDate={editForm.end_date} onChange={(val) => setEditNewDevice({...editNewDevice,start_date:val})} required />
+                <JalaliDatePicker label="پایان دستگاه" value={editNewDevice.end_date} minDate={editForm.start_date} maxDate={editForm.end_date} onChange={(val) => setEditNewDevice({...editNewDevice,end_date:val})} required />
+              </div>
+              <Button type="button" size="sm" variant="secondary" icon={Plus} onClick={addEditDevice}>افزودن به ویرایش</Button>
+            </div>
+            {editForm.add_devices.map((item,index) => (
+              <div key={`${item.device_id}-${index}`} className="flex items-center gap-3 p-3 bg-bg-base border border-border-base rounded-field">
+                <div className="flex-1 text-xs font-mono">{(warehouseDevices || []).find((d) => Number(d.id) === Number(item.device_id))?.imei || item.device_id}<div className="text-[10px] text-text-muted">{toJalali(item.start_date)} تا {toJalali(item.end_date)}</div></div>
+                <button type="button" className="p-1.5 text-text-muted hover:text-danger" onClick={() => setEditForm(prev => ({...prev,add_devices:prev.add_devices.filter((_,i)=>i!==index)}))}><Trash2 size={14}/></button>
+              </div>
+            ))}
+          </div>
+
+          <div className="border border-border-base rounded-card p-4 space-y-4">
+            <h3 className="text-sm font-semibold text-text-primary">اصلاح پرداخت‌ها</h3>
+            {(subscription.payments || []).map((p) => {
+              const payment = editForm.payment_changes[p.id] || p;
+              return <div key={p.id} className="grid grid-cols-1 md:grid-cols-4 gap-3 p-3 bg-bg-base border border-border-base rounded-field">
+                <Input type="number" label="مبلغ" value={payment.amount} onChange={(e) => updateEditPayment(p.id,'amount',e.target.value)} />
+                <JalaliDatePicker label="تاریخ پرداخت" value={payment.payment_date} onChange={(val) => updateEditPayment(p.id,'payment_date',val)} />
+                <Input type="number" label="تعداد دستگاه" value={payment.device_count} onChange={(e) => updateEditPayment(p.id,'device_count',e.target.value)} />
+                <Input label="توضیحات" value={payment.description || ''} onChange={(e) => updateEditPayment(p.id,'description',e.target.value)} />
+              </div>;
+            })}
+            {(!subscription.payments || subscription.payments.length === 0) && <p className="text-xs text-text-muted">پرداختی برای ویرایش وجود ندارد.</p>}
+          </div>
+        </form>
+      </Modal>
 
       {/* ═══ مودال تمدید ═══ */}
       <Modal
