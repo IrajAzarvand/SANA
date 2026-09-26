@@ -25,6 +25,11 @@ export const subscriptionsAPI = {
     await apiClient.delete(`/subscriptions/${id}/`);
   },
 
+  modify: async (id, data) => {
+    const response = await apiClient.post(`/subscriptions/${id}/modify/`, data);
+    return response.data;
+  },
+
   renew: async (id, data) => {
     const response = await apiClient.post(`/subscriptions/${id}/renew/`, data);
     return response.data;
