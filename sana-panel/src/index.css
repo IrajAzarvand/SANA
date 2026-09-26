@@ -1,0 +1,130 @@
+@import url('https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  font-family: 'Vazirmatn', sans-serif;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: #0B1220;
+  color: #E8EDF7;
+  direction: rtl;
+  text-align: right;
+}
+
+/* ─── اسکرول‌بار ─── */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0B1220;
+}
+::-webkit-scrollbar-thumb {
+  background: #1F2D4D;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2A3B5F;
+}
+
+/* ═══════════════════════════════════════════════
+   Leaflet / Map
+   ═══════════════════════════════════════════════ */
+
+.custom-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.custom-marker-png {
+  background: transparent !important;
+  border: none !important;
+}
+
+.custom-marker-png img {
+  transition: transform 0.2s;
+}
+
+@keyframes marker-pulse {
+  0%, 100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.25);
+    opacity: 0.6;
+  }
+}
+
+.endpoint-marker {
+  background: transparent !important;
+  border: none !important;
+}
+.endpoint-marker svg {
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.6));
+}
+
+/* ─── پاپ‌آپ نشان (SANA) ─── */
+
+.sana-popup .leaflet-popup-content-wrapper {
+  background: #16213A !important;
+  border: 1px solid #1F2D4D !important;
+  border-radius: 14px !important;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5) !important;
+  padding: 0 !important;
+}
+
+.sana-popup .leaflet-popup-content {
+  margin: 0 !important;
+  padding: 14px !important;
+  color: #E8EDF7 !important;
+}
+
+.sana-popup .leaflet-popup-tip {
+  background: #16213A !important;
+  border: 1px solid #1F2D4D !important;
+}
+
+.sana-popup .leaflet-popup-close-button {
+  display: none !important;
+}
+
+.sana-popup * {
+  font-family: 'Vazirmatn', sans-serif;
+}
+
+/* ═══════════════════════════════════════════════
+   انیمیشن‌ها
+   ═══════════════════════════════════════════════ */
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadeIn 0.2s ease-out;
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.15s ease-out;
+}
+
+/* ═══════════════════════════════════════════════
+   کلاس کمکی برای z-index منوی سه‌نقطه
+   ═══════════════════════════════════════════════ */
+
+.card-overflow-visible {
+  overflow: visible !important;
+}
