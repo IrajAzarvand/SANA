@@ -757,11 +757,15 @@ function Step4({ form, updateForm }) {
                       <JalaliDatePicker
                         label="تاریخ شروع دستگاه"
                         value={selectedData.start_date}
+                        minDate={form.start_date}
+                        maxDate={form.end_date}
                         onChange={(val) => updateDeviceDates(device.id, 'start_date', val)}
                       />
                       <JalaliDatePicker
                         label="تاریخ پایان دستگاه"
                         value={selectedData.end_date}
+                        minDate={form.start_date}
+                        maxDate={form.end_date}
                         onChange={(val) => updateDeviceDates(device.id, 'end_date', val)}
                       />
                     </div>
