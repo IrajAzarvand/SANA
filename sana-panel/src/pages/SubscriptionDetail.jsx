@@ -1281,12 +1281,16 @@ export default function SubscriptionDetail() {
                 <JalaliDatePicker
                   label="شروع دستگاه"
                   value={renewNewDevice.start_date}
+                  minDate={subscription.start_date}
+                  maxDate={renewForm.new_end_date}
                   onChange={(val) => setRenewNewDevice({ ...renewNewDevice, start_date: val })}
                   required
                 />
                 <JalaliDatePicker
                   label="پایان دستگاه"
                   value={renewNewDevice.end_date}
+                  minDate={subscription.start_date}
+                  maxDate={renewForm.new_end_date}
                   onChange={(val) => setRenewNewDevice({ ...renewNewDevice, end_date: val })}
                   required
                 />
