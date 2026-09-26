@@ -75,6 +75,16 @@ export default function SubscriptionDetail() {
   });
   const [renewCustomer, setRenewCustomer] = useState({});
   const [renewCustomerLoading, setRenewCustomerLoading] = useState(false);
+  const [renewSections, setRenewSections] = useState({
+    info: true,
+    customer: false,
+    devices: false,
+    payments: false,
+  });
+
+  const toggleRenewSection = (section) => {
+    setRenewSections((prev) => ({ ...prev, [section]: !prev[section] }));
+  };
   const [renewNewDevice, setRenewNewDevice] = useState({
     device_id: '',
     start_date: '',
@@ -165,6 +175,7 @@ export default function SubscriptionDetail() {
       description: '',
     });
     setActionError('');
+    setRenewSections({ info: true, customer: false, devices: false, payments: false });
     setRenewCustomerLoading(true);
     setRenewModalOpen(true);
 
@@ -879,6 +890,7 @@ export default function SubscriptionDetail() {
         open={renewModalOpen}
         onClose={() => setRenewModalOpen(false)}
         title="تمدید قرارداد"
+        size="xl"
         footer={
           <>
             <Button variant="secondary" onClick={() => setRenewModalOpen(false)} disabled={saving}>
@@ -890,18 +902,28 @@ export default function SubscriptionDetail() {
           </>
         }
       >
-        <form id="renew-form" onSubmit={handleRenew} className="space-y-5 max-h-[75vh] overflow-y-auto pl-1">
+        <form id="renew-form" onSubmit={handleRenew} className="space-y-3 pl-1">
           {actionError && (
             <div className="bg-danger/10 border border-danger/30 rounded-field p-3">
               <p className="text-xs text-danger whitespace-pre-line">{actionError}</p>
             </div>
           )}
 
-          <div className="border border-border-base rounded-card p-4 space-y-4">
-            <div>
-              <h3 className="text-sm font-semibold text-text-primary">اطلاعات تمدید</h3>
-              <p className="text-[11px] text-text-muted mt-1">تاریخ پایان قرارداد و توضیحات عملیات</p>
-            </div>
+          <div className="border border-border-base rounded-card overflow-hidden">
+            <button
+              type="button"
+              onClick={() => toggleRenewSection('info')}
+              className="w-full flex items-center justify-between gap-4 p-4 text-right hover:bg-bg-hover transition-colors"
+            >
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-text-primary">اطلاعات تمدید</h3>
+                <p className="text-[11px] text-text-muted mt-1">تاریخ پایان قرارداد و توضیحات عملیات</p>
+              </div>
+              <span className="text-text-muted text-lg leading-none flex-shrink-0">{renewSections.info ? '−' : '+'}</span>
+            </button>
+            {renewSections.info && (
+              <div className="px-4 pb-4 space-y-4">
+
             <JalaliDatePicker
               label="تاریخ پایان جدید"
               value={renewForm.new_end_date}
@@ -921,13 +943,26 @@ export default function SubscriptionDetail() {
               onChange={(e) => setRenewForm({ ...renewForm, notes: e.target.value })}
               placeholder="مثلاً تمدید یک‌ساله همراه با افزایش سرویس"
             />
+          
+              </div>
+            )}
           </div>
 
-          <div className="border border-border-base rounded-card p-4 space-y-4">
-            <div>
-              <h3 className="text-sm font-semibold text-text-primary">اطلاعات مشتری</h3>
-              <p className="text-[11px] text-text-muted mt-1">هر تغییری که اینجا ثبت شود داخل تاریخچه همین عملیات ذخیره می‌شود.</p>
-            </div>
+          <div className="border border-border-base rounded-card overflow-hidden">
+            <button
+              type="button"
+              onClick={() => toggleRenewSection('customer')}
+              className="w-full flex items-center justify-between gap-4 p-4 text-right hover:bg-bg-hover transition-colors"
+            >
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-text-primary">اطلاعات مشتری</h3>
+                <p className="text-[11px] text-text-muted mt-1">هر تغییری که اینجا ثبت شود داخل تاریخچه همین عملیات ذخیره می‌شود.</p>
+              </div>
+              <span className="text-text-muted text-lg leading-none flex-shrink-0">{renewSections.customer ? '−' : '+'}</span>
+            </button>
+            {renewSections.customer && (
+              <div className="px-4 pb-4 space-y-4">
+
 
             {renewCustomerLoading ? (
               <LoadingSpinner />
@@ -951,13 +986,26 @@ export default function SubscriptionDetail() {
                 <Input label="آدرس" value={renewCustomer.address || ''} onChange={(e) => setRenewCustomer({ ...renewCustomer, address: e.target.value })} />
               </div>
             )}
+          
+              </div>
+            )}
           </div>
 
-          <div className="border border-border-base rounded-card p-4 space-y-4">
-            <div>
-              <h3 className="text-sm font-semibold text-text-primary">دستگاه‌های قرارداد</h3>
-              <p className="text-[11px] text-text-muted mt-1">می‌توانید هم‌زمان دستگاه اضافه یا از قرارداد خارج کنید.</p>
-            </div>
+          <div className="border border-border-base rounded-card overflow-hidden">
+            <button
+              type="button"
+              onClick={() => toggleRenewSection('devices')}
+              className="w-full flex items-center justify-between gap-4 p-4 text-right hover:bg-bg-hover transition-colors"
+            >
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-text-primary">دستگاه‌های قرارداد</h3>
+                <p className="text-[11px] text-text-muted mt-1">می‌توانید هم‌زمان دستگاه اضافه یا از قرارداد خارج کنید.</p>
+              </div>
+              <span className="text-text-muted text-lg leading-none flex-shrink-0">{renewSections.devices ? '−' : '+'}</span>
+            </button>
+            {renewSections.devices && (
+              <div className="px-4 pb-4 space-y-4">
+
 
             {(subscription.devices || []).length > 0 ? (
               <div className="space-y-2">
@@ -1040,13 +1088,26 @@ export default function SubscriptionDetail() {
                 })}
               </div>
             )}
+          
+              </div>
+            )}
           </div>
 
-          <div className="border border-border-base rounded-card p-4 space-y-4">
-            <div>
-              <h3 className="text-sm font-semibold text-text-primary">پرداخت‌های این تمدید</h3>
-              <p className="text-[11px] text-text-muted mt-1">تمام پرداخت‌های اضافه‌شده با همین عملیات تمدید مرتبط می‌شوند.</p>
-            </div>
+          <div className="border border-border-base rounded-card overflow-hidden">
+            <button
+              type="button"
+              onClick={() => toggleRenewSection('payments')}
+              className="w-full flex items-center justify-between gap-4 p-4 text-right hover:bg-bg-hover transition-colors"
+            >
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-text-primary">پرداخت‌های این تمدید</h3>
+                <p className="text-[11px] text-text-muted mt-1">تمام پرداخت‌های اضافه‌شده با همین عملیات تمدید مرتبط می‌شوند.</p>
+              </div>
+              <span className="text-text-muted text-lg leading-none flex-shrink-0">{renewSections.payments ? '−' : '+'}</span>
+            </button>
+            {renewSections.payments && (
+              <div className="px-4 pb-4 space-y-4">
+
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <Input
@@ -1102,6 +1163,9 @@ export default function SubscriptionDetail() {
                     </button>
                   </div>
                 ))}
+              </div>
+            )}
+          
               </div>
             )}
           </div>
