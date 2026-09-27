@@ -973,15 +973,46 @@ export default function SubscriptionDetail() {
                     </div>
                   )}
                   {operation.changes?.length > 0 && (
-                    <div className="space-y-1.5 pt-1">
-                      {operation.changes.map((change) => (
-                        <div key={change.id} className="text-xs text-text-secondary">
-                          <span className="text-text-muted">{change.entity_type}.{change.field_name}: </span>
-                          <span>{change.old_value || '—'}</span>
-                          <span className="mx-1">←</span>
-                          <span>{change.new_value || '—'}</span>
-                        </div>
-                      ))}
+                    <div className="pt-4">
+                      <div className="text-[10px] font-medium text-text-muted mb-2">تغییرات این عملیات</div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                        {operation.changes.map((change) => {
+                          const changeInfo = getChangeDisplay(change);
+                          return (
+                            <div
+                              key={change.id}
+                              className="rounded-xl border border-border-base bg-bg-elevated p-3.5"
+                            >
+                              <div className="flex items-center gap-2 mb-3">
+                                <div className="w-7 h-7 rounded-lg bg-brand-500/10 flex items-center justify-center flex-shrink-0">
+                                  <Pencil size={13} className="text-brand-400" />
+                                </div>
+                                <div className="text-xs font-medium text-text-primary">
+                                  {changeInfo.label}
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                                <div className="min-w-0">
+                                  <div className="text-[9px] text-text-muted mb-1">قبل</div>
+                                  <div className="text-xs text-text-secondary break-words">
+                                    {changeInfo.oldValue}
+                                  </div>
+                                </div>
+
+                                <ArrowRight size={14} className="text-brand-400 rotate-180 flex-shrink-0" />
+
+                                <div className="min-w-0 text-left">
+                                  <div className="text-[9px] text-text-muted mb-1">بعد</div>
+                                  <div className="text-xs font-medium text-brand-400 break-words">
+                                    {changeInfo.newValue}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
                   {operation.notes && <div className="text-xs text-text-secondary">یادداشت: {operation.notes}</div>}
@@ -1541,6 +1572,49 @@ export default function SubscriptionDetail() {
 
     </div>
   );
+}
+
+const changeFieldLabels = {
+  name: 'نام سازمان',
+  code: 'کد سازمان',
+  registration_number: 'شماره ثبت',
+  economy_code: 'کد اقتصادی',
+  phone: 'تلفن',
+  email: 'ایمیل',
+  address: 'آدرس',
+  website: 'وب‌سایت',
+  first_name: 'نام',
+  last_name: 'نام خانوادگی',
+  mobile: 'موبایل',
+  national_id: 'کد ملی',
+  start_date: 'تاریخ شروع قرارداد',
+  end_date: 'تاریخ پایان قرارداد',
+  notes: 'یادداشت قرارداد',
+  status: 'وضعیت قرارداد',
+};
+
+const entityLabels = {
+  Organization: 'اطلاعات سازمان',
+  User: 'اطلاعات مشتری',
+  Subscription: 'اطلاعات قرارداد',
+  SubscriptionPayment: 'اطلاعات پرداخت',
+  SubscriptionDevice: 'دستگاه قرارداد',
+};
+
+function formatChangeValue(value) {
+  if (value === null || value === undefined || value === '') return '—';
+  return String(value);
+}
+
+function getChangeDisplay(change) {
+  const entityLabel = entityLabels[change.entity_type] || change.entity_type || 'اطلاعات';
+  const fieldLabel = changeFieldLabels[change.field_name] || change.field_name || 'تغییر';
+  return {
+    label: fieldLabel,
+    oldValue: formatChangeValue(change.old_value),
+    newValue: formatChangeValue(change.new_value),
+    entityLabel,
+  };
 }
 
 function DetailItem({ icon: Icon, label, value, color, mono }) {
