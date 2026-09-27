@@ -761,8 +761,8 @@ export default function SubscriptionDetail() {
               <div className="font-mono text-sm text-text-primary">{toJalali(subscription.start_date)}</div>
             </div>
             <div className="p-4 rounded-xl bg-bg-base border border-border-base">
-              <div className="text-[10px] text-text-muted mb-1">پایان قرارداد</div>
-              <div className="font-mono text-sm text-text-primary">{toJalali(subscription.end_date)}</div>
+              <div className="text-[10px] text-text-muted mb-1">پایان فعلی قرارداد</div>
+              <div className="font-mono text-sm text-brand-400">{toJalali(subscription.end_date)}</div>
             </div>
             <div className="p-4 rounded-xl bg-bg-base border border-border-base">
               <div className="text-[10px] text-text-muted mb-1">زمان باقی‌مانده</div>
@@ -772,7 +772,26 @@ export default function SubscriptionDetail() {
             </div>
             <div className="p-4 rounded-xl bg-bg-base border border-border-base">
               <div className="text-[10px] text-text-muted mb-1">دستگاه‌های فعال قرارداد</div>
-              <div className="font-mono text-sm text-text-primary">{subscription.devices?.length || 0} دستگاه</div>
+              <div className="font-mono text-sm text-text-primary">{subscription.active_device_count ?? 0} دستگاه</div>
+            </div>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="p-4 rounded-xl bg-bg-base border border-border-base">
+              <div className="text-[10px] text-text-muted mb-1">کل مبالغ ثبت‌شده</div>
+              <div className="font-mono text-sm font-semibold text-text-primary">{Number(subscription.total_payment_amount || 0).toLocaleString('fa-IR')} ریال</div>
+            </div>
+            <div className="p-4 rounded-xl bg-bg-base border border-border-base">
+              <div className="text-[10px] text-text-muted mb-1">پرداخت‌شده تا امروز</div>
+              <div className="font-mono text-sm font-semibold text-brand-400">{Number(subscription.paid_payment_amount || 0).toLocaleString('fa-IR')} ریال</div>
+            </div>
+            <div className="p-4 rounded-xl bg-bg-base border border-border-base">
+              <div className="text-[10px] text-text-muted mb-1">پرداخت آینده</div>
+              <div className="font-mono text-sm font-semibold text-text-primary">{Number(subscription.future_payment_amount || 0).toLocaleString('fa-IR')} ریال</div>
+            </div>
+            <div className="p-4 rounded-xl bg-bg-base border border-border-base">
+              <div className="text-[10px] text-text-muted mb-1">مانده پرداخت</div>
+              <div className="font-mono text-sm font-semibold text-warning">{Number(subscription.outstanding_payment_amount || 0).toLocaleString('fa-IR')} ریال</div>
             </div>
           </div>
 
