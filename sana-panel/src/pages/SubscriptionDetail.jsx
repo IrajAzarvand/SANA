@@ -600,10 +600,10 @@ export default function SubscriptionDetail() {
         .join(' · ')
     : subscription.user?.username || '';
 
-  const totalPayments = (subscription.payments || []).reduce(
-    (sum, payment) => sum + Number(payment.amount || 0),
-    0
-  );
+  const totalPayments = Number(subscription.total_payment_amount || 0);
+  const paidPayments = Number(subscription.paid_payment_amount || 0);
+  const futurePayments = Number(subscription.future_payment_amount || 0);
+  const outstandingPayments = Number(subscription.outstanding_payment_amount || 0);
 
   const sectionClass = 'border border-border-base rounded-2xl bg-bg-elevated overflow-hidden';
 
