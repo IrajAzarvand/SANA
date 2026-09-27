@@ -973,8 +973,6 @@ export default function SubscriptionDetail() {
         </section>
       )}
 
-    </div>
-  );
       {/* ═══ مودال ویرایش قرارداد ═══ */}
       <Modal
         open={editModalOpen}
