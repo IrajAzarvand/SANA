@@ -235,6 +235,12 @@ class SubscriptionSerializer(serializers.ModelSerializer):
     organization_phone = serializers.CharField(source='organization.phone', read_only=True)
     organization_email = serializers.CharField(source='organization.email', read_only=True)
     user_name = serializers.CharField(source='user.full_name', read_only=True)
+    user_mobile = serializers.CharField(source='user.mobile', read_only=True)
+    user_national_id = serializers.CharField(source='user.national_id', read_only=True)
+    user_address = serializers.CharField(source='user.address', read_only=True)
+    organization_registration_number = serializers.CharField(source='organization.registration_number', read_only=True)
+    organization_economy_code = serializers.CharField(source='organization.economy_code', read_only=True)
+    organization_address = serializers.CharField(source='organization.address', read_only=True)
 
     # status محاسبه‌شده
     status = serializers.CharField(source='computed_status', read_only=True)
@@ -257,7 +263,8 @@ class SubscriptionSerializer(serializers.ModelSerializer):
             'customer_type',
             'organization', 'organization_name', 'organization_code',
             'organization_phone', 'organization_email',
-            'user', 'user_name',
+            'user', 'user_name', 'user_mobile', 'user_national_id', 'user_address',
+            'organization_registration_number', 'organization_economy_code', 'organization_address',
             'customer_name',
             'start_date', 'end_date',
             'price', 'status', 'notes',
