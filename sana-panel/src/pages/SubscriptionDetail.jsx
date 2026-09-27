@@ -590,326 +590,238 @@ export default function SubscriptionDetail() {
   const daysLeft = subscription.days_until_expiry;
   const isCancelled = subscription.status === 'cancelled';
 
+  const customerName = isOrg
+    ? subscription.organization_name || 'سازمان بدون نام'
+    : subscription.user_name || 'مشتری بدون نام';
+
+  const customerMeta = isOrg
+    ? [subscription.organization_code && `کد سازمان: ${subscription.organization_code}`, subscription.organization_phone]
+        .filter(Boolean)
+        .join(' · ')
+    : subscription.user?.username || '';
+
+  const totalPayments = (subscription.payments || []).reduce(
+    (sum, payment) => sum + Number(payment.amount || 0),
+    0
+  );
+
+  const sectionClass = 'border border-border-base rounded-2xl bg-bg-elevated overflow-hidden';
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5 pb-8">
 
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-3 min-w-0">
           <button
             onClick={() => navigate('/panel/subscriptions')}
-            className="p-2 rounded-field text-text-muted hover:bg-bg-hover hover:text-text-primary transition-colors"
+            className="p-2.5 rounded-xl text-text-muted hover:bg-bg-hover hover:text-text-primary transition-colors"
+            aria-label="بازگشت"
           >
-            <ArrowRight size={18} />
+            <ArrowRight size={19} />
           </button>
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <h1 className="text-xl font-bold text-text-primary font-mono">
-                {subscription.contract_number}
-              </h1>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl font-bold text-text-primary">جزئیات قرارداد</h1>
               <Badge variant={st.variant}>{st.label}</Badge>
-              <Badge variant={isOrg ? 'brand' : 'info'}>
-                {isOrg ? 'سازمانی' : 'شخصی'}
-              </Badge>
+              <Badge variant={isOrg ? 'brand' : 'info'}>{isOrg ? 'سازمانی' : 'شخصی'}</Badge>
             </div>
-            <p className="text-sm text-text-muted">
-              {subscription.customer_name}
-            </p>
+            <div className="flex items-center gap-2 mt-1 text-xs text-text-muted">
+              <span className="font-mono">{subscription.contract_number}</span>
+              <span>·</span>
+              <span>{customerName}</span>
+            </div>
           </div>
         </div>
 
         {isSiteAdmin && !isCancelled && (
           <div className="flex items-center gap-2 flex-wrap">
-            <Button
-              variant="secondary"
-              icon={Pencil}
-              onClick={openEditModal}
-            >
-              ویرایش قرارداد
-            </Button>
-            <Button
-              variant="secondary"
-              icon={RotateCw}
-              onClick={openRenewModal}
-            >
-              تمدید
-            </Button>
-
+            <Button variant="secondary" icon={Pencil} onClick={openEditModal}>ویرایش قرارداد</Button>
+            <Button variant="secondary" icon={RotateCw} onClick={openRenewModal}>تمدید</Button>
             {subscription.status === 'active' && (
-              <Button
-                variant="secondary"
-                icon={Ban}
-                onClick={() => handleStatusChange('suspend')}
-              >
-                تعلیق
-              </Button>
+              <Button variant="secondary" icon={Ban} onClick={() => handleStatusChange('suspend')}>تعلیق</Button>
             )}
-
             {subscription.status === 'suspended' && (
-              <Button
-                variant="secondary"
-                icon={CheckCircle2}
-                onClick={() => handleStatusChange('activate')}
-              >
-                فعال‌سازی
-              </Button>
+              <Button variant="secondary" icon={CheckCircle2} onClick={() => handleStatusChange('activate')}>فعال‌سازی</Button>
             )}
-
             {subscription.status === 'expired' && (
-              <Button
-                variant="secondary"
-                icon={RefreshCw}
-                onClick={() => handleStatusChange('activate')}
-              >
-                فعال‌سازی مجدد
-              </Button>
+              <Button variant="secondary" icon={RefreshCw} onClick={() => handleStatusChange('activate')}>فعال‌سازی مجدد</Button>
             )}
-
-            {/* دکمه لغو قرارداد */}
-            {subscription.status !== 'cancelled' && (
-              <Button
-                variant="danger"
-                icon={XCircle}
-                onClick={() => setCancelModalOpen(true)}
-              >
-                لغو قرارداد
-              </Button>
-            )}
+            <Button variant="danger" icon={XCircle} onClick={() => setCancelModalOpen(true)}>لغو قرارداد</Button>
           </div>
         )}
       </div>
 
-      {/* هشدار لغو شده */}
+      {/* هشدارها */}
       {isCancelled && (
-        <div className="bg-danger/10 border border-danger/30 rounded-card p-4 flex items-start gap-3">
+        <div className="bg-danger/10 border border-danger/30 rounded-2xl p-4 flex items-start gap-3">
           <XCircle size={20} className="text-danger flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <h4 className="text-sm font-semibold text-danger mb-1">
-              این قرارداد لغو شده است
-            </h4>
-            <p className="text-xs text-text-secondary">
-              تمام دستگاه‌های این قرارداد به انبار برگردانده شده‌اند و این قرارداد فقط به‌صورت تاریخی قابل مشاهده است.
+          <div>
+            <h4 className="text-sm font-semibold text-danger mb-1">این قرارداد لغو شده است</h4>
+            <p className="text-xs text-text-secondary leading-6">
+              سوابق قرارداد حفظ شده‌اند و این قرارداد فقط به‌صورت تاریخی قابل مشاهده است.
             </p>
           </div>
         </div>
       )}
 
-      {/* هشدار: امروز آخرین روز */}
-      {daysLeft === 0 && !isCancelled && subscription.status !== 'expired' && (
-        <div className="bg-danger/10 border border-danger/30 rounded-card p-4 flex items-start gap-3">
+      {!isCancelled && daysLeft === 0 && subscription.status !== 'expired' && (
+        <div className="bg-danger/10 border border-danger/30 rounded-2xl p-4 flex items-start gap-3">
           <AlertTriangle size={20} className="text-danger flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <h4 className="text-sm font-semibold text-danger mb-1">
-              امروز آخرین روز قرارداد است
-            </h4>
-            <p className="text-xs text-text-secondary">
-              از فردا این قرارداد منقضی می‌شود. لطفاً برای تمدید با پشتیبانی تماس بگیرید.
-            </p>
+          <div>
+            <h4 className="text-sm font-semibold text-danger mb-1">امروز آخرین روز قرارداد است</h4>
+            <p className="text-xs text-text-secondary leading-6">از فردا این قرارداد منقضی می‌شود.</p>
           </div>
         </div>
       )}
 
-      {/* هشدار: به‌زودی منقضی */}
-      {subscription.is_expiring_soon && daysLeft > 0 && !isCancelled && (
-        <div className="bg-warning/10 border border-warning/30 rounded-card p-4 flex items-start gap-3">
+      {!isCancelled && subscription.is_expiring_soon && daysLeft > 0 && (
+        <div className="bg-warning/10 border border-warning/30 rounded-2xl p-4 flex items-start gap-3">
           <AlertTriangle size={20} className="text-warning flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <h4 className="text-sm font-semibold text-warning mb-1">
-              قرارداد به‌زودی منقضی می‌شود
-            </h4>
-            <p className="text-xs text-text-secondary">
-              {daysLeft} روز تا پایان قرارداد مانده است.
-            </p>
+          <div>
+            <h4 className="text-sm font-semibold text-warning mb-1">قرارداد به‌زودی منقضی می‌شود</h4>
+            <p className="text-xs text-text-secondary leading-6">{daysLeft} روز تا پایان قرارداد مانده است.</p>
           </div>
         </div>
       )}
 
-      {/* هشدار: منقضی شده */}
       {subscription.status === 'expired' && !isCancelled && (
-        <div className="bg-muted/10 border border-border-base rounded-card p-4 flex items-start gap-3">
+        <div className="bg-muted/10 border border-border-base rounded-2xl p-4 flex items-start gap-3">
           <AlertTriangle size={20} className="text-text-muted flex-shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <h4 className="text-sm font-semibold text-text-muted mb-1">
-              این قرارداد منقضی شده است
-            </h4>
-            <p className="text-xs text-text-secondary">
-              {Math.abs(daysLeft)} روز از انقضا گذشته است. لطفاً برای تمدید با پشتیبانی تماس بگیرید.
-            </p>
+          <div>
+            <h4 className="text-sm font-semibold text-text-muted mb-1">این قرارداد منقضی شده است</h4>
+            <p className="text-xs text-text-secondary leading-6">{Math.abs(daysLeft)} روز از انقضا گذشته است.</p>
           </div>
         </div>
       )}
 
-      {/* اطلاعات قرارداد */}
-      <Card title="اطلاعات قرارداد" subtitle="بازه‌ی زمانی و مبلغ">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <DetailItem icon={Calendar} label="تاریخ شروع" value={toJalali(subscription.start_date)} mono />
-          <DetailItem icon={Calendar} label="تاریخ پایان" value={toJalali(subscription.end_date)} mono />
-          <DetailItem
-            icon={Calendar}
-            label="روز تا پایان"
-            value={daysLeft < 0 ? `منقضی (${Math.abs(daysLeft)} روز پیش)` : `${daysLeft} روز`}
-            color={daysLeft < 0 ? 'text-danger' : daysLeft <= 30 ? 'text-warning' : 'text-text-primary'}
-            mono
-          />
-          <DetailItem
-            icon={CreditCard}
-            label="مبلغ کل"
-            value={`${Number(subscription.price || 0).toLocaleString('fa-IR')} ریال`}
-            mono
-          />
-          <DetailItem icon={Package} label="تعداد دستگاه" value={subscription.device_count} mono />
-          {subscription.notes && (
-            <div className="md:col-span-3">
-              <div className="text-[10px] text-text-muted mb-1">یادداشت</div>
-              <p className="text-xs text-text-secondary">{subscription.notes}</p>
+      {/* ═══ بخش مستقل مشتری ═══ */}
+      <section className="rounded-2xl border border-border-base bg-bg-elevated overflow-hidden">
+        <div className="p-5 border-b border-border-base">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl bg-brand-500/10 flex items-center justify-center">
+                {isOrg ? <Building2 size={21} className="text-brand-400" /> : <UserIcon size={21} className="text-brand-400" />}
+              </div>
+              <div>
+                <div className="text-[11px] text-text-muted mb-1">مشتری</div>
+                <h2 className="text-lg font-semibold text-text-primary">{customerName}</h2>
+                <p className="text-xs text-text-muted mt-1">{customerMeta || (isOrg ? 'اطلاعات سازمان' : 'حساب مشتری شخصی')}</p>
+              </div>
+            </div>
+            <Badge variant={isOrg ? 'brand' : 'info'}>{isOrg ? 'سازمان' : 'شخص'}</Badge>
+          </div>
+        </div>
+
+        <div className="p-5">
+          {isOrg ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <DetailItem icon={Building2} label="نام سازمان" value={subscription.organization_name} />
+              <DetailItem icon={Hash} label="کد سازمان" value={subscription.organization_code} mono />
+              <DetailItem icon={Phone} label="تلفن" value={subscription.organization_phone} mono />
+              <DetailItem icon={Hash} label="ایمیل" value={subscription.organization_email} mono />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <DetailItem icon={UserIcon} label="نام و نام خانوادگی" value={subscription.user_name} />
+              <DetailItem icon={Phone} label="موبایل" value={subscription.user_mobile} mono />
+              <DetailItem icon={Hash} label="کد ملی" value={subscription.user_national_id} mono />
+              <DetailItem icon={MapPin} label="آدرس" value={subscription.user_address} />
             </div>
           )}
         </div>
-      </Card>
+      </section>
 
-      {/* تاریخچه عملیات قرارداد */}
-      {subscription.operations && subscription.operations.length > 0 && (
-        <Card
-          title={`تاریخچه عملیات قرارداد (${subscription.operations.length})`}
-          subtitle="تمام تغییرات مهم قرارداد، نه فقط تمدید"
-        >
-          <div className="space-y-3">
-            {subscription.operations.map((operation) => (
-              <div
-                key={operation.id}
-                className="p-4 bg-bg-base border border-border-base rounded-field"
-              >
-                <div className="flex items-start justify-between gap-4 mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-field bg-brand-900/40 flex items-center justify-center flex-shrink-0">
-                      <History size={18} className="text-brand-400" />
-                    </div>
-                    <div>
-                      <div className="text-sm font-medium text-text-primary">
-                        {operation.operation_type_display || operation.operation_type}
-                      </div>
-                      <div className="text-[10px] text-text-muted font-mono mt-0.5">
-                        {operation.performed_at
-                          ? new Date(operation.performed_at).toLocaleString('fa-IR')
-                          : '—'}
-                      </div>
-                    </div>
-                  </div>
-                  {operation.performed_by_name && (
-                    <div className="text-[10px] text-text-muted">
-                      توسط: <span className="text-text-secondary">{operation.performed_by_name}</span>
-                    </div>
-                  )}
-                </div>
-
-                {(operation.old_end_date || operation.new_end_date) && (
-                  <div className="flex items-center gap-3 mb-3 p-3 bg-bg-elevated rounded-field">
-                    <div className="flex-1 text-center">
-                      <div className="text-[10px] text-text-muted mb-1">پایان قبلی</div>
-                      <div className="text-sm font-mono text-text-secondary">
-                        {toJalali(operation.old_end_date)}
-                      </div>
-                    </div>
-                    <ArrowRight size={16} className="text-brand-400 flex-shrink-0 rotate-180" />
-                    <div className="flex-1 text-center">
-                      <div className="text-[10px] text-text-muted mb-1">پایان جدید</div>
-                      <div className="text-sm font-mono text-brand-400 font-medium">
-                        {toJalali(operation.new_end_date)}
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {operation.changes?.length > 0 && (
-                  <div className="space-y-1 mb-2">
-                    {operation.changes.map((change) => (
-                      <div key={change.id} className="text-xs text-text-secondary">
-                        <span className="text-text-muted">{change.entity_type}.{change.field_name}: </span>
-                        <span>{change.old_value || '—'}</span>
-                        <span className="mx-1">←</span>
-                        <span>{change.new_value || '—'}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {operation.notes && (
-                  <div className="text-xs text-text-secondary">
-                    <span className="text-text-muted">یادداشت: </span>
-                    {operation.notes}
-                  </div>
-                )}
+      {/* ═══ قرارداد ═══ */}
+      <section className="rounded-2xl border border-border-base bg-bg-elevated overflow-hidden">
+        <div className="p-5 border-b border-border-base">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <div className="text-[11px] text-text-muted mb-1">قرارداد</div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-lg font-semibold font-mono text-text-primary">{subscription.contract_number}</h2>
+                <Badge variant={st.variant}>{st.label}</Badge>
               </div>
-            ))}
+              <p className="text-xs text-text-muted mt-1">تمام اطلاعات، دستگاه‌ها، پرداخت‌ها و تاریخچه مربوط به همین قرارداد در این بخش قرار دارد.</p>
+            </div>
+            <div className="text-left">
+              <div className="text-[10px] text-text-muted">مبلغ قرارداد</div>
+              <div className="text-base font-bold font-mono text-brand-400 mt-1">
+                {Number(subscription.price || 0).toLocaleString('fa-IR')} ریال
+              </div>
+            </div>
           </div>
-        </Card>
-      )}
+        </div>
 
-      {/* اطلاعات مشتری */}
-      <Card title="اطلاعات مشتری" subtitle={isOrg ? 'اطلاعات سازمان' : 'اطلاعات شخصی'}>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {isOrg ? (
-            <>
-              <DetailItem icon={Building2} label="نام سازمان" value={subscription.organization_name} />
-              {subscription.organization_code && (
-                <DetailItem icon={Hash} label="کد سازمان" value={subscription.organization_code} mono />
-              )}
-              {subscription.organization_phone && (
-                <DetailItem icon={Phone} label="تلفن سازمان" value={subscription.organization_phone} mono />
-              )}
-              {subscription.organization_email && (
-                <DetailItem icon={Hash} label="ایمیل سازمان" value={subscription.organization_email} mono />
-              )}
-            </>
-          ) : (
-            <>
-              <DetailItem icon={UserIcon} label="نام مشتری" value={subscription.user_name} />
-            </>
+        <div className="p-5">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="p-4 rounded-xl bg-bg-base border border-border-base">
+              <div className="text-[10px] text-text-muted mb-1">شروع قرارداد</div>
+              <div className="font-mono text-sm text-text-primary">{toJalali(subscription.start_date)}</div>
+            </div>
+            <div className="p-4 rounded-xl bg-bg-base border border-border-base">
+              <div className="text-[10px] text-text-muted mb-1">پایان قرارداد</div>
+              <div className="font-mono text-sm text-text-primary">{toJalali(subscription.end_date)}</div>
+            </div>
+            <div className="p-4 rounded-xl bg-bg-base border border-border-base">
+              <div className="text-[10px] text-text-muted mb-1">زمان باقی‌مانده</div>
+              <div className={`font-mono text-sm font-medium ${daysLeft < 0 ? 'text-danger' : daysLeft <= 30 ? 'text-warning' : 'text-text-primary'}`}>
+                {daysLeft < 0 ? `منقضی · ${Math.abs(daysLeft)} روز` : `${daysLeft} روز`}
+              </div>
+            </div>
+            <div className="p-4 rounded-xl bg-bg-base border border-border-base">
+              <div className="text-[10px] text-text-muted mb-1">دستگاه‌های فعال قرارداد</div>
+              <div className="font-mono text-sm text-text-primary">{subscription.devices?.length || 0} دستگاه</div>
+            </div>
+          </div>
+
+          {subscription.notes && (
+            <div className="mt-4 p-4 rounded-xl bg-bg-base border border-border-base">
+              <div className="text-[10px] text-text-muted mb-1">یادداشت قرارداد</div>
+              <p className="text-xs text-text-secondary leading-6">{subscription.notes}</p>
+            </div>
           )}
         </div>
-      </Card>
+      </section>
 
-      {/* دستگاه‌ها */}
-      <Card
-        title={`دستگاه‌های این قرارداد (${subscription.devices?.length || 0})`}
-        subtitle="دستگاه‌های GPS تخصیص‌یافته"
-        action={
-          isSiteAdmin && !isCancelled ? (
+      {/* ═══ دستگاه‌های قرارداد ═══ */}
+      <section className={sectionClass}>
+        <div className="px-5 py-4 border-b border-border-base flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-text-primary">دستگاه‌های قرارداد</h3>
+            <p className="text-[11px] text-text-muted mt-1">{subscription.devices?.length || 0} دستگاه تخصیص‌یافته به این قرارداد</p>
+          </div>
+          {isSiteAdmin && !isCancelled && (
             <Button
               size="sm"
               icon={Plus}
               variant="secondary"
               onClick={() => {
-                setDeviceForm({
-                  device: '',
-                  start_date: subscription.start_date,
-                  end_date: subscription.end_date,
-                });
+                setDeviceForm({ device: '', start_date: subscription.start_date, end_date: subscription.end_date });
                 setActionError('');
                 setDeviceModalOpen(true);
               }}
             >
               افزودن دستگاه
             </Button>
-          ) : null
-        }
-      >
+          )}
+        </div>
         {(!subscription.devices || subscription.devices.length === 0) ? (
-          <div className="py-8 text-center">
-            <Package size={32} className="text-text-muted mx-auto mb-2" />
-            <p className="text-xs text-text-muted">هنوز دستگاهی اضافه نشده</p>
+          <div className="py-10 text-center">
+            <Package size={30} className="text-text-muted mx-auto mb-2" />
+            <p className="text-xs text-text-muted">هنوز دستگاهی به این قرارداد تخصیص داده نشده است.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto -m-5">
+          <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border-base">
+                <tr className="border-b border-border-base bg-bg-base/50">
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">IMEI</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">مدل</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">SIM</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">خودرو</th>
-                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">شروع دستگاه</th>
-                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">پایان دستگاه</th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">شروع</th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">پایان</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">وضعیت</th>
                   <th className="w-12"></th>
                 </tr>
@@ -923,21 +835,10 @@ export default function SubscriptionDetail() {
                     <td className="py-3 px-4 text-text-secondary font-mono text-xs">{d.vehicle_plate || '—'}</td>
                     <td className="py-3 px-4 text-text-secondary font-mono text-xs">{toJalali(d.start_date)}</td>
                     <td className="py-3 px-4 text-text-secondary font-mono text-xs">{toJalali(d.end_date)}</td>
-                    <td className="py-3 px-4">
-                      <Badge variant={d.is_active ? 'success' : 'muted'}>
-                        {d.is_active ? 'فعال' : 'غیرفعال'}
-                      </Badge>
-                    </td>
+                    <td className="py-3 px-4"><Badge variant={d.is_active ? 'success' : 'muted'}>{d.is_active ? 'فعال' : 'غیرفعال'}</Badge></td>
                     <td className="py-3 px-2">
                       {isSiteAdmin && !isCancelled && (
-                        <ActionMenu items={[
-                          {
-                            label: 'حذف از قرارداد',
-                            icon: Trash2,
-                            variant: 'danger',
-                            onClick: () => handleRemoveDevice(d.id),
-                          },
-                        ]} />
+                        <ActionMenu items={[{ label: 'حذف از قرارداد', icon: Trash2, variant: 'danger', onClick: () => handleRemoveDevice(d.id) }]} />
                       )}
                     </td>
                   </tr>
@@ -946,41 +847,37 @@ export default function SubscriptionDetail() {
             </table>
           </div>
         )}
-      </Card>
+      </section>
 
-      {/* پرداخت‌ها */}
-      <Card
-        title={`تاریخچه پرداخت‌ها (${subscription.payments?.length || 0})`}
-        subtitle="پرداخت‌های انجام‌شده"
-        action={
-          isSiteAdmin && !isCancelled ? (
+      {/* ═══ پرداخت‌های قرارداد ═══ */}
+      <section className={sectionClass}>
+        <div className="px-5 py-4 border-b border-border-base flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-text-primary">پرداخت‌های قرارداد</h3>
+            <p className="text-[11px] text-text-muted mt-1">{subscription.payments?.length || 0} پرداخت ثبت‌شده</p>
+          </div>
+          {isSiteAdmin && !isCancelled && (
             <Button
               size="sm"
               icon={Plus}
               variant="secondary"
               onClick={() => {
-                setPaymentForm({
-                  amount: '',
-                  payment_date: todayGregorian(),
-                  device_count: subscription.device_count || 0,
-                  description: '',
-                });
+                setPaymentForm({ amount: '', payment_date: todayGregorian(), device_count: subscription.device_count || 0, description: '' });
                 setActionError('');
                 setPaymentModalOpen(true);
               }}
             >
               افزودن پرداخت
             </Button>
-          ) : null
-        }
-      >
+          )}
+        </div>
         {(!subscription.payments || subscription.payments.length === 0) ? (
-          <div className="py-8 text-center">
-            <CreditCard size={32} className="text-text-muted mx-auto mb-2" />
-            <p className="text-xs text-text-muted">هنوز پرداختی ثبت نشده</p>
+          <div className="py-10 text-center">
+            <CreditCard size={30} className="text-text-muted mx-auto mb-2" />
+            <p className="text-xs text-text-muted">هنوز پرداختی برای این قرارداد ثبت نشده است.</p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="p-4 space-y-2">
             {subscription.payments.map((p) => {
               const paymentDate = new Date(p.payment_date);
               const today = new Date();
@@ -989,25 +886,18 @@ export default function SubscriptionDetail() {
               const isToday = paymentDate.getTime() === today.getTime();
 
               return (
-                <div key={p.id} className="flex items-center justify-between p-3 bg-bg-base border border-border-base rounded-field">
-                  <div className="flex items-center gap-4 flex-1 min-w-0">
-                    <span className="font-mono text-sm text-text-primary">
-                      {Number(p.amount).toLocaleString('fa-IR')} ریال
-                    </span>
+                <div key={p.id} className="flex items-center justify-between gap-4 p-3.5 bg-bg-base border border-border-base rounded-xl">
+                  <div className="flex items-center gap-4 min-w-0 flex-wrap">
+                    <span className="font-mono text-sm font-medium text-text-primary">{Number(p.amount).toLocaleString('fa-IR')} ریال</span>
                     <span className="text-xs text-text-muted">{p.device_count} دستگاه</span>
                     <span className="text-xs text-text-muted font-mono">{toJalali(p.payment_date)}</span>
-                    {p.description && (
-                      <span className="text-xs text-text-muted truncate">{p.description}</span>
-                    )}
+                    {p.description && <span className="text-xs text-text-muted truncate">{p.description}</span>}
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 flex-shrink-0">
                     {isFuture && <Badge variant="info">پرداخت در آینده</Badge>}
                     {isToday && <Badge variant="warning">امروز</Badge>}
                     {isSiteAdmin && !isCancelled && (
-                      <button
-                        onClick={() => handleRemovePayment(p.id)}
-                        className="p-1.5 rounded-field text-text-muted hover:bg-danger/10 hover:text-danger transition-colors"
-                      >
+                      <button onClick={() => handleRemovePayment(p.id)} className="p-1.5 rounded-field text-text-muted hover:bg-danger/10 hover:text-danger transition-colors" title="حذف پرداخت">
                         <Trash2 size={14} />
                       </button>
                     )}
@@ -1015,16 +905,75 @@ export default function SubscriptionDetail() {
                 </div>
               );
             })}
-            <div className="flex items-center justify-between p-3 bg-brand-500/10 border border-brand-500/30 rounded-field">
-              <span className="text-sm text-text-secondary">مجموع پرداخت‌ها</span>
-              <span className="font-mono text-base font-bold text-brand-400">
-                {Number(subscription.price || 0).toLocaleString('fa-IR')} ریال
-              </span>
+            <div className="flex items-center justify-between p-4 rounded-xl bg-brand-500/10 border border-brand-500/30">
+              <span className="text-sm text-text-secondary">مجموع پرداخت‌های ثبت‌شده</span>
+              <span className="font-mono text-base font-bold text-brand-400">{totalPayments.toLocaleString('fa-IR')} ریال</span>
             </div>
           </div>
         )}
-      </Card>
+      </section>
 
+      {/* ═══ تاریخچه قرارداد ═══ */}
+      {subscription.operations && subscription.operations.length > 0 && (
+        <section className={sectionClass}>
+          <div className="px-5 py-4 border-b border-border-base">
+            <h3 className="text-sm font-semibold text-text-primary">تاریخچه قرارداد</h3>
+            <p className="text-[11px] text-text-muted mt-1">{subscription.operations.length} عملیات ثبت‌شده روی این قرارداد</p>
+          </div>
+          <div className="p-4 space-y-2">
+            {subscription.operations.map((operation) => (
+              <details key={operation.id} className="group border border-border-base rounded-xl bg-bg-base overflow-hidden">
+                <summary className="list-none cursor-pointer px-4 py-3.5 flex items-center justify-between gap-4 hover:bg-bg-hover transition-colors">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-lg bg-brand-500/10 flex items-center justify-center flex-shrink-0">
+                      <History size={16} className="text-brand-400" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium text-text-primary">{operation.operation_type_display || operation.operation_type}</div>
+                      <div className="text-[10px] text-text-muted mt-0.5">
+                        {operation.performed_at ? new Date(operation.performed_at).toLocaleString('fa-IR') : '—'}
+                        {operation.performed_by_name ? ` · توسط ${operation.performed_by_name}` : ''}
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-text-muted text-xs group-open:rotate-180 transition-transform">⌄</span>
+                </summary>
+                <div className="px-4 pb-4 space-y-3 border-t border-border-base">
+                  {(operation.old_end_date || operation.new_end_date) && (
+                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 pt-4">
+                      <div className="p-3 rounded-lg bg-bg-elevated text-center">
+                        <div className="text-[10px] text-text-muted mb-1">پایان قبلی</div>
+                        <div className="text-sm font-mono text-text-secondary">{toJalali(operation.old_end_date)}</div>
+                      </div>
+                      <ArrowRight size={15} className="text-brand-400 rotate-180" />
+                      <div className="p-3 rounded-lg bg-bg-elevated text-center">
+                        <div className="text-[10px] text-text-muted mb-1">پایان جدید</div>
+                        <div className="text-sm font-mono text-brand-400">{toJalali(operation.new_end_date)}</div>
+                      </div>
+                    </div>
+                  )}
+                  {operation.changes?.length > 0 && (
+                    <div className="space-y-1.5 pt-1">
+                      {operation.changes.map((change) => (
+                        <div key={change.id} className="text-xs text-text-secondary">
+                          <span className="text-text-muted">{change.entity_type}.{change.field_name}: </span>
+                          <span>{change.old_value || '—'}</span>
+                          <span className="mx-1">←</span>
+                          <span>{change.new_value || '—'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {operation.notes && <div className="text-xs text-text-secondary">یادداشت: {operation.notes}</div>}
+                </div>
+              </details>
+            ))}
+          </div>
+        </section>
+      )}
+
+    </div>
+  );
       {/* ═══ مودال ویرایش قرارداد ═══ */}
       <Modal
         open={editModalOpen}
