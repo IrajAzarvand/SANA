@@ -201,6 +201,13 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                 notes=notes,
             )
 
+            # تمدید قرارداد باید وضعیت فعلی دستگاه‌های متصل را هم به پایان جدید منتقل کند.
+            # چون end_date قرارداد از آخرین دستگاه فعال نیز محاسبه می‌شود،
+            # اگر این کار انجام نشود، با ذخیره/تغییر بعدی ممکن است تاریخ تمدیدشده دوباره به تاریخ قبلی برگردد.
+            subscription.subscription_devices.filter(
+                unassigned_at__isnull=True
+            ).update(end_date=new_end_date)
+
             subscription.end_date = new_end_date
             subscription.save(update_fields=['end_date', 'updated_at'])
 
