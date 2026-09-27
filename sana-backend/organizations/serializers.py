@@ -328,6 +328,11 @@ class SubscriptionListSerializer(serializers.ModelSerializer):
     days_until_expiry = serializers.IntegerField(read_only=True)
     is_expiring_soon = serializers.BooleanField(read_only=True)
     device_count = serializers.SerializerMethodField()
+    active_device_count = serializers.SerializerMethodField()
+    total_payment_amount = serializers.SerializerMethodField()
+    paid_payment_amount = serializers.SerializerMethodField()
+    future_payment_amount = serializers.SerializerMethodField()
+    outstanding_payment_amount = serializers.SerializerMethodField()
 
     class Meta:
         model = Subscription
@@ -337,11 +342,44 @@ class SubscriptionListSerializer(serializers.ModelSerializer):
             'customer_name',
             'start_date', 'end_date',
             'price', 'status',
-            'days_until_expiry', 'is_expiring_soon', 'device_count',
+            'days_until_expiry', 'is_expiring_soon',
+            'device_count', 'active_device_count',
+            'total_payment_amount', 'paid_payment_amount',
+            'future_payment_amount', 'outstanding_payment_amount',
         ]
 
     def get_device_count(self, obj):
         return obj.subscription_devices.filter(unassigned_at__isnull=True).count()
+
+    def get_active_device_count(self, obj):
+        today = timezone.now().date()
+        return obj.subscription_devices.filter(
+            unassigned_at__isnull=True,
+            start_date__lte=today,
+            end_date__gte=today,
+        ).count()
+
+    def get_total_payment_amount(self, obj):
+        return sum((payment.amount or 0) for payment in obj.payments.all())
+
+    def get_paid_payment_amount(self, obj):
+        today = timezone.now().date()
+        return sum(
+            (payment.amount or 0)
+            for payment in obj.payments.all()
+            if payment.payment_date <= today
+        )
+
+    def get_future_payment_amount(self, obj):
+        today = timezone.now().date()
+        return sum(
+            (payment.amount or 0)
+            for payment in obj.payments.all()
+            if payment.payment_date > today
+        )
+
+    def get_outstanding_payment_amount(self, obj):
+        return self.get_future_payment_amount(obj)
 
 
 # ═══════════════════════════════════════════════
