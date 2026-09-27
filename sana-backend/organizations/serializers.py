@@ -254,6 +254,11 @@ class SubscriptionSerializer(serializers.ModelSerializer):
     operations = SubscriptionOperationSerializer(many=True, read_only=True)
 
     device_count = serializers.SerializerMethodField()
+    active_device_count = serializers.SerializerMethodField()
+    total_payment_amount = serializers.SerializerMethodField()
+    paid_payment_amount = serializers.SerializerMethodField()
+    future_payment_amount = serializers.SerializerMethodField()
+    outstanding_payment_amount = serializers.SerializerMethodField()
 
 
     class Meta:
@@ -269,7 +274,9 @@ class SubscriptionSerializer(serializers.ModelSerializer):
             'start_date', 'end_date',
             'price', 'status', 'notes',
             'days_until_expiry', 'is_active', 'is_expiring_soon',
-            'device_count',
+            'device_count', 'active_device_count',
+            'total_payment_amount', 'paid_payment_amount', 'future_payment_amount',
+            'outstanding_payment_amount',
             'devices', 'payments', 'operations',
             'created_at', 'updated_at',
         ]
@@ -282,6 +289,36 @@ class SubscriptionSerializer(serializers.ModelSerializer):
 
     def get_device_count(self, obj):
         return obj.subscription_devices.filter(unassigned_at__isnull=True).count()
+
+    def get_active_device_count(self, obj):
+        return sum(
+            1 for link in obj.subscription_devices.filter(unassigned_at__isnull=True)
+            if link.is_active
+        )
+
+    def get_total_payment_amount(self, obj):
+        return sum((payment.amount or 0) for payment in obj.payments.all())
+
+    def get_paid_payment_amount(self, obj):
+        today = timezone.now().date()
+        return sum(
+            (payment.amount or 0)
+            for payment in obj.payments.all()
+            if payment.payment_date <= today
+        )
+
+    def get_future_payment_amount(self, obj):
+        today = timezone.now().date()
+        return sum(
+            (payment.amount or 0)
+            for payment in obj.payments.all()
+            if payment.payment_date > today
+        )
+
+    def get_outstanding_payment_amount(self, obj):
+        total = self.get_total_payment_amount(obj)
+        paid = self.get_paid_payment_amount(obj)
+        return max(total - paid, 0)
 
 class SubscriptionListSerializer(serializers.ModelSerializer):
     """سریالایزر سبک برای لیست"""
