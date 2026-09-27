@@ -719,7 +719,8 @@ export default function SubscriptionDetail() {
               <DetailItem icon={Building2} label="نام سازمان" value={subscription.organization_name} />
               <DetailItem icon={Hash} label="کد سازمان" value={subscription.organization_code} mono />
               <DetailItem icon={Phone} label="تلفن" value={subscription.organization_phone} mono />
-              <DetailItem icon={Hash} label="ایمیل" value={subscription.organization_email} mono />
+              <DetailItem icon={Hash} label="شماره ثبت" value={subscription.organization_registration_number} mono />
+              <DetailItem icon={MapPin} label="آدرس" value={subscription.organization_address} />
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
