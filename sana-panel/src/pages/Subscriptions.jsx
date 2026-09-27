@@ -167,7 +167,9 @@ export default function Subscriptions() {
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">شروع</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">پایان</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">روز مانده</th>
-                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">دستگاه‌ها</th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">دستگاه‌های فعال</th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">پرداخت‌شده</th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">پرداخت آینده</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">وضعیت</th>
                   <th className="w-12"></th>
                 </tr>
@@ -199,7 +201,13 @@ export default function Subscriptions() {
                           {daysLeft < 0 ? `منقضی (${Math.abs(daysLeft)} روز پیش)` : `${daysLeft} روز`}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-text-secondary font-mono text-xs">{s.device_count}</td>
+                      <td className="py-3 px-4 text-text-secondary font-mono text-xs">{s.active_device_count ?? 0}</td>
+                      <td className="py-3 px-4 text-text-secondary font-mono text-xs">
+                        {Number(s.paid_payment_amount || 0).toLocaleString('fa-IR')} ریال
+                      </td>
+                      <td className="py-3 px-4 text-text-secondary font-mono text-xs">
+                        {Number(s.future_payment_amount || 0).toLocaleString('fa-IR')} ریال
+                      </td>
                       <td className="py-3 px-4"><Badge variant={st.variant}>{st.label}</Badge></td>
                       <td className="py-3 px-2">
                         <ActionMenu items={getMenuItems(s)} />
