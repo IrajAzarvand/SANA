@@ -22,6 +22,17 @@ export const vehiclesAPI = {
   },
 };
 
+export const deviceLifecycleAPI = {
+  list: async (params = {}) => {
+    const response = await apiClient.get('/device-lifecycle-events/', { params });
+    return response.data;
+  },
+  create: async (data) => {
+    const response = await apiClient.post('/device-lifecycle-events/', data);
+    return response.data;
+  },
+};
+
 export const devicesAPI = {
   list: async (params = {}) => {
     const response = await apiClient.get('/devices/', { params });
