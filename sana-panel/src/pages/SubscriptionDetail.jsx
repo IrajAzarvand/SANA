@@ -156,6 +156,7 @@ export default function SubscriptionDetail() {
       notes: subscription.notes || '',
       remove_device_ids: [],
       add_devices: [],
+      remove_added_device_indices: [],
       payment_changes: Object.fromEntries((subscription.payments || []).map((p) => [p.id, {
         amount: p.amount,
         payment_date: p.payment_date,
