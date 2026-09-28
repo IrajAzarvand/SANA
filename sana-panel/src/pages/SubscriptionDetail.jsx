@@ -921,85 +921,204 @@ export default function SubscriptionDetail() {
             <h3 className="text-sm font-semibold text-text-primary">تاریخچه قرارداد</h3>
             <p className="text-[11px] text-text-muted mt-1">{subscription.operations.length} عملیات ثبت‌شده روی این قرارداد</p>
           </div>
-          <div className="p-4 space-y-2">
-            {subscription.operations.map((operation) => (
-              <details key={operation.id} className="group border border-border-base rounded-xl bg-bg-base overflow-hidden">
-                <summary className="list-none cursor-pointer px-4 py-3.5 flex items-center justify-between gap-4 hover:bg-bg-hover transition-colors">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-lg bg-brand-500/10 flex items-center justify-center flex-shrink-0">
-                      <History size={16} className="text-brand-400" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-xs font-medium text-text-primary">{operation.operation_type_display || operation.operation_type}</div>
-                      <div className="text-[10px] text-text-muted mt-0.5">
-                        {operation.performed_at ? new Date(operation.performed_at).toLocaleString('fa-IR') : '—'}
-                        {operation.performed_by_name ? ` · توسط ${operation.performed_by_name}` : ''}
+
+          <div className="p-4 space-y-3">
+            {subscription.operations.map((operation) => {
+              const hasDateChange =
+                operation.old_start_date !== operation.new_start_date ||
+                operation.old_end_date !== operation.new_end_date;
+              const hasStatusChange =
+                operation.old_status !== operation.new_status &&
+                (operation.old_status || operation.new_status);
+              const addedDevices = operation.added_devices || [];
+              const removedDevices = operation.removed_devices || [];
+              const payments = operation.payments || [];
+              const changes = operation.changes || [];
+
+              return (
+                <details key={operation.id} className="group border border-border-base rounded-xl bg-bg-base overflow-hidden">
+                  <summary className="list-none cursor-pointer px-4 py-3.5 flex items-center justify-between gap-4 hover:bg-bg-hover transition-colors">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-lg bg-brand-500/10 flex items-center justify-center flex-shrink-0">
+                        <History size={16} className="text-brand-400" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-medium text-text-primary">
+                          {operation.operation_type_display || operation.operation_type}
+                        </div>
+                        <div className="text-[10px] text-text-muted mt-0.5">
+                          {operation.performed_at ? new Date(operation.performed_at).toLocaleString('fa-IR') : '—'}
+                          {operation.performed_by_name ? ` · توسط ${operation.performed_by_name}` : ''}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <span className="text-text-muted text-xs group-open:rotate-180 transition-transform">⌄</span>
-                </summary>
-                <div className="px-4 pb-4 space-y-3 border-t border-border-base">
-                  {(operation.old_end_date || operation.new_end_date) && (
-                    <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 pt-4">
-                      <div className="p-3 rounded-lg bg-bg-elevated text-center">
-                        <div className="text-[10px] text-text-muted mb-1">پایان قبلی</div>
-                        <div className="text-sm font-mono text-text-secondary">{toJalali(operation.old_end_date)}</div>
-                      </div>
-                      <ArrowRight size={15} className="text-brand-400 rotate-180" />
-                      <div className="p-3 rounded-lg bg-bg-elevated text-center">
-                        <div className="text-[10px] text-text-muted mb-1">پایان جدید</div>
-                        <div className="text-sm font-mono text-brand-400">{toJalali(operation.new_end_date)}</div>
-                      </div>
-                    </div>
-                  )}
-                  {operation.changes?.length > 0 && (
-                    <div className="pt-4">
-                      <div className="text-[10px] font-medium text-text-muted mb-2">تغییرات این عملیات</div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                        {operation.changes.map((change) => {
-                          const changeInfo = getChangeDisplay(change);
-                          return (
-                            <div
-                              key={change.id}
-                              className="rounded-xl border border-border-base bg-bg-elevated p-3.5"
-                            >
-                              <div className="flex items-center gap-2 mb-3">
-                                <div className="w-7 h-7 rounded-lg bg-brand-500/10 flex items-center justify-center flex-shrink-0">
-                                  <Pencil size={13} className="text-brand-400" />
-                                </div>
-                                <div className="text-xs font-medium text-text-primary">
-                                  {changeInfo.label}
-                                </div>
+                    <span className="text-text-muted text-xs group-open:rotate-180 transition-transform">⌄</span>
+                  </summary>
+
+                  <div className="px-4 pb-4 space-y-4 border-t border-border-base">
+                    {hasDateChange && (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-4">
+                        {operation.old_start_date !== operation.new_start_date && (
+                          <div className="p-3 rounded-xl border border-border-base bg-bg-elevated">
+                            <div className="text-[10px] text-text-muted mb-2">تغییر تاریخ شروع قرارداد</div>
+                            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                              <div>
+                                <div className="text-[9px] text-text-muted">قبل</div>
+                                <div className="text-xs font-mono text-text-secondary">{toJalali(operation.old_start_date) || '—'}</div>
                               </div>
-
-                              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-                                <div className="min-w-0">
-                                  <div className="text-[9px] text-text-muted mb-1">قبل</div>
-                                  <div className="text-xs text-text-secondary break-words">
-                                    {changeInfo.oldValue}
-                                  </div>
-                                </div>
-
-                                <ArrowRight size={14} className="text-brand-400 rotate-180 flex-shrink-0" />
-
-                                <div className="min-w-0 text-left">
-                                  <div className="text-[9px] text-text-muted mb-1">بعد</div>
-                                  <div className="text-xs font-medium text-brand-400 break-words">
-                                    {changeInfo.newValue}
-                                  </div>
-                                </div>
+                              <ArrowRight size={14} className="text-brand-400 rotate-180" />
+                              <div className="text-left">
+                                <div className="text-[9px] text-text-muted">بعد</div>
+                                <div className="text-xs font-mono font-medium text-brand-400">{toJalali(operation.new_start_date) || '—'}</div>
                               </div>
                             </div>
-                          );
-                        })}
+                          </div>
+                        )}
+
+                        {operation.old_end_date !== operation.new_end_date && (
+                          <div className="p-3 rounded-xl border border-border-base bg-bg-elevated">
+                            <div className="text-[10px] text-text-muted mb-2">تغییر تاریخ پایان قرارداد</div>
+                            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                              <div>
+                                <div className="text-[9px] text-text-muted">قبل</div>
+                                <div className="text-xs font-mono text-text-secondary">{toJalali(operation.old_end_date) || '—'}</div>
+                              </div>
+                              <ArrowRight size={14} className="text-brand-400 rotate-180" />
+                              <div className="text-left">
+                                <div className="text-[9px] text-text-muted">بعد</div>
+                                <div className="text-xs font-mono font-medium text-brand-400">{toJalali(operation.new_end_date) || '—'}</div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  )}
-                  {operation.notes && <div className="text-xs text-text-secondary">یادداشت: {operation.notes}</div>}
-                </div>
-              </details>
-            ))}
+                    )}
+
+                    {hasStatusChange && (
+                      <div className="p-3 rounded-xl border border-border-base bg-bg-elevated">
+                        <div className="text-[10px] text-text-muted mb-2">تغییر وضعیت قرارداد</div>
+                        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                          <div className="text-xs text-text-secondary">{statusMap[operation.old_status]?.label || operation.old_status || '—'}</div>
+                          <ArrowRight size={14} className="text-brand-400 rotate-180" />
+                          <div className="text-xs font-medium text-brand-400 text-left">{statusMap[operation.new_status]?.label || operation.new_status || '—'}</div>
+                        </div>
+                      </div>
+                    )}
+
+                    {changes.length > 0 && (
+                      <div className="pt-1">
+                        <div className="text-[10px] font-medium text-text-muted mb-2">تغییرات اطلاعات</div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                          {changes.map((change) => {
+                            const changeInfo = getChangeDisplay(change);
+                            return (
+                              <div key={change.id} className="rounded-xl border border-border-base bg-bg-elevated p-3.5">
+                                <div className="flex items-center gap-2 mb-3">
+                                  <div className="w-7 h-7 rounded-lg bg-brand-500/10 flex items-center justify-center flex-shrink-0">
+                                    <Pencil size={13} className="text-brand-400" />
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="text-xs font-medium text-text-primary">{changeInfo.label}</div>
+                                    <div className="text-[9px] text-text-muted">{changeInfo.entityLabel}</div>
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                                  <div className="min-w-0">
+                                    <div className="text-[9px] text-text-muted mb-1">قبل</div>
+                                    <div className="text-xs text-text-secondary break-words">{changeInfo.oldValue}</div>
+                                  </div>
+                                  <ArrowRight size={14} className="text-brand-400 rotate-180 flex-shrink-0" />
+                                  <div className="min-w-0 text-left">
+                                    <div className="text-[9px] text-text-muted mb-1">بعد</div>
+                                    <div className="text-xs font-medium text-brand-400 break-words">{changeInfo.newValue}</div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {addedDevices.length > 0 && (
+                      <div>
+                        <div className="text-[10px] font-medium text-text-muted mb-2">دستگاه‌های اضافه‌شده</div>
+                        <div className="space-y-2">
+                          {addedDevices.map((device) => (
+                            <div key={device.id} className="flex items-center gap-3 p-3 rounded-xl border border-border-base bg-bg-elevated">
+                              <Package size={16} className="text-brand-400 flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs font-mono text-text-primary">{device.device_imei || '—'}</div>
+                                <div className="text-[10px] text-text-muted mt-1">
+                                  {device.device_model || 'بدون مدل'} · شروع {toJalali(device.start_date)} · پایان {toJalali(device.end_date)}
+                                </div>
+                              </div>
+                              <Badge variant="success">اضافه شد</Badge>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {removedDevices.length > 0 && (
+                      <div>
+                        <div className="text-[10px] font-medium text-text-muted mb-2">دستگاه‌های حذف‌شده</div>
+                        <div className="space-y-2">
+                          {removedDevices.map((device) => (
+                            <div key={device.id} className="flex items-center gap-3 p-3 rounded-xl border border-danger/20 bg-danger/5">
+                              <Trash2 size={16} className="text-danger flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs font-mono text-text-primary">{device.device_imei || '—'}</div>
+                                <div className="text-[10px] text-text-muted mt-1">
+                                  {device.device_model || 'بدون مدل'} · شروع {toJalali(device.start_date)} · پایان {toJalali(device.end_date)}
+                                </div>
+                              </div>
+                              <Badge variant="danger">حذف شد</Badge>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {payments.length > 0 && (
+                      <div>
+                        <div className="text-[10px] font-medium text-text-muted mb-2">پرداخت‌های این عملیات</div>
+                        <div className="space-y-2">
+                          {payments.map((payment) => (
+                            <div key={payment.id} className="flex items-center gap-3 p-3 rounded-xl border border-border-base bg-bg-elevated">
+                              <CreditCard size={16} className="text-brand-400 flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs font-mono font-medium text-text-primary">
+                                  {Number(payment.amount || 0).toLocaleString('fa-IR')} ریال
+                                </div>
+                                <div className="text-[10px] text-text-muted mt-1">
+                                  {toJalali(payment.payment_date)} · {payment.device_count || 0} دستگاه
+                                  {payment.description ? ` · ${payment.description}` : ''}
+                                </div>
+                              </div>
+                              <Badge variant="success">ثبت شد</Badge>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {operation.notes && (
+                      <div className="p-3 rounded-xl bg-bg-elevated border border-border-base">
+                        <div className="text-[10px] text-text-muted mb-1">یادداشت عملیات</div>
+                        <div className="text-xs text-text-secondary leading-6">{operation.notes}</div>
+                      </div>
+                    )}
+
+                    {!hasDateChange && !hasStatusChange && changes.length === 0 && addedDevices.length === 0 && removedDevices.length === 0 && payments.length === 0 && !operation.notes && (
+                      <div className="pt-4 text-xs text-text-muted">
+                        جزئیات اضافه‌ای برای این عملیات ثبت نشده است.
+                      </div>
+                    )}
+                  </div>
+                </details>
+              );
+            })}
           </div>
         </section>
       )}
