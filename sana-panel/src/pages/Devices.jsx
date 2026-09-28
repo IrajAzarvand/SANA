@@ -31,6 +31,8 @@ const managementStatusMap = {
   lost:         { label: 'گمشده',         variant: 'warning' },
   stolen:       { label: 'سرقت شده',      variant: 'danger'  },
   disconnected: { label: 'قطع سرویس',     variant: 'muted'   },
+  retired:      { label: 'بازنشسته',       variant: 'muted'   },
+  disposed:     { label: 'امحاء شده',      variant: 'danger'  },
 };
 
 export default function Devices() {
