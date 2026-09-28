@@ -818,20 +818,7 @@ export default function SubscriptionDetail() {
             <h3 className="text-sm font-semibold text-text-primary">دستگاه‌های قرارداد</h3>
             <p className="text-[11px] text-text-muted mt-1">{subscription.devices?.length || 0} دستگاه تخصیص‌یافته به این قرارداد</p>
           </div>
-          {isSiteAdmin && !isCancelled && (
-            <Button
-              size="sm"
-              icon={Plus}
-              variant="secondary"
-              onClick={() => {
-                setDeviceForm({ device: '', start_date: subscription.start_date, end_date: subscription.end_date });
-                setActionError('');
-                setDeviceModalOpen(true);
-              }}
-            >
-              افزودن دستگاه
-            </Button>
-          )}
+
         </div>
         {(!subscription.devices || subscription.devices.length === 0) ? (
           <div className="py-10 text-center">
@@ -883,20 +870,7 @@ export default function SubscriptionDetail() {
             <h3 className="text-sm font-semibold text-text-primary">پرداخت‌های قرارداد</h3>
             <p className="text-[11px] text-text-muted mt-1">{subscription.payments?.length || 0} پرداخت ثبت‌شده</p>
           </div>
-          {isSiteAdmin && !isCancelled && (
-            <Button
-              size="sm"
-              icon={Plus}
-              variant="secondary"
-              onClick={() => {
-                setPaymentForm({ amount: '', payment_date: todayGregorian(), device_count: subscription.device_count || 0, description: '' });
-                setActionError('');
-                setPaymentModalOpen(true);
-              }}
-            >
-              افزودن پرداخت
-            </Button>
-          )}
+
         </div>
         {(!subscription.payments || subscription.payments.length === 0) ? (
           <div className="py-10 text-center">
