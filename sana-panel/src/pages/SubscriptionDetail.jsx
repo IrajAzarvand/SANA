@@ -947,7 +947,7 @@ export default function SubscriptionDetail() {
                           {operation.operation_type_display || operation.operation_type}
                         </div>
                         <div className="text-[10px] text-text-muted mt-0.5">
-                          {operation.performed_at ? new Date(operation.performed_at).toLocaleString('fa-IR') : '—'}
+                          {operation.performed_at ? formatOperationDateTime(operation.performed_at) : '—'}
                           {operation.performed_by_name ? ` · توسط ${operation.performed_by_name}` : ''}
                         </div>
                       </div>
@@ -1767,6 +1767,7 @@ const changeFieldLabels = {
   national_id: 'کد ملی',
   start_date: 'تاریخ شروع قرارداد',
   end_date: 'تاریخ پایان قرارداد',
+  payment_date: 'تاریخ پرداخت',
   notes: 'یادداشت قرارداد',
   status: 'وضعیت قرارداد',
 };
@@ -1779,9 +1780,32 @@ const entityLabels = {
   SubscriptionDevice: 'دستگاه قرارداد',
 };
 
-function formatChangeValue(value) {
+const dateChangeFields = new Set([
+  'start_date',
+  'end_date',
+  'payment_date',
+  'created_at',
+  'updated_at',
+]);
+
+function formatChangeValue(value, fieldName = '') {
   if (value === null || value === undefined || value === '') return '—';
+  if (dateChangeFields.has(fieldName)) {
+    return toJalali(value) || String(value);
+  }
   return String(value);
+}
+
+function formatOperationDateTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  const jalaliDate = toJalali(date);
+  const time = date.toLocaleTimeString('fa-IR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  return jalaliDate ? `${jalaliDate} · ${time}` : time;
 }
 
 function getChangeDisplay(change) {
@@ -1789,8 +1813,8 @@ function getChangeDisplay(change) {
   const fieldLabel = changeFieldLabels[change.field_name] || change.field_name || 'تغییر';
   return {
     label: fieldLabel,
-    oldValue: formatChangeValue(change.old_value),
-    newValue: formatChangeValue(change.new_value),
+    oldValue: formatChangeValue(change.old_value, change.field_name),
+    newValue: formatChangeValue(change.new_value, change.field_name),
     entityLabel,
   };
 }
