@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import {
-  Search, Plus, Cpu, Pencil, Trash2, Signal, Hash, Phone, Eye, Boxes, Package,
+  Search, Plus, Cpu, Pencil, Trash2, Signal, Hash, Phone, Eye, Boxes, Package, History, RotateCcw,
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
@@ -9,6 +9,7 @@ import Button from '../components/Button';
 import Input from '../components/Input';
 import Select from '../components/Select';
 import Modal from '../components/Modal';
+import JalaliDatePicker from '../components/JalaliDatePicker';
 import EmptyState from '../components/EmptyState';
 import ActionMenu from '../components/ActionMenu';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -16,9 +17,10 @@ import ErrorState from '../components/ErrorState';
 import Tabs from '../components/Tabs';
 import AddDeviceModal from '../components/AddDeviceModal';
 import { useAuth } from '../context/AuthContext';
-import { devicesAPI } from '../api/services/fleet';
+import { devicesAPI, deviceLifecycleAPI } from '../api/services/fleet';
 import { deviceModelsAPI } from '../api/services/deviceModels';
 import { useApi } from '../hooks/useApi';
+import { toJalali } from '../utils/dateUtils';
 
 const managementStatusMap = {
   warehouse:    { label: 'در انبار',      variant: 'info'    },
@@ -73,6 +75,11 @@ function DevicesTab() {
   const [editForm, setEditForm] = useState({
     imei: '', device_model: '', sim_number: '',
   });
+  const [historyDevice, setHistoryDevice] = useState(null);
+  const [historyEvents, setHistoryEvents] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [eventSaving, setEventSaving] = useState(false);
+  const [eventForm, setEventForm] = useState({ event_type: 'returned', reason: 'other', event_date: '', description: '' });
 
   const { isSiteAdmin, isPersonal } = useAuth();
 
@@ -145,6 +152,45 @@ function DevicesTab() {
     setEditModalOpen(true);
   };
 
+  const openHistory = async (device) => {
+    setHistoryDevice(device);
+    setHistoryLoading(true);
+    try {
+      const result = await deviceLifecycleAPI.list({ device: device.id });
+      setHistoryEvents(Array.isArray(result) ? result : result.results || []);
+    } catch (err) {
+      console.error('Error loading lifecycle history:', err);
+      setHistoryEvents([]);
+      alert('خطا در دریافت تاریخچه دستگاه');
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const handleLifecycleEvent = async (e) => {
+    e.preventDefault();
+    if (!historyDevice) return;
+    setEventSaving(true);
+    try {
+      const payload = {
+        device: historyDevice.id,
+        event_type: eventForm.event_type,
+        reason: eventForm.reason || '',
+        description: eventForm.description || '',
+      };
+      if (eventForm.event_date) payload.event_date = eventForm.event_date + 'T00:00:00';
+      await deviceLifecycleAPI.create(payload);
+      setEventForm({ event_type: 'returned', reason: 'other', event_date: '', description: '' });
+      await openHistory(historyDevice);
+      refetch();
+    } catch (err) {
+      console.error('Error saving lifecycle event:', err);
+      alert(err.response?.data?.detail || 'ثبت رویداد ناموفق بود');
+    } finally {
+      setEventSaving(false);
+    }
+  };
+
   const handleDelete = async (id) => {
     if (!confirm('آیا از حذف این دستگاه اطمینان دارید؟')) return;
     try {
@@ -159,9 +205,9 @@ function DevicesTab() {
   const getMenuItems = (device) => {
     const items = [
       {
-        label: 'تاریخچه',
-        icon: Signal,
-        onClick: () => console.log('History device:', device.id),
+        label: 'تاریخچه و رویدادها',
+        icon: History,
+        onClick: () => openHistory(device),
       },
     ];
 
@@ -310,6 +356,38 @@ function DevicesTab() {
         )}
       </Card>
 
+      {/* تاریخچه چرخه عمر دستگاه */}
+      <Modal
+        open={Boolean(historyDevice)}
+        onClose={() => setHistoryDevice(null)}
+        title={historyDevice ? 'تاریخچه دستگاه ' + historyDevice.imei : 'تاریخچه دستگاه'}
+        footer={<Button variant="secondary" onClick={() => setHistoryDevice(null)}>بستن</Button>}
+      >
+        <div className="space-y-5">
+          {historyLoading ? <LoadingSpinner /> : (
+            <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
+              {historyEvents.length === 0 ? <div className="text-sm text-text-muted text-center py-6">هنوز رویدادی ثبت نشده است.</div> : historyEvents.map((event) => (
+                <div key={event.id} className="rounded-card border border-border-base bg-bg-base p-3">
+                  <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-semibold text-text-primary">{event.event_type_display}</div><div className="text-[11px] text-text-muted mt-1 font-mono">{event.event_date ? toJalali(event.event_date) : '—'}</div></div><Badge variant={event.new_status === 'warehouse' ? 'info' : 'brand'}>{managementStatusMap[event.new_status]?.label || event.new_status || '—'}</Badge></div>
+                  {event.reason_display && <div className="text-xs text-text-secondary mt-2">دلیل: {event.reason_display}</div>}
+                  {event.description && <div className="text-xs text-text-secondary mt-2 leading-6">{event.description}</div>}
+                  {(event.subscription_number || event.organization_name || event.vehicle_plate) && <div className="flex flex-wrap gap-2 mt-3 text-[11px] text-text-muted">{event.subscription_number && <span>قرارداد: {event.subscription_number}</span>}{event.organization_name && <span>مشتری: {event.organization_name}</span>}{event.vehicle_plate && <span>خودرو: {event.vehicle_plate}</span>}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+          {isSiteAdmin && <form onSubmit={handleLifecycleEvent} className="border-t border-border-base pt-4 space-y-4">
+            <div className="flex items-center gap-2 text-sm font-semibold text-text-primary"><RotateCcw size={16} />ثبت رویداد جدید</div>
+            <Select label="نوع رویداد" value={eventForm.event_type} onChange={(e) => setEventForm({ ...eventForm, event_type: e.target.value })} options={[{value:'returned',label:'بازگشت به سانا'},{value:'sent_to_repair',label:'ارسال برای تعمیر'},{value:'repaired',label:'اتمام تعمیر'},{value:'replaced',label:'تعویض'},{value:'transferred',label:'انتقال'},{value:'lost',label:'گم‌شدن'},{value:'stolen',label:'سرقت'},{value:'retired',label:'بازنشستگی'},{value:'disposed',label:'امحاء'}]} />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Select label="دلیل" value={eventForm.reason} onChange={(e) => setEventForm({ ...eventForm, reason: e.target.value })} options={[{value:'repair',label:'تعمیر'},{value:'replacement',label:'تعویض'},{value:'contract_termination',label:'پایان قرارداد'},{value:'customer_return',label:'مرجوعی مشتری'},{value:'upgrade',label:'ارتقاء'},{value:'defective',label:'خرابی'},{value:'other',label:'سایر'}]} />
+              <JalaliDatePicker label="تاریخ رویداد" value={eventForm.event_date} onChange={(value) => setEventForm({ ...eventForm, event_date: value })} />
+            </div>
+            <Input label="شرح" value={eventForm.description} onChange={(e) => setEventForm({ ...eventForm, description: e.target.value })} placeholder="برای موارد خاص، توضیحات کامل را وارد کنید..." />
+            <div className="flex justify-end"><Button type="submit" disabled={eventSaving}>{eventSaving ? 'در حال ثبت...' : 'ثبت رویداد'}</Button></div>
+          </form>}
+        </div>
+      </Modal>
       {/* مودال افزودن */}
       <AddDeviceModal
         open={addModalOpen}
