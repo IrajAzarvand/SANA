@@ -31,6 +31,7 @@ from .serializers import (
     SubscriptionOperationSerializer,
 )
 from accounts.permissions import IsSiteAdmin
+from fleet.lifecycle import record_device_lifecycle_event
 
 
 # ═══════════════════════════════════════════════
@@ -228,6 +229,13 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                 link = device_serializer.save()
                 link.added_by_operation = operation
                 link.save(update_fields=['added_by_operation'])
+                record_device_lifecycle_event(
+                    device=link.device,
+                    event_type='assigned_to_contract',
+                    performed_by=request.user,
+                    subscription=subscription,
+                    description=f'دستگاه به قرارداد {subscription.contract_number} اضافه شد.',
+                )
 
             # دستگاه‌های حذف‌شده
             for link_id in request.data.get('remove_device_ids', []):
@@ -241,6 +249,13 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                 link.unassigned_at = timezone.now()
                 link.removed_by_operation = operation
                 link.save(update_fields=['unassigned_at', 'removed_by_operation'])
+                record_device_lifecycle_event(
+                    device=link.device,
+                    event_type='removed_from_contract',
+                    performed_by=request.user,
+                    subscription=subscription,
+                    description=f'دستگاه از قرارداد {subscription.contract_number} خارج شد؛ مالکیت دستگاه حفظ شد.',
+                )
 
             # پرداخت‌های مربوط به همین تمدید
             for item in request.data.get('payments', []):
@@ -397,6 +412,13 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                 link.unassigned_at = timezone.now()
                 link.removed_by_operation = operation
                 link.save(update_fields=['unassigned_at', 'removed_by_operation'])
+                record_device_lifecycle_event(
+                    device=link.device,
+                    event_type='removed_from_contract',
+                    performed_by=request.user,
+                    subscription=subscription,
+                    description=f'دستگاه از قرارداد {subscription.contract_number} خارج شد؛ مالکیت دستگاه حفظ شد.',
+                )
 
             # تغییر اطلاعات مشتری
             if customer_changes:
@@ -535,8 +557,14 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                 device.organization = None
                 device.owner_user = None
                 device.branch = None
-                device.management_status = 'warehouse'
-                device.save()
+                # خروج از قرارداد به معنی بازگشت به انبار نیست؛ دستگاه فروخته شده باقی می‌ماند.
+                record_device_lifecycle_event(
+                    device=device,
+                    event_type='removed_from_contract',
+                    performed_by=request.user,
+                    subscription=subscription,
+                    description=f'قرارداد {subscription.contract_number} لغو شد؛ دستگاه به مالک قبلی باقی ماند و به انبار برنگشت.',
+                )
 
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -598,6 +626,13 @@ class SubscriptionDeviceViewSet(viewsets.ModelViewSet):
                 new_end_date=subscription.end_date,
             )
             instance = serializer.save(added_by_operation=operation)
+            record_device_lifecycle_event(
+                device=instance.device,
+                event_type='assigned_to_contract',
+                performed_by=request.user,
+                subscription=subscription,
+                description=f'دستگاه به قرارداد {subscription.contract_number} اضافه شد.',
+            )
         return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED)
 
     def destroy(self, request, *args, **kwargs):
@@ -620,12 +655,7 @@ class SubscriptionDeviceViewSet(viewsets.ModelViewSet):
             other_active = device.subscription_links.filter(
                 unassigned_at__isnull=True
             ).exclude(id=instance.id).exists()
-            if not other_active:
-                device.organization = None
-                device.owner_user = None
-                device.branch = None
-                device.management_status = 'warehouse'
-                device.save()
+            # خروج از قرارداد به‌تنهایی مالکیت را تغییر نمی‌دهد.
         return Response(status=status.HTTP_204_NO_CONTENT)
 # ═══════════════════════════════════════════════
 # SubscriptionPayment
