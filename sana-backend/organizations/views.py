@@ -229,13 +229,6 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                 link = device_serializer.save()
                 link.added_by_operation = operation
                 link.save(update_fields=['added_by_operation'])
-                record_device_lifecycle_event(
-                    device=link.device,
-                    event_type='assigned_to_contract',
-                    performed_by=request.user,
-                    subscription=subscription,
-                    description=f'دستگاه به قرارداد {subscription.contract_number} اضافه شد.',
-                )
 
             # دستگاه‌های حذف‌شده
             for link_id in request.data.get('remove_device_ids', []):
@@ -615,13 +608,6 @@ class SubscriptionDeviceViewSet(viewsets.ModelViewSet):
                 new_end_date=subscription.end_date,
             )
             instance = serializer.save(added_by_operation=operation)
-            record_device_lifecycle_event(
-                device=instance.device,
-                event_type='assigned_to_contract',
-                performed_by=request.user,
-                subscription=subscription,
-                description=f'دستگاه به قرارداد {subscription.contract_number} اضافه شد.',
-            )
         return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED)
 
     def destroy(self, request, *args, **kwargs):
