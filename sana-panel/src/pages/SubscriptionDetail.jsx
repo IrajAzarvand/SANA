@@ -1090,8 +1090,19 @@ export default function SubscriptionDetail() {
               </label>;
             })}
             <div className="p-3 bg-bg-base border border-border-base rounded-field space-y-3">
-              <div className="text-xs font-medium text-text-secondary">افزودن دستگاه</div>
-              <Select label="دستگاه" placeholder="انتخاب دستگاه انبار..." value={editNewDevice.device_id} onChange={(e) => setEditNewDevice({...editNewDevice,device_id:e.target.value})} options={warehouseOptions} />
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-xs font-medium text-text-secondary">افزودن دستگاه</div>
+                <Button type="button" size="sm" variant="secondary" icon={Plus} onClick={() => setEditAddDeviceModalOpen(true)}>
+                  افزودن دستگاه جدید
+                </Button>
+              </div>
+              <Select
+                label="دستگاه"
+                placeholder="انتخاب دستگاه انبار..."
+                value={editNewDevice.device_id}
+                onChange={(e) => setEditNewDevice({...editNewDevice,device_id:e.target.value})}
+                options={warehouseOptions.filter((option) => !editForm.add_devices.some((item) => Number(item.device_id) === Number(option.value)))}
+              />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <JalaliDatePicker label="شروع دستگاه" value={editNewDevice.start_date} minDate={editForm.start_date} maxDate={editForm.end_date} onChange={(val) => setEditNewDevice({...editNewDevice,start_date:val})} required />
                 <JalaliDatePicker label="پایان دستگاه" value={editNewDevice.end_date} minDate={editForm.start_date} maxDate={editForm.end_date} onChange={(val) => setEditNewDevice({...editNewDevice,end_date:val})} required />
@@ -1424,12 +1435,23 @@ export default function SubscriptionDetail() {
         onClose={() => setEditAddDeviceModalOpen(false)}
         onSuccess={async (newDevice) => {
           await refetchWarehouseDevices();
-          setEditNewDevice((prev) => ({
+          setEditForm((prev) => ({
             ...prev,
-            device_id: newDevice.id,
+            add_devices: [
+              ...prev.add_devices,
+              {
+                device_id: Number(newDevice.id),
+                start_date: editForm.start_date,
+                end_date: editForm.end_date,
+              },
+            ],
+          }));
+          setEditNewDevice({
+            device_id: '',
             start_date: editForm.start_date,
             end_date: editForm.end_date,
-          }));
+          });
+          setEditAddDeviceModalOpen(false);
           setActionError('');
         }}
       />
