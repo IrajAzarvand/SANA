@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.utils import timezone
+from fleet.lifecycle import record_device_lifecycle_event
 from .models import (
     Organization,
     Branch,
@@ -161,6 +162,14 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
             device.management_status = 'sold'
 
         device.save()
+        request = self.context.get('request')
+        record_device_lifecycle_event(
+            device=device,
+            event_type='assigned_to_contract',
+            performed_by=request.user if request else None,
+            subscription=subscription,
+            description=f'دستگاه به قرارداد {subscription.contract_number} اضافه شد.',
+        )
         return instance
 
     
@@ -660,6 +669,13 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                 # آپدیت وضعیت مدیریتی دستگاه — از انبار خارج شد
                 device.management_status = 'sold'
                 device.save()
+                record_device_lifecycle_event(
+                    device=device,
+                    event_type='assigned_to_contract',
+                    performed_by=self.context.get('request').user if self.context.get('request') else None,
+                    subscription=subscription,
+                    description=f'دستگاه به قرارداد {subscription.contract_number} اضافه شد.',
+                )
 
             # ─── ۵. اضافه کردن پرداخت‌ها ───
             for payment_data in payments_data:
