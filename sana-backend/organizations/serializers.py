@@ -194,9 +194,9 @@ class SubscriptionOperationSerializer(serializers.ModelSerializer):
     operation_type_display = serializers.CharField(source='get_operation_type_display', read_only=True)
     performed_by_name = serializers.SerializerMethodField()
     changes = SubscriptionOperationChangeSerializer(many=True, read_only=True)
-    added_device_ids = serializers.SerializerMethodField()
-    removed_device_ids = serializers.SerializerMethodField()
-    payment_ids = serializers.SerializerMethodField()
+    added_devices = serializers.SerializerMethodField()
+    removed_devices = serializers.SerializerMethodField()
+    payments = SubscriptionPaymentSerializer(many=True, read_only=True)
 
     class Meta:
         model = SubscriptionOperation
@@ -204,18 +204,33 @@ class SubscriptionOperationSerializer(serializers.ModelSerializer):
             'id', 'subscription', 'operation_type', 'operation_type_display',
             'performed_at', 'performed_by', 'performed_by_name',
             'old_start_date', 'new_start_date', 'old_end_date', 'new_end_date',
-            'old_status', 'new_status', 'notes', 'changes', 'added_device_ids', 'removed_device_ids', 'payment_ids',
+            'old_status', 'new_status', 'notes', 'changes',
+            'added_devices', 'removed_devices', 'payments',
         ]
         read_only_fields = ['id', 'performed_at', 'performed_by']
 
-    def get_added_device_ids(self, obj):
-        return list(obj.added_devices.values_list('device_id', flat=True))
+    def _serialize_device_links(self, links):
+        return [
+            {
+                'id': link.id,
+                'device_id': link.device_id,
+                'device_imei': link.device.imei,
+                'device_model': link.device.device_model.name if link.device.device_model else None,
+                'device_sim': link.device.sim_number,
+                'vehicle_plate': link.device.vehicle.plate if link.device.vehicle else None,
+                'start_date': link.start_date,
+                'end_date': link.end_date,
+                'assigned_at': link.assigned_at,
+                'unassigned_at': link.unassigned_at,
+            }
+            for link in links.select_related('device__device_model', 'device__vehicle').all()
+        ]
 
-    def get_removed_device_ids(self, obj):
-        return list(obj.removed_devices.values_list('device_id', flat=True))
+    def get_added_devices(self, obj):
+        return self._serialize_device_links(obj.added_devices)
 
-    def get_payment_ids(self, obj):
-        return list(obj.payments.values_list('id', flat=True))
+    def get_removed_devices(self, obj):
+        return self._serialize_device_links(obj.removed_devices)
 
     def get_performed_by_name(self, obj):
         if not obj.performed_by:
