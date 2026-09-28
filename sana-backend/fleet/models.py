@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from django.utils import timezone
 
 
 class VehicleType(models.Model):
@@ -99,6 +100,8 @@ class Device(models.Model):
         ('lost', 'گمشده'),
         ('stolen', 'سرقت شده'),
         ('disconnected', 'قطع سرویس'),
+        ('retired', 'بازنشسته'),
+        ('disposed', 'امحاء شده'),
     ]
 
     imei = models.CharField(max_length=20, unique=True, verbose_name='IMEI')
@@ -236,3 +239,75 @@ class Driver(models.Model):
 
     def __str__(self):
         return f'{self.first_name} {self.last_name}'
+
+class DeviceLifecycleEvent(models.Model):
+    """رویدادهای غیرقابل‌حذف چرخه عمر دستگاه."""
+
+    EVENT_TYPE_CHOICES = [
+        ('received', 'دریافت در سانا'),
+        ('sold', 'فروش'),
+        ('assigned_to_contract', 'اتصال به قرارداد'),
+        ('removed_from_contract', 'خروج از قرارداد'),
+        ('returned', 'بازگشت به سانا'),
+        ('sent_to_repair', 'ارسال برای تعمیر'),
+        ('repaired', 'اتمام تعمیر'),
+        ('replaced', 'تعویض'),
+        ('transferred', 'انتقال'),
+        ('lost', 'گم‌شدن'),
+        ('stolen', 'سرقت'),
+        ('retired', 'بازنشستگی'),
+        ('disposed', 'امحاء'),
+    ]
+
+    RETURN_REASON_CHOICES = [
+        ('repair', 'تعمیر'),
+        ('replacement', 'تعویض'),
+        ('contract_termination', 'پایان قرارداد'),
+        ('customer_return', 'مرجوعی مشتری'),
+        ('upgrade', 'ارتقاء'),
+        ('defective', 'خرابی'),
+        ('other', 'سایر'),
+    ]
+
+    device = models.ForeignKey(
+        Device, on_delete=models.CASCADE, related_name='lifecycle_events', verbose_name='دستگاه'
+    )
+    event_type = models.CharField(max_length=30, choices=EVENT_TYPE_CHOICES, verbose_name='نوع رویداد')
+    event_date = models.DateTimeField(default=timezone.now, verbose_name='تاریخ رویداد')
+    subscription = models.ForeignKey(
+        'organizations.Subscription', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='device_lifecycle_events', verbose_name='قرارداد'
+    )
+    organization = models.ForeignKey(
+        'organizations.Organization', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='device_lifecycle_events', verbose_name='سازمان'
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='device_lifecycle_events', verbose_name='کاربر'
+    )
+    vehicle = models.ForeignKey(
+        'fleet.Vehicle', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='device_lifecycle_events', verbose_name='خودرو'
+    )
+    branch = models.ForeignKey(
+        'organizations.Branch', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='device_lifecycle_events', verbose_name='شعبه'
+    )
+    reason = models.CharField(max_length=30, choices=RETURN_REASON_CHOICES, blank=True, verbose_name='دلیل')
+    description = models.TextField(blank=True, verbose_name='شرح')
+    previous_status = models.CharField(max_length=20, blank=True, verbose_name='وضعیت قبلی')
+    new_status = models.CharField(max_length=20, blank=True, verbose_name='وضعیت جدید')
+    performed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='performed_device_lifecycle_events', verbose_name='انجام‌دهنده'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'رویداد چرخه عمر دستگاه'
+        verbose_name_plural = 'رویدادهای چرخه عمر دستگاه'
+        ordering = ['-event_date', '-id']
+
+    def __str__(self):
+        return f'{self.device.imei} — {self.get_event_type_display()}'
