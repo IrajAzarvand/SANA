@@ -20,6 +20,10 @@ def record_device_lifecycle_event(
 ):
     """ثبت رویداد و در صورت تعریف‌شدن، همگام‌سازی وضعیت فعلی دستگاه."""
     previous_status = device.management_status
+    previous_organization = device.organization
+    previous_user = device.owner_user
+    previous_vehicle = device.vehicle
+    previous_branch = device.branch
 
     status_map = {
         'received': 'warehouse',
@@ -48,13 +52,13 @@ def record_device_lifecycle_event(
         device.save()
 
     if organization is None:
-        organization = device.organization
+        organization = previous_organization
     if user is None:
-        user = device.owner_user
+        user = previous_user
     if vehicle is None:
-        vehicle = device.vehicle
+        vehicle = previous_vehicle
     if branch is None:
-        branch = device.branch
+        branch = previous_branch
 
     return DeviceLifecycleEvent.objects.create(
         device=device,
