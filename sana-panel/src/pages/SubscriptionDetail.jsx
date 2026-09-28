@@ -66,7 +66,7 @@ export default function SubscriptionDetail() {
 
   // ═══ State مودال‌ها ═══
   const [editModalOpen, setEditModalOpen] = useState(false);
-  const [editForm, setEditForm] = useState({ start_date: '', end_date: '', notes: '', remove_device_ids: [], add_devices: [], payment_changes: {} });
+  const [editForm, setEditForm] = useState({ start_date: '', end_date: '', notes: '', remove_device_ids: [], add_devices: [], remove_added_device_indices: [], payment_changes: {} });
   const [editCustomer, setEditCustomer] = useState({});
   const [editNewDevice, setEditNewDevice] = useState({ device_id: '', start_date: '', end_date: '' });
   const [editAddDeviceModalOpen, setEditAddDeviceModalOpen] = useState(false);
@@ -221,7 +221,7 @@ export default function SubscriptionDetail() {
         },
         customer_changes,
         remove_device_ids: editForm.remove_device_ids,
-        add_devices: editForm.add_devices,
+        add_devices: editForm.add_devices.filter((_, index) => !editForm.remove_added_device_indices.includes(index)),
         payment_changes,
       });
       setEditModalOpen(false);
@@ -1095,12 +1095,31 @@ export default function SubscriptionDetail() {
                 <span className={`text-[10px] ${marked ? 'text-danger' : 'text-text-muted'}`}>{marked ? 'حذف می‌شود' : 'باقی می‌ماند'}</span>
               </label>;
             })}
-            {editForm.add_devices.map((item,index) => (
-              <div key={`${item.device_id}-${index}`} className="flex items-center gap-3 p-3 bg-bg-base border border-border-base rounded-field">
-                <div className="flex-1 text-xs font-mono">{(warehouseDevices || []).find((d) => Number(d.id) === Number(item.device_id))?.imei || item.device_id}<div className="text-[10px] text-text-muted">{toJalali(item.start_date)} تا {toJalali(item.end_date)}</div></div>
-                <button type="button" className="p-1.5 text-text-muted hover:text-danger" onClick={() => setEditForm(prev => ({...prev,add_devices:prev.add_devices.filter((_,i)=>i!==index)}))}><Trash2 size={14}/></button>
-              </div>
-            ))}
+            {editForm.add_devices.map((item,index) => {
+              const marked = editForm.remove_added_device_indices.includes(index);
+              return (
+                <label key={`${item.device_id}-${index}`} className={`flex items-center gap-3 p-3 rounded-field border ${marked ? 'border-danger/40 bg-danger/5' : 'border-border-base bg-bg-base'} cursor-pointer`}>
+                  <input
+                    type="checkbox"
+                    checked={marked}
+                    onChange={() => setEditForm((prev) => ({
+                      ...prev,
+                      remove_added_device_indices: prev.remove_added_device_indices.includes(index)
+                        ? prev.remove_added_device_indices.filter((i) => i !== index)
+                        : [...prev.remove_added_device_indices, index],
+                    }))}
+                    className="accent-danger"
+                  />
+                  <div className="flex-1 text-xs font-mono">
+                    <div>{(warehouseDevices || []).find((d) => Number(d.id) === Number(item.device_id))?.imei || item.device_id}</div>
+                    <div className="text-[10px] text-text-muted">شروع {toJalali(item.start_date)} · پایان {toJalali(item.end_date)}</div>
+                  </div>
+                  <span className={`text-[10px] ${marked ? 'text-danger' : 'text-text-muted'}`}>
+                    {marked ? 'حذف می‌شود' : 'باقی می‌ماند'}
+                  </span>
+                </label>
+              );
+            })}
           </div>
 
           <div className="border border-border-base rounded-card p-4 space-y-4">
