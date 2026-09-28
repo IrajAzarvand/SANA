@@ -1081,7 +1081,12 @@ export default function SubscriptionDetail() {
           </div>
 
           <div className="border border-border-base rounded-card p-4 space-y-4">
-            <h3 className="text-sm font-semibold text-text-primary">دستگاه‌های قرارداد</h3>
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold text-text-primary">دستگاه‌های قرارداد</h3>
+              <Button type="button" size="sm" variant="secondary" icon={Plus} onClick={() => setEditDevicePickerModalOpen(true)}>
+                افزودن دستگاه جدید
+              </Button>
+            </div>
             {(subscription.devices || []).map((d) => {
               const marked = editForm.remove_device_ids.includes(d.id);
               return <label key={d.id} className={`flex items-center gap-3 p-3 rounded-field border ${marked ? 'border-danger/40 bg-danger/5' : 'border-border-base bg-bg-base'} cursor-pointer`}>
@@ -1090,11 +1095,6 @@ export default function SubscriptionDetail() {
                 <span className={`text-[10px] ${marked ? 'text-danger' : 'text-text-muted'}`}>{marked ? 'حذف می‌شود' : 'باقی می‌ماند'}</span>
               </label>;
             })}
-            <div className="flex justify-end">
-              <Button type="button" size="sm" variant="secondary" icon={Plus} onClick={() => setEditDevicePickerModalOpen(true)}>
-                افزودن دستگاه جدید
-              </Button>
-            </div>
             {editForm.add_devices.map((item,index) => (
               <div key={`${item.device_id}-${index}`} className="flex items-center gap-3 p-3 bg-bg-base border border-border-base rounded-field">
                 <div className="flex-1 text-xs font-mono">{(warehouseDevices || []).find((d) => Number(d.id) === Number(item.device_id))?.imei || item.device_id}<div className="text-[10px] text-text-muted">{toJalali(item.start_date)} تا {toJalali(item.end_date)}</div></div>
