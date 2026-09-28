@@ -70,6 +70,7 @@ export default function SubscriptionDetail() {
   const [editCustomer, setEditCustomer] = useState({});
   const [editNewDevice, setEditNewDevice] = useState({ device_id: '', start_date: '', end_date: '' });
   const [editAddDeviceModalOpen, setEditAddDeviceModalOpen] = useState(false);
+  const [editDevicePickerModalOpen, setEditDevicePickerModalOpen] = useState(false);
   const [editCustomerLoading, setEditCustomerLoading] = useState(false);
   const [renewModalOpen, setRenewModalOpen] = useState(false);
   const [renewForm, setRenewForm] = useState({
@@ -1089,25 +1090,10 @@ export default function SubscriptionDetail() {
                 <span className={`text-[10px] ${marked ? 'text-danger' : 'text-text-muted'}`}>{marked ? 'حذف می‌شود' : 'باقی می‌ماند'}</span>
               </label>;
             })}
-            <div className="p-3 bg-bg-base border border-border-base rounded-field space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="text-xs font-medium text-text-secondary">افزودن دستگاه</div>
-                <Button type="button" size="sm" variant="secondary" icon={Plus} onClick={() => setEditAddDeviceModalOpen(true)}>
-                  افزودن دستگاه جدید
-                </Button>
-              </div>
-              <Select
-                label="دستگاه"
-                placeholder="انتخاب دستگاه انبار..."
-                value={editNewDevice.device_id}
-                onChange={(e) => setEditNewDevice({...editNewDevice,device_id:e.target.value})}
-                options={warehouseOptions.filter((option) => !editForm.add_devices.some((item) => Number(item.device_id) === Number(option.value)))}
-              />
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <JalaliDatePicker label="شروع دستگاه" value={editNewDevice.start_date} minDate={editForm.start_date} maxDate={editForm.end_date} onChange={(val) => setEditNewDevice({...editNewDevice,start_date:val})} required />
-                <JalaliDatePicker label="پایان دستگاه" value={editNewDevice.end_date} minDate={editForm.start_date} maxDate={editForm.end_date} onChange={(val) => setEditNewDevice({...editNewDevice,end_date:val})} required />
-              </div>
-              <Button type="button" size="sm" variant="secondary" icon={Plus} onClick={addEditDevice}>افزودن به ویرایش</Button>
+            <div className="flex justify-end">
+              <Button type="button" size="sm" variant="secondary" icon={Plus} onClick={() => setEditDevicePickerModalOpen(true)}>
+                افزودن دستگاه جدید
+              </Button>
             </div>
             {editForm.add_devices.map((item,index) => (
               <div key={`${item.device_id}-${index}`} className="flex items-center gap-3 p-3 bg-bg-base border border-border-base rounded-field">
@@ -1429,29 +1415,65 @@ export default function SubscriptionDetail() {
         </form>
       </Modal>
 
+      <Modal
+        open={editDevicePickerModalOpen}
+        onClose={() => setEditDevicePickerModalOpen(false)}
+        title="افزودن دستگاه به قرارداد"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditDevicePickerModalOpen(false)}>
+              انصراف
+            </Button>
+            <Button type="button" onClick={() => {
+              if (!editNewDevice.device_id) {
+                setActionError('برای افزودن دستگاه، یک دستگاه انتخاب کنید.');
+                return;
+              }
+              addEditDevice();
+              setEditDevicePickerModalOpen(false);
+            }}>
+              افزودن به ویرایش
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          {actionError && (
+            <div className="bg-danger/10 border border-danger/30 rounded-field p-3">
+              <p className="text-xs text-danger whitespace-pre-line">{actionError}</p>
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-3">
+            <div className="text-xs text-text-secondary">انتخاب از دستگاه‌های موجود در انبار</div>
+            <Button type="button" size="sm" variant="secondary" icon={Plus} onClick={() => setEditAddDeviceModalOpen(true)}>
+              افزودن دستگاه جدید
+            </Button>
+          </div>
+          <Select
+            label="دستگاه"
+            placeholder="انتخاب دستگاه انبار..."
+            value={editNewDevice.device_id}
+            onChange={(e) => setEditNewDevice({...editNewDevice,device_id:e.target.value})}
+            options={warehouseOptions.filter((option) => !editForm.add_devices.some((item) => Number(item.device_id) === Number(option.value)))}
+          />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <JalaliDatePicker label="شروع دستگاه" value={editNewDevice.start_date} minDate={editForm.start_date} maxDate={editForm.end_date} onChange={(val) => setEditNewDevice({...editNewDevice,start_date:val})} required />
+            <JalaliDatePicker label="پایان دستگاه" value={editNewDevice.end_date} minDate={editForm.start_date} maxDate={editForm.end_date} onChange={(val) => setEditNewDevice({...editNewDevice,end_date:val})} required />
+          </div>
+        </div>
+      </Modal>
+
       {/* ═══ افزودن دستگاه جدید از داخل ویرایش قرارداد ═══ */}
       <AddDeviceModal
         open={editAddDeviceModalOpen}
         onClose={() => setEditAddDeviceModalOpen(false)}
         onSuccess={async (newDevice) => {
           await refetchWarehouseDevices();
-          setEditForm((prev) => ({
-            ...prev,
-            add_devices: [
-              ...prev.add_devices,
-              {
-                device_id: Number(newDevice.id),
-                start_date: editForm.start_date,
-                end_date: editForm.end_date,
-              },
-            ],
-          }));
           setEditNewDevice({
-            device_id: '',
+            device_id: newDevice.id,
             start_date: editForm.start_date,
             end_date: editForm.end_date,
           });
-          setEditAddDeviceModalOpen(false);
           setActionError('');
         }}
       />
