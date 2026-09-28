@@ -3,7 +3,7 @@ from django.db.models import Exists, OuterRef
 from rest_framework import viewsets, filters
 from rest_framework.permissions import IsAuthenticated
 
-from .models import VehicleType, Vehicle, DeviceModel, Device, Driver
+from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent
 from .serializers import (
     VehicleTypeSerializer,
     VehicleSerializer,
@@ -12,6 +12,7 @@ from .serializers import (
     DeviceSerializer,
     DeviceListSerializer,
     DriverSerializer,
+    DeviceLifecycleEventSerializer,
 )
 from organizations.models import SubscriptionDevice
 from accounts.permissions import IsSiteAdmin
@@ -198,3 +199,38 @@ class DriverViewSet(viewsets.ModelViewSet):
             qs = qs.filter(branch_id=branch)
 
         return qs
+
+class DeviceLifecycleEventViewSet(viewsets.ModelViewSet):
+    """تاریخچه و ثبت رویدادهای چرخه عمر دستگاه."""
+    queryset = DeviceLifecycleEvent.objects.select_related(
+        'device', 'subscription', 'organization', 'user', 'vehicle', 'branch', 'performed_by'
+    ).all()
+    serializer_class = DeviceLifecycleEventSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ['event_date', 'created_at']
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = self.queryset
+        if user.is_site_admin:
+            pass
+        elif user.organization_id:
+            qs = qs.filter(organization_id=user.organization_id)
+        elif user.is_personal_user:
+            qs = qs.filter(user=user)
+        else:
+            qs = qs.none()
+
+        device = self.request.query_params.get('device')
+        if device:
+            qs = qs.filter(device_id=device)
+        event_type = self.request.query_params.get('event_type')
+        if event_type:
+            qs = qs.filter(event_type=event_type)
+        return qs
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsSiteAdmin()]
+        return super().get_permissions()
