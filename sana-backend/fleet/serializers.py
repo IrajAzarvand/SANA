@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import VehicleType, Vehicle, DeviceModel, Device, Driver
+from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent
 
 
 class VehicleTypeSerializer(serializers.ModelSerializer):
@@ -123,7 +123,15 @@ class DeviceSerializer(serializers.ModelSerializer):
             elif user.account_type == 'personal':
                 validated_data['owner_user'] = user
 
-        return super().create(validated_data)
+        instance = super().create(validated_data)
+        from .lifecycle import record_device_lifecycle_event
+        record_device_lifecycle_event(
+            device=instance,
+            event_type='received',
+            performed_by=self.context.get('request').user if self.context.get('request') else None,
+            description='دستگاه به موجودی سانا اضافه شد.',
+        )
+        return instance
 
 class DeviceListSerializer(serializers.ModelSerializer):
     management_status = serializers.SerializerMethodField()
@@ -207,3 +215,61 @@ class DriverSerializer(serializers.ModelSerializer):
         if request and request.user.organization_id:
             validated_data['organization_id'] = request.user.organization_id
         return super().create(validated_data)
+
+class DeviceLifecycleEventSerializer(serializers.ModelSerializer):
+    event_type_display = serializers.CharField(source='get_event_type_display', read_only=True)
+    reason_display = serializers.CharField(source='get_reason_display', read_only=True)
+    device_imei = serializers.CharField(source='device.imei', read_only=True)
+    subscription_number = serializers.CharField(source='subscription.contract_number', read_only=True)
+    organization_name = serializers.CharField(source='organization.name', read_only=True)
+    user_name = serializers.CharField(source='user.full_name', read_only=True)
+    vehicle_plate = serializers.CharField(source='vehicle.plate', read_only=True)
+    branch_name = serializers.CharField(source='branch.name', read_only=True)
+    performed_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DeviceLifecycleEvent
+        fields = [
+            'id', 'device', 'device_imei', 'event_type', 'event_type_display',
+            'event_date', 'subscription', 'subscription_number',
+            'organization', 'organization_name', 'user', 'user_name',
+            'vehicle', 'vehicle_plate', 'branch', 'branch_name',
+            'reason', 'reason_display', 'description',
+            'previous_status', 'new_status', 'performed_by', 'performed_by_name',
+            'created_at',
+        ]
+        read_only_fields = [
+            'id', 'device_imei', 'event_type_display', 'reason_display',
+            'subscription_number', 'organization_name', 'user_name',
+            'vehicle_plate', 'branch_name', 'previous_status', 'new_status',
+            'performed_by', 'performed_by_name', 'created_at',
+        ]
+
+    def get_performed_by_name(self, obj):
+        if not obj.performed_by:
+            return None
+        return obj.performed_by.full_name or obj.performed_by.username
+
+    def validate(self, data):
+        device = data.get('device')
+        event_type = data.get('event_type')
+        subscription = data.get('subscription')
+        if event_type == 'assigned_to_contract' and not subscription:
+            raise serializers.ValidationError({'subscription': 'برای اتصال به قرارداد، انتخاب قرارداد الزامی است'})
+        if subscription and device:
+            if not subscription.subscription_devices.filter(device=device).exists():
+                raise serializers.ValidationError({'subscription': 'این دستگاه در سابقه این قرارداد وجود ندارد'})
+        return data
+
+    def create(self, validated_data):
+        from .lifecycle import record_device_lifecycle_event
+        device = validated_data.pop('device')
+        event_type = validated_data.pop('event_type')
+        request = self.context.get('request')
+        performed_by = request.user if request else None
+        return record_device_lifecycle_event(
+            device=device,
+            event_type=event_type,
+            performed_by=performed_by,
+            **validated_data,
+        )
