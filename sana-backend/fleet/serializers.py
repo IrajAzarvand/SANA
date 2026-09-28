@@ -256,6 +256,8 @@ class DeviceLifecycleEventSerializer(serializers.ModelSerializer):
         subscription = data.get('subscription')
         if event_type == 'assigned_to_contract' and not subscription:
             raise serializers.ValidationError({'subscription': 'برای اتصال به قرارداد، انتخاب قرارداد الزامی است'})
+        if event_type == 'returned' and device and device.subscription_links.filter(unassigned_at__isnull=True).exists():
+            raise serializers.ValidationError({'device': 'دستگاه تا زمانی که قرارداد فعال دارد نمی‌تواند به سانا برگردانده شود'})
         if subscription and device:
             if not subscription.subscription_devices.filter(device=device).exists():
                 raise serializers.ValidationError({'subscription': 'این دستگاه در سابقه این قرارداد وجود ندارد'})
