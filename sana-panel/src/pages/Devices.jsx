@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import {
-  Search, Plus, Cpu, Pencil, Trash2, Signal, Hash, Phone, Eye, Boxes, Package, History, RotateCcw,
+  Search, Plus, Cpu, Pencil, Trash2 , Hash, Phone, Eye, Boxes, Package, History, RotateCcw,
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
