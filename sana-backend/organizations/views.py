@@ -531,35 +531,24 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         return Response({'contract_number': number})
 
     def destroy(self, request, *args, **kwargs):
-        """حذف فیزیکی نمی‌کنیم — فقط status رو cancelled می‌کنیم"""
+        """حذف فیزیکی نمی‌کنیم — فقط قرارداد را لغوشده می‌کنیم."""
         subscription = self.get_object()
 
-        # اگه قبلاً cancelled شده، اجازه بده
         if subscription.status == 'cancelled':
             return Response(status=status.HTTP_204_NO_CONTENT)
 
-        subscription.status = 'cancelled'
-        subscription.save()
+        with transaction.atomic():
+            subscription.status = 'cancelled'
+            subscription.save(update_fields=['status', 'updated_at'])
 
-        # همه‌ی دستگاه‌ها رو از قرارداد خارج کن
-        from django.utils import timezone
-        active_links = subscription.subscription_devices.filter(unassigned_at__isnull=True)
-        for link in active_links:
-            link.unassigned_at = timezone.now()
-            link.save()
+            active_links = subscription.subscription_devices.filter(unassigned_at__isnull=True)
+            for link in active_links:
+                link.unassigned_at = timezone.now()
+                link.save(update_fields=['unassigned_at'])
 
-            # برگرداندن دستگاه به انبار
-            device = link.device
-            other_active = device.subscription_links.filter(
-                unassigned_at__isnull=True
-            ).exclude(id=link.id).exists()
-            if not other_active:
-                device.organization = None
-                device.owner_user = None
-                device.branch = None
-                # خروج از قرارداد به معنی بازگشت به انبار نیست؛ دستگاه فروخته شده باقی می‌ماند.
+                # لغو قرارداد به معنی برگشت دستگاه فروخته‌شده به انبار نیست.
                 record_device_lifecycle_event(
-                    device=device,
+                    device=link.device,
                     event_type='removed_from_contract',
                     performed_by=request.user,
                     subscription=subscription,
@@ -636,7 +625,7 @@ class SubscriptionDeviceViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED)
 
     def destroy(self, request, *args, **kwargs):
-        """خروج دستگاه از قرارداد به‌عنوان یک عملیات حسابرسی‌شده."""
+        """خروج دستگاه از قرارداد؛ مالکیت دستگاه حفظ می‌شود."""
         instance = self.get_object()
         subscription = instance.subscription
         with transaction.atomic():
@@ -651,12 +640,15 @@ class SubscriptionDeviceViewSet(viewsets.ModelViewSet):
             instance.removed_by_operation = operation
             instance.save(update_fields=['unassigned_at', 'removed_by_operation'])
 
-            device = instance.device
-            other_active = device.subscription_links.filter(
-                unassigned_at__isnull=True
-            ).exclude(id=instance.id).exists()
-            # خروج از قرارداد به‌تنهایی مالکیت را تغییر نمی‌دهد.
+            record_device_lifecycle_event(
+                device=instance.device,
+                event_type='removed_from_contract',
+                performed_by=request.user,
+                subscription=subscription,
+                description=f'دستگاه از قرارداد {subscription.contract_number} خارج شد؛ مالکیت دستگاه حفظ شد.',
+            )
         return Response(status=status.HTTP_204_NO_CONTENT)
+
 # ═══════════════════════════════════════════════
 # SubscriptionPayment
 # ═══════════════════════════════════════════════
