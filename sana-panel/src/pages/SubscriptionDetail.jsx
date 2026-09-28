@@ -12,6 +12,7 @@ import Button from '../components/Button';
 import Input from '../components/Input';
 import Select from '../components/Select';
 import Modal from '../components/Modal';
+import AddDeviceModal from '../components/AddDeviceModal';
 import ActionMenu from '../components/ActionMenu';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
@@ -68,6 +69,7 @@ export default function SubscriptionDetail() {
   const [editForm, setEditForm] = useState({ start_date: '', end_date: '', notes: '', remove_device_ids: [], add_devices: [], payment_changes: {} });
   const [editCustomer, setEditCustomer] = useState({});
   const [editNewDevice, setEditNewDevice] = useState({ device_id: '', start_date: '', end_date: '' });
+  const [editAddDeviceModalOpen, setEditAddDeviceModalOpen] = useState(false);
   const [editCustomerLoading, setEditCustomerLoading] = useState(false);
   const [renewModalOpen, setRenewModalOpen] = useState(false);
   const [renewForm, setRenewForm] = useState({
@@ -129,7 +131,10 @@ export default function SubscriptionDetail() {
     return Array.isArray(result) ? result : result.results || [];
   }, [deviceModalOpen, renewModalOpen, editModalOpen]);
 
-  const { data: warehouseDevices } = useApi(fetchWarehouseDevices, [deviceModalOpen, renewModalOpen]);
+  const { data: warehouseDevices, refetch: refetchWarehouseDevices } = useApi(
+    fetchWarehouseDevices,
+    [deviceModalOpen, renewModalOpen, editModalOpen]
+  );
 
   const warehouseOptions = useMemo(() => {
     return (warehouseDevices || []).map((d) => ({
@@ -1412,6 +1417,22 @@ export default function SubscriptionDetail() {
           </div>
         </form>
       </Modal>
+
+      {/* ═══ افزودن دستگاه جدید از داخل ویرایش قرارداد ═══ */}
+      <AddDeviceModal
+        open={editAddDeviceModalOpen}
+        onClose={() => setEditAddDeviceModalOpen(false)}
+        onSuccess={async (newDevice) => {
+          await refetchWarehouseDevices();
+          setEditNewDevice((prev) => ({
+            ...prev,
+            device_id: newDevice.id,
+            start_date: editForm.start_date,
+            end_date: editForm.end_date,
+          }));
+          setActionError('');
+        }}
+      />
 
       {/* ═══ مودال افزودن دستگاه ═══ */}
       <Modal
