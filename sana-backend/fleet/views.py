@@ -3,7 +3,7 @@ from django.db.models import Exists, OuterRef
 from rest_framework import viewsets, filters
 from rest_framework.permissions import IsAuthenticated
 
-from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent
+from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent, DeviceReplacementRelation
 from .serializers import (
     VehicleTypeSerializer,
     VehicleSerializer,
