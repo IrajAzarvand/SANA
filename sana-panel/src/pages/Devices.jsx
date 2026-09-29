@@ -618,12 +618,6 @@ function DevicesTab() {
                         value={operationForm.replacement_device}
                         onChange={(e) => setOperationForm({ ...operationForm, replacement_device: e.target.value })}
                         options={[
-                          { value: '', label: 'بدون جایگزین' },
-                          ...replacementCandidates.map((item) => ({
-                            value: item.id,
-                            label: `${item.imei} — ${item.device_model_manufacturer || ''} ${item.device_model_name || ''}`,
-                          })),
-                        ]}
                       />
                       {operationNeedsReplacementType && (
                         <Select
