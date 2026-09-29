@@ -7,6 +7,7 @@ def record_device_lifecycle_event(
     *,
     device,
     event_type,
+    device_operation=None,
     performed_by=None,
     event_date=None,
     subscription=None,
@@ -62,6 +63,7 @@ def record_device_lifecycle_event(
 
     return DeviceLifecycleEvent.objects.create(
         device=device,
+        device_operation=device_operation,
         event_type=event_type,
         event_date=event_date or timezone.now(),
         subscription=subscription,
