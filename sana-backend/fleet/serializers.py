@@ -13,8 +13,6 @@ class VehicleSerializer(serializers.ModelSerializer):
     vehicle_type_name = serializers.CharField(source='vehicle_type.name', read_only=True)
     organization_name = serializers.CharField(source='organization.name', read_only=True)
     branch_name = serializers.CharField(source='branch.name', read_only=True)
-    current_holder_organization_name = serializers.CharField(source='current_holder_organization.name', read_only=True)
-    current_holder_user_name = serializers.CharField(source='current_holder_user.full_name', read_only=True)
     owner_name = serializers.CharField(source='owner_user.full_name', read_only=True)
     device_imei = serializers.SerializerMethodField()
 
@@ -82,6 +80,8 @@ class DeviceModelSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
 class DeviceSerializer(serializers.ModelSerializer):
+    current_holder_organization_name = serializers.CharField(source='current_holder_organization.name', read_only=True)
+    current_holder_user_name = serializers.CharField(source='current_holder_user.full_name', read_only=True)
     device_model_name = serializers.CharField(source='device_model.name', read_only=True)
     device_model_manufacturer = serializers.CharField(source='device_model.manufacturer', read_only=True)
     organization_name = serializers.CharField(source='organization.name', read_only=True)
