@@ -205,6 +205,8 @@ class Device(models.Model):
         link = self.active_subscription_link
         if not link:
             return False
+        if self.management_status in {'faulty', 'lost', 'stolen', 'disconnected', 'retired', 'disposed'}:
+            return False
         return link.is_active
 
 
