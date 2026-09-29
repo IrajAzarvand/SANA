@@ -296,6 +296,8 @@ def execute_device_operation(
         _close_active_link(device, operation)
         device.organization = target_organization
         device.owner_user = target_user
+        device.current_holder_organization = target_organization
+        device.current_holder_user = target_user
         device.branch = None
         device.vehicle = None
         device.management_status = 'sold'
