@@ -135,6 +135,22 @@ class Device(models.Model):
         verbose_name='شعبه'
     )
 
+    # محل/تحویل‌گیرنده فعلی (از مالکیت مستقل است؛ برای دستگاه امانی/تعمیراتی)
+    current_holder_organization = models.ForeignKey(
+        'organizations.Organization',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='held_devices',
+        verbose_name='تحویل‌گیرنده فعلی'
+    )
+    current_holder_user = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.SET_NULL,
+        null=True, blank=True,
+        related_name='held_devices_personal',
+        verbose_name='تحویل‌گیرنده شخصی'
+    )
+
     # SIM
     sim_number = models.CharField(max_length=20, blank=True, verbose_name='شماره SIM')
 
@@ -191,6 +207,78 @@ class Device(models.Model):
             return False
         return link.is_active
 
+
+class DeviceOperation(models.Model):
+    """عملیات اتمیک روی دستگاه؛ رویدادهای چرخه عمر و تغییر قرارداد از اینجا منشعب می‌شوند."""
+
+    OPERATION_TYPE_CHOICES = [
+        ('return_for_repair', 'بازگشت برای تعمیر'),
+        ('repaired', 'اتمام تعمیر'),
+        ('temporary_replacement', 'جایگزینی موقت'),
+        ('permanent_replacement', 'تعویض دائمی'),
+        ('lost', 'گم‌شدن'),
+        ('stolen', 'سرقت'),
+        ('transfer_customer', 'انتقال به مشتری دیگر'),
+        ('transfer_branch', 'انتقال بین شعب'),
+        ('transfer_vehicle', 'انتقال بین خودروها'),
+        ('retire', 'بازنشستگی'),
+        ('dispose', 'امحاء'),
+    ]
+
+    operation_type = models.CharField(max_length=40, choices=OPERATION_TYPE_CHOICES, verbose_name='نوع عملیات')
+    device = models.ForeignKey(Device, on_delete=models.PROTECT, related_name='operations', verbose_name='دستگاه')
+    replacement_device = models.ForeignKey(
+        Device, on_delete=models.PROTECT, null=True, blank=True,
+        related_name='replacement_operations', verbose_name='دستگاه جایگزین'
+    )
+    subscription = models.ForeignKey(
+        'organizations.Subscription', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='device_operations', verbose_name='قرارداد'
+    )
+    target_subscription = models.ForeignKey(
+        'organizations.Subscription', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='target_device_operations', verbose_name='قرارداد مقصد'
+    )
+    target_organization = models.ForeignKey(
+        'organizations.Organization', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='target_device_operations', verbose_name='سازمان مقصد'
+    )
+    target_user = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='target_device_operations', verbose_name='کاربر مقصد'
+    )
+    target_branch = models.ForeignKey(
+        'organizations.Branch', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='target_device_operations', verbose_name='شعبه مقصد'
+    )
+    target_vehicle = models.ForeignKey(
+        'fleet.Vehicle', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='target_device_operations', verbose_name='خودرو مقصد'
+    )
+    replacement_type = models.CharField(
+        max_length=30,
+        choices=DeviceReplacementRelation.REPLACEMENT_TYPE_CHOICES,
+        blank=True,
+        verbose_name='نوع جایگزینی'
+    )
+    reason = models.CharField(max_length=30, blank=True, verbose_name='دلیل')
+    description = models.TextField(blank=True, verbose_name='شرح')
+    old_status = models.CharField(max_length=20, blank=True, verbose_name='وضعیت قبلی')
+    new_status = models.CharField(max_length=20, blank=True, verbose_name='وضعیت جدید')
+    performed_at = models.DateTimeField(default=timezone.now, verbose_name='زمان عملیات')
+    performed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='device_operations', verbose_name='انجام‌دهنده'
+    )
+
+    class Meta:
+        verbose_name = 'عملیات دستگاه'
+        verbose_name_plural = 'عملیات دستگاه'
+        ordering = ['-performed_at', '-id']
+
+    def __str__(self):
+        return f'{self.device.imei} — {self.get_operation_type_display()}'
+    
 
 class DeviceReplacementRelation(models.Model):
     """رابطه جایگزینی بین دو دستگاه؛ تاریخچه رابطه مستقل از وضعیت فعلی دستگاه است."""
