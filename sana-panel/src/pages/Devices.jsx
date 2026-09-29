@@ -89,7 +89,7 @@ function DevicesTab() {
   const [operationSaving, setOperationSaving] = useState(false);
   const [operationForm, setOperationForm] = useState({
     operation_type: 'return_for_repair',
-    replacement_type: '',
+    replacement_type: 'temporary_repair',
     replacement_device: '',
     reason: 'repair',
     description: '',
@@ -257,7 +257,7 @@ function DevicesTab() {
       await deviceOperationsAPI.create(payload);
       setOperationForm({
         operation_type: 'return_for_repair',
-        replacement_type: '',
+        replacement_type: 'temporary_repair',
         replacement_device: '',
         reason: 'repair',
         description: '',
@@ -631,7 +631,11 @@ function DevicesTab() {
                         label="دستگاه جایگزین"
                         placeholder="بدون جایگزین"
                         value={operationForm.replacement_device}
-                        onChange={(e) => setOperationForm({ ...operationForm, replacement_device: e.target.value })}
+                        onChange={(e) => setOperationForm((current) => ({
+                          ...current,
+                          replacement_device: e.target.value,
+                          replacement_type: current.replacement_type || 'temporary_repair',
+                        }))}
                         options={replacementCandidates.map((item) => ({
                           value: item.id,
                           label: item.imei + ' — ' + (item.device_model_manufacturer || '') + ' ' + (item.device_model_name || ''),
@@ -640,8 +644,12 @@ function DevicesTab() {
                       {operationNeedsReplacementType && (
                         <Select
                           label="نوع جایگزینی"
+                          required
                           value={operationForm.replacement_type}
-                          onChange={(e) => setOperationForm({ ...operationForm, replacement_type: e.target.value })}
+                          onChange={(e) => setOperationForm((current) => ({
+                            ...current,
+                            replacement_type: e.target.value,
+                          }))}
                           options={[
                             { value: 'temporary_repair', label: 'جایگزینی موقت برای تعمیر' },
                             { value: 'permanent_replacement', label: 'تعویض دائمی' },
