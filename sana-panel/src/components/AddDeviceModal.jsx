@@ -5,6 +5,7 @@ import Button from './Button';
 import Input from './Input';
 import Select from './Select';
 import { devicesAPI, deviceModelsAPI } from '../api/services/fleet';
+import AddDeviceModelModal from './AddDeviceModelModal';
 
 /**
  * مودال افزودن دستگاه جدید به انبار
@@ -25,6 +26,7 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
   const [modelsLoading, setModelsLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [addModelModalOpen, setAddModelModalOpen] = useState(false);
 
   // لود مدل‌ها وقتی Modal باز می‌شه
   useEffect(() => {
@@ -45,6 +47,14 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
 
     fetchModels();
   }, [open]);
+
+  const handleModelCreated = (createdModel) => {
+    setModels((current) => [...current, createdModel]);
+    setForm((current) => ({
+      ...current,
+      device_model: createdModel.id,
+    }));
+  };
 
   const modelOptions = models.map((m) => ({
     value: m.id,
@@ -131,11 +141,24 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
             options={modelOptions}
             disabled={modelsLoading}
           />
-          {models.length === 0 && !modelsLoading && (
-            <p className="text-[10px] text-warning mt-1.5">
-              هیچ مدلی تعریف نشده. ابتدا از بخش «دستگاه‌ها → مدل‌های دستگاه» مدل جدید بسازید.
-            </p>
-          )}
+          <div className="flex items-center justify-between gap-3 mt-2">
+            {models.length === 0 && !modelsLoading ? (
+              <p className="text-[10px] text-warning">
+                هنوز مدلی تعریف نشده است.
+              </p>
+            ) : (
+              <span />
+            )}
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              icon={Plus}
+              onClick={() => setAddModelModalOpen(true)}
+            >
+              افزودن مدل جدید
+            </Button>
+          </div>
         </div>
 
         <Input
@@ -153,6 +176,12 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
           </p>
         </div>
       </form>
+
+      <AddDeviceModelModal
+        open={addModelModalOpen}
+        onClose={() => setAddModelModalOpen(false)}
+        onSuccess={handleModelCreated}
+      />
     </Modal>
   );
 }
