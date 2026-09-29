@@ -121,7 +121,7 @@ def execute_device_operation(
             device.management_status = 'faulty'
             device.save()
 
-            replacement_device.management_status = 'sold'
+            replacement_device.management_status = 'installed' if replacement_type == 'temporary_repair' else 'sold'
             replacement_device.vehicle = old_vehicle
             replacement_device.branch = old_branch
             replacement_device.current_holder_organization = old_org
