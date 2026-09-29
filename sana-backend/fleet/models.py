@@ -257,7 +257,7 @@ class DeviceOperation(models.Model):
     )
     replacement_type = models.CharField(
         max_length=30,
-        choices=DeviceReplacementRelation.REPLACEMENT_TYPE_CHOICES,
+        choices=[('temporary_repair', 'جایگزینی موقت برای تعمیر'), ('permanent_replacement', 'تعویض دائمی')],
         blank=True,
         verbose_name='نوع جایگزینی'
     )
