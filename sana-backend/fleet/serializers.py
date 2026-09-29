@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent
+from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent, DeviceReplacementRelation
 
 
 class VehicleTypeSerializer(serializers.ModelSerializer):
@@ -275,3 +275,27 @@ class DeviceLifecycleEventSerializer(serializers.ModelSerializer):
             performed_by=performed_by,
             **validated_data,
         )
+
+
+class DeviceReplacementRelationSerializer(serializers.ModelSerializer):
+    replacement_type_display = serializers.CharField(source='get_replacement_type_display', read_only=True)
+    source_device_imei = serializers.CharField(source='source_device.imei', read_only=True)
+    replacement_device_imei = serializers.CharField(source='replacement_device.imei', read_only=True)
+
+    class Meta:
+        model = DeviceReplacementRelation
+        fields = [
+            'id', 'source_device', 'source_device_imei',
+            'replacement_device', 'replacement_device_imei',
+            'replacement_type', 'replacement_type_display',
+            'replacement_date', 'description', 'created_at',
+        ]
+        read_only_fields = [
+            'id', 'source_device_imei', 'replacement_device_imei',
+            'replacement_type_display', 'created_at',
+        ]
+
+    def validate(self, data):
+        if data.get('source_device') == data.get('replacement_device'):
+            raise serializers.ValidationError({'replacement_device': 'دستگاه جایگزین نمی‌تواند همان دستگاه قبلی باشد.'})
+        return data
