@@ -17,7 +17,7 @@ import ErrorState from '../components/ErrorState';
 import Tabs from '../components/Tabs';
 import AddDeviceModal from '../components/AddDeviceModal';
 import { useAuth } from '../context/AuthContext';
-import { devicesAPI, deviceLifecycleAPI } from '../api/services/fleet';
+import { devicesAPI, deviceLifecycleAPI, deviceReplacementAPI } from '../api/services/fleet';
 import { deviceModelsAPI } from '../api/services/deviceModels';
 import { useApi } from '../hooks/useApi';
 import { toJalali } from '../utils/dateUtils';
@@ -79,6 +79,7 @@ function DevicesTab() {
   });
   const [historyDevice, setHistoryDevice] = useState(null);
   const [historyEvents, setHistoryEvents] = useState([]);
+  const [replacementRelations, setReplacementRelations] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [eventSaving, setEventSaving] = useState(false);
   const [eventForm, setEventForm] = useState({ event_type: 'returned', reason: 'other', event_date: '', description: '' });
@@ -158,8 +159,12 @@ function DevicesTab() {
     setHistoryDevice(device);
     setHistoryLoading(true);
     try {
-      const result = await deviceLifecycleAPI.list({ device: device.id });
-      setHistoryEvents(Array.isArray(result) ? result : result.results || []);
+      const [historyResult, replacementResult] = await Promise.all([
+        deviceLifecycleAPI.list({ device: device.id }),
+        deviceReplacementAPI.list({ device: device.id }),
+      ]);
+      setHistoryEvents(Array.isArray(historyResult) ? historyResult : historyResult.results || []);
+      setReplacementRelations(Array.isArray(replacementResult) ? replacementResult : replacementResult.results || []);
     } catch (err) {
       console.error('Error loading lifecycle history:', err);
       setHistoryEvents([]);
@@ -376,6 +381,40 @@ function DevicesTab() {
                   {(event.subscription_number || event.organization_name || event.vehicle_plate) && <div className="flex flex-wrap gap-2 mt-3 text-[11px] text-text-muted">{event.subscription_number && <span>قرارداد: {event.subscription_number}</span>}{event.organization_name && <span>مشتری: {event.organization_name}</span>}{event.vehicle_plate && <span>خودرو: {event.vehicle_plate}</span>}</div>}
                 </div>
               ))}
+            </div>
+          )}
+
+          {!historyLoading && replacementRelations.length > 0 && (
+            <div className="rounded-card border border-border-base bg-bg-base p-4 space-y-3">
+              <div className="text-sm font-semibold text-text-primary">رابطه جایگزینی</div>
+              <div className="space-y-2">
+                {replacementRelations.map((relation) => {
+                  const isSource = relation.source_device === historyDevice?.id;
+                  return (
+                    <div key={relation.id} className="rounded-card border border-border-base bg-bg-surface p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-xs text-text-secondary">
+                          {isSource ? 'این دستگاه جایگزین شده با' : 'این دستگاه جایگزین'}
+                        </div>
+                        <Badge variant={relation.replacement_type === 'temporary_repair' ? 'warning' : 'brand'}>
+                          {relation.replacement_type_display}
+                        </Badge>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between gap-3">
+                        <span className="font-mono text-xs text-text-primary">
+                          {isSource ? relation.replacement_device_imei : relation.source_device_imei}
+                        </span>
+                        <span className="text-[11px] text-text-muted">
+                          {relation.replacement_date ? toJalali(relation.replacement_date) : '—'}
+                        </span>
+                      </div>
+                      {relation.description && (
+                        <div className="text-xs text-text-secondary mt-2 leading-6">{relation.description}</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
           {isSiteAdmin && <form onSubmit={handleLifecycleEvent} className="border-t border-border-base pt-4 space-y-4">
