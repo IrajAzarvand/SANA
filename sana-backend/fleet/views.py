@@ -13,6 +13,7 @@ from .serializers import (
     DeviceListSerializer,
     DriverSerializer,
     DeviceLifecycleEventSerializer,
+    DeviceReplacementRelationSerializer,
 )
 from organizations.models import SubscriptionDevice
 from accounts.permissions import IsSiteAdmin
@@ -229,6 +230,44 @@ class DeviceLifecycleEventViewSet(viewsets.ModelViewSet):
         if event_type:
             qs = qs.filter(event_type=event_type)
         return qs
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsSiteAdmin()]
+        return super().get_permissions()
+
+
+class DeviceReplacementRelationViewSet(viewsets.ModelViewSet):
+    """رابطه‌های جایگزینی دستگاه‌ها؛ تغییر/ثبت فقط توسط ادمین سایت."""
+    queryset = DeviceReplacementRelation.objects.select_related('source_device', 'replacement_device').all()
+    serializer_class = DeviceReplacementRelationSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ['replacement_date', 'created_at']
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = self.queryset
+        if user.is_site_admin:
+            pass
+        elif user.organization_id:
+            qs = qs.filter(
+                source_device__organization_id=user.organization_id
+            ) | qs.filter(
+                replacement_device__organization_id=user.organization_id
+            )
+        elif user.is_personal_user:
+            qs = qs.filter(
+                source_device__owner_user_id=user.id
+            ) | qs.filter(
+                replacement_device__owner_user_id=user.id
+            )
+        else:
+            qs = qs.none()
+        device = self.request.query_params.get('device')
+        if device:
+            qs = qs.filter(source_device_id=device) | qs.filter(replacement_device_id=device)
+        return qs.distinct()
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
