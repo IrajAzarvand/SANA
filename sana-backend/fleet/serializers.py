@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent, DeviceReplacementRelation
+from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation
 
 
 class VehicleTypeSerializer(serializers.ModelSerializer):
@@ -13,6 +13,8 @@ class VehicleSerializer(serializers.ModelSerializer):
     vehicle_type_name = serializers.CharField(source='vehicle_type.name', read_only=True)
     organization_name = serializers.CharField(source='organization.name', read_only=True)
     branch_name = serializers.CharField(source='branch.name', read_only=True)
+    current_holder_organization_name = serializers.CharField(source='current_holder_organization.name', read_only=True)
+    current_holder_user_name = serializers.CharField(source='current_holder_user.full_name', read_only=True)
     owner_name = serializers.CharField(source='owner_user.full_name', read_only=True)
     device_imei = serializers.SerializerMethodField()
 
@@ -101,6 +103,8 @@ class DeviceSerializer(serializers.ModelSerializer):
             'organization', 'organization_name',
             'owner_user', 'owner_name',
             'branch', 'branch_name',
+            'current_holder_organization', 'current_holder_organization_name',
+            'current_holder_user', 'current_holder_user_name',
             'vehicle', 'vehicle_plate',
             'sim_number',
             'management_status',
@@ -299,3 +303,49 @@ class DeviceReplacementRelationSerializer(serializers.ModelSerializer):
         if data.get('source_device') == data.get('replacement_device'):
             raise serializers.ValidationError({'replacement_device': 'دستگاه جایگزین نمی‌تواند همان دستگاه قبلی باشد.'})
         return data
+
+
+class DeviceOperationSerializer(serializers.ModelSerializer):
+    operation_type_display = serializers.CharField(source='get_operation_type_display', read_only=True)
+    device_imei = serializers.CharField(source='device.imei', read_only=True)
+    replacement_device_imei = serializers.CharField(source='replacement_device.imei', read_only=True)
+    subscription_number = serializers.CharField(source='subscription.contract_number', read_only=True)
+    target_subscription_number = serializers.CharField(source='target_subscription.contract_number', read_only=True)
+    performed_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = DeviceOperation
+        fields = [
+            'id', 'operation_type', 'operation_type_display',
+            'device', 'device_imei',
+            'replacement_device', 'replacement_device_imei',
+            'subscription', 'subscription_number',
+            'target_subscription', 'target_subscription_number',
+            'target_organization', 'target_user', 'target_branch', 'target_vehicle',
+            'replacement_type', 'reason', 'description',
+            'old_status', 'new_status', 'performed_at',
+            'performed_by', 'performed_by_name',
+        ]
+        read_only_fields = [
+            'id', 'operation_type_display', 'device_imei', 'replacement_device_imei',
+            'subscription_number', 'target_subscription_number',
+            'old_status', 'new_status', 'performed_at', 'performed_by', 'performed_by_name',
+        ]
+
+    def get_performed_by_name(self, obj):
+        if not obj.performed_by:
+            return None
+        return obj.performed_by.full_name or obj.performed_by.username
+
+    def validate(self, data):
+        if data.get('replacement_device') and data['replacement_device'].pk == data['device'].pk:
+            raise serializers.ValidationError({'replacement_device': 'دستگاه جایگزین نمی‌تواند همان دستگاه قبلی باشد.'})
+        return data
+
+    def create(self, validated_data):
+        from .device_operations import execute_device_operation
+        request = self.context.get('request')
+        return execute_device_operation(
+            performed_by=request.user,
+            **validated_data,
+        )
