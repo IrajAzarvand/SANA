@@ -263,7 +263,8 @@ function DevicesTab() {
         description: '',
         target_organization: '', target_user: '', target_branch: '', target_vehicle: '', target_subscription: '',
       });
-      await openHistory(historyDevice);
+      const updatedDevice = await devicesAPI.get(historyDevice.id);
+      await openHistory(updatedDevice);
       refetch();
     } catch (err) {
       console.error('Error saving device operation:', err);
@@ -499,29 +500,93 @@ function DevicesTab() {
             <div className="rounded-card border border-border-base bg-bg-base p-4 space-y-3">
               <div className="text-sm font-semibold text-text-primary">سوابق عملیات دستگاه</div>
               <div className="space-y-2">
-                {operationHistory.map((operation) => (
-                  <div key={operation.id} className="rounded-card border border-border-base bg-bg-surface p-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm font-medium text-text-primary">{operation.operation_type_display}</div>
-                      <span className="text-[11px] text-text-muted">{operation.performed_at ? toJalali(operation.performed_at) : '—'}</span>
+                {operationHistory.map((operation) => {
+                  const linkedEvent = historyEvents.find((event) => event.device_operation === operation.id)
+                    || historyEvents.find((event) =>
+                      !event.device_operation
+                      && event.description === operation.description
+                      && event.subscription === operation.subscription
+                      && event.event_date
+                      && operation.performed_at
+                      && Math.abs(new Date(event.event_date).getTime() - new Date(operation.performed_at).getTime()) <= 5000
+                    );
+
+                  return (
+                    <div key={operation.id} className="rounded-card border border-border-base bg-bg-surface p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-sm font-medium text-text-primary">{operation.operation_type_display}</div>
+                        <span className="text-[11px] text-text-muted">
+                          {operation.performed_at ? toJalali(operation.performed_at) : '—'}
+                        </span>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 mt-3 text-[11px] text-text-muted">
+                        {operation.old_status && (
+                          <span>وضعیت قبل: {managementStatusMap[operation.old_status]?.label || operation.old_status}</span>
+                        )}
+                        {operation.new_status && (
+                          <span>وضعیت بعد: {managementStatusMap[operation.new_status]?.label || operation.new_status}</span>
+                        )}
+                        {operation.subscription_number && <span>قرارداد: {operation.subscription_number}</span>}
+                        {linkedEvent?.organization_name && <span>مشتری: {linkedEvent.organization_name}</span>}
+                        {linkedEvent?.vehicle_plate && <span>خودرو: {linkedEvent.vehicle_plate}</span>}
+                      </div>
+
+                      {operation.replacement_device_imei && (
+                        <div className="text-xs text-text-secondary mt-2">
+                          دستگاه جایگزین: <span className="font-mono">{operation.replacement_device_imei}</span>
+                        </div>
+                      )}
+
+                      {operation.reason && (
+                        <div className="text-xs text-text-secondary mt-2">
+                          دلیل: {linkedEvent?.reason_display || operation.reason}
+                        </div>
+                      )}
+
+                      {operation.description && (
+                        <div className="text-xs text-text-secondary mt-2 leading-6">{operation.description}</div>
+                      )}
                     </div>
-                    {operation.replacement_device_imei && <div className="text-xs text-text-secondary mt-2">دستگاه جایگزین: <span className="font-mono">{operation.replacement_device_imei}</span></div>}
-                    {operation.description && <div className="text-xs text-text-secondary mt-2 leading-6">{operation.description}</div>}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
-          {historyEvents.length === 0 ? <div className="text-sm text-text-muted text-center py-6">هنوز رویدادی ثبت نشده است.</div> : historyEvents.map((event) => (
-                <div key={event.id} className="rounded-card border border-border-base bg-bg-base p-3">
-                  <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-semibold text-text-primary">{event.event_type_display}</div><div className="text-[11px] text-text-muted mt-1 font-mono">{event.event_date ? toJalali(event.event_date) : '—'}</div></div><Badge variant={event.new_status === 'warehouse' ? 'info' : 'brand'}>{managementStatusMap[event.new_status]?.label || event.new_status || '—'}</Badge></div>
-                  {event.reason_display && <div className="text-xs text-text-secondary mt-2">دلیل: {event.reason_display}</div>}
-                  {event.description && <div className="text-xs text-text-secondary mt-2 leading-6">{event.description}</div>}
-                  {(event.subscription_number || event.organization_name || event.vehicle_plate) && <div className="flex flex-wrap gap-2 mt-3 text-[11px] text-text-muted">{event.subscription_number && <span>قرارداد: {event.subscription_number}</span>}{event.organization_name && <span>مشتری: {event.organization_name}</span>}{event.vehicle_plate && <span>خودرو: {event.vehicle_plate}</span>}</div>}
+
+          {historyEvents.filter((event) => {
+            if (event.device_operation) return false;
+            return !operationHistory.some((operation) =>
+              event.description === operation.description
+              && event.subscription === operation.subscription
+              && event.event_date
+              && operation.performed_at
+              && Math.abs(new Date(event.event_date).getTime() - new Date(operation.performed_at).getTime()) <= 5000
+            );
+          }).map((event) => (
+            <div key={event.id} className="rounded-card border border-border-base bg-bg-base p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-text-primary">{event.event_type_display}</div>
+                  <div className="text-[11px] text-text-muted mt-1 font-mono">
+                    {event.event_date ? toJalali(event.event_date) : '—'}
+                  </div>
                 </div>
-              ))}
+                <Badge variant={event.new_status === 'warehouse' ? 'info' : 'brand'}>
+                  {managementStatusMap[event.new_status]?.label || event.new_status || '—'}
+                </Badge>
+              </div>
+              {event.reason_display && <div className="text-xs text-text-secondary mt-2">دلیل: {event.reason_display}</div>}
+              {event.description && <div className="text-xs text-text-secondary mt-2 leading-6">{event.description}</div>}
+              {(event.subscription_number || event.organization_name || event.vehicle_plate) && (
+                <div className="flex flex-wrap gap-2 mt-3 text-[11px] text-text-muted">
+                  {event.subscription_number && <span>قرارداد: {event.subscription_number}</span>}
+                  {event.organization_name && <span>مشتری: {event.organization_name}</span>}
+                  {event.vehicle_plate && <span>خودرو: {event.vehicle_plate}</span>}
+                </div>
+              )}
             </div>
-          )}
+          ))}
 
           {!historyLoading && replacementRelations.length > 0 && (
             <div className="rounded-card border border-border-base bg-bg-base p-4 space-y-3">
