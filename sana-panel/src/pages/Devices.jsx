@@ -462,20 +462,30 @@ function DevicesTab() {
       >
         <div className="space-y-5">
           {!historyLoading && historyDevice && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 rounded-card border border-border-base bg-bg-base p-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 rounded-card border border-border-base bg-bg-base p-4">
               <div>
-                <div className="text-[11px] text-text-muted">مالک</div>
-                <div className="text-sm text-text-primary mt-1">{historyDevice.organization_name || historyDevice.owner_name || 'سانا'}</div>
-              </div>
-              <div>
-                <div className="text-[11px] text-text-muted">تحویل‌گیرنده فعلی</div>
+                <div className="text-[11px] text-text-muted">مدل دستگاه</div>
                 <div className="text-sm text-text-primary mt-1">
-                  {historyDevice.current_holder_organization_name || historyDevice.current_holder_user_name || 'سانا'}
+                  {historyDevice.device_model_manufacturer && historyDevice.device_model_name
+                    ? `${historyDevice.device_model_manufacturer} ${historyDevice.device_model_name}`
+                    : '—'}
                 </div>
               </div>
               <div>
-                <div className="text-[11px] text-text-muted">خودرو</div>
-                <div className="text-sm text-text-primary mt-1">{historyDevice.vehicle_plate || '—'}</div>
+                <div className="text-[11px] text-text-muted">IMEI</div>
+                <div className="text-sm font-mono text-text-primary mt-1">{historyDevice.imei || '—'}</div>
+              </div>
+              <div>
+                <div className="text-[11px] text-text-muted">شماره سیم‌کارت</div>
+                <div className="text-sm font-mono text-text-primary mt-1">{historyDevice.sim_number || '—'}</div>
+              </div>
+              <div>
+                <div className="text-[11px] text-text-muted">وضعیت فعلی</div>
+                <div className="mt-1">
+                  <Badge variant={(managementStatusMap[historyDevice.management_status] || managementStatusMap.warehouse).variant}>
+                    {(managementStatusMap[historyDevice.management_status] || managementStatusMap.warehouse).label}
+                  </Badge>
+                </div>
               </div>
             </div>
           )}
