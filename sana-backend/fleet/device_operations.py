@@ -180,19 +180,69 @@ def execute_device_operation(
     elif operation_type == 'repaired':
         if device.management_status != 'faulty':
             raise ValidationError({'device': 'فقط دستگاهی که در وضعیت خرابی/تعمیر است قابل ثبت به عنوان تعمیرشده است.'})
+        temp_relation = DeviceReplacementRelation.objects.filter(
+            source_device=device,
+            replacement_type='temporary_repair',
+        ).select_related('replacement_device').order_by('-replacement_date', '-id').first()
+        loaner = temp_relation.replacement_device if temp_relation else None
+        loaner_link = (
+            loaner.subscription_links.filter(unassigned_at__isnull=True).select_related('subscription').first()
+            if loaner else None
+        )
+        return_subscription = loaner_link.subscription if loaner_link else None
+        return_vehicle = loaner.vehicle if loaner else None
+        return_branch = loaner.branch if loaner else None
+
+        if loaner_link:
+            loaner_link.unassigned_at = timezone.now()
+            loaner_link.removed_by_operation = operation
+            loaner_link.save(update_fields=['unassigned_at', 'removed_by_operation'])
+
         device.management_status = 'warehouse'
         device.current_holder_organization = None
         device.current_holder_user = None
-        device.vehicle = None
-        device.branch = None
+        device.vehicle = return_vehicle
+        device.branch = return_branch
         device.save()
+
+        if return_subscription:
+            _add_to_subscription(
+                device,
+                return_subscription,
+                operation,
+                start_date=return_subscription.start_date,
+                end_date=return_subscription.end_date,
+            )
+
+        if loaner:
+            loaner.management_status = 'warehouse'
+            loaner.vehicle = None
+            loaner.branch = None
+            loaner.current_holder_organization = None
+            loaner.current_holder_user = None
+            loaner.save()
+
         record_device_lifecycle_event(
             device=device,
             event_type='repaired',
             performed_by=performed_by,
+            subscription=return_subscription,
+            organization=device.organization,
+            user=device.owner_user,
+            vehicle=device.vehicle,
+            branch=device.branch,
             reason=reason or 'repair',
             description=description or 'تعمیر دستگاه به پایان رسید و دستگاه به انبار سانا برگشت.',
         )
+        if loaner:
+            record_device_lifecycle_event(
+                device=loaner,
+                event_type='removed_from_contract',
+                performed_by=performed_by,
+                subscription=return_subscription,
+                reason='replacement',
+                description=f'دستگاه امانی {loaner.imei} پس از تعمیر {device.imei} به سانا بازگردانده شد.',
+            )
 
     elif operation_type in {'lost', 'stolen'}:
         device.management_status = operation_type
