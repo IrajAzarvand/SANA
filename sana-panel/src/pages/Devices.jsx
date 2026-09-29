@@ -261,7 +261,22 @@ function DevicesTab() {
 
   const loadOperationTargets = async (operationType) => {
     try {
-      if (operationType === 'transfer_customer') {
+      if (operationType === 'repaired') {
+        const [orgs, users, subs, vehicles] = await Promise.all([
+          organizationsAPI.list(),
+          usersAPI.list(),
+          subscriptionsAPI.list({ status: 'active' }),
+          vehiclesAPI.list(historyDevice?.organization ? { organization: historyDevice.organization } : {}),
+        ]);
+        const normalize = (result) => Array.isArray(result) ? result : result.results || [];
+        setOperationTargets((current) => ({
+          ...current,
+          organizations: normalize(orgs),
+          users: normalize(users),
+          subscriptions: normalize(subs),
+          vehicles: normalize(vehicles),
+        }));
+      } else if (operationType === 'transfer_customer') {
         const [orgs, users, subs] = await Promise.all([
           organizationsAPI.list(),
           usersAPI.list(),
@@ -705,7 +720,7 @@ function DevicesTab() {
                       if (['return_for_repair', 'lost', 'stolen'].includes(value)) {
                         await loadReplacementCandidates();
                       }
-                      if (['transfer_customer', 'transfer_branch', 'transfer_vehicle'].includes(value)) {
+                      if (['repaired', 'transfer_customer', 'transfer_branch', 'transfer_vehicle'].includes(value)) {
                         await loadOperationTargets(value);
                       }
                     }}
