@@ -609,6 +609,24 @@ function DevicesTab() {
                         </div>
                       )}
 
+                      {operation.replacement_type && (
+                        <div className="text-xs text-text-secondary mt-2">
+                          ماهیت جایگزینی: {deviceReplacementTypeMap[operation.replacement_type] || operation.replacement_type}
+                        </div>
+                      )}
+
+                      {operation.replacement_method && (
+                        <div className="text-xs text-text-secondary mt-2">
+                          نحوه جایگزینی: {deviceReplacementMethodMap[operation.replacement_method] || operation.replacement_method}
+                        </div>
+                      )}
+
+                      {operation.repair_return_action && (
+                        <div className="text-xs text-text-secondary mt-2">
+                          سرنوشت پس از تعمیر: {deviceRepairReturnActionMap[operation.repair_return_action] || operation.repair_return_action}
+                        </div>
+                      )}
+
                       {operation.reason && (
                         <div className="text-xs text-text-secondary mt-2">
                           دلیل: {linkedEvent?.reason_display || deviceOperationReasonMap[operation.reason] || operation.reason}
