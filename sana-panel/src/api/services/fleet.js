@@ -112,3 +112,15 @@ export const usersAPI = {
     await apiClient.delete(`/users/${id}/`);
   },
 };
+
+
+export const deviceReplacementAPI = {
+  list: async (params = {}) => {
+    const response = await apiClient.get('/device-replacement-relations/', { params });
+    return response.data;
+  },
+  create: async (data) => {
+    const response = await apiClient.post('/device-replacement-relations/', data);
+    return response.data;
+  },
+};
