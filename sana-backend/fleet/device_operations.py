@@ -2,7 +2,7 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from .models import Device, DeviceOperation, DeviceReplacementRelation
+from .models import Device, DeviceOperation, DeviceReplacementRelation, DeviceLifecycleEvent
 from .lifecycle import record_device_lifecycle_event
 from organizations.models import SubscriptionDevice
 
@@ -48,6 +48,8 @@ def execute_device_operation(
     target_branch=None,
     target_vehicle=None,
     replacement_type='',
+    replacement_method='',
+    repair_return_action='',
     reason='',
     description='',
 ):
@@ -73,6 +75,8 @@ def execute_device_operation(
         target_branch=target_branch,
         target_vehicle=target_vehicle,
         replacement_type=replacement_type,
+        replacement_method=replacement_method,
+        repair_return_action=repair_return_action,
         reason=reason,
         description=description,
         old_status=old_status,
@@ -83,6 +87,12 @@ def execute_device_operation(
         if replacement_device:
             if replacement_type not in {'temporary_repair', 'permanent_replacement'}:
                 raise ValidationError({'replacement_type': 'نوع جایگزینی را مشخص کنید'})
+            if not replacement_method:
+                raise ValidationError({'replacement_method': 'نحوه جایگزینی را مشخص کنید'})
+            if replacement_type == 'temporary_repair' and replacement_method not in {'loaner', 'warranty', 'free_exchange', 'other'}:
+                raise ValidationError({'replacement_method': 'برای جایگزینی موقت، نحوه انتخاب‌شده نامعتبر است'})
+            if replacement_type == 'permanent_replacement' and replacement_method == 'loaner':
+                raise ValidationError({'replacement_method': 'دستگاه دائمی نمی‌تواند امانی باشد'})
             if replacement_device.active_subscription_link:
                 raise ValidationError({'replacement_device': 'دستگاه جایگزین در قرارداد دیگری فعال است.'})
             if replacement_device.management_status != 'warehouse' or not replacement_device.is_in_warehouse:
@@ -184,9 +194,11 @@ def execute_device_operation(
     elif operation_type == 'repaired':
         if device.management_status != 'faulty':
             raise ValidationError({'device': 'فقط دستگاهی که در وضعیت خرابی/تعمیر است قابل ثبت به عنوان تعمیرشده است.'})
+        if not repair_return_action:
+            raise ValidationError({'repair_return_action': 'سرنوشت دستگاه پس از تعمیر را مشخص کنید'})
+
         temp_relation = DeviceReplacementRelation.objects.filter(
-            source_device=device,
-            replacement_type='temporary_repair',
+            source_device=device, replacement_type='temporary_repair',
         ).select_related('replacement_device').order_by('-replacement_date', '-id').first()
         loaner = temp_relation.replacement_device if temp_relation else None
         loaner_link = (
@@ -194,60 +206,105 @@ def execute_device_operation(
             if loaner else None
         )
         return_subscription = loaner_link.subscription if loaner_link else None
-        return_vehicle = loaner.vehicle if loaner else None
-        return_branch = loaner.branch if loaner else None
+
+        repair_event = DeviceLifecycleEvent.objects.filter(
+            device=device, event_type='sent_to_repair',
+        ).select_related('organization', 'user', 'vehicle', 'branch').order_by('-event_date', '-id').first()
+        previous_org = repair_event.organization if repair_event else device.organization
+        previous_user = repair_event.user if repair_event else device.owner_user
+        previous_vehicle = repair_event.vehicle if repair_event else None
+        previous_branch = repair_event.branch if repair_event else None
+        return_vehicle = loaner.vehicle if loaner else previous_vehicle
+        return_branch = loaner.branch if loaner else previous_branch
 
         if loaner_link:
             loaner_link.unassigned_at = timezone.now()
             loaner_link.removed_by_operation = operation
             loaner_link.save(update_fields=['unassigned_at', 'removed_by_operation'])
 
-        device.management_status = 'warehouse'
-        device.current_holder_organization = None
-        device.current_holder_user = None
-        device.vehicle = return_vehicle
-        device.branch = return_branch
+        device.vehicle = None
+        device.branch = None
+        device.current_holder_organization = previous_org
+        device.current_holder_user = previous_user
+
+        if repair_return_action == 'return_customer_same_vehicle':
+            device.organization, device.owner_user = previous_org, previous_user
+            device.vehicle, device.branch = return_vehicle, return_branch
+            device.current_holder_organization, device.current_holder_user = previous_org, previous_user
+            device.management_status = 'installed'
+        elif repair_return_action == 'return_customer_no_vehicle':
+            device.organization, device.owner_user = previous_org, previous_user
+            device.current_holder_organization, device.current_holder_user = previous_org, previous_user
+            device.management_status = 'sold'
+        elif repair_return_action == 'sana_warehouse':
+            device.organization = device.owner_user = None
+            device.current_holder_organization = device.current_holder_user = None
+            device.management_status = 'warehouse'
+        elif repair_return_action == 'customer_spare':
+            device.organization, device.owner_user = previous_org, previous_user
+            device.current_holder_organization, device.current_holder_user = previous_org, previous_user
+            device.management_status = 'sold'
+        elif repair_return_action == 'install_other_vehicle':
+            if not target_vehicle:
+                raise ValidationError({'target_vehicle': 'برای نصب روی خودروی دیگر، خودروی مقصد را مشخص کنید'})
+            if device.organization_id and target_vehicle.organization_id != device.organization_id:
+                raise ValidationError({'target_vehicle': 'خودروی مقصد باید متعلق به همان مشتری دستگاه باشد'})
+            device.organization, device.owner_user = previous_org, previous_user
+            device.current_holder_organization, device.current_holder_user = previous_org, previous_user
+            device.vehicle, device.branch = target_vehicle, target_vehicle.branch
+            device.management_status = 'installed'
+        elif repair_return_action == 'transfer_customer':
+            if not target_organization and not target_user:
+                raise ValidationError({'target_organization': 'مالک مقصد را مشخص کنید'})
+            device.organization, device.owner_user = target_organization, target_user
+            device.current_holder_organization, device.current_holder_user = target_organization, target_user
+            device.vehicle = target_vehicle
+            device.branch = target_vehicle.branch if target_vehicle else None
+            device.management_status = 'sold'
+        elif repair_return_action == 'retire':
+            device.organization, device.owner_user = previous_org, previous_user
+            device.current_holder_organization, device.current_holder_user = previous_org, previous_user
+            device.management_status = 'retired'
+        elif repair_return_action == 'dispose':
+            device.organization = device.owner_user = None
+            device.current_holder_organization = device.current_holder_user = None
+            device.management_status = 'disposed'
+        elif repair_return_action == 'other':
+            device.management_status = 'warehouse'
+
         device.save()
 
-        if return_subscription:
-            _add_to_subscription(
-                device,
-                return_subscription,
-                operation,
-                start_date=return_subscription.start_date,
-                end_date=return_subscription.end_date,
-            )
+        if repair_return_action in {'return_customer_same_vehicle', 'return_customer_no_vehicle', 'customer_spare', 'install_other_vehicle'} and return_subscription:
+            _add_to_subscription(device, return_subscription, operation, start_date=return_subscription.start_date, end_date=return_subscription.end_date)
+        elif repair_return_action == 'transfer_customer' and target_subscription:
+            _add_to_subscription(device, target_subscription, operation)
 
         if loaner:
             loaner.management_status = 'warehouse'
-            loaner.vehicle = None
-            loaner.branch = None
-            loaner.current_holder_organization = None
-            loaner.current_holder_user = None
+            loaner.vehicle = loaner.branch = None
+            loaner.current_holder_organization = loaner.current_holder_user = None
             loaner.save()
 
+        disposition_labels = {
+            'return_customer_same_vehicle': 'به مشتری بازگشت و روی خودرو نصب شد',
+            'return_customer_no_vehicle': 'به مشتری بازگشت و فعلاً نصب نشد',
+            'sana_warehouse': 'به انبار سانا بازگشت',
+            'customer_spare': 'به عنوان دستگاه یدکی به مشتری تحویل شد',
+            'install_other_vehicle': 'روی خودروی دیگر نصب شد',
+            'transfer_customer': 'به مشتری دیگر منتقل شد',
+            'retire': 'بازنشسته شد', 'dispose': 'امحاء شد', 'other': 'طبق توضیحات تکمیلی تعیین شد',
+        }
         record_device_lifecycle_event(
-                device_operation=operation,
-                device=device,
-            event_type='repaired',
-            performed_by=performed_by,
-            subscription=return_subscription,
-            organization=device.organization,
-            user=device.owner_user,
-            vehicle=device.vehicle,
-            branch=device.branch,
-            reason=reason or 'repair',
-            description=description or 'تعمیر دستگاه به پایان رسید و دستگاه به انبار سانا برگشت.',
+            device_operation=operation, device=device, event_type='repaired', performed_by=performed_by,
+            subscription=return_subscription or target_subscription, organization=device.organization, user=device.owner_user,
+            vehicle=device.vehicle, branch=device.branch, reason=reason or 'repair',
+            description=description or f'تعمیر دستگاه پایان یافت؛ {disposition_labels.get(repair_return_action, repair_return_action)}.',
         )
         if loaner:
             record_device_lifecycle_event(
-                device_operation=operation,
-                device=loaner,
-                event_type='removed_from_contract',
-                performed_by=performed_by,
-                subscription=return_subscription,
-                reason='replacement',
-                description=f'دستگاه امانی {loaner.imei} پس از تعمیر {device.imei} به سانا بازگردانده شد.',
+                device_operation=operation, device=loaner, event_type='removed_from_contract', performed_by=performed_by,
+                subscription=return_subscription, reason='replacement',
+                description=f'دستگاه امانی {loaner.imei} پس از تعیین تکلیف دستگاه {device.imei} به انبار سانا بازگردانده شد.',
             )
 
     elif operation_type in {'lost', 'stolen'}:
