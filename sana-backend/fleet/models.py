@@ -263,6 +263,36 @@ class DeviceOperation(models.Model):
         blank=True,
         verbose_name='نوع جایگزینی'
     )
+    replacement_method = models.CharField(
+        max_length=30,
+        choices=[
+            ('loaner', 'امانی / موقت'),
+            ('sold', 'فروش به مشتری'),
+            ('free_exchange', 'تعویض بدون هزینه'),
+            ('paid_exchange', 'تعویض با هزینه'),
+            ('warranty', 'تعویض گارانتی'),
+            ('refurbished', 'دستگاه بازسازی‌شده'),
+            ('other', 'سایر'),
+        ],
+        blank=True,
+        verbose_name='نحوه تجاری جایگزینی'
+    )
+    repair_return_action = models.CharField(
+        max_length=40,
+        choices=[
+            ('return_customer_same_vehicle', 'بازگشت به مشتری و نصب روی همان خودرو'),
+            ('return_customer_no_vehicle', 'بازگشت به مشتری بدون نصب'),
+            ('sana_warehouse', 'بازگشت به انبار سانا'),
+            ('customer_spare', 'تحویل به مشتری به عنوان دستگاه یدکی'),
+            ('install_other_vehicle', 'نصب روی خودروی دیگر'),
+            ('transfer_customer', 'انتقال به مشتری دیگر'),
+            ('retire', 'بازنشستگی'),
+            ('dispose', 'امحاء'),
+            ('other', 'سایر'),
+        ],
+        blank=True,
+        verbose_name='سرنوشت دستگاه پس از تعمیر'
+    )
     reason = models.CharField(max_length=30, blank=True, verbose_name='دلیل')
     description = models.TextField(blank=True, verbose_name='شرح')
     old_status = models.CharField(max_length=20, blank=True, verbose_name='وضعیت قبلی')
