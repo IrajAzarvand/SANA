@@ -17,7 +17,7 @@ import ErrorState from '../components/ErrorState';
 import Tabs from '../components/Tabs';
 import AddDeviceModal from '../components/AddDeviceModal';
 import { useAuth } from '../context/AuthContext';
-import { devicesAPI, deviceLifecycleAPI, deviceReplacementAPI, deviceOperationsAPI } from '../api/services/fleet';
+import { devicesAPI, deviceLifecycleAPI, deviceReplacementAPI, deviceOperationsAPI, vehiclesAPI, usersAPI } from '../api/services/fleet';
 import { deviceModelsAPI } from '../api/services/deviceModels';
 import { useApi } from '../hooks/useApi';
 import { toJalali } from '../utils/dateUtils';
