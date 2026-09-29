@@ -133,6 +133,7 @@ def execute_device_operation(
                 )
 
             record_device_lifecycle_event(
+                device_operation=operation,
                 device=device,
                 event_type='sent_to_repair',
                 performed_by=performed_by,
@@ -145,6 +146,7 @@ def execute_device_operation(
                 description=description or 'دستگاه برای تعمیر به سانا بازگردانده شد.',
             )
             record_device_lifecycle_event(
+                device_operation=operation,
                 device=replacement_device,
                 event_type='assigned_to_contract',
                 performed_by=performed_by,
@@ -166,6 +168,7 @@ def execute_device_operation(
             device.management_status = 'faulty'
             device.save()
             record_device_lifecycle_event(
+                device_operation=operation,
                 device=device,
                 event_type='sent_to_repair',
                 performed_by=performed_by,
@@ -224,7 +227,8 @@ def execute_device_operation(
             loaner.save()
 
         record_device_lifecycle_event(
-            device=device,
+                device_operation=operation,
+                device=device,
             event_type='repaired',
             performed_by=performed_by,
             subscription=return_subscription,
@@ -237,6 +241,7 @@ def execute_device_operation(
         )
         if loaner:
             record_device_lifecycle_event(
+                device_operation=operation,
                 device=loaner,
                 event_type='removed_from_contract',
                 performed_by=performed_by,
@@ -249,7 +254,8 @@ def execute_device_operation(
         device.management_status = operation_type
         device.save(update_fields=['management_status', 'updated_at'])
         record_device_lifecycle_event(
-            device=device,
+                device_operation=operation,
+                device=device,
             event_type=operation_type,
             performed_by=performed_by,
             subscription=subscription,
@@ -279,6 +285,7 @@ def execute_device_operation(
                 description=description or 'جایگزینی دستگاه مفقود/سرقت‌شده.',
             )
             record_device_lifecycle_event(
+                device_operation=operation,
                 device=replacement_device,
                 event_type='assigned_to_contract',
                 performed_by=performed_by,
@@ -306,7 +313,8 @@ def execute_device_operation(
         if target_subscription:
             _add_to_subscription(device, target_subscription, operation)
         record_device_lifecycle_event(
-            device=device,
+                device_operation=operation,
+                device=device,
             event_type='transferred',
             performed_by=performed_by,
             subscription=target_subscription or subscription,
@@ -322,7 +330,8 @@ def execute_device_operation(
         device.branch = target_branch
         device.save(update_fields=['branch', 'updated_at'])
         record_device_lifecycle_event(
-            device=device, event_type='transferred', performed_by=performed_by,
+                device_operation=operation,
+                device=device, event_type='transferred', performed_by=performed_by,
             subscription=subscription, organization=device.organization,
             user=device.owner_user, vehicle=device.vehicle, branch=target_branch,
             reason=reason, description=description,
@@ -338,7 +347,8 @@ def execute_device_operation(
         device.branch = target_vehicle.branch
         device.save(update_fields=['vehicle', 'branch', 'updated_at'])
         record_device_lifecycle_event(
-            device=device, event_type='transferred', performed_by=performed_by,
+                device_operation=operation,
+                device=device, event_type='transferred', performed_by=performed_by,
             subscription=subscription, organization=device.organization,
             user=device.owner_user, vehicle=target_vehicle, branch=target_vehicle.branch,
             reason=reason, description=description or f'انتقال از خودرو {old_vehicle.plate if old_vehicle else "بدون خودرو"} انجام شد.',
@@ -348,7 +358,8 @@ def execute_device_operation(
         device.management_status = 'retired'
         device.save(update_fields=['management_status', 'updated_at'])
         record_device_lifecycle_event(
-            device=device, event_type='retired', performed_by=performed_by,
+                device_operation=operation,
+                device=device, event_type='retired', performed_by=performed_by,
             subscription=subscription, organization=device.organization,
             user=device.owner_user, vehicle=device.vehicle, branch=device.branch,
             reason=reason, description=description,
@@ -360,7 +371,8 @@ def execute_device_operation(
         device.management_status = 'disposed'
         device.save(update_fields=['management_status', 'updated_at'])
         record_device_lifecycle_event(
-            device=device, event_type='disposed', performed_by=performed_by,
+                device_operation=operation,
+                device=device, event_type='disposed', performed_by=performed_by,
             subscription=subscription, organization=device.organization,
             user=device.owner_user, reason=reason, description=description,
         )
