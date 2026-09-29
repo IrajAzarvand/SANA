@@ -63,6 +63,28 @@ const deviceReplacementTypeMap = {
   permanent_replacement: 'تعویض دائمی',
 };
 
+const deviceReplacementMethodMap = {
+  loaner: 'امانی / موقت',
+  sold: 'فروش به مشتری',
+  free_exchange: 'تعویض بدون هزینه',
+  paid_exchange: 'تعویض با هزینه',
+  warranty: 'تعویض گارانتی',
+  refurbished: 'دستگاه بازسازی‌شده',
+  other: 'سایر',
+};
+
+const deviceRepairReturnActionMap = {
+  return_customer_same_vehicle: 'بازگشت به مشتری و نصب روی همان خودرو',
+  return_customer_no_vehicle: 'بازگشت به مشتری بدون نصب',
+  sana_warehouse: 'بازگشت به انبار سانا',
+  customer_spare: 'تحویل به مشتری به عنوان دستگاه یدکی',
+  install_other_vehicle: 'نصب روی خودروی دیگر',
+  transfer_customer: 'انتقال به مشتری دیگر',
+  retire: 'بازنشستگی',
+  dispose: 'امحاء',
+  other: 'سایر',
+};
+
 export default function Devices() {
   const [activeTab, setActiveTab] = useState('devices');
 
@@ -116,6 +138,8 @@ function DevicesTab() {
   const [operationForm, setOperationForm] = useState({
     operation_type: 'return_for_repair',
     replacement_type: 'temporary_repair',
+    replacement_method: '',
+    repair_return_action: '',
     replacement_device: '',
     reason: 'repair',
     description: '',
@@ -272,6 +296,8 @@ function DevicesTab() {
         operation_type: operationForm.operation_type,
         reason: operationForm.reason || '',
         description: operationForm.description || '',
+        replacement_method: operationForm.replacement_method || '',
+        repair_return_action: operationForm.repair_return_action || '',
       };
       ['target_organization', 'target_user', 'target_branch', 'target_vehicle', 'target_subscription'].forEach((key) => {
         if (operationForm[key]) payload[key] = Number(operationForm[key]);
@@ -284,6 +310,8 @@ function DevicesTab() {
       setOperationForm({
         operation_type: 'return_for_repair',
         replacement_type: 'temporary_repair',
+        replacement_method: '',
+        repair_return_action: '',
         replacement_device: '',
         reason: 'repair',
         description: '',
@@ -317,7 +345,9 @@ function DevicesTab() {
   };
 
   const operationNeedsReplacement = ['return_for_repair', 'lost', 'stolen'].includes(operationForm.operation_type);
-  const operationNeedsReplacementType = operationForm.operation_type === 'return_for_repair' && Boolean(operationForm.replacement_device);
+  const operationNeedsReplacementType = ['return_for_repair', 'lost', 'stolen'].includes(operationForm.operation_type) && Boolean(operationForm.replacement_device);
+  const operationNeedsReplacementMethod = ['return_for_repair', 'lost', 'stolen'].includes(operationForm.operation_type) && Boolean(operationForm.replacement_device);
+  const operationNeedsRepairDisposition = operationForm.operation_type === 'repaired';
 
   const handleDelete = async (id) => {
     if (!confirm('آیا از حذف این دستگاه اطمینان دارید؟')) return;
@@ -667,6 +697,8 @@ function DevicesTab() {
                         ...current,
                         operation_type: value,
                         replacement_type: '',
+                        replacement_method: '',
+                        repair_return_action: '',
                         replacement_device: '',
                         reason: value === 'return_for_repair' ? 'repair' : current.reason,
                       }));
@@ -703,6 +735,58 @@ function DevicesTab() {
 
                   {operationForm.operation_type === 'transfer_vehicle' && (
                     <Select label="خودرو مقصد" placeholder="انتخاب خودرو" value={operationForm.target_vehicle} onChange={(e) => setOperationForm({ ...operationForm, target_vehicle: e.target.value })} options={operationTargets.vehicles.map((item) => ({ value: item.id, label: item.plate }))} />
+                  )}
+
+                  {operationNeedsRepairDisposition && (
+                    <div className="space-y-3 rounded-card border border-border-base bg-bg-base p-3">
+                      <Select
+                        label="سرنوشت دستگاه پس از تعمیر"
+                        required
+                        value={operationForm.repair_return_action}
+                        onChange={(e) => setOperationForm((current) => ({
+                          ...current,
+                          repair_return_action: e.target.value,
+                        }))}
+                        options={Object.entries(deviceRepairReturnActionMap).map(([value, label]) => ({ value, label }))}
+                      />
+                      {['install_other_vehicle', 'transfer_customer'].includes(operationForm.repair_return_action) && (
+                        <Select
+                          label="خودروی مقصد"
+                          placeholder="انتخاب خودرو"
+                          value={operationForm.target_vehicle}
+                          onChange={(e) => setOperationForm((current) => ({
+                            ...current,
+                            target_vehicle: e.target.value,
+                          }))}
+                          options={operationTargets.vehicles.map((item) => ({ value: item.id, label: item.plate }))}
+                        />
+                      )}
+                      {operationForm.repair_return_action === 'transfer_customer' && (
+                        <div className="space-y-3">
+                          <Select
+                            label="سازمان مقصد"
+                            placeholder="انتخاب سازمان"
+                            value={operationForm.target_organization}
+                            onChange={(e) => setOperationForm((current) => ({ ...current, target_organization: e.target.value, target_user: '' }))}
+                            options={operationTargets.organizations.map((item) => ({ value: item.id, label: item.name }))}
+                          />
+                          <Select
+                            label="کاربر شخصی مقصد"
+                            placeholder="در صورت انتقال به مشتری شخصی"
+                            value={operationForm.target_user}
+                            onChange={(e) => setOperationForm((current) => ({ ...current, target_user: e.target.value, target_organization: '' }))}
+                            options={operationTargets.users.filter((item) => item.account_type === 'personal').map((item) => ({ value: item.id, label: item.full_name || item.username }))}
+                          />
+                          <Select
+                            label="قرارداد مقصد (اختیاری)"
+                            placeholder="انتخاب قرارداد"
+                            value={operationForm.target_subscription}
+                            onChange={(e) => setOperationForm((current) => ({ ...current, target_subscription: e.target.value }))}
+                            options={operationTargets.subscriptions.map((item) => ({ value: item.id, label: item.contract_number }))}
+                          />
+                        </div>
+                      )}
+                    </div>
                   )}
 
                   {operationNeedsReplacement && (
@@ -749,6 +833,18 @@ function DevicesTab() {
                             { value: 'temporary_repair', label: 'جایگزینی موقت برای تعمیر' },
                             { value: 'permanent_replacement', label: 'تعویض دائمی' },
                           ]}
+                        />
+                      )}
+                      {operationNeedsReplacementMethod && (
+                        <Select
+                          label="نحوه جایگزینی"
+                          required
+                          value={operationForm.replacement_method}
+                          onChange={(e) => setOperationForm((current) => ({
+                            ...current,
+                            replacement_method: e.target.value,
+                          }))}
+                          options={Object.entries(deviceReplacementMethodMap).map(([value, label]) => ({ value, label }))}
                         />
                       )}
                     </div>
