@@ -618,8 +618,10 @@ function DevicesTab() {
                         placeholder="بدون جایگزین"
                         value={operationForm.replacement_device}
                         onChange={(e) => setOperationForm({ ...operationForm, replacement_device: e.target.value })}
-                        options={[
-                      />
+                        options={replacementCandidates.map((item) => ({
+                          value: item.id,
+                          label: item.imei + ' — ' + (item.device_model_manufacturer || '') + ' ' + (item.device_model_name || ''),
+                        }))}
                       {operationNeedsReplacementType && (
                         <Select
                           label="نوع جایگزینی"
