@@ -191,6 +191,49 @@ class Device(models.Model):
             return False
         return link.is_active
 
+
+class DeviceReplacementRelation(models.Model):
+    """رابطه جایگزینی بین دو دستگاه؛ تاریخچه رابطه مستقل از وضعیت فعلی دستگاه است."""
+
+    REPLACEMENT_TYPE_CHOICES = [
+        ('temporary_repair', 'جایگزینی موقت برای تعمیر'),
+        ('permanent_replacement', 'تعویض دائمی'),
+    ]
+
+    source_device = models.ForeignKey(
+        Device,
+        on_delete=models.CASCADE,
+        related_name='replacement_relations_as_source',
+        verbose_name='دستگاه قبلی',
+    )
+    replacement_device = models.ForeignKey(
+        Device,
+        on_delete=models.CASCADE,
+        related_name='replacement_relations_as_replacement',
+        verbose_name='دستگاه جایگزین',
+    )
+    replacement_type = models.CharField(
+        max_length=30,
+        choices=REPLACEMENT_TYPE_CHOICES,
+        verbose_name='نوع جایگزینی',
+    )
+    replacement_date = models.DateTimeField(default=timezone.now, verbose_name='تاریخ جایگزینی')
+    description = models.TextField(blank=True, verbose_name='شرح')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'رابطه جایگزینی دستگاه'
+        verbose_name_plural = 'روابط جایگزینی دستگاه‌ها'
+        ordering = ['-replacement_date', '-id']
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if self.source_device_id and self.source_device_id == self.replacement_device_id:
+            raise ValidationError({'replacement_device': 'دستگاه جایگزین نمی‌تواند همان دستگاه قبلی باشد.'})
+
+    def __str__(self):
+        return f'{self.source_device.imei} → {self.replacement_device.imei}'
+
 class Driver(models.Model):
     """راننده — فقط برای سازمان‌ها"""
 
