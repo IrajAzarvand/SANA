@@ -39,7 +39,7 @@ def record_device_lifecycle_event(
     }
     target_status = new_status if new_status is not None else status_map.get(event_type)
 
-    if event_type in {'returned', 'repaired'}:
+    if event_type == 'returned':
         device.organization = None
         device.owner_user = None
         device.branch = None
