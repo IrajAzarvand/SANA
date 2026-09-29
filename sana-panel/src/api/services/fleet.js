@@ -124,3 +124,15 @@ export const deviceReplacementAPI = {
     return response.data;
   },
 };
+
+
+export const deviceOperationsAPI = {
+  list: async (params = {}) => {
+    const response = await apiClient.get('/device-operations/', { params });
+    return response.data;
+  },
+  create: async (data) => {
+    const response = await apiClient.post('/device-operations/', data);
+    return response.data;
+  },
+};
