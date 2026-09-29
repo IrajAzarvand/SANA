@@ -3,7 +3,7 @@ from django.db.models import Exists, OuterRef
 from rest_framework import viewsets, filters
 from rest_framework.permissions import IsAuthenticated
 
-from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent, DeviceReplacementRelation
+from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation
 from .serializers import (
     VehicleTypeSerializer,
     VehicleSerializer,
@@ -14,6 +14,7 @@ from .serializers import (
     DriverSerializer,
     DeviceLifecycleEventSerializer,
     DeviceReplacementRelationSerializer,
+    DeviceOperationSerializer,
 )
 from organizations.models import SubscriptionDevice
 from accounts.permissions import IsSiteAdmin
@@ -271,5 +272,50 @@ class DeviceReplacementRelationViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsSiteAdmin()]
+        return super().get_permissions()
+
+
+class DeviceOperationViewSet(viewsets.ModelViewSet):
+    """عملیات واقعی دستگاه؛ اجرای تغییرات فقط توسط ادمین سایت."""
+    queryset = DeviceOperation.objects.select_related(
+        'device', 'replacement_device', 'subscription', 'target_subscription',
+        'target_organization', 'target_user', 'target_branch', 'target_vehicle', 'performed_by'
+    ).all()
+    serializer_class = DeviceOperationSerializer
+    permission_classes = [IsAuthenticated]
+    http_method_names = ['get', 'post', 'head', 'options']
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = self.queryset
+        if user.is_site_admin:
+            pass
+        elif user.organization_id:
+            qs = qs.filter(
+                device__organization_id=user.organization_id
+            ) | qs.filter(
+                replacement_device__organization_id=user.organization_id
+            ) | qs.filter(
+                target_organization_id=user.organization_id
+            )
+        elif user.is_personal_user:
+            qs = qs.filter(
+                device__owner_user_id=user.id
+            ) | qs.filter(
+                replacement_device__owner_user_id=user.id
+            ) | qs.filter(
+                target_user_id=user.id
+            )
+        else:
+            qs = qs.none()
+
+        device = self.request.query_params.get('device')
+        if device:
+            qs = qs.filter(device_id=device) | qs.filter(replacement_device_id=device)
+        return qs.distinct()
+
+    def get_permissions(self):
+        if self.action == 'create':
             return [IsSiteAdmin()]
         return super().get_permissions()
