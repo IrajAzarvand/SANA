@@ -268,9 +268,13 @@ function DevicesTab() {
     } catch (err) {
       console.error('Error saving device operation:', err);
       const data = err.response?.data;
-      const message = data
-        ? Object.entries(data).map(([key, value]) => `${key}: ${Array.isArray(value) ? value[0] : value}`).join('\n')
-        : 'ثبت عملیات ناموفق بود';
+      const message = typeof data === 'string'
+        ? data
+        : data?.detail
+          ? data.detail
+          : data
+            ? Object.entries(data).map(([key, value]) => `${key}: ${Array.isArray(value) ? value[0] : value}`).join('\n')
+            : 'ثبت عملیات ناموفق بود';
       alert(message);
     } finally {
       setOperationSaving(false);
