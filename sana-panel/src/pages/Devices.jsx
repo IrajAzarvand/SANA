@@ -37,6 +37,32 @@ const managementStatusMap = {
   disposed:     { label: 'امحاء شده',      variant: 'danger'  },
 };
 
+const deviceOperationTypeMap = {
+  return_for_repair: 'بازگشت برای تعمیر',
+  repaired: 'اتمام تعمیر',
+  temporary_replacement: 'جایگزینی موقت',
+  permanent_replacement: 'تعویض دائمی',
+  lost: 'گم‌شدن',
+  stolen: 'سرقت',
+  transfer_customer: 'انتقال به مشتری دیگر',
+  transfer_branch: 'انتقال بین شعب',
+  transfer_vehicle: 'انتقال بین خودروها',
+  retire: 'بازنشستگی',
+  dispose: 'امحاء',
+};
+
+const deviceOperationReasonMap = {
+  repair: 'تعمیر',
+  replacement: 'تعویض',
+  defective: 'خرابی',
+  other: 'سایر',
+};
+
+const deviceReplacementTypeMap = {
+  temporary_repair: 'جایگزینی موقت برای تعمیر',
+  permanent_replacement: 'تعویض دائمی',
+};
+
 export default function Devices() {
   const [activeTab, setActiveTab] = useState('devices');
 
@@ -514,7 +540,7 @@ function DevicesTab() {
                   return (
                     <div key={operation.id} className="rounded-card border border-border-base bg-bg-surface p-3">
                       <div className="flex items-center justify-between gap-3">
-                        <div className="text-sm font-medium text-text-primary">{operation.operation_type_display}</div>
+                        <div className="text-sm font-medium text-text-primary">{deviceOperationTypeMap[operation.operation_type] || operation.operation_type_display || 'عملیات دستگاه'}</div>
                         <span className="text-[11px] text-text-muted">
                           {operation.performed_at ? toJalali(operation.performed_at) : '—'}
                         </span>
@@ -540,7 +566,7 @@ function DevicesTab() {
 
                       {operation.reason && (
                         <div className="text-xs text-text-secondary mt-2">
-                          دلیل: {linkedEvent?.reason_display || operation.reason}
+                          دلیل: {linkedEvent?.reason_display || deviceOperationReasonMap[operation.reason] || operation.reason}
                         </div>
                       )}
 
@@ -571,7 +597,7 @@ function DevicesTab() {
             <div key={event.id} className="rounded-card border border-border-base bg-bg-base p-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-sm font-semibold text-text-primary">{event.event_type_display}</div>
+                  <div className="text-sm font-semibold text-text-primary">{event.event_type_display || deviceOperationTypeMap[event.event_type] || event.event_type || 'رویداد دستگاه'}</div>
                   <div className="text-[11px] text-text-muted mt-1 font-mono">
                     {event.event_date ? toJalali(event.event_date) : '—'}
                   </div>
@@ -605,7 +631,7 @@ function DevicesTab() {
                           {isSource ? 'این دستگاه جایگزین شده با' : 'این دستگاه جایگزین'}
                         </div>
                         <Badge variant={relation.replacement_type === 'temporary_repair' ? 'warning' : 'brand'}>
-                          {relation.replacement_type_display}
+                          {deviceReplacementTypeMap[relation.replacement_type] || relation.replacement_type_display || relation.replacement_type || '—'}
                         </Badge>
                       </div>
                       <div className="mt-2 flex items-center justify-between gap-3">
