@@ -622,6 +622,7 @@ function DevicesTab() {
                           value: item.id,
                           label: item.imei + ' — ' + (item.device_model_manufacturer || '') + ' ' + (item.device_model_name || ''),
                         }))}
+                      />
                       {operationNeedsReplacementType && (
                         <Select
                           label="نوع جایگزینی"
