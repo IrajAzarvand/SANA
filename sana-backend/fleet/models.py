@@ -405,6 +405,10 @@ class DeviceLifecycleEvent(models.Model):
     device = models.ForeignKey(
         Device, on_delete=models.CASCADE, related_name='lifecycle_events', verbose_name='دستگاه'
     )
+    device_operation = models.ForeignKey(
+        'fleet.DeviceOperation', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='lifecycle_events', verbose_name='عملیات دستگاه'
+    )
     event_type = models.CharField(max_length=30, choices=EVENT_TYPE_CHOICES, verbose_name='نوع رویداد')
     event_date = models.DateTimeField(default=timezone.now, verbose_name='تاریخ رویداد')
     subscription = models.ForeignKey(
