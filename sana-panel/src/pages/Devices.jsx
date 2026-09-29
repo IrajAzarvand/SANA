@@ -421,6 +421,24 @@ function DevicesTab() {
         footer={<Button variant="secondary" onClick={() => setHistoryDevice(null)}>بستن</Button>}
       >
         <div className="space-y-5">
+          {!historyLoading && historyDevice && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 rounded-card border border-border-base bg-bg-base p-4">
+              <div>
+                <div className="text-[11px] text-text-muted">مالک</div>
+                <div className="text-sm text-text-primary mt-1">{historyDevice.organization_name || historyDevice.owner_name || 'سانا'}</div>
+              </div>
+              <div>
+                <div className="text-[11px] text-text-muted">تحویل‌گیرنده فعلی</div>
+                <div className="text-sm text-text-primary mt-1">
+                  {historyDevice.current_holder_organization_name || historyDevice.current_holder_user_name || 'سانا'}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] text-text-muted">خودرو</div>
+                <div className="text-sm text-text-primary mt-1">{historyDevice.vehicle_plate || '—'}</div>
+              </div>
+            </div>
+          )}
           {historyLoading ? <LoadingSpinner /> : (
             <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
               {operationHistory.length > 0 && (
