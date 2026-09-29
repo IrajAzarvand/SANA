@@ -21,6 +21,8 @@ import { devicesAPI, deviceLifecycleAPI, deviceReplacementAPI, deviceOperationsA
 import { deviceModelsAPI } from '../api/services/deviceModels';
 import { useApi } from '../hooks/useApi';
 import { toJalali } from '../utils/dateUtils';
+import { organizationsAPI, branchesAPI } from '../api/services/organizations';
+import { subscriptionsAPI } from '../api/services/subscriptions';
 
 const managementStatusMap = {
   warehouse:    { label: 'در انبار',      variant: 'info'    },
@@ -82,6 +84,7 @@ function DevicesTab() {
   const [replacementRelations, setReplacementRelations] = useState([]);
   const [operationHistory, setOperationHistory] = useState([]);
   const [replacementCandidates, setReplacementCandidates] = useState([]);
+  const [operationTargets, setOperationTargets] = useState({ organizations: [], users: [], branches: [], vehicles: [], subscriptions: [] });
   const [replacementModalOpen, setReplacementModalOpen] = useState(false);
   const [operationSaving, setOperationSaving] = useState(false);
   const [operationForm, setOperationForm] = useState({
@@ -90,6 +93,11 @@ function DevicesTab() {
     replacement_device: '',
     reason: 'repair',
     description: '',
+    target_organization: '',
+    target_user: '',
+    target_branch: '',
+    target_vehicle: '',
+    target_subscription: '',
   });
   const [historyLoading, setHistoryLoading] = useState(false);
   const [eventSaving, setEventSaving] = useState(false);
@@ -200,6 +208,33 @@ function DevicesTab() {
     }
   };
 
+  const loadOperationTargets = async (operationType) => {
+    try {
+      if (operationType === 'transfer_customer') {
+        const [orgs, users, subs] = await Promise.all([
+          organizationsAPI.list(),
+          usersAPI.list(),
+          subscriptionsAPI.list({ status: 'active' }),
+        ]);
+        const normalize = (result) => Array.isArray(result) ? result : result.results || [];
+        setOperationTargets((current) => ({
+          ...current,
+          organizations: normalize(orgs),
+          users: normalize(users),
+          subscriptions: normalize(subs),
+        }));
+      } else if (operationType === 'transfer_branch') {
+        const result = await branchesAPI.list(historyDevice?.organization ? { organization: historyDevice.organization } : {});
+        setOperationTargets((current) => ({ ...current, branches: Array.isArray(result) ? result : result.results || [] }));
+      } else if (operationType === 'transfer_vehicle') {
+        const result = await vehiclesAPI.list(historyDevice?.organization ? { organization: historyDevice.organization } : {});
+        setOperationTargets((current) => ({ ...current, vehicles: Array.isArray(result) ? result : result.results || [] }));
+      }
+    } catch (err) {
+      console.error('Error loading operation targets:', err);
+    }
+  };
+
   const handleDeviceOperation = async (e) => {
     e.preventDefault();
     if (!historyDevice) return;
@@ -211,6 +246,9 @@ function DevicesTab() {
         reason: operationForm.reason || '',
         description: operationForm.description || '',
       };
+      ['target_organization', 'target_user', 'target_branch', 'target_vehicle', 'target_subscription'].forEach((key) => {
+        if (operationForm[key]) payload[key] = Number(operationForm[key]);
+      });
       if (operationForm.replacement_device) {
         payload.replacement_device = Number(operationForm.replacement_device);
         payload.replacement_type = operationForm.replacement_type;
@@ -222,6 +260,7 @@ function DevicesTab() {
         replacement_device: '',
         reason: 'repair',
         description: '',
+        target_organization: '', target_user: '', target_branch: '', target_vehicle: '', target_subscription: '',
       });
       await openHistory(historyDevice);
       refetch();
@@ -524,16 +563,38 @@ function DevicesTab() {
                       if (['return_for_repair', 'lost', 'stolen'].includes(value)) {
                         await loadReplacementCandidates();
                       }
+                      if (['transfer_customer', 'transfer_branch', 'transfer_vehicle'].includes(value)) {
+                        await loadOperationTargets(value);
+                      }
                     }}
                     options={[
                       { value: 'return_for_repair', label: 'بازگشت برای تعمیر' },
                       { value: 'repaired', label: 'اتمام تعمیر' },
                       { value: 'lost', label: 'گم‌شدن' },
                       { value: 'stolen', label: 'سرقت' },
+                      { value: 'transfer_customer', label: 'انتقال به مشتری دیگر' },
+                      { value: 'transfer_branch', label: 'انتقال بین شعب' },
+                      { value: 'transfer_vehicle', label: 'انتقال بین خودروها' },
                       { value: 'retire', label: 'بازنشستگی' },
                       { value: 'dispose', label: 'امحاء' },
                     ]}
                   />
+                  {operationForm.operation_type === 'transfer_customer' && (
+                    <div className="space-y-3 rounded-card border border-border-base bg-bg-base p-3">
+                      <Select label="سازمان مقصد" placeholder="انتخاب سازمان" value={operationForm.target_organization} onChange={(e) => setOperationForm({ ...operationForm, target_organization: e.target.value, target_user: '' })} options={operationTargets.organizations.map((item) => ({ value: item.id, label: item.name }))} />
+                      <Select label="کاربر شخصی مقصد" placeholder="در صورت انتقال به مشتری شخصی" value={operationForm.target_user} onChange={(e) => setOperationForm({ ...operationForm, target_user: e.target.value, target_organization: '' })} options={operationTargets.users.filter((item) => item.account_type === 'personal').map((item) => ({ value: item.id, label: item.full_name || item.username }))} />
+                      <Select label="قرارداد مقصد (اختیاری)" placeholder="انتخاب قرارداد" value={operationForm.target_subscription} onChange={(e) => setOperationForm({ ...operationForm, target_subscription: e.target.value })} options={operationTargets.subscriptions.map((item) => ({ value: item.id, label: item.contract_number }))} />
+                    </div>
+                  )}
+
+                  {operationForm.operation_type === 'transfer_branch' && (
+                    <Select label="شعبه مقصد" placeholder="انتخاب شعبه" value={operationForm.target_branch} onChange={(e) => setOperationForm({ ...operationForm, target_branch: e.target.value })} options={operationTargets.branches.map((item) => ({ value: item.id, label: item.name }))} />
+                  )}
+
+                  {operationForm.operation_type === 'transfer_vehicle' && (
+                    <Select label="خودرو مقصد" placeholder="انتخاب خودرو" value={operationForm.target_vehicle} onChange={(e) => setOperationForm({ ...operationForm, target_vehicle: e.target.value })} options={operationTargets.vehicles.map((item) => ({ value: item.id, label: item.plate }))} />
+                  )}
+
                   {operationNeedsReplacement && (
                     <div className="space-y-3 rounded-card border border-border-base bg-bg-base p-3">
                       <div className="flex items-center justify-between gap-3">
