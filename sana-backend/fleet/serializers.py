@@ -237,7 +237,7 @@ class DeviceLifecycleEventSerializer(serializers.ModelSerializer):
     class Meta:
         model = DeviceLifecycleEvent
         fields = [
-            'id', 'device', 'device_imei', 'event_type', 'event_type_display',
+            'id', 'device', 'device_operation', 'device_imei', 'event_type', 'event_type_display',
             'event_date', 'subscription', 'subscription_number',
             'organization', 'organization_name', 'user', 'user_name',
             'vehicle', 'vehicle_plate', 'branch', 'branch_name',
@@ -246,7 +246,7 @@ class DeviceLifecycleEventSerializer(serializers.ModelSerializer):
             'created_at',
         ]
         read_only_fields = [
-            'id', 'device_imei', 'event_type_display', 'reason_display',
+            'id', 'device_operation', 'device_imei', 'event_type_display', 'reason_display',
             'subscription_number', 'organization_name', 'user_name',
             'vehicle_plate', 'branch_name', 'previous_status', 'new_status',
             'performed_by', 'performed_by_name', 'created_at',
