@@ -758,6 +758,8 @@ function DevicesTab() {
               />
             </>
           )}
+          </div>
+        )}
         </div>
       </Modal>
       {/* مودال افزودن */}
