@@ -152,6 +152,8 @@ class DeviceListSerializer(serializers.ModelSerializer):
     owner_name = serializers.CharField(source='owner_user.full_name', read_only=True)
     vehicle_plate = serializers.CharField(source='vehicle.plate', read_only=True)
     branch_name = serializers.CharField(source='branch.name', read_only=True)
+    current_holder_organization_name = serializers.CharField(source='current_holder_organization.name', read_only=True)
+    current_holder_user_name = serializers.CharField(source='current_holder_user.full_name', read_only=True)
 
     # اطلاعات قرارداد فعلی
     subscription_id = serializers.SerializerMethodField()
@@ -170,6 +172,7 @@ class DeviceListSerializer(serializers.ModelSerializer):
             'organization', 'organization_name',
             'owner_user', 'owner_name',
             'branch', 'branch_name',
+            'current_holder_organization_name', 'current_holder_user_name',
             'vehicle_plate',
             'subscription_id', 'subscription_number', 'subscription_end_date',
             'management_status',
