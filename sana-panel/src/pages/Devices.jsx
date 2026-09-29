@@ -176,6 +176,7 @@ function DevicesTab() {
 
   const openHistory = async (device) => {
     setHistoryDevice(device);
+    loadReplacementCandidates(device);
     setHistoryLoading(true);
     try {
       const [historyResult, replacementResult, operationResult] = await Promise.all([
@@ -197,11 +198,11 @@ function DevicesTab() {
     }
   };
 
-  const loadReplacementCandidates = async () => {
+  const loadReplacementCandidates = async (device = historyDevice) => {
     try {
       const result = await devicesAPI.list({ in_warehouse: 'true' });
       const list = Array.isArray(result) ? result : result.results || [];
-      setReplacementCandidates(list.filter((item) => item.id !== historyDevice?.id));
+      setReplacementCandidates(list.filter((item) => item.id !== device?.id));
     } catch (err) {
       console.error('Error loading replacement candidates:', err);
       setReplacementCandidates([]);
