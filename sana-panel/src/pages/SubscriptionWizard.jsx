@@ -790,6 +790,16 @@ function Step4({ form, updateForm }) {
    مرحله ۵ — پرداخت اولیه
    ═══════════════════════════════════════════════ */
 
+function formatAmountInput(value) {
+  const digits = String(value ?? '').replace(/[^0-9]/g, '');
+  return digits ? digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '';
+}
+
+function parseAmountInput(value) {
+  const digits = String(value ?? '').replace(/[^0-9]/g, '');
+  return digits ? Number(digits) : 0;
+}
+
 function Step5({ form, updateForm }) {
   const [payment, setPayment] = useState({
     amount: '',
@@ -800,7 +810,7 @@ function Step5({ form, updateForm }) {
 
   const addPayment = () => {
     if (!payment.amount) return;
-    updateForm('payments', [...form.payments, { ...payment, amount: Number(payment.amount) }]);
+    updateForm('payments', [...form.payments, { ...payment, amount: parseAmountInput(payment.amount) }]);
     setPayment({
       amount: '',
       payment_date: new Date().toISOString().split('T')[0],
@@ -828,11 +838,11 @@ function Step5({ form, updateForm }) {
         <h4 className="text-xs font-medium text-text-muted">افزودن پرداخت</h4>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <Input
-            type="number"
+            inputMode="numeric"
             label="مبلغ (ریال)"
             value={payment.amount}
-            onChange={(e) => setPayment({ ...payment, amount: e.target.value })}
-            placeholder="مثلاً 50000000"
+            onChange={(e) => setPayment({ ...payment, amount: formatAmountInput(e.target.value) })}
+            placeholder="مثلاً 50,000,000"
           />
           <JalaliDatePicker
             label="تاریخ پرداخت"
