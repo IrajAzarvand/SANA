@@ -11,8 +11,10 @@ def _close_active_link(device, operation):
     link = device.subscription_links.filter(unassigned_at__isnull=True).select_related('subscription').first()
     if link:
         link.unassigned_at = timezone.now()
-        link.removed_by_operation = operation
-        link.save(update_fields=['unassigned_at', 'removed_by_operation'])
+        # DeviceOperation is a separate audit model from SubscriptionOperation.
+        # SubscriptionDevice keeps its legacy SubscriptionOperation links nullable;
+        # the DeviceOperation itself already records this operation and subscription.
+        link.save(update_fields=['unassigned_at'])
     return link
 
 
@@ -28,7 +30,6 @@ def _add_to_subscription(device, subscription, operation, start_date=None, end_d
         device=device,
         start_date=start_date,
         end_date=end_date,
-        added_by_operation=operation,
     )
     return link
 
