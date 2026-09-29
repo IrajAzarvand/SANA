@@ -554,6 +554,10 @@ function DevicesTab() {
             </div>
           )}
 
+          {operationHistory.length === 0 && historyEvents.filter((event) => !event.device_operation).length === 0 && (
+            <div className="text-sm text-text-muted text-center py-6">هنوز رویدادی ثبت نشده است.</div>
+          )}
+
           {historyEvents.filter((event) => {
             if (event.device_operation) return false;
             return !operationHistory.some((operation) =>
