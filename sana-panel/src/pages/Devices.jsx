@@ -17,7 +17,7 @@ import ErrorState from '../components/ErrorState';
 import Tabs from '../components/Tabs';
 import AddDeviceModal from '../components/AddDeviceModal';
 import { useAuth } from '../context/AuthContext';
-import { devicesAPI, deviceLifecycleAPI, deviceReplacementAPI } from '../api/services/fleet';
+import { devicesAPI, deviceLifecycleAPI, deviceReplacementAPI, deviceOperationsAPI } from '../api/services/fleet';
 import { deviceModelsAPI } from '../api/services/deviceModels';
 import { useApi } from '../hooks/useApi';
 import { toJalali } from '../utils/dateUtils';
@@ -80,6 +80,17 @@ function DevicesTab() {
   const [historyDevice, setHistoryDevice] = useState(null);
   const [historyEvents, setHistoryEvents] = useState([]);
   const [replacementRelations, setReplacementRelations] = useState([]);
+  const [operationHistory, setOperationHistory] = useState([]);
+  const [replacementCandidates, setReplacementCandidates] = useState([]);
+  const [replacementModalOpen, setReplacementModalOpen] = useState(false);
+  const [operationSaving, setOperationSaving] = useState(false);
+  const [operationForm, setOperationForm] = useState({
+    operation_type: 'return_for_repair',
+    replacement_type: '',
+    replacement_device: '',
+    reason: 'repair',
+    description: '',
+  });
   const [historyLoading, setHistoryLoading] = useState(false);
   const [eventSaving, setEventSaving] = useState(false);
   const [eventForm, setEventForm] = useState({ event_type: 'returned', reason: 'other', event_date: '', description: '' });
@@ -162,41 +173,80 @@ function DevicesTab() {
       const [historyResult, replacementResult] = await Promise.all([
         deviceLifecycleAPI.list({ device: device.id }),
         deviceReplacementAPI.list({ device: device.id }),
+        deviceOperationsAPI.list({ device: device.id }),
       ]);
       setHistoryEvents(Array.isArray(historyResult) ? historyResult : historyResult.results || []);
       setReplacementRelations(Array.isArray(replacementResult) ? replacementResult : replacementResult.results || []);
+      setOperationHistory(Array.isArray(operationResult) ? operationResult : operationResult.results || []);
     } catch (err) {
-      console.error('Error loading lifecycle history:', err);
+      console.error('Error loading device history:', err);
       setHistoryEvents([]);
+      setReplacementRelations([]);
+      setOperationHistory([]);
       alert('خطا در دریافت تاریخچه دستگاه');
     } finally {
       setHistoryLoading(false);
     }
   };
 
-  const handleLifecycleEvent = async (e) => {
+  const loadReplacementCandidates = async () => {
+    try {
+      const result = await devicesAPI.list({ in_warehouse: 'true' });
+      const list = Array.isArray(result) ? result : result.results || [];
+      setReplacementCandidates(list.filter((item) => item.id !== historyDevice?.id));
+    } catch (err) {
+      console.error('Error loading replacement candidates:', err);
+      setReplacementCandidates([]);
+    }
+  };
+
+  const handleDeviceOperation = async (e) => {
     e.preventDefault();
     if (!historyDevice) return;
-    setEventSaving(true);
+    setOperationSaving(true);
     try {
       const payload = {
         device: historyDevice.id,
-        event_type: eventForm.event_type,
-        reason: eventForm.reason || '',
-        description: eventForm.description || '',
+        operation_type: operationForm.operation_type,
+        reason: operationForm.reason || '',
+        description: operationForm.description || '',
       };
-      if (eventForm.event_date) payload.event_date = eventForm.event_date + 'T00:00:00';
-      await deviceLifecycleAPI.create(payload);
-      setEventForm({ event_type: 'returned', reason: 'other', event_date: '', description: '' });
+      if (operationForm.replacement_device) {
+        payload.replacement_device = Number(operationForm.replacement_device);
+        payload.replacement_type = operationForm.replacement_type;
+      }
+      await deviceOperationsAPI.create(payload);
+      setOperationForm({
+        operation_type: 'return_for_repair',
+        replacement_type: '',
+        replacement_device: '',
+        reason: 'repair',
+        description: '',
+      });
       await openHistory(historyDevice);
       refetch();
     } catch (err) {
-      console.error('Error saving lifecycle event:', err);
-      alert(err.response?.data?.detail || 'ثبت رویداد ناموفق بود');
+      console.error('Error saving device operation:', err);
+      const data = err.response?.data;
+      const message = data
+        ? Object.entries(data).map(([key, value]) => `${key}: ${Array.isArray(value) ? value[0] : value}`).join('\n')
+        : 'ثبت عملیات ناموفق بود';
+      alert(message);
     } finally {
-      setEventSaving(false);
+      setOperationSaving(false);
     }
   };
+
+  const handleReplacementCreated = (createdDevice) => {
+    setReplacementModalOpen(false);
+    setOperationForm((current) => ({
+      ...current,
+      replacement_device: createdDevice.id,
+    }));
+  };
+
+  const operationNeedsReplacement = ['return_for_repair', 'lost', 'stolen'].includes(operationForm.operation_type);
+  const operationNeedsReplacementType = operationForm.operation_type === 'return_for_repair' && Boolean(operationForm.replacement_device);
 
   const handleDelete = async (id) => {
     if (!confirm('آیا از حذف این دستگاه اطمینان دارید؟')) return;
@@ -373,7 +423,24 @@ function DevicesTab() {
         <div className="space-y-5">
           {historyLoading ? <LoadingSpinner /> : (
             <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
-              {historyEvents.length === 0 ? <div className="text-sm text-text-muted text-center py-6">هنوز رویدادی ثبت نشده است.</div> : historyEvents.map((event) => (
+              {operationHistory.length > 0 && (
+            <div className="rounded-card border border-border-base bg-bg-base p-4 space-y-3">
+              <div className="text-sm font-semibold text-text-primary">سوابق عملیات دستگاه</div>
+              <div className="space-y-2">
+                {operationHistory.map((operation) => (
+                  <div key={operation.id} className="rounded-card border border-border-base bg-bg-surface p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-sm font-medium text-text-primary">{operation.operation_type_display}</div>
+                      <span className="text-[11px] text-text-muted">{operation.performed_at ? toJalali(operation.performed_at) : '—'}</span>
+                    </div>
+                    {operation.replacement_device_imei && <div className="text-xs text-text-secondary mt-2">دستگاه جایگزین: <span className="font-mono">{operation.replacement_device_imei}</span></div>}
+                    {operation.description && <div className="text-xs text-text-secondary mt-2 leading-6">{operation.description}</div>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {historyEvents.length === 0 ? <div className="text-sm text-text-muted text-center py-6">هنوز رویدادی ثبت نشده است.</div> : historyEvents.map((event) => (
                 <div key={event.id} className="rounded-card border border-border-base bg-bg-base p-3">
                   <div className="flex items-start justify-between gap-3"><div><div className="text-sm font-semibold text-text-primary">{event.event_type_display}</div><div className="text-[11px] text-text-muted mt-1 font-mono">{event.event_date ? toJalali(event.event_date) : '—'}</div></div><Badge variant={event.new_status === 'warehouse' ? 'info' : 'brand'}>{managementStatusMap[event.new_status]?.label || event.new_status || '—'}</Badge></div>
                   {event.reason_display && <div className="text-xs text-text-secondary mt-2">دلیل: {event.reason_display}</div>}
@@ -417,16 +484,112 @@ function DevicesTab() {
               </div>
             </div>
           )}
-          {isSiteAdmin && <form onSubmit={handleLifecycleEvent} className="border-t border-border-base pt-4 space-y-4">
-            <div className="flex items-center gap-2 text-sm font-semibold text-text-primary"><RotateCcw size={16} />ثبت رویداد جدید</div>
-            <Select label="نوع رویداد" value={eventForm.event_type} onChange={(e) => setEventForm({ ...eventForm, event_type: e.target.value })} options={[{value:'returned',label:'بازگشت به سانا'},{value:'sent_to_repair',label:'ارسال برای تعمیر'},{value:'repaired',label:'اتمام تعمیر'},{value:'replaced',label:'تعویض'},{value:'transferred',label:'انتقال'},{value:'lost',label:'گم‌شدن'},{value:'stolen',label:'سرقت'},{value:'retired',label:'بازنشستگی'},{value:'disposed',label:'امحاء'}]} />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Select label="دلیل" value={eventForm.reason} onChange={(e) => setEventForm({ ...eventForm, reason: e.target.value })} options={[{value:'repair',label:'تعمیر'},{value:'replacement',label:'تعویض'},{value:'contract_termination',label:'پایان قرارداد'},{value:'customer_return',label:'مرجوعی مشتری'},{value:'upgrade',label:'ارتقاء'},{value:'defective',label:'خرابی'},{value:'other',label:'سایر'}]} />
-              <JalaliDatePicker label="تاریخ رویداد" value={eventForm.event_date} onChange={(value) => setEventForm({ ...eventForm, event_date: value })} />
-            </div>
-            <Input label="شرح" value={eventForm.description} onChange={(e) => setEventForm({ ...eventForm, description: e.target.value })} placeholder="برای موارد خاص، توضیحات کامل را وارد کنید..." />
-            <div className="flex justify-end"><Button type="submit" disabled={eventSaving}>{eventSaving ? 'در حال ثبت...' : 'ثبت رویداد'}</Button></div>
-          </form>}
+          {isSiteAdmin && (
+            <>
+              <div className="border-t border-border-base pt-4">
+                <form onSubmit={handleDeviceOperation} className="space-y-4">
+                  <div className="flex items-center gap-2 text-sm font-semibold text-text-primary">
+                    <RotateCcw size={16} />عملیات دستگاه
+                  </div>
+                  <Select
+                    label="نوع عملیات"
+                    value={operationForm.operation_type}
+                    onChange={async (e) => {
+                      const value = e.target.value;
+                      setOperationForm((current) => ({
+                        ...current,
+                        operation_type: value,
+                        replacement_type: '',
+                        replacement_device: '',
+                        reason: value === 'return_for_repair' ? 'repair' : current.reason,
+                      }));
+                      if (['return_for_repair', 'lost', 'stolen'].includes(value)) {
+                        await loadReplacementCandidates();
+                      }
+                    }}
+                    options={[
+                      { value: 'return_for_repair', label: 'بازگشت برای تعمیر' },
+                      { value: 'repaired', label: 'اتمام تعمیر' },
+                      { value: 'lost', label: 'گم‌شدن' },
+                      { value: 'stolen', label: 'سرقت' },
+                      { value: 'retire', label: 'بازنشستگی' },
+                      { value: 'dispose', label: 'امحاء' },
+                    ]}
+                  />
+                  {operationNeedsReplacement && (
+                    <div className="space-y-3 rounded-card border border-border-base bg-bg-base p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-xs font-medium text-text-secondary">جایگزین</span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          icon={Plus}
+                          onClick={() => {
+                            loadReplacementCandidates();
+                            setReplacementModalOpen(true);
+                          }}
+                        >
+                          افزودن دستگاه جدید
+                        </Button>
+                      </div>
+                      <Select
+                        label="دستگاه جایگزین"
+                        placeholder="بدون جایگزین"
+                        value={operationForm.replacement_device}
+                        onChange={(e) => setOperationForm({ ...operationForm, replacement_device: e.target.value })}
+                        options={[
+                          { value: '', label: 'بدون جایگزین' },
+                          ...replacementCandidates.map((item) => ({
+                            value: item.id,
+                            label: `${item.imei} — ${item.device_model_manufacturer || ''} ${item.device_model_name || ''}`,
+                          })),
+                        ]}
+                      />
+                      {operationNeedsReplacementType && (
+                        <Select
+                          label="نوع جایگزینی"
+                          value={operationForm.replacement_type}
+                          onChange={(e) => setOperationForm({ ...operationForm, replacement_type: e.target.value })}
+                          options={[
+                            { value: 'temporary_repair', label: 'جایگزینی موقت برای تعمیر' },
+                            { value: 'permanent_replacement', label: 'تعویض دائمی' },
+                          ]}
+                        />
+                      )}
+                    </div>
+                  )}
+                  <Select
+                    label="دلیل"
+                    value={operationForm.reason}
+                    onChange={(e) => setOperationForm({ ...operationForm, reason: e.target.value })}
+                    options={[
+                      { value: 'repair', label: 'تعمیر' },
+                      { value: 'replacement', label: 'تعویض' },
+                      { value: 'defective', label: 'خرابی' },
+                      { value: 'other', label: 'سایر' },
+                    ]}
+                  />
+                  <Input
+                    label="شرح"
+                    value={operationForm.description}
+                    onChange={(e) => setOperationForm({ ...operationForm, description: e.target.value })}
+                    placeholder="شرح کامل عملیات..."
+                  />
+                  <div className="flex justify-end">
+                    <Button type="submit" disabled={operationSaving}>
+                      {operationSaving ? 'در حال ثبت...' : 'ثبت عملیات'}
+                    </Button>
+                  </div>
+                </form>
+              </div>
+              <AddDeviceModal
+                open={replacementModalOpen}
+                onClose={() => setReplacementModalOpen(false)}
+                onSuccess={handleReplacementCreated}
+              />
+            </>
+          )}
         </div>
       </Modal>
       {/* مودال افزودن */}
