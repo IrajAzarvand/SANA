@@ -170,7 +170,7 @@ function DevicesTab() {
     setHistoryDevice(device);
     setHistoryLoading(true);
     try {
-      const [historyResult, replacementResult] = await Promise.all([
+      const [historyResult, replacementResult, operationResult] = await Promise.all([
         deviceLifecycleAPI.list({ device: device.id }),
         deviceReplacementAPI.list({ device: device.id }),
         deviceOperationsAPI.list({ device: device.id }),
