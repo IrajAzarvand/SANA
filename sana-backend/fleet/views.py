@@ -110,7 +110,10 @@ class DeviceViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        qs = Device.objects.select_related('device_model', 'organization', 'branch', 'vehicle', 'owner_user')
+        qs = Device.objects.select_related(
+            'device_model', 'organization', 'branch', 'vehicle', 'owner_user',
+            'current_holder_organization', 'current_holder_user',
+        )
 
         if user.is_site_admin:
             pass
