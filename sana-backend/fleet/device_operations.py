@@ -29,7 +29,11 @@ def _open_customer_access(device, subscription=None, branch=None, organization=N
     current = DeviceCustomerAccessPeriod.objects.filter(device=device, ended_at__isnull=True).first()
     if current:
         same_customer = current.organization_id == getattr(customer['organization'], 'id', None) and current.user_id == getattr(customer['user'], 'id', None)
-        if same_customer:
+        branch_id = getattr(branch, 'id', None)
+        if same_customer and current.branch_id != branch_id:
+            _close_customer_access(device, started_at)
+            current = None
+        if current and same_customer:
             changed = []
             if subscription and current.subscription_id != subscription.id:
                 current.subscription = subscription; changed.append('subscription')
@@ -37,7 +41,8 @@ def _open_customer_access(device, subscription=None, branch=None, organization=N
                 current.branch = branch; changed.append('branch')
             if changed: current.save(update_fields=changed)
             return current
-        _close_customer_access(device, started_at)
+        if current:
+            _close_customer_access(device, started_at)
     return DeviceCustomerAccessPeriod.objects.create(device=device, subscription=subscription, branch=branch, started_at=started_at or timezone.now(), reason=reason, **customer)
 
 
@@ -559,6 +564,7 @@ def execute_device_operation(
             raise ValidationError({'target_branch': 'شعبه مقصد را مشخص کنید'})
         device.branch = target_branch
         device.save(update_fields=['branch', 'updated_at'])
+        _open_customer_access(device, subscription=subscription, branch=target_branch)
         record_device_lifecycle_event(
             device_operation=operation,
             device=device,
@@ -588,6 +594,7 @@ def execute_device_operation(
         device.vehicle = target_vehicle
         device.branch = target_vehicle.branch
         device.save(update_fields=['vehicle', 'branch', 'updated_at'])
+        _open_customer_access(device, subscription=subscription, branch=target_vehicle.branch)
         record_device_lifecycle_event(
             device_operation=operation,
             device=device,
