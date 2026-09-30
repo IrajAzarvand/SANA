@@ -1,9 +1,9 @@
 from django.utils import timezone
-from django.db.models import Exists, OuterRef, Prefetch
+from django.db.models import Exists, OuterRef, Prefetch, Q
 from rest_framework import viewsets, filters
 from rest_framework.permissions import IsAuthenticated
 
-from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation
+from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation, DeviceCustomerAccessPeriod
 from .serializers import (
     VehicleTypeSerializer,
     VehicleSerializer,
@@ -129,11 +129,11 @@ class DeviceViewSet(viewsets.ModelViewSet):
         if user.is_site_admin:
             pass
         elif user.is_main_user and user.organization:
-            qs = qs.filter(organization=user.organization)
+            qs = qs.filter(customer_access_periods__organization=user.organization, customer_access_periods__ended_at__isnull=True).distinct()
         elif user.is_branch_manager and user.branch:
-            qs = qs.filter(branch=user.branch)
+            qs = qs.filter(customer_access_periods__organization=user.organization, customer_access_periods__branch=user.branch, customer_access_periods__ended_at__isnull=True).distinct()
         elif user.is_personal_user:
-            qs = qs.filter(owner_user=user)
+            qs = qs.filter(customer_access_periods__user=user, customer_access_periods__ended_at__isnull=True).distinct()
         else:
             qs = qs.none()
 
