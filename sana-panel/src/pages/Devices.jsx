@@ -474,7 +474,6 @@ function DevicesTab() {
                   )}
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">قرارداد</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">نوع ارتباط</th>
-                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">جایگزینی</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">خودرو</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">وضعیت</th>
                   <th className="w-12"></th>
@@ -517,24 +516,14 @@ function DevicesTab() {
                         )}
                       </td>
                        <td className="py-3 px-4">
-                         {d.subscription_device_type_display ? (
+                         {d.replacement_device_imei ? (
+                           <button type="button" onClick={() => focusRelatedDevice(d.replacement_device_imei)} title={d.replacement_relation_direction === 'replaced_by' ? `این دستگاه با IMEI ${d.replacement_device_imei} جایگزین شده است` : `این دستگاه جایگزین IMEI ${d.replacement_device_imei} است`} className="inline-flex items-center rounded-full border border-border-base px-2.5 py-1 text-xs text-text-primary hover:bg-bg-hover hover:border-brand/40 transition-colors cursor-pointer">
+                             {d.subscription_device_type_display || 'جایگزین شده'}
+                           </button>
+                         ) : d.subscription_device_type_display ? (
                            <Badge variant={d.subscription_device_type === 'primary' ? 'muted' : 'brand'}>
                              {d.subscription_device_type_display}
                            </Badge>
-                         ) : (
-                           <span className="text-text-muted text-xs">—</span>
-                         )}
-                       </td>
-                       <td className="py-3 px-4">
-                         {d.replacement_device_imei ? (
-                           <button
-                             type="button"
-                             onClick={() => focusRelatedDevice(d.replacement_device_imei)}
-                             title="نمایش دستگاه مرتبط"
-                             className="text-xs text-brand hover:underline font-mono"
-                           >
-                             {d.replacement_relation_direction === 'replaced_by' ? 'جایگزین شده با' : 'جایگزین'} {d.replacement_device_imei}
-                           </button>
                          ) : (
                            <span className="text-text-muted text-xs">—</span>
                          )}
