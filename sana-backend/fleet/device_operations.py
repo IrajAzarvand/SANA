@@ -102,8 +102,8 @@ def execute_device_operation(
 
             old_vehicle = device.vehicle
             old_branch = device.branch
-            old_org = device.organization
-            old_user = device.owner_user
+            old_org = device.organization or device.current_holder_organization
+            old_user = device.owner_user or device.current_holder_user
 
             DeviceReplacementRelation.objects.create(
                 source_device=device,
@@ -162,8 +162,8 @@ def execute_device_operation(
                 description=f'به عنوان جایگزین دستگاه {device.imei} به قرارداد متصل شد.',
             )
         else:
-            old_org = device.organization
-            old_user = device.owner_user
+            old_org = device.organization or device.current_holder_organization
+            old_user = device.owner_user or device.current_holder_user
             old_vehicle = device.vehicle
             old_branch = device.branch
 
@@ -234,8 +234,8 @@ def execute_device_operation(
 
         old_vehicle = device.vehicle
         old_branch = device.branch
-        old_org = device.organization
-        old_user = device.owner_user
+        old_org = device.organization or device.current_holder_organization
+        old_user = device.owner_user or device.current_holder_user
 
         # مفقودی/سرقت مالکیت و قرارداد را لغو نمی‌کند؛ فقط نصب فعلی را جدا می‌کند.
         device.vehicle = None
