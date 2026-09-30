@@ -154,7 +154,7 @@ class Migration(migrations.Migration):
             model_name='vehicle',
             name='vehicle_type',
             field=models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to='fleet.vehicletype', verbose_name='نوع خودرو'),
-        ),,
+        ),
         migrations.CreateModel(
             name='DeviceReplacementRelation',
             fields=[
@@ -171,7 +171,7 @@ class Migration(migrations.Migration):
                 'verbose_name_plural': 'روابط جایگزینی دستگاه‌ها',
                 'ordering': ['-replacement_date', '-id'],
             },
-        ),,
+        ),
         migrations.AddField(
             model_name='device',
             name='current_holder_organization',
@@ -307,7 +307,7 @@ class Migration(migrations.Migration):
                 'verbose_name_plural': 'عملیات دستگاه',
                 'ordering': ['-performed_at', '-id'],
             },
-        ),,
+        ),
         migrations.AddField(
             model_name='devicelifecycleevent',
             name='device_operation',
@@ -319,7 +319,7 @@ class Migration(migrations.Migration):
                 to='fleet.deviceoperation',
                 verbose_name='عملیات دستگاه',
             ),
-        ),,
+        ),
         migrations.AddField(
             model_name='deviceoperation',
             name='replacement_method',
@@ -357,7 +357,7 @@ class Migration(migrations.Migration):
                 max_length=40,
                 verbose_name='سرنوشت دستگاه پس از تعمیر',
             ),
-        ),,
+        ),
         migrations.RenameField(
             model_name='deviceoperation',
             old_name='repair_return_action',
@@ -452,7 +452,7 @@ class Migration(migrations.Migration):
                 max_length=30,
                 verbose_name='نوع رویداد',
             ),
-        ),,
+        ),
         migrations.CreateModel(
             name='DeviceOwnershipHistory',
             fields=[
@@ -523,7 +523,7 @@ class Migration(migrations.Migration):
                 name='device_access_one_customer',
             ),
         ),
-        migrations.RunPython(backfill_device_history, migrations.RunPython.noop),,
+        migrations.RunPython(backfill_device_history, migrations.RunPython.noop),
         migrations.RenameIndex(
             model_name='devicecustomeraccessperiod',
             new_name='fleet_devic_device__208b12_idx',
