@@ -2,9 +2,60 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from .models import Device, DeviceOperation, DeviceReplacementRelation, DeviceLifecycleEvent
+from .models import Device, DeviceOperation, DeviceReplacementRelation, DeviceLifecycleEvent, DeviceOwnershipHistory, DeviceCustomerAccessPeriod
 from .lifecycle import record_device_lifecycle_event
 from organizations.models import SubscriptionDevice
+
+
+def _customer_kwargs(device=None, organization=None, user=None):
+    organization = organization if organization is not None else (device.organization if device else None)
+    user = user if user is not None else (device.owner_user if device else None)
+    if organization:
+        return {'organization': organization, 'user': None}
+    if user:
+        return {'organization': None, 'user': user}
+    return {'organization': None, 'user': None}
+
+
+def _close_customer_access(device, when=None):
+    when = when or timezone.now()
+    DeviceCustomerAccessPeriod.objects.filter(device=device, ended_at__isnull=True).update(ended_at=when)
+
+
+def _open_customer_access(device, subscription=None, branch=None, organization=None, user=None, started_at=None, reason=''):
+    customer = _customer_kwargs(device, organization, user)
+    if not customer['organization'] and not customer['user']:
+        return None
+    current = DeviceCustomerAccessPeriod.objects.filter(device=device, ended_at__isnull=True).first()
+    if current:
+        same_customer = current.organization_id == getattr(customer['organization'], 'id', None) and current.user_id == getattr(customer['user'], 'id', None)
+        if same_customer:
+            changed = []
+            if subscription and current.subscription_id != subscription.id:
+                current.subscription = subscription; changed.append('subscription')
+            if branch and current.branch_id != branch.id:
+                current.branch = branch; changed.append('branch')
+            if changed: current.save(update_fields=changed)
+            return current
+        _close_customer_access(device, started_at)
+    return DeviceCustomerAccessPeriod.objects.create(device=device, subscription=subscription, branch=branch, started_at=started_at or timezone.now(), reason=reason, **customer)
+
+
+def _close_ownership(device, when=None):
+    when = when or timezone.now()
+    DeviceOwnershipHistory.objects.filter(device=device, ended_at__isnull=True).update(ended_at=when)
+
+
+def _open_ownership(device, organization=None, user=None, started_at=None, reason=''):
+    customer = _customer_kwargs(device, organization, user)
+    if not customer['organization'] and not customer['user']:
+        return None
+    current = DeviceOwnershipHistory.objects.filter(device=device, ended_at__isnull=True).first()
+    same_customer = current and current.organization_id == getattr(customer['organization'], 'id', None) and current.owner_user_id == getattr(customer['user'], 'id', None)
+    if same_customer:
+        return current
+    if current: _close_ownership(device, started_at)
+    return DeviceOwnershipHistory.objects.create(device=device, started_at=started_at or timezone.now(), reason=reason, **customer)
 
 
 def _close_active_link(device, operation):
@@ -64,6 +115,11 @@ def execute_device_operation(
         raise ValidationError({'replacement_device': 'دستگاه جایگزین نمی‌تواند همان دستگاه قبلی باشد.'})
 
     old_status = device.management_status
+    if device.organization_id or device.owner_user_id:
+        _open_ownership(device, reason='customer_assignment')
+        if active_link:
+            _open_customer_access(device, subscription=active_link.subscription, branch=device.branch, reason='existing_relationship')
+
     operation = DeviceOperation.objects.create(
         operation_type=operation_type,
         device=device,
@@ -469,6 +525,8 @@ def execute_device_operation(
         if not target_organization and not target_user:
             raise ValidationError({'target_organization': 'مالک مقصد را مشخص کنید'})
         _close_active_link(device, operation)
+        _close_customer_access(device)
+        _close_ownership(device)
         device.organization = target_organization
         device.owner_user = target_user
         device.current_holder_organization = target_organization
@@ -479,6 +537,8 @@ def execute_device_operation(
         device.save()
         if target_subscription:
             _add_to_subscription(device, target_subscription, operation)
+        _open_ownership(device, organization=target_organization, user=target_user, reason='transfer_customer')
+        _open_customer_access(device, subscription=target_subscription, branch=target_branch, organization=target_organization, user=target_user, reason='transfer_customer')
         record_device_lifecycle_event(
             device_operation=operation,
             device=device,
