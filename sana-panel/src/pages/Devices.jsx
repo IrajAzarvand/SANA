@@ -466,6 +466,7 @@ function DevicesTab() {
                     <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">مشتری</th>
                   )}
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">قرارداد</th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">نوع ارتباط</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">خودرو</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">وضعیت</th>
                   <th className="w-12"></th>
@@ -495,7 +496,7 @@ function DevicesTab() {
                       </td>
                       {isSiteAdmin && (
                         <td className="py-3 px-4 text-text-secondary text-xs">
-                          {d.organization_name || d.owner_name || (
+                          {d.customer_name || (
                             <span className="text-text-muted">در انبار</span>
                           )}
                         </td>
