@@ -524,12 +524,10 @@ class DeviceLifecycleEvent(models.Model):
         ('replaced', 'تعویض'),
         ('transferred', 'انتقال'),
         ('lost', 'گم‌شدن'),
-        ('found', 'پیدا شدن'),
         ('disposition', 'تعیین تکلیف'),
         ('stolen', 'سرقت'),
         ('retired', 'بازنشستگی'),
         ('disposed', 'امحاء'),
-        ('disposition', 'تعیین تکلیف'),
     ]
 
     RETURN_REASON_CHOICES = [
