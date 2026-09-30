@@ -96,6 +96,7 @@ class Device(models.Model):
         ('sold', 'فروخته شده'),
         ('installed', 'نصب شده'),
         ('active', 'فعال'),
+        ('ready', 'آماده تعیین تکلیف'),
         ('faulty', 'خراب'),
         ('lost', 'گمشده'),
         ('stolen', 'سرقت شده'),
@@ -216,9 +217,12 @@ class DeviceOperation(models.Model):
     OPERATION_TYPE_CHOICES = [
         ('return_for_repair', 'بازگشت برای تعمیر'),
         ('repaired', 'اتمام تعمیر'),
+        ('found', 'پیدا شدن دستگاه'),
+        ('disposition', 'تعیین تکلیف دستگاه'),
         ('temporary_replacement', 'جایگزینی موقت'),
         ('permanent_replacement', 'تعویض دائمی'),
         ('lost', 'گم‌شدن'),
+        ('found', 'پیدا شدن'),
         ('stolen', 'سرقت'),
         ('transfer_customer', 'انتقال به مشتری دیگر'),
         ('transfer_branch', 'انتقال بین شعب'),
@@ -277,7 +281,7 @@ class DeviceOperation(models.Model):
         blank=True,
         verbose_name='نحوه تجاری جایگزینی'
     )
-    repair_return_action = models.CharField(
+    outcome_action = models.CharField(
         max_length=40,
         choices=[
             ('return_customer_same_vehicle', 'بازگشت به مشتری و نصب روی همان خودرو'),
@@ -291,7 +295,7 @@ class DeviceOperation(models.Model):
             ('other', 'سایر'),
         ],
         blank=True,
-        verbose_name='سرنوشت دستگاه پس از تعمیر'
+        verbose_name='تعیین تکلیف دستگاه'
     )
     reason = models.CharField(max_length=30, blank=True, verbose_name='دلیل')
     description = models.TextField(blank=True, verbose_name='شرح')
@@ -417,9 +421,12 @@ class DeviceLifecycleEvent(models.Model):
         ('replaced', 'تعویض'),
         ('transferred', 'انتقال'),
         ('lost', 'گم‌شدن'),
+        ('found', 'پیدا شدن'),
+        ('disposition', 'تعیین تکلیف'),
         ('stolen', 'سرقت'),
         ('retired', 'بازنشستگی'),
         ('disposed', 'امحاء'),
+        ('disposition', 'تعیین تکلیف'),
     ]
 
     RETURN_REASON_CHOICES = [
