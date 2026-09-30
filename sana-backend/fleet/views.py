@@ -231,10 +231,15 @@ class DeviceLifecycleEventViewSet(viewsets.ModelViewSet):
         qs = self.queryset
         if user.is_site_admin:
             pass
-        elif user.organization_id:
-            qs = qs.filter(organization_id=user.organization_id)
+        elif user.is_main_user and user.organization_id:
+            access = DeviceCustomerAccessPeriod.objects.filter(device=OuterRef('device_id'), organization_id=user.organization_id, started_at__lte=OuterRef('event_date')).filter(Q(ended_at__isnull=True) | Q(ended_at__gte=OuterRef('event_date')))
+            qs = qs.filter(Exists(access))
+        elif user.is_branch_manager and user.branch_id:
+            access = DeviceCustomerAccessPeriod.objects.filter(device=OuterRef('device_id'), organization_id=user.organization_id, branch_id=user.branch_id, started_at__lte=OuterRef('event_date')).filter(Q(ended_at__isnull=True) | Q(ended_at__gte=OuterRef('event_date')))
+            qs = qs.filter(Exists(access))
         elif user.is_personal_user:
-            qs = qs.filter(user=user)
+            access = DeviceCustomerAccessPeriod.objects.filter(device=OuterRef('device_id'), user_id=user.id, started_at__lte=OuterRef('event_date')).filter(Q(ended_at__isnull=True) | Q(ended_at__gte=OuterRef('event_date')))
+            qs = qs.filter(Exists(access))
         else:
             qs = qs.none()
 
