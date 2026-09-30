@@ -508,13 +508,22 @@ function DevicesTab() {
                           <span className="text-text-muted text-xs">—</span>
                         )}
                       </td>
-                      <td className="py-3 px-4">
-                        {d.vehicle_plate ? (
-                          <span className="font-mono text-text-primary text-xs">{d.vehicle_plate}</span>
-                        ) : (
-                          <span className="text-text-muted text-xs">—</span>
-                        )}
-                      </td>
+                       <td className="py-3 px-4">
+                         {d.subscription_device_type_display ? (
+                           <Badge variant={d.subscription_device_type === 'primary' ? 'muted' : 'brand'}>
+                             {d.subscription_device_type_display}
+                           </Badge>
+                         ) : (
+                           <span className="text-text-muted text-xs">—</span>
+                         )}
+                       </td>
+                       <td className="py-3 px-4">
+                         {d.vehicle_plate ? (
+                           <span className="font-mono text-text-primary text-xs">{d.vehicle_plate}</span>
+                         ) : (
+                           <span className="text-text-muted text-xs">—</span>
+                         )}
+                       </td>
                       <td className="py-3 px-4">
                         <Badge variant={mgmt.variant}>{mgmt.label}</Badge>
                       </td>
