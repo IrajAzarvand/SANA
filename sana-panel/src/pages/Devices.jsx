@@ -375,6 +375,13 @@ function DevicesTab() {
     }
   };
 
+  const focusRelatedDevice = (imei) => {
+    if (!imei) return;
+    setFilterStatus('');
+    setFilterWarehouse('');
+    setSearch(imei);
+  };
+
   const getMenuItems = (device) => {
     const items = [
       {
@@ -467,6 +474,7 @@ function DevicesTab() {
                   )}
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">قرارداد</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">نوع ارتباط</th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">جایگزینی</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">خودرو</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">وضعیت</th>
                   <th className="w-12"></th>
@@ -480,7 +488,7 @@ function DevicesTab() {
                     : '—';
 
                   return (
-                    <tr key={d.id} className="border-b border-border-base last:border-0 hover:bg-bg-hover transition-colors">
+                    <tr id={`device-row-${d.id}`} key={d.id} className="border-b border-border-base last:border-0 hover:bg-bg-hover transition-colors">
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-1.5 font-mono text-xs text-text-primary">
                           <Hash size={12} className="text-text-muted" />
@@ -513,6 +521,20 @@ function DevicesTab() {
                            <Badge variant={d.subscription_device_type === 'primary' ? 'muted' : 'brand'}>
                              {d.subscription_device_type_display}
                            </Badge>
+                         ) : (
+                           <span className="text-text-muted text-xs">—</span>
+                         )}
+                       </td>
+                       <td className="py-3 px-4">
+                         {d.replacement_device_imei ? (
+                           <button
+                             type="button"
+                             onClick={() => focusRelatedDevice(d.replacement_device_imei)}
+                             title="نمایش دستگاه مرتبط"
+                             className="text-xs text-brand hover:underline font-mono"
+                           >
+                             {d.replacement_relation_direction === 'replaced_by' ? 'جایگزین شده با' : 'جایگزین'} {d.replacement_device_imei}
+                           </button>
                          ) : (
                            <span className="text-text-muted text-xs">—</span>
                          )}

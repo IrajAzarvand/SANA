@@ -162,6 +162,9 @@ class DeviceListSerializer(serializers.ModelSerializer):
     subscription_end_date = serializers.SerializerMethodField()
     subscription_device_type = serializers.SerializerMethodField()
     subscription_device_type_display = serializers.SerializerMethodField()
+    replacement_device_id = serializers.SerializerMethodField()
+    replacement_device_imei = serializers.SerializerMethodField()
+    replacement_relation_direction = serializers.SerializerMethodField()
 
     # وضعیت انبار
     is_in_warehouse = serializers.BooleanField(read_only=True)
@@ -180,6 +183,7 @@ class DeviceListSerializer(serializers.ModelSerializer):
             'vehicle_plate',
             'subscription_id', 'subscription_number', 'subscription_end_date',
             'subscription_device_type', 'subscription_device_type_display',
+            'replacement_device_id', 'replacement_device_imei', 'replacement_relation_direction',
             'management_status',
             'is_in_warehouse',
             'created_at',
@@ -258,6 +262,38 @@ class DeviceListSerializer(serializers.ModelSerializer):
             'permanent_replacement': 'جایگزین دائمی',
             'replacement': 'دستگاه جایگزین',
         }.get(value)
+
+    def _latest_replacement_relation(self, obj):
+        relations = []
+        for relation in getattr(obj, '_replacement_relations_as_source', []):
+            relations.append(('source', relation))
+        for relation in getattr(obj, '_replacement_relations_as_replacement', []):
+            relations.append(('replacement', relation))
+        if not relations:
+            return None, None
+        direction, relation = max(
+            relations,
+            key=lambda item: (item[1].replacement_date, item[1].id),
+        )
+        return direction, relation
+
+    def get_replacement_device_id(self, obj):
+        direction, relation = self._latest_replacement_relation(obj)
+        if not relation:
+            return None
+        return relation.replacement_device_id if direction == 'source' else relation.source_device_id
+
+    def get_replacement_device_imei(self, obj):
+        direction, relation = self._latest_replacement_relation(obj)
+        if not relation:
+            return None
+        return relation.replacement_device.imei if direction == 'source' else relation.source_device.imei
+
+    def get_replacement_relation_direction(self, obj):
+        direction, relation = self._latest_replacement_relation(obj)
+        if not relation:
+            return None
+        return 'replaced_by' if direction == 'source' else 'replacement_for'
 
 class DriverSerializer(serializers.ModelSerializer):
     organization_name = serializers.CharField(source='organization.name', read_only=True)

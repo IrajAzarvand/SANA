@@ -1,5 +1,5 @@
 from django.utils import timezone
-from django.db.models import Exists, OuterRef
+from django.db.models import Exists, OuterRef, Prefetch
 from rest_framework import viewsets, filters
 from rest_framework.permissions import IsAuthenticated
 
@@ -113,6 +113,17 @@ class DeviceViewSet(viewsets.ModelViewSet):
         qs = Device.objects.select_related(
             'device_model', 'organization', 'branch', 'vehicle', 'owner_user',
             'current_holder_organization', 'current_holder_user',
+        ).prefetch_related(
+            Prefetch(
+                'replacement_relations_as_source',
+                queryset=DeviceReplacementRelation.objects.select_related('replacement_device').order_by('-replacement_date', '-id'),
+                to_attr='_replacement_relations_as_source',
+            ),
+            Prefetch(
+                'replacement_relations_as_replacement',
+                queryset=DeviceReplacementRelation.objects.select_related('source_device').order_by('-replacement_date', '-id'),
+                to_attr='_replacement_relations_as_replacement',
+            ),
         )
 
         if user.is_site_admin:
