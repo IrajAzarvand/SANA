@@ -204,17 +204,51 @@ class DeviceListSerializer(serializers.ModelSerializer):
         link = obj.active_subscription_link
         return link.end_date if link else None
 
+    def _current_replacement_operation(self, obj):
+        link = obj.active_subscription_link
+        if not link:
+            return None
+
+        # B is the replacement device in the return-for-repair operation.
+        # Match the operation to the currently active contract so an old
+        # replacement history cannot affect the current device role.
+        return obj.replacement_operations.filter(
+            operation_type='return_for_repair',
+            subscription=link.subscription,
+        ).order_by('-performed_at', '-id').first()
+
     def get_subscription_device_type(self, obj):
         link = obj.active_subscription_link
         if not link:
             return None
-        replacement_operation = obj.replacement_operations.filter(
-            operation_type='return_for_repair',
-            subscription=link.subscription,
-        ).order_by('-performed_at', '-id').first()
-        if replacement_operation:
-            return replacement_operation.replacement_type or 'replacement'
+
+        replacement_operation = self._current_replacement_operation(obj)
+        if replacement_operation and replacement_operation.replacement_type:
+            return replacement_operation.replacement_type
+
+        # Fallback for existing records created before DeviceOperation was
+        # linked consistently: the replacement relation still contains the
+        # authoritative replacement type.
+        relation = obj.replacement_relations_as_replacement.order_by(
+            '-replacement_date', '-id'
+        ).first()
+        if relation:
+            return relation.replacement_type
+
         return 'primary'
+
+    def get_management_status(self, obj):
+        if obj.is_in_warehouse:
+            return 'warehouse'
+
+        replacement_operation = self._current_replacement_operation(obj)
+        if replacement_operation and replacement_operation.replacement_type:
+            if replacement_operation.replacement_type == 'temporary_repair':
+                return 'installed'
+            if replacement_operation.replacement_type == 'permanent_replacement':
+                return 'sold'
+
+        return obj.management_status
 
     def get_subscription_device_type_display(self, obj):
         value = self.get_subscription_device_type(obj)
