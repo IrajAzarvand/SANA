@@ -44,6 +44,8 @@ const deviceOperationTypeMap = {
   permanent_replacement: 'تعویض دائمی',
   lost: 'گم‌شدن',
   stolen: 'سرقت',
+  found: 'پیدا شدن دستگاه',
+  disposition: 'تعیین تکلیف دستگاه',
   transfer_customer: 'انتقال به مشتری دیگر',
   transfer_branch: 'انتقال بین شعب',
   transfer_vehicle: 'انتقال بین خودروها',
@@ -73,7 +75,7 @@ const deviceReplacementMethodMap = {
   other: 'سایر',
 };
 
-const deviceRepairReturnActionMap = {
+const deviceOutcomeActionMap = {
   return_customer_same_vehicle: 'بازگشت به مشتری و نصب روی همان خودرو',
   return_customer_no_vehicle: 'بازگشت به مشتری بدون نصب',
   sana_warehouse: 'بازگشت به انبار سانا',
@@ -139,7 +141,7 @@ function DevicesTab() {
     operation_type: 'return_for_repair',
     replacement_type: 'temporary_repair',
     replacement_method: '',
-    repair_return_action: '',
+    outcome_action: '',
     replacement_device: '',
     reason: 'repair',
     description: '',
@@ -312,7 +314,7 @@ function DevicesTab() {
         reason: operationForm.reason || '',
         description: operationForm.description || '',
         replacement_method: operationForm.replacement_method || '',
-        repair_return_action: operationForm.repair_return_action || '',
+        outcome_action: operationForm.outcome_action || '',
       };
       ['target_organization', 'target_user', 'target_branch', 'target_vehicle', 'target_subscription'].forEach((key) => {
         if (operationForm[key]) payload[key] = Number(operationForm[key]);
@@ -326,7 +328,7 @@ function DevicesTab() {
         operation_type: 'return_for_repair',
         replacement_type: 'temporary_repair',
         replacement_method: '',
-        repair_return_action: '',
+        outcome_action: '',
         replacement_device: '',
         reason: 'repair',
         description: '',
@@ -362,7 +364,7 @@ function DevicesTab() {
   const operationNeedsReplacement = ['return_for_repair', 'lost', 'stolen'].includes(operationForm.operation_type);
   const operationNeedsReplacementType = ['return_for_repair', 'lost', 'stolen'].includes(operationForm.operation_type) && Boolean(operationForm.replacement_device);
   const operationNeedsReplacementMethod = ['return_for_repair', 'lost', 'stolen'].includes(operationForm.operation_type) && Boolean(operationForm.replacement_device);
-  const operationNeedsRepairDisposition = operationForm.operation_type === 'repaired';
+  const operationNeedsDisposition = operationForm.operation_type === 'disposition';
 
   const handleDelete = async (id) => {
     if (!confirm('آیا از حذف این دستگاه اطمینان دارید؟')) return;
@@ -642,9 +644,9 @@ function DevicesTab() {
                         </div>
                       )}
 
-                      {operation.repair_return_action && (
+                      {operation.outcome_action && (
                         <div className="text-xs text-text-secondary mt-2">
-                          سرنوشت پس از تعمیر: {deviceRepairReturnActionMap[operation.repair_return_action] || operation.repair_return_action}
+                          سرنوشت پس از تعمیر: {deviceOutcomeActionMap[operation.outcome_action] || operation.outcome_action}
                         </div>
                       )}
 
@@ -752,20 +754,22 @@ function DevicesTab() {
                         operation_type: value,
                         replacement_type: '',
                         replacement_method: '',
-                        repair_return_action: '',
+                        outcome_action: '',
                         replacement_device: '',
                         reason: value === 'return_for_repair' ? 'repair' : current.reason,
                       }));
                       if (['return_for_repair', 'lost', 'stolen'].includes(value)) {
                         await loadReplacementCandidates();
                       }
-                      if (['repaired', 'transfer_customer', 'transfer_branch', 'transfer_vehicle'].includes(value)) {
+                      if (['disposition', 'transfer_customer', 'transfer_branch', 'transfer_vehicle'].includes(value)) {
                         await loadOperationTargets(value);
                       }
                     }}
                     options={[
                       { value: 'return_for_repair', label: 'بازگشت برای تعمیر' },
                       { value: 'repaired', label: 'اتمام تعمیر' },
+                      { value: 'found', label: 'پیدا شدن دستگاه' },
+                      { value: 'disposition', label: 'تعیین تکلیف دستگاه' },
                       { value: 'lost', label: 'گم‌شدن' },
                       { value: 'stolen', label: 'سرقت' },
                       { value: 'transfer_customer', label: 'انتقال به مشتری دیگر' },
@@ -791,19 +795,19 @@ function DevicesTab() {
                     <Select label="خودرو مقصد" placeholder="انتخاب خودرو" value={operationForm.target_vehicle} onChange={(e) => setOperationForm({ ...operationForm, target_vehicle: e.target.value })} options={operationTargets.vehicles.map((item) => ({ value: item.id, label: item.plate }))} />
                   )}
 
-                  {operationNeedsRepairDisposition && (
+                  {operationNeedsDisposition && (
                     <div className="space-y-3 rounded-card border border-border-base bg-bg-base p-3">
                       <Select
-                        label="سرنوشت دستگاه پس از تعمیر"
+                        label="تعیین تکلیف دستگاه"
                         required
-                        value={operationForm.repair_return_action}
+                        value={operationForm.outcome_action}
                         onChange={(e) => setOperationForm((current) => ({
                           ...current,
-                          repair_return_action: e.target.value,
+                          outcome_action: e.target.value,
                         }))}
-                        options={Object.entries(deviceRepairReturnActionMap).map(([value, label]) => ({ value, label }))}
+                        options={Object.entries(deviceOutcomeActionMap).map(([value, label]) => ({ value, label }))}
                       />
-                      {['install_other_vehicle', 'transfer_customer'].includes(operationForm.repair_return_action) && (
+                      {['install_other_vehicle', 'transfer_customer'].includes(operationForm.outcome_action) && (
                         <Select
                           label="خودروی مقصد"
                           placeholder="انتخاب خودرو"
@@ -815,7 +819,7 @@ function DevicesTab() {
                           options={operationTargets.vehicles.map((item) => ({ value: item.id, label: item.plate }))}
                         />
                       )}
-                      {operationForm.repair_return_action === 'transfer_customer' && (
+                      {operationForm.outcome_action === 'transfer_customer' && (
                         <div className="space-y-3">
                           <Select
                             label="سازمان مقصد"
