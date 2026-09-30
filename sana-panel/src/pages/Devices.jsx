@@ -29,6 +29,7 @@ const managementStatusMap = {
   sold:         { label: 'فروخته شده',    variant: 'brand'   },
   installed:    { label: 'نصب شده',       variant: 'brand'   },
   active:       { label: 'فعال',          variant: 'success' },
+  ready:        { label: 'آماده تعیین تکلیف', variant: 'info' },
   faulty:       { label: 'خراب',          variant: 'danger'  },
   lost:         { label: 'گمشده',         variant: 'warning' },
   stolen:       { label: 'سرقت شده',      variant: 'danger'  },
@@ -263,7 +264,7 @@ function DevicesTab() {
 
   const loadOperationTargets = async (operationType) => {
     try {
-      if (operationType === 'repaired') {
+      if (operationType === 'disposition') {
         const [orgs, users, subs, vehicles] = await Promise.all([
           organizationsAPI.list(),
           usersAPI.list(),
