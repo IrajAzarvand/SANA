@@ -1,9 +1,9 @@
 from django.utils import timezone
-from django.db.models import Exists, OuterRef, Prefetch
+from django.db.models import Exists, OuterRef, Prefetch, Q
 from rest_framework import viewsets, filters
 from rest_framework.permissions import IsAuthenticated
 
-from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation
+from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation, DeviceCustomerAccessPeriod
 from .serializers import (
     VehicleTypeSerializer,
     VehicleSerializer,
@@ -129,11 +129,11 @@ class DeviceViewSet(viewsets.ModelViewSet):
         if user.is_site_admin:
             pass
         elif user.is_main_user and user.organization:
-            qs = qs.filter(organization=user.organization)
+            qs = qs.filter(customer_access_periods__organization=user.organization, customer_access_periods__ended_at__isnull=True).distinct()
         elif user.is_branch_manager and user.branch:
-            qs = qs.filter(branch=user.branch)
+            qs = qs.filter(customer_access_periods__organization=user.organization, customer_access_periods__branch=user.branch, customer_access_periods__ended_at__isnull=True).distinct()
         elif user.is_personal_user:
-            qs = qs.filter(owner_user=user)
+            qs = qs.filter(customer_access_periods__user=user, customer_access_periods__ended_at__isnull=True).distinct()
         else:
             qs = qs.none()
 
@@ -231,10 +231,15 @@ class DeviceLifecycleEventViewSet(viewsets.ModelViewSet):
         qs = self.queryset
         if user.is_site_admin:
             pass
-        elif user.organization_id:
-            qs = qs.filter(organization_id=user.organization_id)
+        elif user.is_main_user and user.organization_id:
+            access = DeviceCustomerAccessPeriod.objects.filter(device=OuterRef('device_id'), organization_id=user.organization_id, started_at__lte=OuterRef('event_date')).filter(Q(ended_at__isnull=True) | Q(ended_at__gte=OuterRef('event_date')))
+            qs = qs.filter(Exists(access))
+        elif user.is_branch_manager and user.branch_id:
+            access = DeviceCustomerAccessPeriod.objects.filter(device=OuterRef('device_id'), organization_id=user.organization_id, branch_id=user.branch_id, started_at__lte=OuterRef('event_date')).filter(Q(ended_at__isnull=True) | Q(ended_at__gte=OuterRef('event_date')))
+            qs = qs.filter(Exists(access))
         elif user.is_personal_user:
-            qs = qs.filter(user=user)
+            access = DeviceCustomerAccessPeriod.objects.filter(device=OuterRef('device_id'), user_id=user.id, started_at__lte=OuterRef('event_date')).filter(Q(ended_at__isnull=True) | Q(ended_at__gte=OuterRef('event_date')))
+            qs = qs.filter(Exists(access))
         else:
             qs = qs.none()
 
@@ -305,25 +310,17 @@ class DeviceOperationViewSet(viewsets.ModelViewSet):
         qs = self.queryset
         if user.is_site_admin:
             pass
-        elif user.organization_id:
-            qs = qs.filter(
-                device__organization_id=user.organization_id
-            ) | qs.filter(
-                replacement_device__organization_id=user.organization_id
-            ) | qs.filter(
-                target_organization_id=user.organization_id
-            )
+        elif user.is_main_user and user.organization_id:
+            access = DeviceCustomerAccessPeriod.objects.filter(device=OuterRef('device_id'), organization_id=user.organization_id, started_at__lte=OuterRef('performed_at')).filter(Q(ended_at__isnull=True) | Q(ended_at__gte=OuterRef('performed_at')))
+            qs = qs.filter(Exists(access))
+        elif user.is_branch_manager and user.branch_id:
+            access = DeviceCustomerAccessPeriod.objects.filter(device=OuterRef('device_id'), organization_id=user.organization_id, branch_id=user.branch_id, started_at__lte=OuterRef('performed_at')).filter(Q(ended_at__isnull=True) | Q(ended_at__gte=OuterRef('performed_at')))
+            qs = qs.filter(Exists(access))
         elif user.is_personal_user:
-            qs = qs.filter(
-                device__owner_user_id=user.id
-            ) | qs.filter(
-                replacement_device__owner_user_id=user.id
-            ) | qs.filter(
-                target_user_id=user.id
-            )
+            access = DeviceCustomerAccessPeriod.objects.filter(device=OuterRef('device_id'), user_id=user.id, started_at__lte=OuterRef('performed_at')).filter(Q(ended_at__isnull=True) | Q(ended_at__gte=OuterRef('performed_at')))
+            qs = qs.filter(Exists(access))
         else:
             qs = qs.none()
-
         device = self.request.query_params.get('device')
         if device:
             qs = qs.filter(device_id=device) | qs.filter(replacement_device_id=device)

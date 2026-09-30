@@ -211,6 +211,110 @@ class Device(models.Model):
         return link.is_active
 
 
+
+class DeviceOwnershipHistory(models.Model):
+    """تاریخچه مالکیت قانونی دستگاه؛ مستقل از قرارداد و دسترسی عملیاتی مشتری."""
+
+    device = models.ForeignKey(
+        Device, on_delete=models.CASCADE, related_name='ownership_history',
+        verbose_name='دستگاه',
+    )
+    organization = models.ForeignKey(
+        'organizations.Organization', on_delete=models.CASCADE,
+        null=True, blank=True, related_name='device_ownership_history',
+        verbose_name='سازمان مالک',
+    )
+    owner_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        null=True, blank=True, related_name='device_ownership_history',
+        verbose_name='مالک شخصی',
+    )
+    started_at = models.DateTimeField(default=timezone.now, verbose_name='شروع مالکیت')
+    ended_at = models.DateTimeField(null=True, blank=True, verbose_name='پایان مالکیت')
+    reason = models.CharField(max_length=40, blank=True, verbose_name='دلیل تغییر')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'سابقه مالکیت دستگاه'
+        verbose_name_plural = 'سوابق مالکیت دستگاه‌ها'
+        ordering = ['-started_at', '-id']
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    (models.Q(organization__isnull=False) & models.Q(owner_user__isnull=True))
+                    | (models.Q(organization__isnull=True) & models.Q(owner_user__isnull=False))
+                ),
+                name='device_ownership_one_customer',
+            ),
+        ]
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if bool(self.organization_id) == bool(self.owner_user_id):
+            raise ValidationError('مالک دستگاه باید دقیقاً یک سازمان یا یک کاربر شخصی باشد.')
+        if self.ended_at and self.ended_at < self.started_at:
+            raise ValidationError({'ended_at': 'پایان مالکیت نمی‌تواند قبل از شروع آن باشد.'})
+
+
+class DeviceCustomerAccessPeriod(models.Model):
+    """بازه مجاز مشاهده/رصد دستگاه برای یک مشتری؛ مستقل از مالکیت و قرارداد."""
+
+    device = models.ForeignKey(
+        Device, on_delete=models.CASCADE, related_name='customer_access_periods',
+        verbose_name='دستگاه',
+    )
+    organization = models.ForeignKey(
+        'organizations.Organization', on_delete=models.CASCADE,
+        null=True, blank=True, related_name='device_access_periods',
+        verbose_name='سازمان',
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+        null=True, blank=True, related_name='device_access_periods',
+        verbose_name='کاربر شخصی',
+    )
+    subscription = models.ForeignKey(
+        'organizations.Subscription', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='device_access_periods',
+        verbose_name='قرارداد مرتبط',
+    )
+    branch = models.ForeignKey(
+        'organizations.Branch', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='device_access_periods',
+        verbose_name='شعبه مرتبط',
+    )
+    started_at = models.DateTimeField(default=timezone.now, verbose_name='شروع دسترسی')
+    ended_at = models.DateTimeField(null=True, blank=True, verbose_name='پایان دسترسی')
+    reason = models.CharField(max_length=40, blank=True, verbose_name='دلیل')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'بازه دسترسی مشتری به دستگاه'
+        verbose_name_plural = 'بازه‌های دسترسی مشتری به دستگاه'
+        ordering = ['-started_at', '-id']
+        indexes = [
+            models.Index(fields=['device', 'started_at', 'ended_at']),
+            models.Index(fields=['organization', 'started_at', 'ended_at']),
+            models.Index(fields=['user', 'started_at', 'ended_at']),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    (models.Q(organization__isnull=False) & models.Q(user__isnull=True))
+                    | (models.Q(organization__isnull=True) & models.Q(user__isnull=False))
+                ),
+                name='device_access_one_customer',
+            ),
+        ]
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if bool(self.organization_id) == bool(self.user_id):
+            raise ValidationError('دسترسی باید دقیقاً به یک سازمان یا یک کاربر شخصی تعلق داشته باشد.')
+        if self.ended_at and self.ended_at < self.started_at:
+            raise ValidationError({'ended_at': 'پایان دسترسی نمی‌تواند قبل از شروع آن باشد.'})
+
+
 class DeviceOperation(models.Model):
     """عملیات اتمیک روی دستگاه؛ رویدادهای چرخه عمر و تغییر قرارداد از اینجا منشعب می‌شوند."""
 
@@ -222,7 +326,6 @@ class DeviceOperation(models.Model):
         ('temporary_replacement', 'جایگزینی موقت'),
         ('permanent_replacement', 'تعویض دائمی'),
         ('lost', 'گم‌شدن'),
-        ('found', 'پیدا شدن'),
         ('stolen', 'سرقت'),
         ('transfer_customer', 'انتقال به مشتری دیگر'),
         ('transfer_branch', 'انتقال بین شعب'),
@@ -421,12 +524,10 @@ class DeviceLifecycleEvent(models.Model):
         ('replaced', 'تعویض'),
         ('transferred', 'انتقال'),
         ('lost', 'گم‌شدن'),
-        ('found', 'پیدا شدن'),
         ('disposition', 'تعیین تکلیف'),
         ('stolen', 'سرقت'),
         ('retired', 'بازنشستگی'),
         ('disposed', 'امحاء'),
-        ('disposition', 'تعیین تکلیف'),
     ]
 
     RETURN_REASON_CHOICES = [
