@@ -37,14 +37,14 @@ def backfill_device_history(apps, schema_editor):
             )
 
         active_link = device.subscription_links.filter(unassigned_at__isnull=True).first()
-        if active_link and (organization_id or user_id):
+        if (organization_id or user_id) and device.management_status not in {'warehouse', 'disposed'}:
             DeviceCustomerAccessPeriod.objects.get_or_create(
                 device_id=device.id,
                 ended_at__isnull=True,
                 defaults={
                     'organization_id': organization_id,
                     'user_id': None if organization_id else user_id,
-                    'subscription_id': active_link.subscription_id,
+                    'subscription_id': active_link.subscription_id if active_link else None,
                     'branch_id': device.branch_id,
                     'reason': 'migration',
                 },
