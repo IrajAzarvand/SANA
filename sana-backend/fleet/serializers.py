@@ -239,6 +239,17 @@ class DeviceListSerializer(serializers.ModelSerializer):
         if relation:
             return relation.replacement_type
 
+        # The source device remains in the contract after replacement.
+        # While it is out of operation, show its relationship as «replaced»
+        # instead of incorrectly presenting it as the current primary device.
+        source_relation = obj.replacement_relations_as_source.order_by(
+            '-replacement_date', '-id'
+        ).first()
+        if source_relation and obj.management_status in {
+            'faulty', 'lost', 'stolen', 'ready'
+        }:
+            return 'replaced'
+
         return 'primary'
 
     def get_management_status(self, obj):
@@ -261,6 +272,7 @@ class DeviceListSerializer(serializers.ModelSerializer):
             'temporary_repair': 'جایگزین موقت',
             'permanent_replacement': 'جایگزین دائمی',
             'replacement': 'دستگاه جایگزین',
+        'replaced': 'جایگزین شده',
         }.get(value)
 
     def _latest_replacement_relation(self, obj):
