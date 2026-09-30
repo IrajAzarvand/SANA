@@ -154,11 +154,14 @@ class DeviceListSerializer(serializers.ModelSerializer):
     branch_name = serializers.CharField(source='branch.name', read_only=True)
     current_holder_organization_name = serializers.CharField(source='current_holder_organization.name', read_only=True)
     current_holder_user_name = serializers.CharField(source='current_holder_user.full_name', read_only=True)
+    customer_name = serializers.SerializerMethodField()
 
     # اطلاعات قرارداد فعلی
     subscription_id = serializers.SerializerMethodField()
     subscription_number = serializers.SerializerMethodField()
     subscription_end_date = serializers.SerializerMethodField()
+    subscription_device_type = serializers.SerializerMethodField()
+    subscription_device_type_display = serializers.SerializerMethodField()
 
     # وضعیت انبار
     is_in_warehouse = serializers.BooleanField(read_only=True)
@@ -173,12 +176,21 @@ class DeviceListSerializer(serializers.ModelSerializer):
             'owner_user', 'owner_name',
             'branch', 'branch_name',
             'current_holder_organization_name', 'current_holder_user_name',
+            'customer_name',
             'vehicle_plate',
             'subscription_id', 'subscription_number', 'subscription_end_date',
+            'subscription_device_type', 'subscription_device_type_display',
             'management_status',
             'is_in_warehouse',
             'created_at',
         ]
+
+    def get_customer_name(self, obj):
+        if obj.current_holder_organization:
+            return obj.current_holder_organization.name
+        if obj.current_holder_user:
+            return obj.current_holder_user.full_name or obj.current_holder_user.username
+        return None
 
     def get_subscription_id(self, obj):
         link = obj.active_subscription_link
@@ -191,6 +203,27 @@ class DeviceListSerializer(serializers.ModelSerializer):
     def get_subscription_end_date(self, obj):
         link = obj.active_subscription_link
         return link.end_date if link else None
+
+    def get_subscription_device_type(self, obj):
+        link = obj.active_subscription_link
+        if not link:
+            return None
+        replacement_operation = obj.replacement_operations.filter(
+            operation_type='return_for_repair',
+            subscription=link.subscription,
+        ).order_by('-performed_at', '-id').first()
+        if replacement_operation:
+            return replacement_operation.replacement_type or 'replacement'
+        return 'primary'
+
+    def get_subscription_device_type_display(self, obj):
+        value = self.get_subscription_device_type(obj)
+        return {
+            'primary': 'دستگاه اصلی',
+            'temporary_repair': 'جایگزین موقت',
+            'permanent_replacement': 'جایگزین دائمی',
+            'replacement': 'دستگاه جایگزین',
+        }.get(value)
 
 class DriverSerializer(serializers.ModelSerializer):
     organization_name = serializers.CharField(source='organization.name', read_only=True)
