@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   Search, Plus, Cpu, Pencil, Trash2 , Hash, Phone, Eye, Boxes, Package, History, RotateCcw,
 } from 'lucide-react';
@@ -17,6 +17,7 @@ import ErrorState from '../components/ErrorState';
 import Tabs from '../components/Tabs';
 import AddDeviceModal from '../components/AddDeviceModal';
 import { useAuth } from '../context/AuthContext';
+import { useSearchParams } from 'react-router-dom';
 import { devicesAPI, deviceLifecycleAPI, deviceReplacementAPI, deviceOperationsAPI, vehiclesAPI, usersAPI } from '../api/services/fleet';
 import { deviceModelsAPI } from '../api/services/deviceModels';
 import { useApi } from '../hooks/useApi';
@@ -157,6 +158,7 @@ function DevicesTab() {
   const [eventForm, setEventForm] = useState({ event_type: 'returned', reason: 'other', event_date: '', description: '' });
 
   const { isSiteAdmin, isPersonal } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const fetchDevices = useCallback(async () => {
     const result = await devicesAPI.list();
@@ -417,6 +419,22 @@ function DevicesTab() {
     return items;
   };
 
+  useEffect(() => {
+    const deviceId = Number(searchParams.get('device'));
+    const action = searchParams.get('action');
+    if (!deviceId || !action || !devices?.length) return;
+
+    const device = devices.find((item) => Number(item.id) === deviceId);
+    if (!device) return;
+
+    setSearchParams({}, { replace: true });
+    if (action === 'history') {
+      openHistory(device);
+    } else if (action === 'edit') {
+      handleEdit(device);
+    }
+  }, [devices, searchParams, setSearchParams]);
+
   if (loading) return <Card><LoadingSpinner /></Card>;
   if (error) return <Card><ErrorState error={error} onRetry={refetch} /></Card>;
 
@@ -562,7 +580,7 @@ function DevicesTab() {
       >
         <div className="space-y-5">
           {!historyLoading && historyDevice && (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 rounded-card border border-border-base bg-bg-base p-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 rounded-card border border-border-base bg-bg-base p-4">
               <div>
                 <div className="text-[11px] text-text-muted">مدل دستگاه</div>
                 <div className="text-sm text-text-primary mt-1">
@@ -577,7 +595,7 @@ function DevicesTab() {
               </div>
               <div>
                 <div className="text-[11px] text-text-muted">شماره سیم‌کارت</div>
-                <div className="text-sm font-mono text-text-primary mt-1">{historyDevice.sim_number || '—'}</div>
+                <div dir="ltr" className="text-sm font-mono text-text-primary mt-1 text-right">{historyDevice.sim_number || '—'}</div>
               </div>
               <div>
                 <div className="text-[11px] text-text-muted">وضعیت فعلی</div>
