@@ -60,7 +60,16 @@ def _open_ownership(device, organization=None, user=None, started_at=None, reaso
     if same_customer:
         return current
     if current: _close_ownership(device, started_at)
-    return DeviceOwnershipHistory.objects.create(device=device, started_at=started_at or timezone.now(), reason=reason, **customer)
+    ownership_customer = {
+        'organization': customer['organization'],
+        'owner_user': customer['user'],
+    }
+    return DeviceOwnershipHistory.objects.create(
+        device=device,
+        started_at=started_at or timezone.now(),
+        reason=reason,
+        **ownership_customer,
+    )
 
 
 def _close_active_link(device, operation):
