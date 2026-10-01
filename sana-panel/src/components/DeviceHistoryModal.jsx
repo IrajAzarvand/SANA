@@ -1,15 +1,24 @@
 import { useEffect, useState } from 'react';
+import { Plus, RotateCcw } from 'lucide-react';
 import Badge from './Badge';
 import Button from './Button';
+import Input from './Input';
+import Select from './Select';
 import LoadingSpinner from './LoadingSpinner';
+import AddDeviceModal from './AddDeviceModal';
 import Modal from './Modal';
 import {
   devicesAPI,
   deviceLifecycleAPI,
   deviceReplacementAPI,
   deviceOperationsAPI,
+  vehiclesAPI,
+  usersAPI,
 } from '../api/services/fleet';
 import { toJalali } from '../utils/dateUtils';
+import { useAuth } from '../context/AuthContext';
+import { organizationsAPI, branchesAPI } from '../api/services/organizations';
+import { subscriptionsAPI } from '../api/services/subscriptions';
 
 const managementStatusMap = {
   warehouse: { label: 'در انبار', variant: 'info' },
@@ -53,6 +62,28 @@ const deviceReplacementTypeMap = {
   permanent_replacement: 'تعویض دائمی',
 };
 
+const deviceReplacementMethodMap = {
+  loaner: 'امانی / موقت',
+  sold: 'فروش به مشتری',
+  free_exchange: 'تعویض بدون هزینه',
+  paid_exchange: 'تعویض با هزینه',
+  warranty: 'تعویض گارانتی',
+  refurbished: 'دستگاه بازسازی‌شده',
+  other: 'سایر',
+};
+
+const deviceOutcomeActionMap = {
+  return_customer_same_vehicle: 'بازگشت به مشتری و نصب روی همان خودرو',
+  return_customer_no_vehicle: 'بازگشت به مشتری بدون نصب',
+  sana_warehouse: 'بازگشت به انبار سانا',
+  customer_spare: 'تحویل به مشتری به عنوان دستگاه یدکی',
+  install_other_vehicle: 'نصب روی خودروی دیگر',
+  transfer_customer: 'انتقال به مشتری دیگر',
+  retire: 'بازنشستگی',
+  dispose: 'امحاء',
+  other: 'سایر',
+};
+
 export default function DeviceHistoryModal({ open, deviceId, onClose }) {
   const [historyDevice, setHistoryDevice] = useState(null);
   const [historyEvents, setHistoryEvents] = useState([]);
@@ -60,6 +91,25 @@ export default function DeviceHistoryModal({ open, deviceId, onClose }) {
   const [operationHistory, setOperationHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState('');
+  const { isSiteAdmin } = useAuth();
+  const [replacementCandidates, setReplacementCandidates] = useState([]);
+  const [operationTargets, setOperationTargets] = useState({ organizations: [], users: [], branches: [], vehicles: [], subscriptions: [] });
+  const [replacementModalOpen, setReplacementModalOpen] = useState(false);
+  const [operationSaving, setOperationSaving] = useState(false);
+  const [operationForm, setOperationForm] = useState({
+    operation_type: 'return_for_repair',
+    replacement_type: 'temporary_repair',
+    replacement_method: '',
+    outcome_action: '',
+    replacement_device: '',
+    reason: 'repair',
+    description: '',
+    target_organization: '',
+    target_user: '',
+    target_branch: '',
+    target_vehicle: '',
+    target_subscription: '',
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -110,6 +160,140 @@ export default function DeviceHistoryModal({ open, deviceId, onClose }) {
       cancelled = true;
     };
   }, [open, deviceId]);
+
+  const loadReplacementCandidates = async () => {
+    if (!historyDevice) return;
+    try {
+      const result = await devicesAPI.list({ in_warehouse: 'true' });
+      const list = Array.isArray(result) ? result : result.results || [];
+      setReplacementCandidates(list.filter((item) => item.id !== historyDevice.id));
+    } catch (err) {
+      console.error('Error loading replacement candidates:', err);
+      setReplacementCandidates([]);
+    }
+  };
+
+  const loadOperationTargets = async (operationType) => {
+    if (!historyDevice) return;
+    try {
+      const normalize = (result) => Array.isArray(result) ? result : result.results || [];
+      if (operationType === 'disposition') {
+        const [orgs, users, subs, vehicles] = await Promise.all([
+          organizationsAPI.list(),
+          usersAPI.list(),
+          subscriptionsAPI.list({ status: 'active' }),
+          vehiclesAPI.list(historyDevice.organization ? { organization: historyDevice.organization } : {}),
+        ]);
+        setOperationTargets((current) => ({
+          ...current,
+          organizations: normalize(orgs),
+          users: normalize(users),
+          subscriptions: normalize(subs),
+          vehicles: normalize(vehicles),
+        }));
+      } else if (operationType === 'transfer_customer') {
+        const [orgs, users, subs] = await Promise.all([
+          organizationsAPI.list(),
+          usersAPI.list(),
+          subscriptionsAPI.list({ status: 'active' }),
+        ]);
+        setOperationTargets((current) => ({
+          ...current,
+          organizations: normalize(orgs),
+          users: normalize(users),
+          subscriptions: normalize(subs),
+        }));
+      } else if (operationType === 'transfer_branch') {
+        const result = await branchesAPI.list(historyDevice.organization ? { organization: historyDevice.organization } : {});
+        setOperationTargets((current) => ({ ...current, branches: normalize(result) }));
+      } else if (operationType === 'transfer_vehicle') {
+        const result = await vehiclesAPI.list(historyDevice.organization ? { organization: historyDevice.organization } : {});
+        setOperationTargets((current) => ({ ...current, vehicles: normalize(result) }));
+      }
+    } catch (err) {
+      console.error('Error loading operation targets:', err);
+    }
+  };
+
+  const handleDeviceOperation = async (e) => {
+    e.preventDefault();
+    if (!historyDevice) return;
+    setOperationSaving(true);
+    try {
+      const payload = {
+        device: historyDevice.id,
+        operation_type: operationForm.operation_type,
+        reason: operationForm.reason || '',
+        description: operationForm.description || '',
+        replacement_method: operationForm.replacement_method || '',
+        outcome_action: operationForm.outcome_action || '',
+      };
+
+      ['target_organization', 'target_user', 'target_branch', 'target_vehicle', 'target_subscription'].forEach((key) => {
+        if (operationForm[key]) payload[key] = Number(operationForm[key]);
+      });
+
+      if (operationForm.replacement_device) {
+        payload.replacement_device = Number(operationForm.replacement_device);
+        payload.replacement_type = operationForm.replacement_type;
+      }
+
+      await deviceOperationsAPI.create(payload);
+
+      setOperationForm({
+        operation_type: 'return_for_repair',
+        replacement_type: 'temporary_repair',
+        replacement_method: '',
+        outcome_action: '',
+        replacement_device: '',
+        reason: 'repair',
+        description: '',
+        target_organization: '',
+        target_user: '',
+        target_branch: '',
+        target_vehicle: '',
+        target_subscription: '',
+      });
+
+      const updatedDevice = await devicesAPI.get(historyDevice.id);
+      const [historyResult, replacementResult, operationResult] = await Promise.all([
+        deviceLifecycleAPI.list({ device: historyDevice.id }),
+        deviceReplacementAPI.list({ device: historyDevice.id }),
+        deviceOperationsAPI.list({ device: historyDevice.id }),
+      ]);
+      setHistoryDevice(updatedDevice);
+      setHistoryEvents(Array.isArray(historyResult) ? historyResult : historyResult.results || []);
+      setReplacementRelations(Array.isArray(replacementResult) ? replacementResult : replacementResult.results || []);
+      setOperationHistory(Array.isArray(operationResult) ? operationResult : operationResult.results || []);
+    } catch (err) {
+      console.error('Error saving device operation:', err);
+      const data = err.response?.data;
+      const message = typeof data === 'string'
+        ? data
+        : data?.detail
+          ? data.detail
+          : data
+            ? Object.entries(data).map(([key, value]) => `${key}: ${Array.isArray(value) ? value[0] : value}`).join('\n')
+            : 'ثبت عملیات ناموفق بود';
+      alert(message);
+    } finally {
+      setOperationSaving(false);
+    }
+  };
+
+  const handleReplacementCreated = (createdDevice) => {
+    setReplacementModalOpen(false);
+    setOperationForm((current) => ({
+      ...current,
+      replacement_device: createdDevice.id,
+    }));
+  };
+
+  const canAddFollowUpReplacement = ['faulty', 'lost', 'stolen'].includes(historyDevice?.management_status);
+  const operationNeedsReplacement = ['return_for_repair', 'lost', 'stolen', 'temporary_replacement', 'permanent_replacement'].includes(operationForm.operation_type);
+  const operationNeedsReplacementType = operationNeedsReplacement && Boolean(operationForm.replacement_device);
+  const operationNeedsReplacementMethod = operationNeedsReplacement && Boolean(operationForm.replacement_device);
+  const operationNeedsDisposition = operationForm.operation_type === 'disposition';
 
   const closeModal = () => {
     if (!historyLoading) onClose();
