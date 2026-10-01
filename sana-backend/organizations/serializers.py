@@ -1,6 +1,5 @@
 from rest_framework import serializers
 from django.utils import timezone
-from django.db.models import Prefetch
 from fleet.lifecycle import record_device_lifecycle_event
 from .models import (
     Organization,
