@@ -497,6 +497,90 @@ export default function DeviceHistoryModal({ open, deviceId, onClose }) {
                 </div>
               )}
             </div>
+            {isSiteAdmin && (
+              <>
+                <div className="border-t border-border-base pt-4">
+                  <form onSubmit={handleDeviceOperation} className="space-y-4">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-text-primary">
+                      <RotateCcw size={16} />عملیات دستگاه
+                    </div>
+                    <Select
+                      label="نوع عملیات"
+                      value={operationForm.operation_type}
+                      onChange={async (e) => {
+                        const value = e.target.value;
+                        setOperationForm((current) => ({
+                          ...current,
+                          operation_type: value,
+                          replacement_type: value === 'temporary_replacement' ? 'temporary_repair' : value === 'permanent_replacement' ? 'permanent_replacement' : '',
+                          replacement_method: '',
+                          outcome_action: '',
+                          replacement_device: '',
+                          reason: ['return_for_repair', 'temporary_replacement', 'permanent_replacement'].includes(value) ? 'repair' : current.reason,
+                        }));
+                        if (['return_for_repair', 'lost', 'stolen', 'temporary_replacement', 'permanent_replacement'].includes(value)) await loadReplacementCandidates();
+                        if (['disposition', 'transfer_customer', 'transfer_branch', 'transfer_vehicle'].includes(value)) await loadOperationTargets(value);
+                      }}
+                      options={[
+                        { value: 'return_for_repair', label: 'بازگشت برای تعمیر' },
+                        ...(canAddFollowUpReplacement ? [
+                          { value: 'temporary_replacement', label: 'جایگزینی موقت' },
+                          { value: 'permanent_replacement', label: 'تعویض دائمی' },
+                        ] : []),
+                        { value: 'repaired', label: 'اتمام تعمیر' },
+                        { value: 'found', label: 'پیدا شدن دستگاه' },
+                        { value: 'disposition', label: 'تعیین تکلیف دستگاه' },
+                        { value: 'lost', label: 'گم‌شدن' },
+                        { value: 'stolen', label: 'سرقت' },
+                        { value: 'transfer_customer', label: 'انتقال به مشتری دیگر' },
+                        { value: 'transfer_branch', label: 'انتقال بین شعب' },
+                        { value: 'transfer_vehicle', label: 'انتقال بین خودروها' },
+                        { value: 'retire', label: 'بازنشستگی' },
+                        { value: 'dispose', label: 'امحاء' },
+                      ]}
+                    />
+                    {operationForm.operation_type === 'transfer_customer' && (
+                      <div className="space-y-3 rounded-card border border-border-base bg-bg-base p-3">
+                        <Select label="سازمان مقصد" placeholder="انتخاب سازمان" value={operationForm.target_organization} onChange={(e) => setOperationForm((current) => ({ ...current, target_organization: e.target.value, target_user: '' }))} options={operationTargets.organizations.map((item) => ({ value: item.id, label: item.name }))} />
+                        <Select label="کاربر شخصی مقصد" placeholder="در صورت انتقال به مشتری شخصی" value={operationForm.target_user} onChange={(e) => setOperationForm((current) => ({ ...current, target_user: e.target.value, target_organization: '' }))} options={operationTargets.users.filter((item) => item.account_type === 'personal').map((item) => ({ value: item.id, label: item.full_name || item.username }))} />
+                        <Select label="قرارداد مقصد (اختیاری)" placeholder="انتخاب قرارداد" value={operationForm.target_subscription} onChange={(e) => setOperationForm((current) => ({ ...current, target_subscription: e.target.value }))} options={operationTargets.subscriptions.map((item) => ({ value: item.id, label: item.contract_number }))} />
+                      </div>
+                    )}
+                    {operationForm.operation_type === 'transfer_branch' && <Select label="شعبه مقصد" placeholder="انتخاب شعبه" value={operationForm.target_branch} onChange={(e) => setOperationForm((current) => ({ ...current, target_branch: e.target.value }))} options={operationTargets.branches.map((item) => ({ value: item.id, label: item.name }))} />}
+                    {operationForm.operation_type === 'transfer_vehicle' && <Select label="خودرو مقصد" placeholder="انتخاب خودرو" value={operationForm.target_vehicle} onChange={(e) => setOperationForm((current) => ({ ...current, target_vehicle: e.target.value }))} options={operationTargets.vehicles.map((item) => ({ value: item.id, label: item.plate }))} />}
+                    {operationNeedsDisposition && (
+                      <div className="space-y-3 rounded-card border border-border-base bg-bg-base p-3">
+                        <Select label="تعیین تکلیف دستگاه" required value={operationForm.outcome_action} onChange={(e) => setOperationForm((current) => ({ ...current, outcome_action: e.target.value }))} options={Object.entries(deviceOutcomeActionMap).map(([value, label]) => ({ value, label }))} />
+                        {['install_other_vehicle', 'transfer_customer'].includes(operationForm.outcome_action) && <Select label="خودروی مقصد" placeholder="انتخاب خودرو" value={operationForm.target_vehicle} onChange={(e) => setOperationForm((current) => ({ ...current, target_vehicle: e.target.value }))} options={operationTargets.vehicles.map((item) => ({ value: item.id, label: item.plate }))} />}
+                        {operationForm.outcome_action === 'transfer_customer' && (
+                          <div className="space-y-3">
+                            <Select label="سازمان مقصد" placeholder="انتخاب سازمان" value={operationForm.target_organization} onChange={(e) => setOperationForm((current) => ({ ...current, target_organization: e.target.value, target_user: '' }))} options={operationTargets.organizations.map((item) => ({ value: item.id, label: item.name }))} />
+                            <Select label="کاربر شخصی مقصد" placeholder="در صورت انتقال به مشتری شخصی" value={operationForm.target_user} onChange={(e) => setOperationForm((current) => ({ ...current, target_user: e.target.value, target_organization: '' }))} options={operationTargets.users.filter((item) => item.account_type === 'personal').map((item) => ({ value: item.id, label: item.full_name || item.username }))} />
+                            <Select label="قرارداد مقصد (اختیاری)" placeholder="انتخاب قرارداد" value={operationForm.target_subscription} onChange={(e) => setOperationForm((current) => ({ ...current, target_subscription: e.target.value }))} options={operationTargets.subscriptions.map((item) => ({ value: item.id, label: item.contract_number }))} />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {operationNeedsReplacement && (
+                      <div className="space-y-3 rounded-card border border-border-base bg-bg-base p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-xs font-medium text-text-secondary">جایگزین</span>
+                          <Button type="button" size="sm" variant="secondary" icon={Plus} onClick={() => { loadReplacementCandidates(); setReplacementModalOpen(true); }}>افزودن دستگاه جدید</Button>
+                        </div>
+                        <Select label="دستگاه جایگزین" placeholder="بدون جایگزین" value={operationForm.replacement_device} onChange={(e) => setOperationForm((current) => ({ ...current, replacement_device: e.target.value, replacement_type: current.replacement_type || 'temporary_repair' }))} options={replacementCandidates.map((item) => ({ value: item.id, label: item.imei + ' — ' + (item.device_model_manufacturer || '') + ' ' + (item.device_model_name || '') }))} />
+                        {operationNeedsReplacementType && <Select label="نوع جایگزینی" required value={operationForm.replacement_type} onChange={(e) => setOperationForm((current) => ({ ...current, replacement_type: e.target.value }))} options={[{ value: 'temporary_repair', label: 'جایگزینی موقت برای تعمیر' }, { value: 'permanent_replacement', label: 'تعویض دائمی' }]} />}
+                        {operationNeedsReplacementMethod && <Select label="نحوه جایگزینی" required value={operationForm.replacement_method} onChange={(e) => setOperationForm((current) => ({ ...current, replacement_method: e.target.value }))} options={Object.entries(deviceReplacementMethodMap).map(([value, label]) => ({ value, label }))} />}
+                      </div>
+                    )}
+                    <Select label="دلیل" value={operationForm.reason} onChange={(e) => setOperationForm({ ...operationForm, reason: e.target.value })} options={[{ value: 'repair', label: 'تعمیر' }, { value: 'replacement', label: 'تعویض' }, { value: 'defective', label: 'خرابی' }, { value: 'other', label: 'سایر' }]} />
+                    <Input label="شرح" value={operationForm.description} onChange={(e) => setOperationForm({ ...operationForm, description: e.target.value })} placeholder="شرح کامل عملیات..." />
+                    <div className="flex justify-end"><Button type="submit" disabled={operationSaving}>{operationSaving ? 'در حال ثبت...' : 'ثبت عملیات'}</Button></div>
+                  </form>
+                </div>
+                <AddDeviceModal open={replacementModalOpen} onClose={() => setReplacementModalOpen(false)} onSuccess={handleReplacementCreated} />
+              </>
+            )}
+
           </>
         )}
       </div>
