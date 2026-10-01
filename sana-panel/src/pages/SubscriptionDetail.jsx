@@ -14,6 +14,7 @@ import Select from '../components/Select';
 import Modal from '../components/Modal';
 import AddDeviceModal from '../components/AddDeviceModal';
 import ActionMenu from '../components/ActionMenu';
+import DeviceHistoryModal from '../components/DeviceHistoryModal';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
 import JalaliDatePicker from '../components/JalaliDatePicker';
@@ -167,6 +168,7 @@ export default function SubscriptionDetail() {
 
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [deviceHistoryId, setDeviceHistoryId] = useState(null);
 
   // ═══ لیست دستگاه‌های انبار ═══
   const fetchWarehouseDevices = useCallback(async () => {
@@ -572,7 +574,8 @@ export default function SubscriptionDetail() {
   };
 
   const openDeviceHistory = (deviceId) => {
-    navigate(`/panel/devices?device=${deviceId}&action=history`);
+    if (!deviceId) return;
+    setDeviceHistoryId(deviceId);
   };
 
   const openDeviceEdit = (deviceId) => {
@@ -1239,6 +1242,11 @@ export default function SubscriptionDetail() {
         </section>
       )}
 
+      <DeviceHistoryModalHost
+        deviceHistoryId={deviceHistoryId}
+        onClose={() => setDeviceHistoryId(null)}
+      />
+
       {/* ═══ مودال ویرایش قرارداد ═══ */}
       <Modal
         open={editModalOpen}
@@ -1867,6 +1875,18 @@ export default function SubscriptionDetail() {
     </div>
   );
 }
+
+
+function DeviceHistoryModalHost({ deviceHistoryId, onClose }) {
+  return (
+    <DeviceHistoryModal
+      open={Boolean(deviceHistoryId)}
+      deviceId={deviceHistoryId}
+      onClose={onClose}
+    />
+  );
+}
+
 
 const changeFieldLabels = {
   name: 'نام سازمان',
