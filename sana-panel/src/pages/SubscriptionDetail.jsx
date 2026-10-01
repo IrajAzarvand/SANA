@@ -23,7 +23,7 @@ import { organizationsAPI } from '../api/services/organizations';
 import { devicesAPI } from '../api/services/fleet';
 import { usersAPI } from '../api/services/fleet';
 import { useApi } from '../hooks/useApi';
-import { toJalali, todayGregorian } from '../utils/dateUtils';
+import { toJalali, toPersianDigits, todayGregorian } from '../utils/dateUtils';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 
 const statusMap = {
@@ -654,7 +654,7 @@ export default function SubscriptionDetail() {
               <Badge variant={isOrg ? 'brand' : 'info'}>{isOrg ? 'سازمانی' : 'شخصی'}</Badge>
             </div>
             <div className="flex items-center gap-2 mt-1 text-xs text-text-muted">
-              <span className="font-mono">{subscription.contract_number}</span>
+              <span className="font-mono">{toPersianDigits(subscription.contract_number)}</span>
               <span>·</span>
               <span>{customerName}</span>
             </div>
@@ -745,14 +745,14 @@ export default function SubscriptionDetail() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <DetailItem icon={Building2} label="نام سازمان" value={subscription.organization_name} />
               <DetailItem icon={Hash} label="کد سازمان" value={subscription.organization_code} mono />
-              <DetailItem icon={Phone} label="تلفن" value={subscription.organization_phone} mono />
+              <DetailItem icon={Phone} label="تلفن" value={toPersianDigits(subscription.organization_phone)} mono />
               <DetailItem icon={Hash} label="شماره ثبت" value={subscription.organization_registration_number} mono />
               <DetailItem icon={MapPin} label="آدرس" value={subscription.organization_address} />
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <DetailItem icon={UserIcon} label="نام و نام خانوادگی" value={subscription.user_name} />
-              <DetailItem icon={Phone} label="موبایل" value={subscription.user_mobile} mono />
+              <DetailItem icon={Phone} label="موبایل" value={toPersianDigits(subscription.user_mobile)} mono />
               <DetailItem icon={Hash} label="کد ملی" value={subscription.user_national_id} mono />
               <DetailItem icon={MapPin} label="آدرس" value={subscription.user_address} />
             </div>
@@ -767,7 +767,7 @@ export default function SubscriptionDetail() {
             <div>
               <div className="text-[11px] text-text-muted mb-1">قرارداد</div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h2 className="text-lg font-semibold font-mono text-text-primary">{subscription.contract_number}</h2>
+                <h2 className="text-lg font-semibold font-mono text-text-primary">{toPersianDigits(subscription.contract_number)}</h2>
                 <Badge variant={st.variant}>{st.label}</Badge>
               </div>
               <p className="text-xs text-text-muted mt-1">تمام اطلاعات، دستگاه‌ها، پرداخت‌ها و تاریخچه مربوط به همین قرارداد در این بخش قرار دارد.</p>
@@ -785,11 +785,11 @@ export default function SubscriptionDetail() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="p-4 rounded-xl bg-bg-base border border-border-base">
               <div className="text-[10px] text-text-muted mb-1">شروع قرارداد</div>
-              <div className="text-sm font-medium text-text-primary">{toJalali(subscription.start_date)}</div>
+              <div className="text-sm font-medium text-text-primary">{toPersianDigits(toJalali(subscription.start_date))}</div>
             </div>
             <div className="p-4 rounded-xl bg-bg-base border border-border-base">
               <div className="text-[10px] text-text-muted mb-1">پایان فعلی قرارداد</div>
-              <div className="text-sm font-medium text-brand-400">{toJalali(subscription.end_date)}</div>
+              <div className="text-sm font-medium text-brand-400">{toPersianDigits(toJalali(subscription.end_date))}</div>
             </div>
             <div className="p-4 rounded-xl bg-bg-base border border-border-base">
               <div className="text-[10px] text-text-muted mb-1">زمان باقی‌مانده</div>
@@ -930,7 +930,7 @@ export default function SubscriptionDetail() {
                   <div className="flex items-center gap-4 min-w-0 flex-wrap">
                     <span className="text-sm font-medium text-text-primary">{Number(p.amount).toLocaleString('fa-IR')} ریال</span>
                     <span className="text-xs text-text-muted">{p.device_count} دستگاه</span>
-                    <span className="text-xs text-text-muted">{toJalali(p.payment_date)}</span>
+                    <span className="text-xs text-text-muted">{toPersianDigits(toJalali(p.payment_date))}</span>
                     {p.description && <span className="text-xs text-text-muted truncate">{p.description}</span>}
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
@@ -1780,7 +1780,7 @@ export default function SubscriptionDetail() {
           <p className="text-sm text-text-secondary">
             آیا از لغو قرارداد
             <span className="font-mono font-bold text-text-primary mx-1">
-              {subscription.contract_number}
+              {toPersianDigits(subscription.contract_number)}
             </span>
             اطمینان دارید؟
           </p>
