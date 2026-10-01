@@ -21,7 +21,7 @@ import { useSearchParams } from 'react-router-dom';
 import { devicesAPI, deviceLifecycleAPI, deviceReplacementAPI, deviceOperationsAPI, vehiclesAPI, usersAPI } from '../api/services/fleet';
 import { deviceModelsAPI } from '../api/services/deviceModels';
 import { useApi } from '../hooks/useApi';
-import { toJalali } from '../utils/dateUtils';
+import { toJalali, toPersianDigits } from '../utils/dateUtils';
 import { organizationsAPI, branchesAPI } from '../api/services/organizations';
 import { subscriptionsAPI } from '../api/services/subscriptions';
 
