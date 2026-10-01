@@ -8,6 +8,24 @@
   font-family: 'Vazirmatn', sans-serif;
 }
 
+/* فونت یکدست رابط کاربری؛ حتی کلاس‌های فنی مثل font-mono هم از فونت اصلی سامانه استفاده می‌کنند. */
+.font-mono,
+code,
+pre,
+kbd,
+samp {
+  font-family: 'Vazirmatn', sans-serif !important;
+}
+
+/* کتابخانه‌های نقشه نیز باید از تایپوگرافی اصلی سامانه استفاده کنند. */
+.leaflet-container,
+.leaflet-container *,
+.leaflet-control,
+.leaflet-popup,
+.leaflet-tooltip {
+  font-family: 'Vazirmatn', sans-serif !important;
+}
+
 html, body, #root {
   height: 100%;
   margin: 0;
@@ -19,6 +37,7 @@ body {
   color: #E8EDF7;
   direction: rtl;
   text-align: right;
+  font-family: 'Vazirmatn', sans-serif;
 }
 
 /* ─── اسکرول‌بار ─── */
