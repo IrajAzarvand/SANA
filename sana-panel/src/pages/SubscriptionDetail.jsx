@@ -34,6 +34,46 @@ const statusMap = {
   cancelled: { label: 'لغو‌شده',        variant: 'danger'  },
 };
 
+const deviceManagementStatusMap = {
+  warehouse: { label: 'در انبار', variant: 'muted' },
+  sold: { label: 'فروخته شده', variant: 'info' },
+  installed: { label: 'نصب شده', variant: 'success' },
+  active: { label: 'فعال', variant: 'success' },
+  ready: { label: 'آماده تعیین تکلیف', variant: 'warning' },
+  faulty: { label: 'خراب', variant: 'danger' },
+  lost: { label: 'گمشده', variant: 'danger' },
+  stolen: { label: 'سرقت شده', variant: 'danger' },
+  disconnected: { label: 'قطع سرویس', variant: 'warning' },
+  retired: { label: 'بازنشسته', variant: 'muted' },
+  disposed: { label: 'امحاء شده', variant: 'muted' },
+};
+
+const getContractDeviceStatus = (device) => {
+  const managementStatus = device.management_status;
+  const relation = device.replacement_relation;
+
+  let relationLabel = 'فعال';
+  let relationVariant = 'success';
+
+  if (relation?.direction === 'replaced') {
+    relationLabel = 'جایگزین شده';
+    relationVariant = 'brand';
+  } else if (relation?.direction === 'replacement') {
+    relationLabel = relation.label || 'جایگزین';
+    relationVariant = relation.replacement_type === 'temporary_repair' ? 'info' : 'warning';
+  } else if (['faulty', 'lost', 'stolen'].includes(managementStatus)) {
+    relationLabel = 'بدون جایگزین';
+    relationVariant = 'muted';
+  }
+
+  const management = deviceManagementStatusMap[managementStatus];
+  const showManagementStatus = Boolean(
+    managementStatus && managementStatus !== 'active' && managementStatus !== 'installed'
+  );
+
+  return { relationLabel, relationVariant, management, showManagementStatus };
+};
+
 export default function SubscriptionDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -869,7 +909,40 @@ export default function SubscriptionDetail() {
                     <td className="py-3 px-4 text-text-secondary font-mono text-xs">{d.vehicle_plate || '—'}</td>
                     <td className="py-3 px-4 text-text-secondary font-mono text-xs">{toJalali(d.start_date)}</td>
                     <td className="py-3 px-4 text-text-secondary font-mono text-xs">{toJalali(d.end_date)}</td>
-                    <td className="py-3 px-4"><Badge variant={d.is_active ? 'success' : 'muted'}>{d.is_active ? 'فعال' : 'غیرفعال'}</Badge></td>
+                    <td className="py-3 px-4">
+                      {(() => {
+                        const deviceStatus = getContractDeviceStatus(d);
+                        const relation = d.replacement_relation;
+                        const relatedDevice = relation?.related_device_id
+                          ? 'IMEI: ' + (relation.related_device_imei || '—') +
+                            ' | مدل: ' + (relation.related_device_model || '—') +
+                            ' | SIM: ' + (relation.related_device_sim || '—')
+                          : '';
+
+                        return (
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {relation?.related_device_id ? (
+                              <button
+                                type="button"
+                                onClick={() => openDeviceHistory(relation.related_device_id)}
+                                title={'مشاهده دستگاه مرتبط — ' + relatedDevice}
+                                className="inline-flex items-center rounded-full focus:outline-none focus:ring-2 focus:ring-brand-400/40"
+                              >
+                                <Badge variant={deviceStatus.relationVariant}>{deviceStatus.relationLabel}</Badge>
+                              </button>
+                            ) : (
+                              <Badge variant={deviceStatus.relationVariant}>{deviceStatus.relationLabel}</Badge>
+                            )}
+
+                            {deviceStatus.showManagementStatus && deviceStatus.management && (
+                              <Badge variant={deviceStatus.management.variant}>
+                                {deviceStatus.management.label}
+                              </Badge>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td className="py-3 px-2">
                       <ActionMenu
                         items={[
