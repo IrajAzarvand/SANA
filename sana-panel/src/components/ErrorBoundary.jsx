@@ -112,7 +112,7 @@ ${this.state.errorInfo?.componentStack || '—'}
 
               <div className="space-y-3">
                 <div>
-                  <div className="text-[10px] text-text-muted mb-1">URL:</div>
+                  <div className="text-[10px] text-text-muted mb-1">نشانی صفحه:</div>
                   <div className="text-[10px] text-text-secondary font-mono break-all">
                     {window.location.href}
                   </div>
@@ -127,7 +127,7 @@ ${this.state.errorInfo?.componentStack || '—'}
 
                 {this.state.error?.stack && (
                   <div>
-                    <div className="text-[10px] text-text-muted mb-1">Stack Trace:</div>
+                    <div className="text-[10px] text-text-muted mb-1">ردیابی خطا:</div>
                     <pre className="text-[10px] text-text-secondary font-mono whitespace-pre-wrap break-all max-h-40 overflow-y-auto">
                       {this.state.error.stack}
                     </pre>
@@ -136,7 +136,7 @@ ${this.state.errorInfo?.componentStack || '—'}
 
                 {this.state.errorInfo?.componentStack && (
                   <div>
-                    <div className="text-[10px] text-text-muted mb-1">Component Stack:</div>
+                    <div className="text-[10px] text-text-muted mb-1">ردیابی مؤلفه:</div>
                     <pre className="text-[10px] text-text-secondary font-mono whitespace-pre-wrap break-all max-h-40 overflow-y-auto">
                       {this.state.errorInfo.componentStack}
                     </pre>
