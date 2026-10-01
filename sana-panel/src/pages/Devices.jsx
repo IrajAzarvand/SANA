@@ -366,8 +366,8 @@ function DevicesTab() {
 
   const canAddFollowUpReplacement = ['faulty', 'lost', 'stolen'].includes(historyDevice?.management_status);
   const operationNeedsReplacement = ['return_for_repair', 'lost', 'stolen', 'temporary_replacement', 'permanent_replacement'].includes(operationForm.operation_type);
-  const operationNeedsReplacementType = ['return_for_repair', 'lost', 'stolen'].includes(operationForm.operation_type) && Boolean(operationForm.replacement_device);
-  const operationNeedsReplacementMethod = ['return_for_repair', 'lost', 'stolen'].includes(operationForm.operation_type) && Boolean(operationForm.replacement_device);
+  const operationNeedsReplacementType = ['return_for_repair', 'lost', 'stolen', 'temporary_replacement', 'permanent_replacement'].includes(operationForm.operation_type) && Boolean(operationForm.replacement_device);
+  const operationNeedsReplacementMethod = ['return_for_repair', 'lost', 'stolen', 'temporary_replacement', 'permanent_replacement'].includes(operationForm.operation_type) && Boolean(operationForm.replacement_device);
   const operationNeedsDisposition = operationForm.operation_type === 'disposition';
 
   const handleDelete = async (id) => {
