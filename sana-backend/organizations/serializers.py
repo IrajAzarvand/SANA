@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.utils import timezone
+from django.db.models import Prefetch
 from fleet.lifecycle import record_device_lifecycle_event
 from .models import (
     Organization,
@@ -96,6 +97,12 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
     device_model_manufacturer = serializers.CharField(source='device.device_model.manufacturer', read_only=True)
     device_sim = serializers.CharField(source='device.sim_number', read_only=True)
     vehicle_plate = serializers.CharField(source='device.vehicle.plate', read_only=True)
+    management_status = serializers.CharField(source='device.management_status', read_only=True)
+    management_status_display = serializers.CharField(
+        source='device.get_management_status_display',
+        read_only=True,
+    )
+    replacement_relation = serializers.SerializerMethodField()
     is_active = serializers.BooleanField(read_only=True)
     is_expired = serializers.BooleanField(read_only=True)
     days_until_expiry = serializers.IntegerField(read_only=True)
@@ -107,11 +114,56 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
             'subscription',
             'device', 'device_imei', 'device_model', 'device_model_manufacturer', 'device_sim',
             'vehicle_plate',
+            'management_status', 'management_status_display', 'replacement_relation',
             'start_date', 'end_date',
             'assigned_at', 'unassigned_at',
             'is_active', 'is_expired', 'days_until_expiry',
         ]
         read_only_fields = ['id', 'assigned_at', 'unassigned_at']
+
+    def get_replacement_relation(self, obj):
+        device = obj.device
+
+        source_relations = list(device.replacement_relations_as_source.all())
+        if source_relations:
+            relation = source_relations[0]
+            related = relation.replacement_device
+            return {
+                'direction': 'replaced',
+                'label': 'جایگزین شده',
+                'replacement_type': relation.replacement_type,
+                'replacement_type_display': relation.get_replacement_type_display(),
+                'related_device_id': related.id,
+                'related_device_imei': related.imei,
+                'related_device_model': related.device_model.name if related.device_model else None,
+                'related_device_sim': related.sim_number,
+                'related_device_status': related.management_status,
+                'related_device_status_display': related.get_management_status_display(),
+            }
+
+        replacement_relations = list(device.replacement_relations_as_replacement.all())
+        if replacement_relations:
+            relation = replacement_relations[0]
+            related = relation.source_device
+            label = (
+                'جایگزین موقت'
+                if relation.replacement_type == 'temporary_repair'
+                else 'تعویض دائمی'
+            )
+            return {
+                'direction': 'replacement',
+                'label': label,
+                'replacement_type': relation.replacement_type,
+                'replacement_type_display': relation.get_replacement_type_display(),
+                'related_device_id': related.id,
+                'related_device_imei': related.imei,
+                'related_device_model': related.device_model.name if related.device_model else None,
+                'related_device_sim': related.sim_number,
+                'related_device_status': related.management_status,
+                'related_device_status_display': related.get_management_status_display(),
+            }
+
+        return None
 
     def validate(self, data):
         # چک کن دستگاه قبلاً توی قرارداد فعال دیگه نباشه
@@ -308,7 +360,15 @@ class SubscriptionSerializer(serializers.ModelSerializer):
 
     def get_devices(self, obj):
         """فقط لینک‌های فعال (unassigned_at=None) رو برگردون"""
-        active_links = obj.subscription_devices.filter(unassigned_at__isnull=True)
+        active_links = (
+            obj.subscription_devices
+            .filter(unassigned_at__isnull=True)
+            .select_related('device__device_model', 'device__vehicle')
+            .prefetch_related(
+                'device__replacement_relations_as_source__replacement_device__device_model',
+                'device__replacement_relations_as_replacement__source_device__device_model',
+            )
+        )
         return SubscriptionDeviceSerializer(active_links, many=True).data
 
     def get_device_count(self, obj):
