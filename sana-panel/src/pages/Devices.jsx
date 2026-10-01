@@ -364,7 +364,8 @@ function DevicesTab() {
     }));
   };
 
-  const operationNeedsReplacement = ['return_for_repair', 'lost', 'stolen'].includes(operationForm.operation_type);
+  const canAddFollowUpReplacement = ['faulty', 'lost', 'stolen'].includes(historyDevice?.management_status);
+  const operationNeedsReplacement = ['return_for_repair', 'lost', 'stolen', 'temporary_replacement', 'permanent_replacement'].includes(operationForm.operation_type);
   const operationNeedsReplacementType = ['return_for_repair', 'lost', 'stolen'].includes(operationForm.operation_type) && Boolean(operationForm.replacement_device);
   const operationNeedsReplacementMethod = ['return_for_repair', 'lost', 'stolen'].includes(operationForm.operation_type) && Boolean(operationForm.replacement_device);
   const operationNeedsDisposition = operationForm.operation_type === 'disposition';
@@ -775,9 +776,9 @@ function DevicesTab() {
                         replacement_method: '',
                         outcome_action: '',
                         replacement_device: '',
-                        reason: value === 'return_for_repair' ? 'repair' : current.reason,
+                        reason: ['return_for_repair', 'temporary_replacement', 'permanent_replacement'].includes(value) ? 'repair' : current.reason,
                       }));
-                      if (['return_for_repair', 'lost', 'stolen'].includes(value)) {
+                      if (['return_for_repair', 'lost', 'stolen', 'temporary_replacement', 'permanent_replacement'].includes(value)) {
                         await loadReplacementCandidates();
                       }
                       if (['disposition', 'transfer_customer', 'transfer_branch', 'transfer_vehicle'].includes(value)) {
@@ -786,6 +787,10 @@ function DevicesTab() {
                     }}
                     options={[
                       { value: 'return_for_repair', label: 'بازگشت برای تعمیر' },
+                      ...(canAddFollowUpReplacement ? [
+                        { value: 'temporary_replacement', label: 'جایگزینی موقت' },
+                        { value: 'permanent_replacement', label: 'تعویض دائمی' },
+                      ] : []),
                       { value: 'repaired', label: 'اتمام تعمیر' },
                       { value: 'found', label: 'پیدا شدن دستگاه' },
                       { value: 'disposition', label: 'تعیین تکلیف دستگاه' },
