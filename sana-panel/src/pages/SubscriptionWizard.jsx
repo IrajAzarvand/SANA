@@ -79,7 +79,12 @@ export default function SubscriptionWizard() {
     fetchNextNumber();
   }, [form.customer_type]); // eslint-disable-line
   const updateForm = (key, value) => {
-    setForm((f) => ({ ...f, [key]: value }));
+    setForm((f) => {
+      if (key === 'start_date' && f.end_date && value && value > f.end_date) {
+        return { ...f, start_date: value, end_date: '' };
+      }
+      return { ...f, [key]: value };
+    });
   };
 
   const validateStep = () => {
@@ -574,6 +579,7 @@ function Step3({ form, updateForm }) {
         <JalaliDatePicker
           label="تاریخ پایان"
           value={form.end_date}
+          minDate={form.start_date || null}
           onChange={(val) => updateForm('end_date', val)}
           required
         />
