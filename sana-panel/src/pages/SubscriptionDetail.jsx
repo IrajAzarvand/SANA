@@ -528,6 +528,26 @@ export default function SubscriptionDetail() {
     }
   };
 
+  const openDeviceHistory = (deviceId) => {
+    navigate(`/panel/devices?device=${deviceId}&action=history`);
+  };
+
+  const openDeviceEdit = (deviceId) => {
+    navigate(`/panel/devices?device=${deviceId}&action=edit`);
+  };
+
+  const handleDeleteDevice = async (deviceId) => {
+    if (!confirm('آیا از حذف کامل این دستگاه از سامانه اطمینان دارید؟')) return;
+    try {
+      await devicesAPI.delete(deviceId);
+      refetch();
+    } catch (err) {
+      console.error('Error deleting device:', err);
+      const msg = err.response?.data?.detail || 'خطا در حذف دستگاه';
+      alert(msg);
+    }
+  };
+
   // ═══ افزودن پرداخت ═══
   const handleAddPayment = async (e) => {
     e.preventDefault();
@@ -754,7 +774,7 @@ export default function SubscriptionDetail() {
             </div>
             <div className="text-left">
               <div className="text-[10px] text-text-muted">مبلغ قرارداد</div>
-              <div className="text-base font-bold font-mono text-brand-400 mt-1">
+              <div className="text-base font-bold text-brand-400 mt-1">
                 {Number(subscription.price || 0).toLocaleString('fa-IR')} ریال
               </div>
             </div>
@@ -765,40 +785,40 @@ export default function SubscriptionDetail() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="p-4 rounded-xl bg-bg-base border border-border-base">
               <div className="text-[10px] text-text-muted mb-1">شروع قرارداد</div>
-              <div className="font-mono text-sm text-text-primary">{toJalali(subscription.start_date)}</div>
+              <div className="text-sm font-medium text-text-primary">{toJalali(subscription.start_date)}</div>
             </div>
             <div className="p-4 rounded-xl bg-bg-base border border-border-base">
               <div className="text-[10px] text-text-muted mb-1">پایان فعلی قرارداد</div>
-              <div className="font-mono text-sm text-brand-400">{toJalali(subscription.end_date)}</div>
+              <div className="text-sm font-medium text-brand-400">{toJalali(subscription.end_date)}</div>
             </div>
             <div className="p-4 rounded-xl bg-bg-base border border-border-base">
               <div className="text-[10px] text-text-muted mb-1">زمان باقی‌مانده</div>
-              <div className={`font-mono text-sm font-medium ${daysLeft < 0 ? 'text-danger' : daysLeft <= 30 ? 'text-warning' : 'text-text-primary'}`}>
+              <div className={`text-sm font-medium ${daysLeft < 0 ? 'text-danger' : daysLeft <= 30 ? 'text-warning' : 'text-text-primary'}`}>
                 {daysLeft < 0 ? `منقضی · ${Math.abs(daysLeft)} روز` : `${daysLeft} روز`}
               </div>
             </div>
             <div className="p-4 rounded-xl bg-bg-base border border-border-base">
               <div className="text-[10px] text-text-muted mb-1">دستگاه‌های فعال قرارداد</div>
-              <div className="font-mono text-sm text-text-primary">{subscription.active_device_count ?? 0} دستگاه</div>
+              <div className="text-sm font-medium text-text-primary">{subscription.active_device_count ?? 0} دستگاه</div>
             </div>
           </div>
 
           <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="p-4 rounded-xl bg-bg-base border border-border-base">
               <div className="text-[10px] text-text-muted mb-1">کل مبالغ ثبت‌شده</div>
-              <div className="font-mono text-sm font-semibold text-text-primary">{Number(subscription.total_payment_amount || 0).toLocaleString('fa-IR')} ریال</div>
+              <div className="text-sm font-semibold text-text-primary">{Number(subscription.total_payment_amount || 0).toLocaleString('fa-IR')} ریال</div>
             </div>
             <div className="p-4 rounded-xl bg-bg-base border border-border-base">
               <div className="text-[10px] text-text-muted mb-1">پرداخت‌شده تا امروز</div>
-              <div className="font-mono text-sm font-semibold text-brand-400">{Number(subscription.paid_payment_amount || 0).toLocaleString('fa-IR')} ریال</div>
+              <div className="text-sm font-semibold text-brand-400">{Number(subscription.paid_payment_amount || 0).toLocaleString('fa-IR')} ریال</div>
             </div>
             <div className="p-4 rounded-xl bg-bg-base border border-border-base">
               <div className="text-[10px] text-text-muted mb-1">پرداخت آینده</div>
-              <div className="font-mono text-sm font-semibold text-text-primary">{Number(subscription.future_payment_amount || 0).toLocaleString('fa-IR')} ریال</div>
+              <div className="text-sm font-semibold text-text-primary">{Number(subscription.future_payment_amount || 0).toLocaleString('fa-IR')} ریال</div>
             </div>
             <div className="p-4 rounded-xl bg-bg-base border border-border-base">
               <div className="text-[10px] text-text-muted mb-1">مانده پرداخت</div>
-              <div className="font-mono text-sm font-semibold text-warning">{Number(subscription.outstanding_payment_amount || 0).toLocaleString('fa-IR')} ریال</div>
+              <div className="text-sm font-semibold text-warning">{Number(subscription.outstanding_payment_amount || 0).toLocaleString('fa-IR')} ریال</div>
             </div>
           </div>
 
@@ -851,9 +871,28 @@ export default function SubscriptionDetail() {
                     <td className="py-3 px-4 text-text-secondary font-mono text-xs">{toJalali(d.end_date)}</td>
                     <td className="py-3 px-4"><Badge variant={d.is_active ? 'success' : 'muted'}>{d.is_active ? 'فعال' : 'غیرفعال'}</Badge></td>
                     <td className="py-3 px-2">
-                      {isSiteAdmin && !isCancelled && (
-                        <ActionMenu items={[{ label: 'حذف از قرارداد', icon: Trash2, variant: 'danger', onClick: () => handleRemoveDevice(d.id) }]} />
-                      )}
+                      <ActionMenu
+                        items={[
+                          {
+                            label: 'تاریخچه و رویدادها',
+                            icon: History,
+                            onClick: () => openDeviceHistory(d.device),
+                          },
+                          ...(isSiteAdmin ? [
+                            {
+                              label: 'ویرایش',
+                              icon: Pencil,
+                              onClick: () => openDeviceEdit(d.device),
+                            },
+                            {
+                              label: 'حذف',
+                              icon: Trash2,
+                              variant: 'danger',
+                              onClick: () => handleDeleteDevice(d.device),
+                            },
+                          ] : []),
+                        ]}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -889,9 +928,9 @@ export default function SubscriptionDetail() {
               return (
                 <div key={p.id} className="flex items-center justify-between gap-4 p-3.5 bg-bg-base border border-border-base rounded-xl">
                   <div className="flex items-center gap-4 min-w-0 flex-wrap">
-                    <span className="font-mono text-sm font-medium text-text-primary">{Number(p.amount).toLocaleString('fa-IR')} ریال</span>
+                    <span className="text-sm font-medium text-text-primary">{Number(p.amount).toLocaleString('fa-IR')} ریال</span>
                     <span className="text-xs text-text-muted">{p.device_count} دستگاه</span>
-                    <span className="text-xs text-text-muted font-mono">{toJalali(p.payment_date)}</span>
+                    <span className="text-xs text-text-muted">{toJalali(p.payment_date)}</span>
                     {p.description && <span className="text-xs text-text-muted truncate">{p.description}</span>}
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
@@ -908,7 +947,7 @@ export default function SubscriptionDetail() {
             })}
             <div className="flex items-center justify-between p-4 rounded-xl bg-brand-500/10 border border-brand-500/30">
               <span className="text-sm text-text-secondary">مجموع پرداخت‌های ثبت‌شده</span>
-              <span className="font-mono text-base font-bold text-brand-400">{totalPayments.toLocaleString('fa-IR')} ریال</span>
+              <span className="text-base font-bold text-brand-400">{totalPayments.toLocaleString('fa-IR')} ریال</span>
             </div>
           </div>
         )}
