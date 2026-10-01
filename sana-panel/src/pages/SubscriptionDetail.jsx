@@ -61,8 +61,11 @@ const getContractDeviceStatus = (device) => {
   } else if (relation?.direction === 'replacement') {
     relationLabel = relation.label || 'جایگزین';
     relationVariant = relation.replacement_type === 'temporary_repair' ? 'info' : 'warning';
-  } else if (['faulty', 'lost', 'stolen'].includes(managementStatus)) {
+  } else if (['faulty', 'lost', 'stolen', 'ready', 'disconnected', 'retired', 'disposed'].includes(managementStatus)) {
     relationLabel = 'بدون جایگزین';
+    relationVariant = 'muted';
+  } else if (!device.is_active) {
+    relationLabel = 'غیرفعال';
     relationVariant = 'muted';
   }
 
@@ -916,7 +919,8 @@ export default function SubscriptionDetail() {
                         const relatedDevice = relation?.related_device_id
                           ? 'IMEI: ' + (relation.related_device_imei || '—') +
                             ' | مدل: ' + (relation.related_device_model || '—') +
-                            ' | SIM: ' + (relation.related_device_sim || '—')
+                            ' | SIM: ' + (relation.related_device_sim || '—') +
+                            ' | وضعیت: ' + (relation.related_device_status_display || '—')
                           : '';
 
                         return (
