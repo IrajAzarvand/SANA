@@ -261,6 +261,90 @@ def execute_device_operation(
                 description=description or 'دستگاه برای تعمیر به سانا بازگردانده شد.',
             )
 
+    elif operation_type in {'temporary_replacement', 'permanent_replacement'}:
+        if device.management_status not in {'faulty', 'lost', 'stolen'}:
+            raise ValidationError({
+                'device': 'فقط دستگاه خراب، گمشده یا سرقت‌شده می‌تواند بعداً جایگزین دریافت کند.'
+            })
+        if not replacement_device:
+            raise ValidationError({'replacement_device': 'دستگاه جایگزین را انتخاب کنید.'})
+        if replacement_type not in {'temporary_repair', 'permanent_replacement'}:
+            raise ValidationError({'replacement_type': 'نوع جایگزینی را مشخص کنید.'})
+        if not replacement_method:
+            raise ValidationError({'replacement_method': 'نحوه جایگزینی را مشخص کنید.'})
+        expected_type = 'temporary_repair' if operation_type == 'temporary_replacement' else 'permanent_replacement'
+        if replacement_type != expected_type:
+            raise ValidationError({'replacement_type': 'نوع جایگزینی با عملیات انتخاب‌شده هماهنگ نیست.'})
+        if replacement_type == 'temporary_repair' and replacement_method not in {
+            'loaner', 'warranty', 'free_exchange', 'other'
+        }:
+            raise ValidationError({'replacement_method': 'برای جایگزینی موقت، نحوه انتخاب‌شده نامعتبر است'})
+        if replacement_type == 'permanent_replacement' and replacement_method == 'loaner':
+            raise ValidationError({'replacement_method': 'دستگاه دائمی نمی‌تواند امانی باشد'})
+        if replacement_device.active_subscription_link or not replacement_device.is_in_warehouse:
+            raise ValidationError({'replacement_device': 'دستگاه جایگزین باید در انبار آزاد سانا باشد.'})
+
+        previous_event = DeviceLifecycleEvent.objects.filter(
+            device=device,
+            event_type__in=['sent_to_repair', 'lost', 'stolen'],
+        ).order_by('-event_date', '-id').first()
+        previous_vehicle = previous_event.vehicle if previous_event else None
+        previous_branch = previous_event.branch if previous_event else None
+        customer_org = device.organization or device.current_holder_organization
+        customer_user = device.owner_user or device.current_holder_user
+
+        DeviceReplacementRelation.objects.create(
+            source_device=device,
+            replacement_device=replacement_device,
+            replacement_type=replacement_type,
+            description=description or 'جایگزینی دستگاه در ادامه عملیات قبلی.',
+        )
+
+        replacement_device.management_status = (
+            'installed' if replacement_type == 'temporary_repair' else 'sold'
+        )
+        replacement_device.vehicle = previous_vehicle
+        replacement_device.branch = previous_branch
+        replacement_device.current_holder_organization = customer_org
+        replacement_device.current_holder_user = customer_user
+        if replacement_type == 'permanent_replacement':
+            replacement_device.organization = customer_org
+            replacement_device.owner_user = customer_user
+        replacement_device.save()
+
+        if replacement_type == 'permanent_replacement':
+            _open_ownership(
+                replacement_device,
+                organization=customer_org,
+                user=customer_user,
+                reason='permanent_replacement',
+            )
+
+        if subscription:
+            _add_to_subscription(replacement_device, subscription, operation)
+            _open_customer_access(
+                replacement_device,
+                subscription=subscription,
+                branch=previous_branch,
+                organization=customer_org,
+                user=customer_user,
+                reason='replacement',
+            )
+
+        record_device_lifecycle_event(
+            device_operation=operation,
+            device=replacement_device,
+            event_type='assigned_to_contract',
+            performed_by=performed_by,
+            subscription=subscription,
+            organization=customer_org,
+            user=customer_user,
+            vehicle=previous_vehicle,
+            branch=previous_branch,
+            reason='replacement',
+            description=f'به عنوان جایگزین دستگاه {device.imei} به قرارداد متصل شد.',
+        )
+
     elif operation_type == 'repaired':
         if device.management_status != 'faulty':
             raise ValidationError({
