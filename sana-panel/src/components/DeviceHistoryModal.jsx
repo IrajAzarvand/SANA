@@ -1,0 +1,321 @@
+import { useEffect, useState } from 'react';
+import Badge from './Badge';
+import Button from './Button';
+import LoadingSpinner from './LoadingSpinner';
+import Modal from './Modal';
+import {
+  devicesAPI,
+  deviceLifecycleAPI,
+  deviceReplacementAPI,
+  deviceOperationsAPI,
+} from '../api/services/fleet';
+import { toJalali } from '../utils/dateUtils';
+
+const managementStatusMap = {
+  warehouse: { label: 'در انبار', variant: 'info' },
+  sold: { label: 'فروخته شده', variant: 'brand' },
+  installed: { label: 'نصب شده', variant: 'brand' },
+  active: { label: 'فعال', variant: 'success' },
+  ready: { label: 'آماده تعیین تکلیف', variant: 'info' },
+  faulty: { label: 'خراب', variant: 'danger' },
+  lost: { label: 'گمشده', variant: 'warning' },
+  stolen: { label: 'سرقت شده', variant: 'danger' },
+  disconnected: { label: 'قطع سرویس', variant: 'muted' },
+  retired: { label: 'بازنشسته', variant: 'muted' },
+  disposed: { label: 'امحاء', variant: 'danger' },
+};
+
+const deviceOperationTypeMap = {
+  return_for_repair: 'بازگشت برای تعمیر',
+  repaired: 'اتمام تعمیر',
+  temporary_replacement: 'جایگزینی موقت',
+  permanent_replacement: 'تعویض دائمی',
+  lost: 'گم‌شدن',
+  stolen: 'سرقت',
+  found: 'پیدا شدن دستگاه',
+  disposition: 'تعیین تکلیف دستگاه',
+  transfer_customer: 'انتقال به مشتری دیگر',
+  transfer_branch: 'انتقال بین شعب',
+  transfer_vehicle: 'انتقال بین خودروها',
+  retire: 'بازنشستگی',
+  dispose: 'امحاء',
+};
+
+const deviceOperationReasonMap = {
+  repair: 'تعمیر',
+  replacement: 'تعویض',
+  defective: 'خرابی',
+  other: 'سایر',
+};
+
+const deviceReplacementTypeMap = {
+  temporary_repair: 'جایگزینی موقت برای تعمیر',
+  permanent_replacement: 'تعویض دائمی',
+};
+
+export default function DeviceHistoryModal({ open, deviceId, onClose }) {
+  const [historyDevice, setHistoryDevice] = useState(null);
+  const [historyEvents, setHistoryEvents] = useState([]);
+  const [replacementRelations, setReplacementRelations] = useState([]);
+  const [operationHistory, setOperationHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!open || !deviceId) {
+      setHistoryDevice(null);
+      setHistoryEvents([]);
+      setReplacementRelations([]);
+      setOperationHistory([]);
+      setHistoryError('');
+      return undefined;
+    }
+
+    const loadHistory = async () => {
+      setHistoryLoading(true);
+      setHistoryError('');
+
+      try {
+        const [device, historyResult, replacementResult, operationResult] = await Promise.all([
+          devicesAPI.get(deviceId),
+          deviceLifecycleAPI.list({ device: deviceId }),
+          deviceReplacementAPI.list({ device: deviceId }),
+          deviceOperationsAPI.list({ device: deviceId }),
+        ]);
+
+        if (cancelled) return;
+
+        setHistoryDevice(device);
+        setHistoryEvents(Array.isArray(historyResult) ? historyResult : historyResult.results || []);
+        setReplacementRelations(Array.isArray(replacementResult) ? replacementResult : replacementResult.results || []);
+        setOperationHistory(Array.isArray(operationResult) ? operationResult : operationResult.results || []);
+      } catch (err) {
+        if (cancelled) return;
+        console.error('Error loading device history:', err);
+        setHistoryDevice(null);
+        setHistoryEvents([]);
+        setReplacementRelations([]);
+        setOperationHistory([]);
+        setHistoryError('خطا در دریافت تاریخچه دستگاه');
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
+      }
+    };
+
+    loadHistory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, deviceId]);
+
+  const closeModal = () => {
+    if (!historyLoading) onClose();
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={closeModal}
+      title={historyDevice ? 'تاریخچه دستگاه ' + historyDevice.imei : 'تاریخچه دستگاه'}
+      footer={<Button variant="secondary" onClick={onClose}>بستن</Button>}
+    >
+      <div className="space-y-5">
+        {historyLoading && <LoadingSpinner />}
+
+        {historyError && !historyLoading && (
+          <div className="rounded-card border border-danger/20 bg-danger/5 p-4 text-sm text-danger">
+            {historyError}
+          </div>
+        )}
+
+        {!historyLoading && historyDevice && (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 rounded-card border border-border-base bg-bg-base p-4">
+              <div>
+                <div className="text-[11px] text-text-muted">مدل دستگاه</div>
+                <div className="text-sm text-text-primary mt-1">
+                  {historyDevice.device_model_manufacturer && historyDevice.device_model_name
+                    ? `${historyDevice.device_model_manufacturer} ${historyDevice.device_model_name}`
+                    : '—'}
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] text-text-muted">IMEI</div>
+                <div className="text-sm font-mono text-text-primary mt-1">{historyDevice.imei || '—'}</div>
+              </div>
+              <div>
+                <div className="text-[11px] text-text-muted">شماره سیم‌کارت</div>
+                <div dir="ltr" className="text-sm font-mono text-text-primary mt-1 text-right">{historyDevice.sim_number || '—'}</div>
+              </div>
+              <div>
+                <div className="text-[11px] text-text-muted">وضعیت فعلی</div>
+                <div className="mt-1">
+                  <Badge variant={(managementStatusMap[historyDevice.management_status] || managementStatusMap.warehouse).variant}>
+                    {(managementStatusMap[historyDevice.management_status] || managementStatusMap.warehouse).label}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3 max-h-[360px] overflow-y-auto pr-1">
+              {operationHistory.length > 0 && (
+                <div className="rounded-card border border-border-base bg-bg-base p-4 space-y-3">
+                  <div className="text-sm font-semibold text-text-primary">سوابق عملیات دستگاه</div>
+                  <div className="space-y-2">
+                    {operationHistory.map((operation) => {
+                      const linkedEvent = historyEvents.find((event) => event.device_operation === operation.id)
+                        || historyEvents.find((event) =>
+                          !event.device_operation
+                          && event.description === operation.description
+                          && event.subscription === operation.subscription
+                          && event.event_date
+                          && operation.performed_at
+                          && Math.abs(new Date(event.event_date).getTime() - new Date(operation.performed_at).getTime()) <= 5000
+                        );
+
+                      return (
+                        <div key={operation.id} className="rounded-card border border-border-base bg-bg-surface p-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-sm font-medium text-text-primary">
+                              {deviceOperationTypeMap[operation.operation_type] || operation.operation_type_display || 'عملیات دستگاه'}
+                            </div>
+                            <span className="text-[11px] text-text-muted">
+                              {operation.performed_at ? toJalali(operation.performed_at) : '—'}
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2 mt-3 text-[11px] text-text-muted">
+                            {operation.old_status && (
+                              <span>وضعیت قبل: {managementStatusMap[operation.old_status]?.label || operation.old_status}</span>
+                            )}
+                            {operation.new_status && (
+                              <span>وضعیت بعد: {managementStatusMap[operation.new_status]?.label || operation.new_status}</span>
+                            )}
+                            {operation.subscription_number && <span>قرارداد: {operation.subscription_number}</span>}
+                            {linkedEvent?.organization_name && <span>مشتری: {linkedEvent.organization_name}</span>}
+                            {linkedEvent?.vehicle_plate && <span>خودرو: {linkedEvent.vehicle_plate}</span>}
+                          </div>
+
+                          {operation.replacement_device_imei && (
+                            <div className="text-xs text-text-secondary mt-2">
+                              دستگاه جایگزین: <span className="font-mono">{operation.replacement_device_imei}</span>
+                            </div>
+                          )}
+
+                          {operation.replacement_type && (
+                            <div className="text-xs text-text-secondary mt-2">
+                              ماهیت جایگزینی: {deviceReplacementTypeMap[operation.replacement_type] || operation.replacement_type}
+                            </div>
+                          )}
+
+                          {operation.replacement_method && (
+                            <div className="text-xs text-text-secondary mt-2">
+                              نحوه جایگزینی: {operation.replacement_method}
+                            </div>
+                          )}
+
+                          {operation.outcome_action && (
+                            <div className="text-xs text-text-secondary mt-2">
+                              سرنوشت پس از تعمیر: {operation.outcome_action}
+                            </div>
+                          )}
+
+                          {operation.reason && (
+                            <div className="text-xs text-text-secondary mt-2">
+                              دلیل: {linkedEvent?.reason_display || deviceOperationReasonMap[operation.reason] || operation.reason}
+                            </div>
+                          )}
+
+                          {operation.description && (
+                            <div className="text-xs text-text-secondary mt-2 leading-6">{operation.description}</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {operationHistory.length === 0 && historyEvents.filter((event) => !event.device_operation).length === 0 && (
+                <div className="text-sm text-text-muted text-center py-6">هنوز رویدادی ثبت نشده است.</div>
+              )}
+
+              {historyEvents.filter((event) => {
+                if (event.device_operation) return false;
+                return !operationHistory.some((operation) =>
+                  event.description === operation.description
+                  && event.subscription === operation.subscription
+                  && event.event_date
+                  && operation.performed_at
+                  && Math.abs(new Date(event.event_date).getTime() - new Date(operation.performed_at).getTime()) <= 5000
+                );
+              }).map((event) => (
+                <div key={event.id} className="rounded-card border border-border-base bg-bg-base p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-semibold text-text-primary">
+                        {event.event_type_display || deviceOperationTypeMap[event.event_type] || event.event_type || 'رویداد دستگاه'}
+                      </div>
+                      <div className="text-[11px] text-text-muted mt-1 font-mono">
+                        {event.event_date ? toJalali(event.event_date) : '—'}
+                      </div>
+                    </div>
+                    <Badge variant={event.new_status === 'warehouse' ? 'info' : 'brand'}>
+                      {managementStatusMap[event.new_status]?.label || event.new_status || '—'}
+                    </Badge>
+                  </div>
+                  {event.reason_display && <div className="text-xs text-text-secondary mt-2">دلیل: {event.reason_display}</div>}
+                  {event.description && <div className="text-xs text-text-secondary mt-2 leading-6">{event.description}</div>}
+                  {(event.subscription_number || event.organization_name || event.vehicle_plate) && (
+                    <div className="flex flex-wrap gap-2 mt-3 text-[11px] text-text-muted">
+                      {event.subscription_number && <span>قرارداد: {event.subscription_number}</span>}
+                      {event.organization_name && <span>مشتری: {event.organization_name}</span>}
+                      {event.vehicle_plate && <span>خودرو: {event.vehicle_plate}</span>}
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {replacementRelations.length > 0 && (
+                <div className="rounded-card border border-border-base bg-bg-base p-4 space-y-3">
+                  <div className="text-sm font-semibold text-text-primary">رابطه جایگزینی</div>
+                  <div className="space-y-2">
+                    {replacementRelations.map((relation) => {
+                      const isSource = relation.source_device === historyDevice?.id;
+                      return (
+                        <div key={relation.id} className="rounded-card border border-border-base bg-bg-surface p-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-xs text-text-secondary">
+                              {isSource ? 'این دستگاه جایگزین شده با' : 'این دستگاه جایگزین'}
+                            </div>
+                            <Badge variant={relation.replacement_type === 'temporary_repair' ? 'warning' : 'brand'}>
+                              {deviceReplacementTypeMap[relation.replacement_type] || relation.replacement_type_display || relation.replacement_type || '—'}
+                            </Badge>
+                          </div>
+                          <div className="mt-2 flex items-center justify-between gap-3">
+                            <span className="font-mono text-xs text-text-primary">
+                              {isSource ? relation.replacement_device_imei : relation.source_device_imei}
+                            </span>
+                            <span className="text-[11px] text-text-muted">
+                              {relation.replacement_date ? toJalali(relation.replacement_date) : '—'}
+                            </span>
+                          </div>
+                          {relation.description && (
+                            <div className="text-xs text-text-secondary mt-2 leading-6">{relation.description}</div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
