@@ -190,10 +190,18 @@ class DeviceListSerializer(serializers.ModelSerializer):
         ]
 
     def get_customer_name(self, obj):
+        # نمایش مشتری باید فقط به current_holder وابسته نباشد؛
+        # دستگاه‌هایی که از مسیر قرارداد به مشتری تخصیص یافته‌اند
+        # ممکن است مالکیتشان روی organization / owner_user ثبت شده باشد
+        # ولی current_holder هنوز مقداردهی نشده باشد.
         if obj.current_holder_organization:
             return obj.current_holder_organization.name
         if obj.current_holder_user:
             return obj.current_holder_user.full_name or obj.current_holder_user.username
+        if obj.organization:
+            return obj.organization.name
+        if obj.owner_user:
+            return obj.owner_user.full_name or obj.owner_user.username
         return None
 
     def get_subscription_id(self, obj):
