@@ -524,6 +524,7 @@ class DeviceLifecycleEvent(models.Model):
         ('replaced', 'تعویض'),
         ('transferred', 'انتقال'),
         ('lost', 'گم‌شدن'),
+        ('found', 'پیدا شدن'),
         ('disposition', 'تعیین تکلیف'),
         ('stolen', 'سرقت'),
         ('retired', 'بازنشستگی'),
