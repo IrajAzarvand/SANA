@@ -399,6 +399,65 @@ class DriverSerializer(serializers.ModelSerializer):
             validated_data['organization_id'] = request.user.organization_id
         return super().create(validated_data)
 
+class DriverVehicleAssignmentSerializer(serializers.ModelSerializer):
+    driver_name = serializers.SerializerMethodField()
+    vehicle_plate = serializers.CharField(source='vehicle.plate', read_only=True)
+    driver_branch_name = serializers.CharField(source='driver.branch.name', read_only=True)
+    vehicle_branch_name = serializers.CharField(source='vehicle.branch.name', read_only=True)
+
+    class Meta:
+        model = DriverVehicleAssignment
+        fields = [
+            'id', 'driver', 'driver_name',
+            'vehicle', 'vehicle_plate',
+            'driver_branch_name', 'vehicle_branch_name',
+            'started_at', 'ended_at', 'created_at',
+        ]
+        read_only_fields = [
+            'id', 'driver_name', 'vehicle_plate',
+            'driver_branch_name', 'vehicle_branch_name', 'created_at',
+        ]
+
+    def get_driver_name(self, obj):
+        return str(obj.driver)
+
+    def validate(self, attrs):
+        driver = attrs.get('driver', getattr(self.instance, 'driver', None))
+        vehicle = attrs.get('vehicle', getattr(self.instance, 'vehicle', None))
+        started_at = attrs.get('started_at', getattr(self.instance, 'started_at', None))
+        ended_at = attrs.get('ended_at', getattr(self.instance, 'ended_at', None))
+
+        if not driver or not vehicle:
+            raise serializers.ValidationError('راننده و خودرو الزامی هستند.')
+
+        if driver.organization_id != vehicle.organization_id:
+            raise serializers.ValidationError({'vehicle': 'راننده و خودرو باید متعلق به یک سازمان باشند.'})
+
+        if driver.branch_id and vehicle.branch_id and driver.branch_id != vehicle.branch_id:
+            raise serializers.ValidationError({'vehicle': 'شعبه راننده و خودرو باید یکسان باشد.'})
+
+        if ended_at and ended_at <= started_at:
+            raise serializers.ValidationError({'ended_at': 'پایان تخصیص باید بعد از شروع تخصیص باشد.'})
+
+        overlap = DriverVehicleAssignment.objects.filter(vehicle=vehicle)
+        if ended_at:
+            overlap = overlap.filter(
+                started_at__lt=ended_at,
+            ).filter(
+                Q(ended_at__isnull=True) | Q(ended_at__gt=started_at)
+            )
+        else:
+            overlap = overlap.filter(
+                Q(ended_at__isnull=True) | Q(ended_at__gt=started_at)
+            )
+        if self.instance:
+            overlap = overlap.exclude(pk=self.instance.pk)
+        if overlap.exists():
+            raise serializers.ValidationError({'vehicle': 'این بازه زمانی با تخصیص دیگری به این خودرو تداخل دارد.'})
+
+        return attrs
+
+
 class DeviceLifecycleEventSerializer(serializers.ModelSerializer):
     event_type_display = serializers.CharField(source='get_event_type_display', read_only=True)
     reason_display = serializers.CharField(source='get_reason_display', read_only=True)
