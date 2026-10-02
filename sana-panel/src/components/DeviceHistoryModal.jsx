@@ -291,8 +291,9 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
     }
   };
 
-  const handleReplacementCreated = (createdDevice) => {
+  const handleReplacementCreated = async (createdDevice) => {
     setReplacementModalOpen(false);
+    await loadReplacementCandidates();
     setOperationForm((current) => ({
       ...current,
       replacement_device: createdDevice.id,
