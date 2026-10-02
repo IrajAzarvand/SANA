@@ -510,6 +510,67 @@ class Driver(models.Model):
     def __str__(self):
         return f'{self.first_name} {self.last_name}'
 
+class DriverVehicleAssignment(models.Model):
+    """تاریخچه تخصیص راننده به خودرو."""
+
+    driver = models.ForeignKey(
+        Driver,
+        on_delete=models.CASCADE,
+        related_name='vehicle_assignments',
+        verbose_name='راننده',
+    )
+    vehicle = models.ForeignKey(
+        Vehicle,
+        on_delete=models.CASCADE,
+        related_name='driver_assignments',
+        verbose_name='خودرو',
+    )
+    started_at = models.DateTimeField(verbose_name='شروع تخصیص')
+    ended_at = models.DateTimeField(null=True, blank=True, verbose_name='پایان تخصیص')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'تخصیص راننده به خودرو'
+        verbose_name_plural = 'تخصیص‌های راننده به خودرو'
+        ordering = ['-started_at', '-id']
+        indexes = [
+            models.Index(fields=['driver', 'started_at', 'ended_at']),
+            models.Index(fields=['vehicle', 'started_at', 'ended_at']),
+        ]
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if self.ended_at and self.ended_at <= self.started_at:
+            raise ValidationError({'ended_at': 'پایان تخصیص باید بعد از شروع تخصیص باشد.'})
+
+        if self.driver.organization_id != self.vehicle.organization_id:
+            raise ValidationError({'vehicle': 'راننده و خودرو باید متعلق به یک سازمان باشند.'})
+
+        if self.driver.branch_id and self.vehicle.branch_id and self.driver.branch_id != self.vehicle.branch_id:
+            raise ValidationError({'vehicle': 'شعبه راننده و خودرو باید یکسان باشد.'})
+
+        assignment_end = self.ended_at
+        overlap = DriverVehicleAssignment.objects.filter(
+            vehicle=self.vehicle,
+        ).exclude(pk=self.pk).filter(
+            started_at__lt=assignment_end if assignment_end else timezone.datetime.max.replace(tzinfo=timezone.utc),
+        )
+        if self.ended_at:
+            overlap = overlap.filter(
+                models.Q(ended_at__isnull=True) | models.Q(ended_at__gt=self.started_at)
+            )
+        else:
+            overlap = overlap.filter(
+                models.Q(ended_at__isnull=True) | models.Q(ended_at__gt=self.started_at)
+            )
+        if overlap.exists():
+            raise ValidationError({'vehicle': 'این بازه زمانی با تخصیص دیگری به این خودرو تداخل دارد.'})
+
+    def __str__(self):
+        return f'{self.driver} → {self.vehicle}'
+
+
 class DeviceLifecycleEvent(models.Model):
     """رویدادهای غیرقابل‌حذف چرخه عمر دستگاه."""
 
