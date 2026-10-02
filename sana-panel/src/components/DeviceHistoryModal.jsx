@@ -84,7 +84,7 @@ const deviceOutcomeActionMap = {
   other: 'سایر',
 };
 
-export default function DeviceHistoryModal({ open, deviceId, onClose }) {
+export default function DeviceHistoryModal({ open, deviceId, onClose, onOperationSaved }) {
   const [historyDevice, setHistoryDevice] = useState(null);
   const [historyEvents, setHistoryEvents] = useState([]);
   const [replacementRelations, setReplacementRelations] = useState([]);
@@ -251,7 +251,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose }) {
       setOperationForm({
         operation_type: 'return_for_repair',
         replacement_type: 'temporary_repair',
-        replacement_method: '',
+        replacement_method: 'loaner',
         outcome_action: '',
         replacement_device: '',
         reason: 'repair',
@@ -273,6 +273,8 @@ export default function DeviceHistoryModal({ open, deviceId, onClose }) {
       setHistoryEvents(Array.isArray(historyResult) ? historyResult : historyResult.results || []);
       setReplacementRelations(Array.isArray(replacementResult) ? replacementResult : replacementResult.results || []);
       setOperationHistory(Array.isArray(operationResult) ? operationResult : operationResult.results || []);
+      if (onOperationSaved) await onOperationSaved();
+      onClose();
     } catch (err) {
       console.error('Error saving device operation:', err);
       const data = err.response?.data;
@@ -382,10 +384,10 @@ export default function DeviceHistoryModal({ open, deviceId, onClose }) {
 
                           <div className="flex flex-wrap gap-2 mt-3 text-[11px] text-text-muted">
                             {operation.old_status && (
-                              <span>وضعیت قبل: {managementStatusMap[operation.old_status]?.label || operation.old_status}</span>
+                              <span>وضعیت قبل: {managementStatusMap[operation.old_status]?.label || '—'}</span>
                             )}
                             {operation.new_status && (
-                              <span>وضعیت بعد: {managementStatusMap[operation.new_status]?.label || operation.new_status}</span>
+                              <span>وضعیت بعد: {managementStatusMap[operation.new_status]?.label || '—'}</span>
                             )}
                             {operation.subscription_number && <span>قرارداد: {operation.subscription_number}</span>}
                             {linkedEvent?.organization_name && <span>مشتری: {linkedEvent.organization_name}</span>}
@@ -400,13 +402,13 @@ export default function DeviceHistoryModal({ open, deviceId, onClose }) {
 
                           {operation.replacement_type && (
                             <div className="text-xs text-text-secondary mt-2">
-                              ماهیت جایگزینی: {deviceReplacementTypeMap[operation.replacement_type] || operation.replacement_type}
+                              ماهیت جایگزینی: {deviceReplacementTypeMap[operation.replacement_type] || operation.replacement_type_display || '—'}
                             </div>
                           )}
 
                           {operation.replacement_method && (
                             <div className="text-xs text-text-secondary mt-2">
-                              نحوه جایگزینی: {operation.replacement_method}
+                              نحوه جایگزینی: {deviceReplacementMethodMap[operation.replacement_method] || operation.replacement_method_display || '—'}
                             </div>
                           )}
 
@@ -418,7 +420,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose }) {
 
                           {operation.reason && (
                             <div className="text-xs text-text-secondary mt-2">
-                              دلیل: {linkedEvent?.reason_display || deviceOperationReasonMap[operation.reason] || operation.reason}
+                              دلیل: {linkedEvent?.reason_display || deviceOperationReasonMap[operation.reason] || '—'}
                             </div>
                           )}
 
@@ -450,14 +452,14 @@ export default function DeviceHistoryModal({ open, deviceId, onClose }) {
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="text-sm font-semibold text-text-primary">
-                        {event.event_type_display || deviceOperationTypeMap[event.event_type] || event.event_type || 'رویداد دستگاه'}
+                        {event.event_type_display || deviceOperationTypeMap[event.event_type] || 'رویداد دستگاه'}
                       </div>
                       <div className="text-[11px] text-text-muted mt-1 font-mono">
                         {event.event_date ? toJalali(event.event_date) : '—'}
                       </div>
                     </div>
                     <Badge variant={event.new_status === 'warehouse' ? 'info' : 'brand'}>
-                      {managementStatusMap[event.new_status]?.label || event.new_status || '—'}
+                      {managementStatusMap[event.new_status]?.label || '—'}
                     </Badge>
                   </div>
                   {event.reason_display && <div className="text-xs text-text-secondary mt-2">دلیل: {event.reason_display}</div>}
@@ -485,7 +487,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose }) {
                               {isSource ? 'این دستگاه جایگزین شده با' : 'این دستگاه جایگزین'}
                             </div>
                             <Badge variant={relation.replacement_type === 'temporary_repair' ? 'warning' : 'brand'}>
-                              {deviceReplacementTypeMap[relation.replacement_type] || relation.replacement_type_display || relation.replacement_type || '—'}
+                              {deviceReplacementTypeMap[relation.replacement_type] || relation.replacement_type_display || '—'}
                             </Badge>
                           </div>
                           <div className="mt-2 flex items-center justify-between gap-3">
