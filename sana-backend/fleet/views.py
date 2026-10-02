@@ -18,7 +18,7 @@ from .serializers import (
     DriverVehicleAssignmentSerializer,
 )
 from organizations.models import SubscriptionDevice
-from accounts.permissions import IsSiteAdmin
+from accounts.permissions import IsSiteAdmin, IsOrganizationMember
 
 
 class VehicleTypeViewSet(viewsets.ModelViewSet):
