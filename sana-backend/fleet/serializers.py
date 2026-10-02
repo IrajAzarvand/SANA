@@ -263,7 +263,9 @@ class DeviceListSerializer(serializers.ModelSerializer):
 
     def get_subscription_end_date(self, obj):
         link = self._display_subscription_link(obj)
-        return link.end_date if link else None
+        if not link:
+            return None
+        return getattr(link, 'end_date', None) or getattr(link.subscription, 'end_date', None)
 
     def _current_replacement_operation(self, obj):
         link = obj.active_subscription_link
