@@ -141,6 +141,14 @@ export default function DeviceHistoryModal({ open, deviceId, onClose }) {
         setHistoryEvents(Array.isArray(historyResult) ? historyResult : historyResult.results || []);
         setReplacementRelations(Array.isArray(replacementResult) ? replacementResult : replacementResult.results || []);
         setOperationHistory(Array.isArray(operationResult) ? operationResult : operationResult.results || []);
+        try {
+          const warehouseResult = await devicesAPI.list({ in_warehouse: 'true' });
+          const warehouseList = Array.isArray(warehouseResult) ? warehouseResult : warehouseResult.results || [];
+          setReplacementCandidates(warehouseList.filter((item) => item.id !== device.id));
+        } catch (warehouseErr) {
+          console.error('Error loading replacement candidates:', warehouseErr);
+          setReplacementCandidates([]);
+        }
       } catch (err) {
         if (cancelled) return;
         console.error('Error loading device history:', err);
