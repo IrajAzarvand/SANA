@@ -1245,6 +1245,7 @@ export default function SubscriptionDetail() {
       <DeviceHistoryModalHost
         deviceHistoryId={deviceHistoryId}
         onClose={() => setDeviceHistoryId(null)}
+        onOperationSaved={refetch}
       />
 
       {/* ═══ مودال ویرایش قرارداد ═══ */}
@@ -1877,12 +1878,13 @@ export default function SubscriptionDetail() {
 }
 
 
-function DeviceHistoryModalHost({ deviceHistoryId, onClose }) {
+function DeviceHistoryModalHost({ deviceHistoryId, onClose, onOperationSaved }) {
   return (
     <DeviceHistoryModal
       open={Boolean(deviceHistoryId)}
       deviceId={deviceHistoryId}
       onClose={onClose}
+      onOperationSaved={onOperationSaved}
     />
   );
 }
