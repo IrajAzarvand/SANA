@@ -204,9 +204,13 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
         if subscription.organization:
             device.organization = subscription.organization
             device.owner_user = None
+            device.current_holder_organization = subscription.organization
+            device.current_holder_user = None
         elif subscription.user:
             device.owner_user = subscription.user
             device.organization = None
+            device.current_holder_organization = None
+            device.current_holder_user = subscription.user
 
         # آپدیت وضعیت
         if device.management_status == 'warehouse':
@@ -719,11 +723,17 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                     added_by_operation=operation,
                 )
 
-                # تخصیص مالکیت دستگاه
+                # تخصیص مالکیت و مشتری فعلی دستگاه
                 if organization:
                     device.organization = organization
+                    device.owner_user = None
+                    device.current_holder_organization = organization
+                    device.current_holder_user = None
                 else:
                     device.owner_user = user
+                    device.organization = None
+                    device.current_holder_organization = None
+                    device.current_holder_user = user
 
                 # آپدیت وضعیت مدیریتی دستگاه — از انبار خارج شد
                 device.management_status = 'sold'
