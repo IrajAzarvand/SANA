@@ -358,6 +358,7 @@ function DevicesTab() {
         open={Boolean(deviceHistoryId)}
         deviceId={deviceHistoryId}
         onClose={() => setDeviceHistoryId(null)}
+        onOperationSaved={refetch}
       />
 
       {/* مودال افزودن */}
