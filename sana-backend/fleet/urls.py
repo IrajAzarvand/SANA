@@ -10,6 +10,7 @@ from .views import (
     DeviceLifecycleEventViewSet,
     DeviceReplacementRelationViewSet,
     DeviceOperationViewSet,
+    DriverVehicleAssignmentViewSet,
 )
 
 router = DefaultRouter()
@@ -21,5 +22,6 @@ router.register(r'drivers', DriverViewSet, basename='driver')
 router.register(r'device-lifecycle-events', DeviceLifecycleEventViewSet, basename='device-lifecycle-event')
 router.register(r'device-replacement-relations', DeviceReplacementRelationViewSet, basename='device-replacement-relation')
 router.register(r'device-operations', DeviceOperationViewSet, basename='device-operation')
+router.register(r'driver-vehicle-assignments', DriverVehicleAssignmentViewSet, basename='driver-vehicle-assignment')
 
 urlpatterns = router.urls
