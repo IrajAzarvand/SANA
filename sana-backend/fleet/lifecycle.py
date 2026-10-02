@@ -34,6 +34,7 @@ def record_device_lifecycle_event(
         'sent_to_repair': 'faulty',
         'repaired': 'warehouse',
         'lost': 'lost',
+        'found': 'ready',
         'stolen': 'stolen',
         'retired': 'retired',
         'disposed': 'disposed',
