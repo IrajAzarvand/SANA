@@ -3,7 +3,7 @@ from django.db.models import Exists, OuterRef, Prefetch, Q
 from rest_framework import viewsets, filters
 from rest_framework.permissions import IsAuthenticated
 
-from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation, DeviceCustomerAccessPeriod
+from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation, DeviceCustomerAccessPeriod, DriverVehicleAssignment
 from .serializers import (
     VehicleTypeSerializer,
     VehicleSerializer,
@@ -15,6 +15,7 @@ from .serializers import (
     DeviceLifecycleEventSerializer,
     DeviceReplacementRelationSerializer,
     DeviceOperationSerializer,
+    DriverVehicleAssignmentSerializer,
 )
 from organizations.models import SubscriptionDevice
 from accounts.permissions import IsSiteAdmin
@@ -215,6 +216,48 @@ class DriverViewSet(viewsets.ModelViewSet):
             qs = qs.filter(branch_id=branch)
 
         return qs
+
+class DriverVehicleAssignmentViewSet(viewsets.ModelViewSet):
+    """تاریخچه و مدیریت تخصیص راننده به خودرو."""
+    queryset = DriverVehicleAssignment.objects.select_related(
+        'driver', 'driver__organization', 'driver__branch',
+        'vehicle', 'vehicle__organization', 'vehicle__branch',
+    ).all()
+    serializer_class = DriverVehicleAssignmentSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [filters.OrderingFilter]
+    ordering_fields = ['started_at', 'ended_at', 'created_at']
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = self.queryset
+        if user.is_site_admin:
+            pass
+        elif user.is_main_user and user.organization_id:
+            qs = qs.filter(driver__organization_id=user.organization_id)
+        elif user.is_branch_manager and user.branch_id:
+            qs = qs.filter(driver__organization_id=user.organization_id, driver__branch_id=user.branch_id)
+        else:
+            qs = qs.none()
+
+        driver = self.request.query_params.get('driver')
+        vehicle = self.request.query_params.get('vehicle')
+        active = self.request.query_params.get('active')
+
+        if driver:
+            qs = qs.filter(driver_id=driver)
+        if vehicle:
+            qs = qs.filter(vehicle_id=vehicle)
+        if active == 'true':
+            qs = qs.filter(ended_at__isnull=True)
+
+        return qs
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsOrganizationMember()]
+        return super().get_permissions()
+
 
 class DeviceLifecycleEventViewSet(viewsets.ModelViewSet):
     """تاریخچه و ثبت رویدادهای چرخه عمر دستگاه."""
