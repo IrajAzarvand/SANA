@@ -84,6 +84,25 @@ export const driversAPI = {
   },
 };
 
+export const driverVehicleAssignmentsAPI = {
+  list: async (params = {}) => {
+    const response = await apiClient.get('/driver-vehicle-assignments/', { params });
+    return response.data;
+  },
+  get: async (id) => {
+    const response = await apiClient.get(`/driver-vehicle-assignments/${id}/`);
+    return response.data;
+  },
+  create: async (data) => {
+    const response = await apiClient.post('/driver-vehicle-assignments/', data);
+    return response.data;
+  },
+  update: async (id, data) => {
+    const response = await apiClient.patch(`/driver-vehicle-assignments/${id}/`, data);
+    return response.data;
+  },
+};
+
 export const vehicleTypesAPI = {
   list: async (params = {}) => {
     const response = await apiClient.get('/vehicle-types/', { params });
