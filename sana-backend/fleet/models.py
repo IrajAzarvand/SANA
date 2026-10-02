@@ -550,14 +550,14 @@ class DriverVehicleAssignment(models.Model):
         if self.driver.branch_id and self.vehicle.branch_id and self.driver.branch_id != self.vehicle.branch_id:
             raise ValidationError({'vehicle': 'شعبه راننده و خودرو باید یکسان باشد.'})
 
-        assignment_end = self.ended_at
         overlap = DriverVehicleAssignment.objects.filter(
             vehicle=self.vehicle,
-        ).exclude(pk=self.pk).filter(
-            started_at__lt=assignment_end if assignment_end else timezone.datetime.max.replace(tzinfo=timezone.utc),
-        )
+        ).exclude(pk=self.pk)
+
         if self.ended_at:
             overlap = overlap.filter(
+                started_at__lt=self.ended_at,
+            ).filter(
                 models.Q(ended_at__isnull=True) | models.Q(ended_at__gt=self.started_at)
             )
         else:
