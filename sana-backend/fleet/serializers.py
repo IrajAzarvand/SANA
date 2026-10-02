@@ -433,6 +433,16 @@ class DriverVehicleAssignmentSerializer(serializers.ModelSerializer):
         if driver.organization_id != vehicle.organization_id:
             raise serializers.ValidationError({'vehicle': 'راننده و خودرو باید متعلق به یک سازمان باشند.'})
 
+        request = self.context.get('request')
+        user = request.user if request else None
+        if user and not user.is_site_admin:
+            if not user.organization_id or driver.organization_id != user.organization_id:
+                raise serializers.ValidationError({'driver': 'این راننده متعلق به سازمان شما نیست.'})
+            if user.is_branch_manager and driver.branch_id != user.branch_id:
+                raise serializers.ValidationError({'driver': 'شما فقط می‌توانید رانندگان شعبه خود را مدیریت کنید.'})
+            if user.is_branch_manager and vehicle.branch_id and vehicle.branch_id != user.branch_id:
+                raise serializers.ValidationError({'vehicle': 'شما فقط می‌توانید خودروهای شعبه خود را مدیریت کنید.'})
+
         if driver.branch_id and vehicle.branch_id and driver.branch_id != vehicle.branch_id:
             raise serializers.ValidationError({'vehicle': 'شعبه راننده و خودرو باید یکسان باشد.'})
 
