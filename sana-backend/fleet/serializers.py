@@ -156,7 +156,7 @@ class DeviceListSerializer(serializers.ModelSerializer):
     current_holder_user_name = serializers.CharField(source='current_holder_user.full_name', read_only=True)
     customer_name = serializers.SerializerMethodField()
 
-    # اطلاعات قرارداد فعلی
+    # اطلاعات قرارداد مرتبط با دستگاه (فعال یا تاریخی)
     subscription_id = serializers.SerializerMethodField()
     subscription_number = serializers.SerializerMethodField()
     subscription_end_date = serializers.SerializerMethodField()
@@ -204,16 +204,65 @@ class DeviceListSerializer(serializers.ModelSerializer):
             return obj.owner_user.full_name or obj.owner_user.username
         return None
 
+    def _display_subscription_link(self, obj):
+        """قرارداد قابل نمایش دستگاه را از وضعیت فعلی یا سابقه آن پیدا می‌کند.
+
+        در دستگاه‌های جایگزین، ممکن است دستگاه قبلی دیگر اتصال فعال نداشته
+        باشد؛ با این حال باید قرارداد مرتبط با سابقه دستگاه همچنان در لیست
+        قابل مشاهده باشد.
+        """
+        active_link = obj.active_subscription_link
+        if active_link:
+            return active_link
+
+        # اگر اتصال فعال بسته شده باشد، آخرین اتصال تاریخی دستگاه را نشان بده.
+        historical_link = obj.subscription_links.select_related(
+            'subscription'
+        ).order_by('-assigned_at', '-id').first()
+        if historical_link:
+            return historical_link
+
+        # پشتیبان برای داده‌های قدیمی/غیرهمگام که عملیات جایگزینی قرارداد
+        # را ثبت کرده ولی SubscriptionDevice برای دستگاه موجود نیست.
+        replacement_operation = obj.operations.filter(
+            replacement_device__isnull=False,
+            subscription__isnull=False,
+            operation_type__in={
+                'return_for_repair',
+                'temporary_replacement',
+                'permanent_replacement',
+            },
+        ).select_related('subscription').order_by(
+            '-performed_at', '-id'
+        ).first()
+        if replacement_operation:
+            return replacement_operation
+
+        replacement_operation = obj.replacement_operations.filter(
+            subscription__isnull=False,
+            operation_type__in={
+                'return_for_repair',
+                'temporary_replacement',
+                'permanent_replacement',
+            },
+        ).select_related('subscription').order_by(
+            '-performed_at', '-id'
+        ).first()
+        if replacement_operation:
+            return replacement_operation
+
+        return None
+
     def get_subscription_id(self, obj):
-        link = obj.active_subscription_link
+        link = self._display_subscription_link(obj)
         return link.subscription.id if link else None
 
     def get_subscription_number(self, obj):
-        link = obj.active_subscription_link
+        link = self._display_subscription_link(obj)
         return link.subscription.contract_number if link else None
 
     def get_subscription_end_date(self, obj):
-        link = obj.active_subscription_link
+        link = self._display_subscription_link(obj)
         return link.end_date if link else None
 
     def _current_replacement_operation(self, obj):
