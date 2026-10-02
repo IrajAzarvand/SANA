@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { Search, Plus, Users, Pencil, Trash2, Phone, CreditCard, Eye } from 'lucide-react';
+import { Search, Plus, Users, Pencil, Trash2, Phone, CreditCard, Eye, Car, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
 import Badge from '../components/Badge';
@@ -12,7 +12,7 @@ import ActionMenu from '../components/ActionMenu';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
 import { useAuth } from '../context/AuthContext';
-import { driversAPI } from '../api/services/fleet';
+import { driversAPI, vehiclesAPI, driverVehicleAssignmentsAPI } from '../api/services/fleet';
 import { branchesAPI } from '../api/services/organizations';
 import { useApi } from '../hooks/useApi';
 import { toJalali } from '../utils/dateUtils';
@@ -37,6 +37,14 @@ export default function Drivers() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingDriver, setEditingDriver] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [assignmentModalOpen, setAssignmentModalOpen] = useState(false);
+  const [assignmentDriver, setAssignmentDriver] = useState(null);
+  const [assignmentVehicle, setAssignmentVehicle] = useState('');
+  const [assignmentStart, setAssignmentStart] = useState('');
+  const [assignmentSaving, setAssignmentSaving] = useState(false);
+  const [driverAssignments, setDriverAssignments] = useState([]);
+
+
   const [form, setForm] = useState({
     first_name: '', last_name: '', national_id: '', mobile: '',
     personnel_code: '', position: 'driver',
@@ -62,6 +70,13 @@ export default function Drivers() {
 
   const { data: drivers, loading, error, refetch } = useApi(fetchDrivers, []);
   const { data: branches } = useApi(fetchBranches, []);
+  const fetchVehicles = useCallback(async () => {
+    const result = await vehiclesAPI.list();
+    return Array.isArray(result) ? result : result.results || [];
+  }, []);
+
+  const { data: vehicles } = useApi(fetchVehicles, []);
+
 
   const filtered = useMemo(() => {
     if (!drivers) return [];
@@ -155,6 +170,65 @@ export default function Drivers() {
     setModalOpen(true);
   };
 
+  const loadDriverAssignments = async (driverId) => {
+    const result = await driverVehicleAssignmentsAPI.list({ driver: driverId });
+    setDriverAssignments(Array.isArray(result) ? result : result.results || []);
+  };
+
+  const handleOpenAssignment = async (driver) => {
+    setAssignmentDriver(driver);
+    setAssignmentVehicle('');
+    setAssignmentStart('');
+    setAssignmentModalOpen(true);
+    try {
+      await loadDriverAssignments(driver.id);
+    } catch {
+      setDriverAssignments([]);
+    }
+  };
+
+  const handleCreateAssignment = async (e) => {
+    e.preventDefault();
+    if (!assignmentDriver || !assignmentVehicle || !assignmentStart) return;
+
+    setAssignmentSaving(true);
+    try {
+      await driverVehicleAssignmentsAPI.create({
+        driver: assignmentDriver.id,
+        vehicle: Number(assignmentVehicle),
+        started_at: new Date(assignmentStart).toISOString(),
+      });
+      await loadDriverAssignments(assignmentDriver.id);
+      setAssignmentVehicle('');
+      setAssignmentStart('');
+      alert('تخصیص راننده با موفقیت ثبت شد.');
+    } catch (err) {
+      const errData = err.response?.data;
+      const errMsg = errData
+        ? Object.values(errData).flat().join('\n')
+        : 'لطفاً دوباره تلاش کنید';
+      alert('خطا در ثبت تخصیص:\n' + errMsg);
+    } finally {
+      setAssignmentSaving(false);
+    }
+  };
+
+  const handleEndAssignment = async (assignment) => {
+    if (!confirm('تخصیص فعلی این راننده پایان داده شود؟')) return;
+    try {
+      await driverVehicleAssignmentsAPI.update(assignment.id, {
+        ended_at: new Date().toISOString(),
+      });
+      await loadDriverAssignments(assignmentDriver.id);
+    } catch (err) {
+      const errData = err.response?.data;
+      const errMsg = errData
+        ? Object.values(errData).flat().join('\n')
+        : 'لطفاً دوباره تلاش کنید';
+      alert('خطا در پایان تخصیص:\n' + errMsg);
+    }
+  };
+
   const handleDelete = async (id) => {
     if (!confirm('آیا از حذف این راننده اطمینان دارید؟')) return;
     try {
@@ -174,6 +248,11 @@ export default function Drivers() {
         label: 'ویرایش',
         icon: Pencil,
         onClick: () => handleEdit(driver),
+      });
+      items.push({
+        label: 'تخصیص به خودرو',
+        icon: Car,
+        onClick: () => handleOpenAssignment(driver),
       });
       items.push({
         label: 'حذف',
@@ -342,6 +421,93 @@ export default function Drivers() {
           </div>
         )}
       </Card>
+
+      {canEdit && assignmentModalOpen && assignmentDriver && (
+        <Modal
+          open={assignmentModalOpen}
+          onClose={() => {
+            setAssignmentModalOpen(false);
+            setAssignmentDriver(null);
+            setDriverAssignments([]);
+          }}
+          title={`تخصیص خودرو — ${assignmentDriver.first_name} ${assignmentDriver.last_name}`}
+          size="lg"
+        >
+          <div className="space-y-5">
+            <div className="text-xs text-text-muted">
+              تخصیص‌ها به‌صورت تاریخی ذخیره می‌شوند و بازه‌های زمانی یک خودرو نباید با هم تداخل داشته باشند.
+            </div>
+
+            {driverAssignments.length > 0 && (
+              <div className="space-y-2">
+                <h4 className="text-xs font-medium text-text-muted">سوابق تخصیص</h4>
+                {driverAssignments.map((assignment) => (
+                  <div key={assignment.id} className="flex items-center justify-between gap-3 rounded-lg border border-border-base p-3">
+                    <div>
+                      <div className="text-sm text-text-primary">{assignment.vehicle_plate}</div>
+                      <div className="text-[11px] text-text-muted">
+                        {toJalali(assignment.started_at?.slice(0, 10))}
+                        {' تا '}
+                        {assignment.ended_at ? toJalali(assignment.ended_at.slice(0, 10)) : 'فعال'}
+                      </div>
+                    </div>
+                    {!assignment.ended_at && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        icon={X}
+                        onClick={() => handleEndAssignment(assignment)}
+                      >
+                        پایان تخصیص
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="border-t border-border-base" />
+
+            <form onSubmit={handleCreateAssignment} className="space-y-4">
+              <h4 className="text-xs font-medium text-text-muted">تخصیص جدید</h4>
+              <Select
+                label="خودرو"
+                placeholder="انتخاب خودرو..."
+                value={assignmentVehicle}
+                onChange={(e) => setAssignmentVehicle(e.target.value)}
+                options={(vehicles || [])
+                  .filter((vehicle) =>
+                    vehicle.organization === assignmentDriver.organization &&
+                    (!assignmentDriver.branch || !vehicle.branch || vehicle.branch === assignmentDriver.branch)
+                  )
+                  .map((vehicle) => ({
+                    value: vehicle.id,
+                    label: vehicle.plate,
+                  }))}
+              />
+              <Input
+                label="شروع تخصیص"
+                type="datetime-local"
+                value={assignmentStart}
+                onChange={(e) => setAssignmentStart(e.target.value)}
+                required
+              />
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="secondary"
+                  type="button"
+                  onClick={() => setAssignmentModalOpen(false)}
+                >
+                  بستن
+                </Button>
+                <Button type="submit" disabled={assignmentSaving || !assignmentVehicle || !assignmentStart}>
+                  {assignmentSaving ? 'در حال ذخیره...' : 'ثبت تخصیص'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </Modal>
+      )}
 
       {canEdit && (
         <Modal
