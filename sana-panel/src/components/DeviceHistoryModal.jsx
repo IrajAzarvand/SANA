@@ -99,7 +99,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose }) {
   const [operationForm, setOperationForm] = useState({
     operation_type: 'return_for_repair',
     replacement_type: 'temporary_repair',
-    replacement_method: '',
+    replacement_method: 'loaner',
     outcome_action: '',
     replacement_device: '',
     reason: 'repair',
@@ -294,6 +294,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose }) {
     setOperationForm((current) => ({
       ...current,
       replacement_device: createdDevice.id,
+      replacement_method: current.replacement_method || 'loaner',
     }));
   };
 
@@ -575,7 +576,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose }) {
                           <span className="text-xs font-medium text-text-secondary">جایگزین</span>
                           <Button type="button" size="sm" variant="secondary" icon={Plus} onClick={() => { loadReplacementCandidates(); setReplacementModalOpen(true); }}>افزودن دستگاه جدید</Button>
                         </div>
-                        <Select label="دستگاه جایگزین" placeholder="بدون جایگزین" value={operationForm.replacement_device} onChange={(e) => setOperationForm((current) => ({ ...current, replacement_device: e.target.value, replacement_type: current.replacement_type || 'temporary_repair' }))} options={replacementCandidates.map((item) => ({ value: item.id, label: item.imei + ' — ' + (item.device_model_manufacturer || '') + ' ' + (item.device_model_name || '') }))} />
+                        <Select label="دستگاه جایگزین" placeholder="بدون جایگزین" value={operationForm.replacement_device} onChange={(e) => setOperationForm((current) => ({ ...current, replacement_device: e.target.value, replacement_type: current.replacement_type || 'temporary_repair', replacement_method: current.replacement_method || 'loaner' }))} options={replacementCandidates.map((item) => ({ value: item.id, label: item.imei + ' — ' + (item.device_model_manufacturer || '') + ' ' + (item.device_model_name || '') }))} />
                         {operationNeedsReplacementType && <Select label="نوع جایگزینی" required value={operationForm.replacement_type} onChange={(e) => setOperationForm((current) => ({ ...current, replacement_type: e.target.value }))} options={[{ value: 'temporary_repair', label: 'جایگزینی موقت برای تعمیر' }, { value: 'permanent_replacement', label: 'تعویض دائمی' }]} />}
                         {operationNeedsReplacementMethod && <Select label="نحوه جایگزینی" required value={operationForm.replacement_method} onChange={(e) => setOperationForm((current) => ({ ...current, replacement_method: e.target.value }))} options={Object.entries(deviceReplacementMethodMap).map(([value, label]) => ({ value, label }))} />}
                       </div>
