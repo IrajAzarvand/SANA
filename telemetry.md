@@ -38637,35 +38637,35 @@ Maximum Number of Services
 # 77. وضعیت نهایی طراحی
 
 ```text
-Stage 1   Architecture Foundation       CLOSED
-Stage 2   Normalized Telemetry          CLOSED
-Stage 3   PostgreSQL / Permissions      CLOSED
-Stage 4   Protocol Architecture         CLOSED
-Stage 5   Location History              CLOSED
-Stage 6   CurrentState                  CLOSED
-Stage 7   Event                         CLOSED
-Stage 8   Batch / Dedup / Replay        CLOSED
-Stage 9   Trip                          CLOSED
-Stage 10  Device Assignment             CLOSED
-Stage 11  Device Lifecycle              CLOSED
-Stage 12  Geofence                      CLOSED
-Stage 13  Alert                         CLOSED
-Stage 14  Failure / Backpressure        CLOSED
-Stage 15  Configuration                 CLOSED
-Stage 16  Transport                     CLOSED
-Stage 17  Concurrency                   CLOSED
-Stage 18  WebSocket / Live Map          CLOSED
-Stage 19  Command Runtime               CLOSED
-Stage 20  Telemetry Pipeline            CLOSED
-Stage 21  Observability                 CLOSED
-Stage 22  Security                      CLOSED
-Stage 23  MVP Scope / Freeze             CLOSED
+Stage 1   Architecture Foundation          CLOSED
+Stage 2   Normalized Telemetry             CLOSED
+Stage 3   PostgreSQL / Permissions         CLOSED
+Stage 4   Protocol Architecture            CLOSED
+Stage 5   Location History                 CLOSED
+Stage 6   CurrentState                     CLOSED
+Stage 7   Event                            CLOSED
+Stage 8   Batch / Dedup / Replay           CLOSED
+Stage 9   Trip                             CLOSED
+Stage 10  Device Assignment                CLOSED
+Stage 11  Device Lifecycle                 CLOSED
+Stage 12  Geofence                         CLOSED
+Stage 13  Alert                            CLOSED
+Stage 14  Failure / Backpressure           CLOSED
+Stage 15  Configuration                    CLOSED
+Stage 16  Transport                        CLOSED
+Stage 17  Concurrency                      CLOSED
+Stage 18  WebSocket / Live Map             CLOSED
+Stage 19  Command Runtime                  CLOSED
+Stage 20  Telemetry Pipeline               CLOSED
+Stage 21  Observability                    CLOSED
+Stage 22  Command Runtime                  CLOSED
+Stage 23  Telemetry Processing             CLOSED
+Stage 24  Observability / Health           CLOSED
+Stage 25  Security / Authentication        CLOSED
+Stage 26  MVP Scope / Architecture Freeze CLOSED
 ```
 
-شماره‌گذاری فوق صرفاً نمای کلی وضعیت فازهاست؛ در اسناد اجرایی، Stageهای اخیر با شماره‌های 23 تا 26 ثبت شده‌اند.
-
----
-
+شماره‌گذاری بالا مطابق Stageهای واقعی ثبت‌شده در همین سند است.
 # 78. FINAL ARCHITECTURE FREEZE
 
 در این نقطه:
@@ -38747,6 +38747,20 @@ ACK
 پیاده‌سازی و با **دستگاه واقعی** تست خواهد شد.
 
 ---
+
+## Global Architectural Invariants
+
+این قواعد در تمام بخش‌های سند حاکم هستند و بر توضیحات قدیمی‌تر نیز اولویت دارند:
+
+1. **مرز Decoder/Normalizer:** Decoder فقط Protocol Frame را Parse/Decode می‌کند و `ProtocolMessage` می‌سازد؛ Unit Conversion، Field Mapping و Representation Conversion فقط در Normalizer انجام می‌شوند.
+2. **ACK:** ACK موفق فقط پس از Commit موفق داده‌های مربوط به Packet/Batch ارسال می‌شود. خطای Commit به معنی عدم ارسال Successful ACK است.
+3. **Unknown Device:** دستگاه ناشناخته به‌صورت پیش‌فرض Session، Telemetry Processing و Raw Persistence ندارد؛ Capture فقط با Policy صریح Diagnostic/Pending مجاز است.
+4. **Processing Queue:** Queue در MVP فقط bounded و in-process است و جایگزین Broker، Durable Queue یا Source of Truth نیست.
+5. **Motion:** `motion` از نوع Boolean Nullable است؛ `true` یعنی حرکت تشخیص داده شده، `false` یعنی عدم حرکت تشخیص داده شده و `NULL` یعنی قابل تعیین نیست.
+6. **Location Ownership:** Location متعلق به Device است و ارتباط آن با Vehicle از طریق Assignment History تفسیر می‌شود.
+7. **Odometer/Distance:** Device-reported Odometer و SANA-calculated Distance دو مفهوم مستقل هستند و نباید با هم ادغام شوند.
+
+`telemetry.md` از این قواعد به‌عنوان مرجع نهایی در زمان Implementation استفاده می‌کند.
 
 # FINAL STATUS
 
