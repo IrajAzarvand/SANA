@@ -203,7 +203,17 @@ Reject سریع
 
 داده دستگاه ناشناخته نباید وارد پردازش سنگین شود.
 
-در آینده در صورت نیاز می‌توان قابلیت Pending / Unknown Device اضافه کرد.
+قاعده MVP:
+
+```text
+Unknown Device
+→ No Session
+→ No Telemetry Processing
+→ No Successful ACK
+→ No Raw Packet Persistence by default
+```
+
+فقط اگر یک Policy صریح `Pending / Diagnostic / Unknown Device Capture` فعال شده باشد، Raw Packet ناشناخته می‌تواند طبق Retention جداگانه ذخیره شود. این استثناء نباید به‌صورت پیش‌فرض فعال باشد.
 
 ---
 
