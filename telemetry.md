@@ -1131,7 +1131,7 @@ NormalizedTelemetry
 ├── speed               NULLABLE
 ├── heading             NULLABLE
 ├── altitude            NULLABLE
-└── motion              STATE
+└── motion              NULLABLE BOOLEAN
 ```
 
 ---
