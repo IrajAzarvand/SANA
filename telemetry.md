@@ -1138,7 +1138,7 @@ NormalizedTelemetry
 
 # 7. واحدهای استاندارد SANA
 
-تمام Protocol Decoderها باید داده‌ها را قبل از ورود به `NormalizedTelemetry` به واحد استاندارد SANA تبدیل کنند.
+Normalizer باید داده‌های `ProtocolMessage` را قبل از ورود به `NormalizedTelemetry` به واحد استاندارد SANA تبدیل کند.
 
 در این مرحله:
 
@@ -1162,6 +1162,10 @@ altitude → meter
 Teltonika
       ↓
 Teltonika Decoder
+      ↓
+ProtocolMessage
+      ↓
+Normalizer
       ↓
 NormalizedTelemetry
 ```
@@ -13446,7 +13450,7 @@ temperature
 °C
 ```
 
-تبدیل باید در Decoder/Normalization انجام شود.
+تبدیل باید در Normalizer انجام شود. Decoder فقط مقدار خام و واحد/نمایش Protocol را استخراج می‌کند.
 
 Business Logic نباید وابسته به Unit یا Format داخلی Device باشد.
 
