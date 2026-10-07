@@ -22599,10 +22599,16151 @@ Persistent State
 ============================================================================
 ============================================================================
 
+# SANA GPS — تصمیمات قطعی Offline Detector و Offline/Online Lifecycle
+
+## 1. مبنای Offline
+
+Offline بر اساس این دو مفهوم تعیین می‌شود:
+
+```text
+last_seen
+offline_timeout
+```
+
+قاعده:
+
+```text
+now - last_seen > offline_timeout
+→ Device Offline
+```
+
+`device_time` معیار Offline نیست.
+
+---
+
+## 2. connection_state
+
+`connection_state` در Database ذخیره نمی‌شود.
+
+Backend آن را محاسبه می‌کند:
+
+```text
+last_seen = NULL
+→ NEVER_SEEN
+```
+
+```text
+now - last_seen <= offline_timeout
+→ ONLINE
+```
+
+```text
+now - last_seen > offline_timeout
+→ OFFLINE
+```
+
+در شرایط Recovery پس از خاموشی کامل Server، وضعیت بازه‌ای که Server در آن قابل مشاهده نبوده، قابل اثبات نیست و نباید به‌صورت Offline قطعی تفسیر شود.
+
+---
+
+## 3. Offline Detector
+
+Offline Detector یک Scheduler مرکزی است.
+
+برای هر Device Timer جداگانه ایجاد نمی‌شود.
+
+ساختار:
+
+```text
+Offline Detector
+      ↓
+Find Candidates
+      ↓
+Conditional DB Transition
+      ↓
+DEVICE_OFFLINE Event
+```
+
+مثلاً:
+
+```text
+OFFLINE_CHECK_INTERVAL = 10 seconds
+```
+
+این مقدار قابل تنظیم است.
+
+---
+
+## 4. Batch Processing
+
+Offline Candidateها به‌صورت Batch بررسی می‌شوند.
+
+همه Deviceها در هر Cycle یک‌جا پردازش نمی‌شوند.
+
+مثلاً:
+
+```text
+LIMIT 100
+LIMIT 500
+LIMIT 1000
+```
+
+بر اساس Load قابل تنظیم است.
+
+---
+
+## 5. DEVICE_OFFLINE Event
+
+Offline یک State Event است.
+
+مثلاً:
+
+```text
+DEVICE_OFFLINE
+started_at = 12:05:07
+ended_at   = NULL
+```
+
+تا زمانی که Device برنگشته، Event جدید ایجاد نمی‌شود.
+
+برای یک Device در هر لحظه حداکثر یک:
+
+```text
+DEVICE_OFFLINE
+```
+
+فعال وجود دارد.
+
+Partial Unique Constraint از این قانون محافظت می‌کند.
+
+---
+
+## 6. Offline Transition
+
+Offline Detector فقط زمانی اجازه ایجاد Offline Event دارد که `last_seen` واقعاً از Timeout عبور کرده باشد.
+
+مفهوم:
+
+```sql
+WHERE device_id = ?
+AND last_seen < cutoff
+```
+
+اما تصمیم نهایی باید داخل Transaction و با State فعلی Database انجام شود تا Race Condition کنترل شود.
+
+---
+
+## 7. Race با Telemetry / Heartbeat
+
+ممکن است Offline Detector و Communication Activity همزمان اجرا شوند.
+
+مثلاً:
+
+```text
+Detector
+→ Device appears Offline
+
+همزمان
+
+Heartbeat
+→ last_seen = NOW
+```
+
+Database باید تضمین کند که نتیجه بر اساس آخرین State واقعی تعیین شود.
+
+اگر Heartbeat/Telemetry ابتدا Commit شود:
+
+```text
+last_seen = NOW
+```
+
+Offline Detector دیگر نباید Offline Event ایجاد کند.
+
+اگر Offline Transition ابتدا Commit شود، Communication بعدی باید Offline Event را ببندد.
+
+---
+
+## 8. ONLINE Transition
+
+Communication معتبر بعدی باعث پایان Offline می‌شود.
+
+مثلاً:
+
+```text
+DEVICE_OFFLINE
+started_at = 12:05:07
+ended_at   = 12:17:03
+```
+
+و در صورت فعال بودن Point Event:
+
+```text
+DEVICE_ONLINE
+occurred_at = 12:17:03
+```
+
+ایجاد می‌شود.
+
+`DEVICE_OFFLINE` و `DEVICE_ONLINE` از نظر مدل Event دو مفهوم مستقل‌اند:
+
+```text
+DEVICE_OFFLINE
+→ State Event
+
+DEVICE_ONLINE
+→ Point Event
+```
+
+---
+
+## 9. چه چیزهایی Device را Online می‌کنند؟
+
+### Valid Telemetry
+
+بله:
+
+```text
+Valid Telemetry
+→ Communication Activity
+→ last_seen
+→ Online Transition
+```
+
+### Valid Heartbeat
+
+بله:
+
+```text
+Valid Heartbeat
+→ Communication Activity
+→ last_seen
+→ Online Transition
+```
+
+### Login
+
+Login موفق می‌تواند Session را فعال کند و Communication Activity محسوب شود، ولی نباید الزاماً به‌عنوان Telemetry دارای `device_time` یا CurrentState Snapshot تلقی شود.
+
+---
+
+## 10. چه چیزهایی Device را Online نمی‌کنند؟
+
+موارد زیر به‌تنهایی Online Transition ایجاد نمی‌کنند:
+
+```text
+Invalid Packet
+Malformed Packet
+CRC Error
+Unknown Device
+Unknown Protocol
+Decode Failure
+Duplicate Packet
+ACK sent by Server
+Session Close
+```
+
+به‌خصوص:
+
+```text
+ACK
+```
+
+چون ACK از Server به Device ارسال شده و نشان‌دهنده Communication ورودی جدید نیست.
+
+---
+
+## 11. Duplicate
+
+Duplicate Packet نباید:
+
+```text
+last_seen
+```
+
+را جلو ببرد.
+
+و نباید:
+
+```text
+DEVICE_ONLINE
+```
+
+ایجاد کند.
+
+مثلاً:
+
+```text
+Offline Device
+    ↓
+Old Packet Replay
+    ↓
+DUPLICATE
+```
+
+نتیجه:
+
+```text
+No last_seen update
+No Online Transition
+```
+
+---
+
+## 12. Heartbeat
+
+Heartbeat اگر Message جدید و معتبر باشد:
+
+```text
+Heartbeat
+→ last_activity
+→ last_seen
+→ Online Transition
+```
+
+اما اگر همان Heartbeat دوباره Replay شود:
+
+```text
+Duplicate Heartbeat
+→ No new side effect
+```
+
+---
+
+## 13. Session و Offline مستقل هستند
+
+Session:
+
+```text
+ACTIVE
+FENCED
+CLOSED
+```
+
+نشان‌دهنده ارتباط منطقی Device با sana-gps است.
+
+اما Offline بر اساس:
+
+```text
+last_seen
+```
+
+تعیین می‌شود.
+
+بنابراین:
+
+```text
+Session CLOSED
+```
+
+به‌تنهایی Offline Event ایجاد نمی‌کند.
+
+همچنین:
+
+```text
+Session ACTIVE
+```
+
+به‌تنهایی تضمین نمی‌کند که Device Online است.
+
+---
+
+## 14. DEVICE_OFFLINE.started_at
+
+زمان شروع Offline برابر زمان تشخیص Server است.
+
+مثلاً:
+
+```text
+last_seen = 12:00:00
+offline_timeout = 5m
+detected_at = 12:05:07
+```
+
+پس:
+
+```text
+started_at = 12:05:07
+```
+
+نه:
+
+```text
+12:05:00
+```
+
+زیرا Event در زمان تشخیص Server ایجاد شده است.
+
+---
+
+## 15. DEVICE_OFFLINE.ended_at
+
+زمان پایان Offline برابر اولین Communication Activity معتبر بعدی است.
+
+مثلاً:
+
+```text
+Offline detected:
+12:05:07
+
+Heartbeat:
+12:17:03
+```
+
+نتیجه:
+
+```text
+ended_at = 12:17:03
+```
+
+---
+
+## 16. GPS No-Fix
+
+GPS No-Fix با Offline متفاوت است.
+
+```text
+gps_valid = false
+```
+
+ممکن است در حالی رخ دهد که:
+
+```text
+last_seen
+```
+
+مرتباً در حال به‌روزرسانی است.
+
+پس:
+
+```text
+GPS No-Fix
+≠
+DEVICE_OFFLINE
+```
+
+---
+
+## 17. Server Downtime
+
+اگر کل SANA Server خاموش باشد:
+
+```text
+12:00 → Server Down
+13:00 → Server Up
+```
+
+SANA نمی‌تواند بفهمد Device در این بازه:
+
+```text
+Online
+Offline
+```
+
+بوده است.
+
+بنابراین نباید Offline Event جعلی ایجاد شود.
+
+اصل:
+
+> SANA فقط رخدادی را به‌عنوان Offline ثبت می‌کند که در زمانی که Server واقعاً در حال مشاهده سیستم بوده، بتواند آن را اثبات کند.
+
+---
+
+## 18. server_started_at
+
+در Runtime زمان شروع Server نگهداری می‌شود:
+
+```text
+server_started_at
+```
+
+این مقدار برای جلوگیری از False Offline در Recovery استفاده می‌شود.
+
+اگر:
+
+```text
+last_seen < server_started_at
+```
+
+باشد، صرفاً از روی این اختلاف نباید Offline Event ساخته شود.
+
+---
+
+## 19. Startup Recovery
+
+بعد از Restart:
+
+```text
+Boot
+ ↓
+Database
+ ↓
+Listeners
+ ↓
+Session Manager
+ ↓
+Workers
+ ↓
+Offline Detector
+```
+
+Offline Detector نباید بلافاصله تمام Deviceهایی را که قبل از Shutdown دیده شده‌اند Offline کند.
+
+ابتدا باید Communication جدید مشاهده شود.
+
+بعد از آن Monitoring عادی ادامه پیدا می‌کند.
+
+---
+
+## 20. Online بعد از Server Restart
+
+مثلاً:
+
+```text
+Server Down
+12:00
+
+Server Up
+13:00
+
+Device reconnect
+13:05
+```
+
+می‌توانیم بگوییم:
+
+```text
+DEVICE_ONLINE
+occurred_at = 13:05
+```
+
+اما نمی‌توانیم نتیجه بگیریم:
+
+```text
+Device Offline
+12:00 → 13:05
+```
+
+زیرا وضعیت Device در زمان خاموشی Server قابل مشاهده نبوده است.
+
+---
+
+## 21. Timeout و Check Interval
+
+این دو مقدار مستقل‌اند:
+
+```text
+offline_timeout
+```
+
+مدت لازم برای Offline شدن.
+
+و:
+
+```text
+offline_check_interval
+```
+
+فاصله اجرای Detector.
+
+مثلاً:
+
+```text
+offline_timeout = 5 minutes
+offline_check_interval = 10 seconds
+```
+
+در این حالت Detection ممکن است چند ثانیه بعد از عبور Timeout انجام شود.
+
+---
+
+## 22. Offline Timeout Configuration
+
+MVP می‌تواند این ساختار را داشته باشد:
+
+```text
+Global Default
+       ↓
+Device Override
+```
+
+مثلاً:
+
+```text
+Global = 5 min
+
+Device A = 2 min
+Device B = 10 min
+```
+
+نیازی به Rule Engine پیچیده برای این Configuration نیست.
+
+---
+
+## 23. Race Protection
+
+Race Condition بین:
+
+```text
+Offline Detector
+Heartbeat
+Telemetry
+```
+
+با ترکیب موارد زیر کنترل می‌شود:
+
+```text
+PostgreSQL Transaction
+Conditional Update
+Row Lock where necessary
+Partial Unique Constraint
+```
+
+PostgreSQL مرجع نهایی وضعیت است.
+
+---
+
+## 24. چند Instance
+
+اگر چند Instance داشته باشیم:
+
+```text
+sana-gps #1
+sana-gps #2
+sana-gps #3
+```
+
+هرکدام می‌توانند Candidateهای Offline را بررسی کنند.
+
+اما فقط یک Instance باید بتواند Transition را با موفقیت Commit کند.
+
+Constraint:
+
+```text
+UNIQUE(device_id, event_type)
+WHERE ended_at IS NULL
+```
+
+از ایجاد چند Offline Event فعال جلوگیری می‌کند.
+
+نیازی به Leader Election یا Redis فقط برای Offline Detector در MVP نداریم.
+
+---
+
+## 25. Communication Activity
+
+Communication Activity شامل پیام‌های معتبر ورودی است که نشان می‌دهند Device واقعاً با Server ارتباط داشته است.
+
+نمونه:
+
+```text
+Heartbeat
+Telemetry
+Protocol Login
+```
+
+اما هر نوع Message باید بر اساس Protocol مشخص شود که آیا Communication Activity محسوب می‌شود یا خیر.
+
+---
+
+## 26. Telemetry Time و Communication Time
+
+برای Telemetry:
+
+```text
+device_time
+```
+
+زمان داده از دید Device است.
+
+برای Communication:
+
+```text
+server_received_at
+```
+
+زمان دریافت در SANA است.
+
+Heartbeat ممکن است فقط:
+
+```text
+server_received_at
+```
+
+داشته باشد و `device_time` نداشته باشد.
+
+---
+
+## 27. ACK
+
+ACK ارسالی توسط SANA:
+
+```text
+ACK
+```
+
+هیچ‌وقت به‌تنهایی باعث:
+
+```text
+last_seen
+Online
+```
+
+نمی‌شود.
+
+Online شدن فقط از Communication معتبر ورودی حاصل می‌شود.
+
+---
+
+## 28. اصل نهایی
+
+```text
+Session
+→ Logical Device Connection
+
+last_seen
+→ Last Valid Communication Activity
+
+connection_state
+→ Computed
+
+DEVICE_OFFLINE
+→ Historical State Event
+
+DEVICE_ONLINE
+→ Historical Point Event
+
+Server Downtime
+→ Unknown Interval
+```
+
+و:
+
+```text
+Offline Detection
+→ last_seen + timeout
+
+Race Protection
+→ PostgreSQL Transaction + Conditional Logic
+
+Duplicate
+→ No Communication Transition
+
+Valid Heartbeat
+→ Communication Activity
+
+Valid Telemetry
+→ Communication Activity
+
+ACK
+→ Not Communication Activity
+```
+
+# تصمیمات قطعی مرحله ۱۰
+
+1. Offline بر اساس `last_seen` و `offline_timeout` است.
+2. `connection_state` در Database ذخیره نمی‌شود.
+3. Offline Detector مرکزی و Scheduler-based است.
+4. برای هر Device Timer جدا نداریم.
+5. Candidateها Batch پردازش می‌شوند.
+6. چند Instance می‌توانند Detector داشته باشند.
+7. PostgreSQL مرجع نهایی Race و Transition است.
+8. فقط یک `DEVICE_OFFLINE` فعال برای هر Device مجاز است.
+9. Valid Telemetry می‌تواند Device را Online کند.
+10. Valid Heartbeat می‌تواند Device را Online کند.
+11. Invalid Packet باعث Online شدن نمی‌شود.
+12. Duplicate باعث Online شدن نمی‌شود.
+13. ACK باعث Online شدن نمی‌شود.
+14. Session Close باعث Offline شدن نمی‌شود.
+15. `DEVICE_OFFLINE.started_at` زمان تشخیص Server است.
+16. `DEVICE_OFFLINE.ended_at` زمان اولین Communication Activity معتبر بعدی است.
+17. `DEVICE_ONLINE` در صورت نیاز Point Event مستقل است.
+18. GPS No-Fix برابر Offline نیست.
+19. Server Downtime باعث Offline Event جعلی نمی‌شود.
+20. `server_started_at` برای جلوگیری از False Offline در Recovery استفاده می‌شود.
+21. بعد از Server Restart، وضعیت Device در بازه خاموشی Server Unknown است.
+22. Offline Timeout و Check Interval جدا هستند.
+23. Offline Timeout می‌تواند Global Default + Device Override داشته باشد.
+24. Session و Offline State مستقل هستند.
+25. `last_seen` فقط با Communication معتبر جدید جلو می‌رود.
+26. PostgreSQL با Transaction/Conditional Logic/Constraint از Race محافظت می‌کند.
 
 
 ============================================================================
 ============================================================================
+
+# SANA GPS — تصمیمات قطعی WebSocket Notification Reliability
+
+## 1. Source of Truth
+
+منبع اصلی وضعیت Live:
+
+```text
+PostgreSQL
+    ↓
+gps.current_state
+```
+
+است.
+
+موارد زیر Source of Truth نیستند:
+
+```text
+LISTEN / NOTIFY
+WebSocket
+Frontend Memory
+Backend Local Memory
+```
+
+---
+
+## 2. نقش LISTEN / NOTIFY
+
+PostgreSQL `LISTEN / NOTIFY` فقط یک Signal است.
+
+مثلاً:
+
+```text
+CurrentState changed
+        ↓
+NOTIFY
+        ↓
+sana-backend
+        ↓
+Read CurrentState
+```
+
+Notification نباید حامل Full State باشد.
+
+---
+
+## 3. NOTIFY Payload
+
+Payload سبک خواهد بود، مثلاً:
+
+```json
+{
+  "device_id": 125,
+  "state_version": 48291
+}
+```
+
+هدف Notification فقط اطلاع دادن از تغییر است.
+
+---
+
+## 4. state_version
+
+برای CurrentState یک:
+
+```text
+state_version
+```
+
+خواهیم داشت.
+
+هر بار که Snapshot واقعاً تغییر کند:
+
+```text
+state_version
+→ افزایش
+```
+
+مثلاً:
+
+```text
+100
+101
+102
+103
+```
+
+این مقدار Monotonic است.
+
+Gap مجاز است:
+
+```text
+100
+101
+105
+109
+```
+
+لازم نیست Sequence بدون Gap باشد.
+
+---
+
+## 5. State Version و CurrentState Update
+
+CurrentState همچنان با `device_time` کنترل می‌شود.
+
+مفهوم:
+
+```sql
+UPDATE gps.current_state
+SET
+    ...,
+    state_version = nextval(...),
+    updated_at = CURRENT_TIMESTAMP
+WHERE device_id = ?
+  AND (
+      device_time IS NULL
+      OR device_time < incoming_device_time
+  );
+```
+
+اگر Update موفق باشد:
+
+```text
+Snapshot changed
+```
+
+و اگر صفر Row تغییر کند:
+
+```text
+Snapshot unchanged
+```
+
+---
+
+## 6. NOTIFY فقط برای Snapshot واقعی
+
+برای Packet قدیمی که CurrentState را تغییر نمی‌دهد:
+
+```text
+CurrentState
+→ unchanged
+
+NOTIFY
+→ ارسال نمی‌شود
+```
+
+جریان صحیح:
+
+```text
+Telemetry
+    ↓
+Transaction
+    ↓
+CurrentState Update
+    ↓
+state_version
+    ↓
+COMMIT
+    ↓
+NOTIFY
+```
+
+---
+
+## 7. NOTIFY قبل از Commit ممنوع
+
+این ترتیب ممنوع است:
+
+```text
+CurrentState Update
+    ↓
+NOTIFY
+    ↓
+COMMIT
+```
+
+ترتیب صحیح:
+
+```text
+CurrentState Update
+    ↓
+COMMIT
+    ↓
+NOTIFY
+```
+
+زیرا Client نباید Stateای را دریافت کند که Transaction آن Rollback شده است.
+
+---
+
+## 8. Lost Notification
+
+حتی اگر NOTIFY بعد از Commit ارسال شود، ممکن است Backend در همان لحظه:
+
+```text
+Restart
+Connection Loss
+Network Failure
+```
+
+داشته باشد.
+
+بنابراین ممکن است:
+
+```text
+COMMIT
+    ↓
+NOTIFY lost
+```
+
+اتفاق بیفتد.
+
+معماری نباید به تحویل قطعی NOTIFY وابسته باشد.
+
+---
+
+## 9. Reconciliation
+
+Backend یک مکانیزم Reconciliation خواهد داشت.
+
+مفهوم:
+
+```text
+Backend Cursor
+      ↓
+state_version
+      ↓
+Find newer CurrentState
+```
+
+مثلاً:
+
+```sql
+SELECT ...
+FROM gps.current_state
+WHERE state_version > ?
+ORDER BY state_version;
+```
+
+هدف Reconciliation:
+
+```text
+Lost Notification
+        ↓
+Detect
+        ↓
+Read CurrentState
+        ↓
+WebSocket
+```
+
+---
+
+## 10. NOTIFY و Reconciliation
+
+دو مسیر داریم:
+
+### Fast Path
+
+```text
+NOTIFY
+    ↓
+Read CurrentState
+    ↓
+Permission
+    ↓
+WebSocket
+```
+
+### Reliability Path
+
+```text
+Reconciliation
+    ↓
+Detect newer state
+    ↓
+Read CurrentState
+    ↓
+Permission
+    ↓
+WebSocket
+```
+
+بنابراین:
+
+```text
+NOTIFY
+→ سریع
+
+Reconciliation
+→ اطمینان
+```
+
+---
+
+## 11. Full CurrentState در WebSocket
+
+WebSocket طبق تصمیم قبلی Full CurrentState ارسال می‌کند.
+
+مثلاً:
+
+```text
+device_id
+device_time
+server_received_at
+last_seen
+connection_state
+position
+last_valid_position
+speed
+heading
+motion
+ignition
+battery
+voltage
+fuel
+engine_hours
+...
+```
+
+NOTIFY شامل این اطلاعات کامل نیست.
+
+---
+
+## 12. Coalescing
+
+اگر یک Device خیلی سریع چند بار تغییر کند:
+
+```text
+version 100
+version 101
+version 102
+version 103
+```
+
+لازم نیست WebSocket همه چهار Update را ارسال کند.
+
+Backend می‌تواند آنها را Coalesce کند و فقط:
+
+```text
+version 103
+```
+
+را ارسال کند.
+
+این فقط مربوط به Live Delivery است.
+
+---
+
+## 13. Coalescing با History متفاوت است
+
+Coalescing WebSocket به معنی حذف History نیست.
+
+تاریخچه همچنان در:
+
+```text
+LocationHistory
+Event
+Trip
+```
+
+حفظ می‌شود.
+
+بنابراین:
+
+```text
+WebSocket Coalescing
+≠
+Historical Compression
+```
+
+---
+
+## 14. WebSocket Reconnect
+
+اگر Browser قطع شود:
+
+```text
+WebSocket
+    ↓
+Disconnected
+```
+
+پس از اتصال مجدد:
+
+```text
+Authenticate
+    ↓
+Permission
+    ↓
+Subscription
+    ↓
+Initial CurrentState
+```
+
+ارسال می‌شود.
+
+Notificationهای از دست‌رفته Replay نمی‌شوند.
+
+Client فقط وضعیت فعلی را دریافت می‌کند.
+
+---
+
+## 15. WebSocket History Replay ندارد
+
+اگر Client پنج دقیقه Offline بوده باشد و در این مدت صدها State Update اتفاق افتاده باشد، لازم نیست تمام آنها را دریافت کند.
+
+Client فقط:
+
+```text
+CurrentState فعلی
+```
+
+را می‌گیرد.
+
+اگر History لازم باشد:
+
+```text
+LocationHistory API
+Event API
+Trip API
+```
+
+به‌صورت مستقل استفاده می‌شوند.
+
+---
+
+## 16. Backend Restart
+
+بعد از Restart:
+
+```text
+sana-backend
+    ↓
+LISTEN
+    ↓
+WebSocket Connections
+    ↓
+Reconnect
+    ↓
+Authentication
+    ↓
+Permission
+    ↓
+Initial State
+```
+
+نیازی به Replay کردن Notificationهای قبلی نیست.
+
+---
+
+## 17. Multi-Instance Backend
+
+چند Instance مجاز هستند:
+
+```text
+sana-backend #1
+sana-backend #2
+sana-backend #3
+```
+
+هر Instance می‌تواند روی PostgreSQL:
+
+```text
+LISTEN gps_current_state_changed
+```
+
+داشته باشد.
+
+هر Instance فقط WebSocket Clientهای خودش را مدیریت می‌کند.
+
+---
+
+## 18. Permission
+
+قبل از ارسال CurrentState به Browser:
+
+```text
+NOTIFY
+    ↓
+CurrentState
+    ↓
+Authentication
+    ↓
+Permission
+    ↓
+Subscription
+    ↓
+WebSocket
+```
+
+Device غیرمجاز هرگز نباید ارسال شود.
+
+مخفی کردن Marker در Frontend کافی نیست.
+
+---
+
+## 19. Subscription
+
+WebSocket می‌تواند:
+
+### All Authorized
+
+```text
+User
+ ↓
+All Authorized Devices
+```
+
+یا:
+
+### Selected Devices
+
+```text
+User
+ ↓
+Selected Device IDs
+```
+
+را دریافت کند.
+
+Permission همیشه بالاتر از Subscription است.
+
+---
+
+## 20. Race در Initial Snapshot
+
+ممکن است هنگام Initial Snapshot:
+
+```text
+Backend
+→ SELECT CurrentState
+```
+
+و همزمان:
+
+```text
+GPS
+→ CurrentState Update
+→ COMMIT
+→ NOTIFY
+```
+
+اتفاق بیفتد.
+
+این مشکل نیست.
+
+در بدترین حالت:
+
+```text
+Initial State
++
+New State Notification
+```
+
+دریافت می‌شود و Backend می‌تواند State جدید را Coalesce کند.
+
+اگر Notification از دست برود:
+
+```text
+Reconciliation
+```
+
+آن را جبران می‌کند.
+
+---
+
+## 21. Notification Reliability
+
+SANA تضمین نمی‌کند که هر Intermediate WebSocket Update دقیقاً یک‌بار تحویل شود.
+
+هدف:
+
+```text
+Current State Eventually Correct
+```
+
+است.
+
+یعنی:
+
+> Client در نهایت باید وضعیت صحیح فعلی Device را داشته باشد، حتی اگر برخی Intermediate Updateها را از دست داده باشد.
+
+---
+
+## 22. Exactly Once
+
+برای WebSocket چنین تضمینی نداریم:
+
+```text
+Exactly Once ❌
+```
+
+اما:
+
+```text
+Current State Convergence ✅
+```
+
+داریم.
+
+این مدل برای Live Map مناسب‌تر و بسیار ساده‌تر است.
+
+---
+
+## 23. Database Failure
+
+اگر PostgreSQL Commit نشود:
+
+```text
+CurrentState
+→ تغییر نکرده
+```
+
+و:
+
+```text
+NOTIFY
+→ ارسال نمی‌شود
+```
+
+بنابراین WebSocket نباید Stateای را دریافت کند که Database آن را Commit نکرده است.
+
+---
+
+## 24. History مستقل است
+
+مسیرهای اصلی:
+
+```text
+NormalizedTelemetry
+       │
+       ├── CurrentState
+       │
+       ├── LocationHistory
+       │
+       └── Event / Trip
+```
+
+WebSocket فقط Projection زنده CurrentState را Delivery می‌کند.
+
+---
+
+# تصمیمات قطعی مرحله ۱۱
+
+1. PostgreSQL CurrentState Source of Truth است.
+2. `LISTEN/NOTIFY` فقط Signal است.
+3. Full CurrentState داخل NOTIFY قرار نمی‌گیرد.
+4. NOTIFY شامل Signal سبک مانند `device_id + state_version` است.
+5. CurrentState دارای `state_version` خواهد بود.
+6. `state_version` Monotonic است.
+7. Gap در State Version مجاز است.
+8. State Version فقط هنگام تغییر واقعی Snapshot افزایش می‌یابد.
+9. NOTIFY فقط بعد از Commit ارسال می‌شود.
+10. Lost Notification ممکن است و معماری باید آن را تحمل کند.
+11. Backend مکانیزم Reconciliation دارد.
+12. NOTIFY مسیر Fast Path است.
+13. Reconciliation مسیر Reliability است.
+14. WebSocket Full CurrentState ارسال می‌کند.
+15. Updateهای سریع یک Device می‌توانند Coalesce شوند.
+16. Coalescing فقط در WebSocket است و History را تغییر نمی‌دهد.
+17. WebSocket History Replay ندارد.
+18. پس از Reconnect، Initial CurrentState ارسال می‌شود.
+19. Backend Restart نیاز به Notification Replay ندارد.
+20. Multi-instance Backend پشتیبانی می‌شود.
+21. Permission قبل از WebSocket Delivery اعمال می‌شود.
+22. Subscription می‌تواند All Authorized یا Selected Devices باشد.
+23. WebSocket Exactly-Once نیست.
+24. هدف اصلی Current-State Convergence است.
+25. Database همچنان مرجع نهایی است.
+26. اگر Transaction Rollback شود، Notification نباید State جدیدی را منتشر کند.
+
+# وضعیت
+
+```text
+[✓] WebSocket Notification Reliability
+[✓] LISTEN / NOTIFY
+[✓] state_version
+[✓] Lost Notification Recovery
+[✓] Reconciliation
+[✓] WebSocket Coalescing
+[✓] Reconnect
+[✓] Multi-Instance Backend
+[✓] Permission
+[✓] Current-State Convergence
+
+مرحله ۱۱ — CLOSED
+```
+
+
+============================================================================
+============================================================================
+
+# SANA GPS — تصمیمات قطعی Command Schema و Lifecycle
+
+## 1. تعریف Command
+
+`Command` یک درخواست صریح برای انجام عملیات توسط GPS Device است.
+
+نمونه:
+
+```text
+REQUEST_POSITION
+REBOOT
+OUTPUT_ON
+OUTPUT_OFF
+SET_OUTPUT
+SET_CONFIG
+REQUEST_CONFIG
+```
+
+Command با موارد زیر متفاوت است:
+
+```text
+Telemetry
+Event
+Alarm
+Alert
+Notification
+```
+
+جریان اصلی:
+
+```text
+User / System
+    ↓
+sana-backend
+    ↓
+Command
+    ↓
+sana-gps
+    ↓
+Device
+```
+
+---
+
+# 2. مالکیت Command
+
+Command از نظر Business توسط:
+
+```text
+sana-backend
+```
+
+ایجاد می‌شود.
+
+`sana-panel` مستقیماً با `sana-gps` ارتباط Commandی ندارد.
+
+`sana-gps` مسئول اجرای فنی Command است، نه Authorization Business.
+
+---
+
+# 3. Permission
+
+Backend قبل از ایجاد Command باید بررسی کند:
+
+```text
+User Permission
++
+Device Permission
++
+Command Permission
++
+Business Rules
++
+Payload Validation
+```
+
+صرفاً داشتن دسترسی مشاهده Device به معنی داشتن اجازه ارسال Command نیست.
+
+---
+
+# 4. sana-gps و Authorization
+
+`sana-gps` تصمیم نمی‌گیرد که User اجازه انجام Command را دارد یا خیر.
+
+این مسئولیت:
+
+```text
+sana-backend
+```
+
+است.
+
+`sana-gps` فقط موارد فنی را بررسی می‌کند:
+
+```text
+Protocol Support
+Session Availability
+Command Encoding
+Device/Protocol Compatibility
+Payload Compatibility
+```
+
+---
+
+# 5. Database Entity
+
+Command در PostgreSQL ذخیره می‌شود.
+
+جدول:
+
+```text
+gps.command
+```
+
+دلیل:
+
+* Audit
+* Debug
+* History
+* Recovery بعد از Restart
+* وضعیت اجرای Command
+* بررسی خطا
+* Retry Control
+
+Command Runtime-only نیست.
+
+---
+
+# 6. Command Schema
+
+مدل MVP:
+
+```text
+Command
+├── id
+├── device_id
+├── type
+├── status
+├── source
+├── requested_by
+├── payload
+├── result
+├── error_code
+├── attempts
+├── session_generation
+├── created_at
+├── updated_at
+├── expires_at
+├── sent_at
+├── acknowledged_at
+└── completed_at
+```
+
+---
+
+# 7. ID
+
+```text
+id
+Type: BIGINT
+Source: SANA
+```
+
+شناسه داخلی Command است.
+
+این شناسه با شناسه Command در Protocol Device یکی نیست.
+
+```text
+SANA Command ID
+≠
+Protocol Command Identity
+```
+
+---
+
+# 8. Device
+
+```text
+device_id
+```
+
+Command مستقیماً به Device تعلق دارد.
+
+رابطه:
+
+```text
+gps.command.device_id
+        ↓
+public.device.id
+```
+
+Device نباید در اثر حذف/تعویض Device دیگری به Command جدید تبدیل شود.
+
+Commandهای تاریخی Device قبلی متعلق به همان Device باقی می‌مانند.
+
+---
+
+# 9. Delete Policy
+
+Command History نباید با حذف یا Lifecycle تغییر Device از بین برود.
+
+بنابراین رابطه Device با Command از نوع محافظتی خواهد بود:
+
+```text
+ON DELETE PROTECT
+```
+
+در عمل نیز حذف فیزیکی Device در Lifecycle اصلی SANA مجاز نیست.
+
+---
+
+# 10. Command Type
+
+`type` یک Code مستقل از Protocol است.
+
+مثلاً:
+
+```text
+REQUEST_POSITION
+REBOOT
+SET_OUTPUT
+```
+
+و نه:
+
+```text
+TELTONIKA_REBOOT
+GT06_REBOOT
+```
+
+Backend فقط مفهوم SANA را می‌شناسد.
+
+Protocol-specific encoding در sana-gps انجام می‌شود.
+
+---
+
+# 11. Protocol Translation
+
+جریان:
+
+```text
+SANA Command
+    ↓
+Protocol Encoder
+    ↓
+Protocol-specific Bytes
+    ↓
+Session
+    ↓
+Transport
+    ↓
+Device
+```
+
+Backend نباید Raw Protocol Bytes تولید کند.
+
+---
+
+# 12. Command Payload
+
+`payload` از نوع:
+
+```text
+JSONB
+```
+
+است.
+
+مثلاً:
+
+```json
+{
+  "output": 1,
+  "value": true
+}
+```
+
+Payload باید متناسب با Command Type باشد.
+
+Backend مسئول Validation اولیه Payload است.
+
+`sana-gps` نیز هنگام Encode کردن باید Compatibility فنی آن را بررسی کند.
+
+---
+
+# 13. Raw Protocol Data
+
+Raw Protocol Bytes جزو قرارداد اصلی Command نیست.
+
+Command باید Protocol-independent باقی بماند.
+
+در صورت نیاز به Debug اطلاعات خام می‌تواند در مکانیزم‌های فنی جداگانه ثبت شود، اما `gps.command` تبدیل به Storage وابسته به Protocol نمی‌شود.
+
+---
+
+# 14. Result
+
+`result` از نوع:
+
+```text
+JSONB
+```
+
+است.
+
+برای نگهداری نتیجه یا Response ساختاریافته Device استفاده می‌شود.
+
+مثلاً:
+
+```json
+{
+  "device_result": "OK"
+}
+```
+
+Result جایگزین:
+
+```text
+Telemetry
+Event
+```
+
+نیست.
+
+---
+
+# 15. Error Code
+
+خطای Command با Code استاندارد ذخیره می‌شود.
+
+نمونه:
+
+```text
+DEVICE_OFFLINE
+COMMAND_EXPIRED
+COMMAND_CANCELLED
+UNSUPPORTED_COMMAND
+UNSUPPORTED_PROTOCOL
+INVALID_PAYLOAD
+SESSION_UNAVAILABLE
+SEND_FAILED
+ACK_TIMEOUT
+DEVICE_REJECTED
+PROTOCOL_ERROR
+```
+
+متن آزاد Error منبع اصلی تصمیم‌گیری نیست.
+
+---
+
+# 16. Source
+
+منبع ایجاد Command:
+
+```text
+USER
+SYSTEM
+API
+```
+
+است.
+
+مثلاً:
+
+```text
+source = USER
+requested_by = 125
+```
+
+یا:
+
+```text
+source = SYSTEM
+requested_by = NULL
+```
+
+---
+
+# 17. requested_by
+
+اگر Command توسط User ایجاد شده باشد:
+
+```text
+requested_by
+```
+
+برای Audit نگهداری می‌شود.
+
+اگر Command سیستمی باشد:
+
+```text
+requested_by = NULL
+```
+
+و User مصنوعی ایجاد نمی‌شود.
+
+---
+
+# 18. State Machine
+
+Statusهای اصلی:
+
+```text
+PENDING
+QUEUED
+SENDING
+SENT
+ACKNOWLEDGED
+COMPLETED
+FAILED
+EXPIRED
+CANCELLED
+```
+
+---
+
+# 19. PENDING
+
+Command توسط Backend ایجاد شده ولی هنوز توسط sana-gps به‌عنوان Runtime Command پذیرفته نشده است.
+
+```text
+PENDING
+```
+
+---
+
+# 20. QUEUED
+
+`sana-gps` Command را دریافت و معتبر تشخیص داده است، اما هنوز ارسال نشده است.
+
+مثلاً Device Offline است یا Command دیگری در حال اجراست.
+
+```text
+PENDING
+    ↓
+QUEUED
+```
+
+---
+
+# 21. SENDING
+
+یک sana-gps Instance Command را به‌صورت Atomic Claim کرده و مسئول اجرای آن شده است.
+
+```text
+QUEUED
+    ↓
+SENDING
+```
+
+در این مرحله سایر Instanceها نباید همان Command را ارسال کنند.
+
+---
+
+# 22. SENT
+
+Bytes با موفقیت به Transport/Socket تحویل داده شده‌اند.
+
+```text
+SENDING
+    ↓
+SENT
+```
+
+این وضعیت به معنی موفقیت Device نیست.
+
+---
+
+# 23. ACKNOWLEDGED
+
+Device یک Response/ACK قابل شناسایی و مرتبط با Command ارسال کرده است.
+
+```text
+SENT
+    ↓
+ACKNOWLEDGED
+```
+
+ACKNOWLEDGED الزاماً به معنی اجرای کامل Command نیست.
+
+---
+
+# 24. COMPLETED
+
+وقتی موفقیت واقعی عملیات از طریق Protocol Response یا Telemetry قابل اثبات باشد:
+
+```text
+ACKNOWLEDGED
+    ↓
+COMPLETED
+```
+
+اگر Protocol فقط ACK داشته باشد و مفهوم Completion نداشته باشد، `ACKNOWLEDGED` می‌تواند آخرین وضعیت قابل اثبات باشد و SANA نباید Completion خیالی ایجاد کند.
+
+---
+
+# 25. FAILED
+
+Command در اثر خطای غیرقابل ادامه Failed می‌شود.
+
+مثلاً:
+
+```text
+SEND_FAILED
+DEVICE_REJECTED
+UNSUPPORTED_COMMAND
+PROTOCOL_ERROR
+```
+
+---
+
+# 26. EXPIRED
+
+اگر:
+
+```text
+now >= expires_at
+```
+
+و Command هنوز قابل اجرا نباشد:
+
+```text
+EXPIRED
+```
+
+می‌شود.
+
+Command Expired دیگر نباید ارسال شود.
+
+---
+
+# 27. CANCELLED
+
+Command قبل از ایجاد Side Effect می‌تواند Cancel شود.
+
+مثلاً:
+
+```text
+PENDING
+    ↓
+CANCELLED
+```
+
+یا:
+
+```text
+QUEUED
+    ↓
+CANCELLED
+```
+
+Commandی که به Device ارسال شده است با تغییر ساده Status لغو نمی‌شود.
+
+---
+
+# 28. Retry
+
+Retry وابسته به Command Type و Protocol است.
+
+هر Command الزاماً قابل Retry نیست.
+
+نمونه:
+
+```text
+REQUEST_POSITION
+→ معمولاً Retryable
+
+REBOOT
+→ به‌صورت پیش‌فرض Auto Retry ندارد
+```
+
+دلیل:
+
+Commandهای Side Effect دار ممکن است Device را واقعاً تحت تأثیر قرار داده باشند ولی ACK به SANA نرسیده باشد.
+
+---
+
+# 29. Attempts
+
+```text
+attempts
+```
+
+تعداد تلاش‌های ارسال Command را نشان می‌دهد.
+
+مثلاً:
+
+```text
+attempts = 3
+```
+
+یعنی سه تلاش برای ارسال انجام شده است.
+
+در MVP جدول جداگانه برای هر Attempt ایجاد نمی‌شود.
+
+---
+
+# 30. Retry Policy
+
+Retry Policy در Code و بر اساس Command Type/Protocol تعریف می‌شود.
+
+مثلاً:
+
+```text
+retryable
+max_attempts
+ack_timeout
+```
+
+این Policy بخشی از Business History نیست و در Database به‌عنوان Configuration پیچیده ذخیره نمی‌شود.
+
+---
+
+# 31. Session Generation
+
+هنگام Claim Command:
+
+```text
+session_generation
+```
+
+Session فعلی ثبت می‌شود.
+
+مثلاً:
+
+```text
+Command
+generation = 42
+```
+
+اگر Session به:
+
+```text
+generation = 43
+```
+
+تغییر کند، Session قدیمی دیگر اجازه ارسال Command را ندارد.
+
+---
+
+# 32. Atomic Claim
+
+Claim باید در PostgreSQL به‌صورت Atomic انجام شود.
+
+مفهوم:
+
+```sql
+UPDATE gps.command
+SET
+    status = 'SENDING',
+    attempts = attempts + 1,
+    session_generation = ?
+WHERE id = ?
+  AND status = 'QUEUED'
+  AND expires_at > CURRENT_TIMESTAMP;
+```
+
+اگر:
+
+```text
+rows = 1
+```
+
+Claim موفق است.
+
+اگر:
+
+```text
+rows = 0
+```
+
+Instance مالک Command نیست.
+
+---
+
+# 33. Session Validation قبل از Send
+
+حتی بعد از Claim باید Session دوباره بررسی شود.
+
+چون ممکن است:
+
+```text
+Claim
+    ↓
+Session Fenced
+    ↓
+Send
+```
+
+رخ دهد.
+
+اگر Session دیگر Current نباشد، Command نباید از Connection قدیمی ارسال شود.
+
+---
+
+# 34. One In-Flight Command
+
+در MVP برای هر Device:
+
+```text
+Maximum 1 In-Flight Command
+```
+
+خواهیم داشت.
+
+یعنی Commandهای زیر:
+
+```text
+SENDING
+SENT
+ACKNOWLEDGED
+```
+
+همزمان برای یک Device بیش از یکی نخواهند بود.
+
+Commandهای بعدی در:
+
+```text
+QUEUED
+```
+
+می‌مانند.
+
+---
+
+# 35. دلیل Sequential بودن
+
+برخی GPS Protocolها:
+
+* Command ID ندارند.
+* ACK ساده دارند.
+* Correlation ضعیف دارند.
+* چند Command همزمان را تضمین نمی‌کنند.
+
+Sequential بودن MVP ریسک Correlation و Race را کاهش می‌دهد.
+
+---
+
+# 36. Offline Device
+
+اگر Device Offline باشد:
+
+```text
+Command
+    ↓
+QUEUED
+```
+
+می‌ماند.
+
+تا زمانی که:
+
+```text
+expires_at
+```
+
+نرسیده باشد.
+
+وقتی Session فعال شود:
+
+```text
+QUEUED
+    ↓
+SENDING
+```
+
+---
+
+# 37. Command Expiry
+
+برای هر Command:
+
+```text
+expires_at
+```
+
+داریم.
+
+Command Scheduler به‌صورت مرکزی Commandهای منقضی‌شده را پیدا می‌کند.
+
+نیازی به Timer جداگانه برای هر Command نیست.
+
+---
+
+# 38. Cancellation
+
+Cancellation فقط قبل از ایجاد Side Effect قابل انجام است.
+
+```text
+PENDING → CANCELLED
+QUEUED  → CANCELLED
+```
+
+ولی:
+
+```text
+SENT → CANCELLED
+```
+
+مجاز نیست.
+
+اگر Protocol قابلیت Cancel Command داشته باشد، آن یک Command مستقل خواهد بود.
+
+---
+
+# 39. Command Delivery از Backend به sana-gps
+
+مسیر پیشنهادی:
+
+```text
+sana-backend
+    ↓
+INSERT gps.command
+    ↓
+COMMIT
+    ↓
+NOTIFY
+    ↓
+sana-gps
+```
+
+`NOTIFY` فقط Signal است.
+
+Database همچنان Source of Truth است.
+
+---
+
+# 40. Command Reconciliation
+
+اگر NOTIFY از دست برود:
+
+```text
+sana-gps
+```
+
+به‌صورت دوره‌ای Commandهای:
+
+```text
+PENDING
+QUEUED
+```
+
+را بررسی می‌کند.
+
+پس:
+
+```text
+NOTIFY
+→ Fast Path
+
+Reconciliation
+→ Reliability Path
+```
+
+---
+
+# 41. Command بعد از Restart
+
+Commandهای Database باقی می‌مانند.
+
+پس از Restart:
+
+```text
+sana-gps
+    ↓
+Command Reconciliation
+    ↓
+PENDING / QUEUED
+```
+
+بررسی می‌شوند.
+
+اما وضعیت:
+
+```text
+SENDING
+SENT
+```
+
+ممکن است در مرز Crash مبهم باشد و نباید کورکورانه دوباره اجرا شود.
+
+---
+
+# 42. Crash Ambiguity
+
+ممکن است:
+
+```text
+DB:
+SENT
+
+Device:
+Command را دریافت کرده
+
+Server:
+Crash
+```
+
+رخ دهد.
+
+بعد از Restart، SANA نمی‌تواند همیشه تشخیص دهد که Command واقعاً اجرا شده یا نه.
+
+بنابراین Auto Retry برای Commandهای Side Effect دار به‌صورت پیش‌فرض ممنوع است مگر Protocol قابلیت مناسب برای Retry/Idempotency داشته باشد.
+
+---
+
+# 43. Timestampها
+
+Timestampهای Command:
+
+```text
+created_at
+updated_at
+expires_at
+sent_at
+acknowledged_at
+completed_at
+```
+
+همگی:
+
+```text
+UTC
+Server-side
+```
+
+هستند.
+
+---
+
+# 44. Device Replacement
+
+Command به Device تعلق دارد.
+
+اگر:
+
+```text
+Vehicle A
+Device 100
+```
+
+تعویض شود با:
+
+```text
+Vehicle A
+Device 200
+```
+
+Commandهای Device 100 به Device 200 منتقل نمی‌شوند.
+
+---
+
+# 45. Command و CurrentState
+
+Command مستقیماً CurrentState را تغییر نمی‌دهد.
+
+مثلاً:
+
+```text
+SET_OUTPUT ON
+```
+
+نباید باعث شود SANA فوراً:
+
+```text
+output = ON
+```
+
+را ثبت کند.
+
+جریان صحیح:
+
+```text
+Command
+    ↓
+Device
+    ↓
+Response / Telemetry
+    ↓
+Normalization
+    ↓
+CurrentState / Event
+```
+
+---
+
+# 46. Command و Event
+
+این دو مستقل هستند.
+
+مثلاً:
+
+```text
+Command:
+REBOOT
+```
+
+ممکن است بعداً باعث:
+
+```text
+Event:
+DEVICE_REBOOTED
+```
+
+شود.
+
+ولی Command خودش Event نیست.
+
+---
+
+# 47. Command و Alert
+
+Alert نیز Command نیست.
+
+در آینده ممکن است:
+
+```text
+Event
+    ↓
+Alert Rule
+    ↓
+Alert
+    ↓
+Automation
+    ↓
+Command
+```
+
+ایجاد شود، ولی این‌ها Entityهای مستقل هستند.
+
+---
+
+# 48. Command Schema نهایی MVP
+
+```text
+gps.command
+│
+├── id                    BIGINT
+├── device_id             BIGINT FK
+├── type                  CODE
+├── status                CODE
+├── source                CODE
+├── requested_by          BIGINT NULL
+├── payload               JSONB
+├── result                JSONB NULL
+├── error_code            CODE NULL
+├── attempts              INTEGER
+├── session_generation    BIGINT NULL
+│
+├── created_at            TIMESTAMPTZ
+├── updated_at            TIMESTAMPTZ
+├── expires_at            TIMESTAMPTZ
+├── sent_at               TIMESTAMPTZ NULL
+├── acknowledged_at       TIMESTAMPTZ NULL
+└── completed_at          TIMESTAMPTZ NULL
+```
+
+---
+
+# 49. State Machine نهایی
+
+```text
+                 ┌──────────────┐
+                 │   PENDING    │
+                 └──────┬───────┘
+                        │
+                        ▼
+                 ┌──────────────┐
+                 │    QUEUED    │
+                 └──────┬───────┘
+                        │
+                  Atomic Claim
+                        │
+                        ▼
+                 ┌──────────────┐
+                 │   SENDING    │
+                 └──────┬───────┘
+                        │
+                      send()
+                        │
+                        ▼
+                 ┌──────────────┐
+                 │     SENT     │
+                 └──────┬───────┘
+                        │
+                       ACK
+                        │
+                        ▼
+              ┌───────────────────┐
+              │   ACKNOWLEDGED    │
+              └─────────┬─────────┘
+                        │
+                   completion
+                        │
+                        ▼
+                 ┌──────────────┐
+                 │  COMPLETED   │
+                 └──────────────┘
+```
+
+خطاها:
+
+```text
+PENDING ───────→ CANCELLED
+QUEUED ────────→ CANCELLED
+QUEUED ────────→ EXPIRED
+
+SENDING ───────→ FAILED
+SENT ──────────→ FAILED
+SENT ──────────→ QUEUED       (Retry if allowed)
+
+ACKNOWLEDGED ──→ FAILED
+ACKNOWLEDGED ──→ COMPLETED
+```
+
+---
+
+# 50. قواعد قطعی
+
+1. Command یک Entity مستقل است.
+2. Command مستقیماً به Device تعلق دارد.
+3. Command توسط sana-backend ایجاد می‌شود.
+4. Permission در Backend بررسی می‌شود.
+5. sana-gps مسئول Authorization Business نیست.
+6. Command در PostgreSQL ذخیره می‌شود.
+7. Command History حذف نمی‌شود.
+8. Command Type مستقل از Protocol است.
+9. Protocol Encoding در sana-gps انجام می‌شود.
+10. Payload و Result از نوع JSONB هستند.
+11. Raw Protocol Bytes بخشی از Command Contract نیست.
+12. `SENT` به معنی موفقیت Device نیست.
+13. `ACKNOWLEDGED` با `COMPLETED` متفاوت است.
+14. Completion فقط در صورت وجود شواهد معتبر ثبت می‌شود.
+15. Command دارای `expires_at` است.
+16. Command Claim به‌صورت Atomic انجام می‌شود.
+17. Session Generation هنگام Claim و قبل از Send بررسی می‌شود.
+18. در MVP حداکثر یک Command In-Flight برای هر Device داریم.
+19. Retry وابسته به Command Type/Protocol است.
+20. Side-effect Commandها به‌صورت پیش‌فرض Auto Retry نمی‌شوند.
+21. Device Offline باعث حذف فوری Command نمی‌شود.
+22. Command Expired هرگز ارسال نمی‌شود.
+23. Cancellation بعد از ایجاد Side Effect مجاز نیست.
+24. Command مستقیماً CurrentState را تغییر نمی‌دهد.
+25. Command مستقیماً Event ایجاد نمی‌کند؛ Event در نتیجه واقعی Device ایجاد می‌شود.
+26. Device Replacement Commandهای Device قبلی را منتقل نمی‌کند.
+27. NOTIFY فقط Signal است.
+28. Reconciliation برای Commandهای بدون Notification وجود دارد.
+29. Timestampها UTC و Server-side هستند.
+30. Crash در مرز Send/DB می‌تواند وضعیت Command را مبهم کند.
+31. Retry نباید بدون توجه به Idempotency انجام شود.
+32. Commandهای یک Device در MVP Sequential هستند.
+33. `requested_by` برای Audit نگهداری می‌شود.
+34. Commandهای System می‌توانند بدون User ایجاد شوند.
+
+---
+
+# وضعیت
+
+```text
+[✓] Command Entity
+[✓] Command Schema
+[✓] Command Type
+[✓] Command Status
+[✓] State Machine
+[✓] Atomic Claim
+[✓] Session Generation
+[✓] Timeout / Expiry
+[✓] Retry Policy
+[✓] Offline Queue
+[✓] Command Reconciliation
+[✓] Crash Ambiguity
+[✓] Audit
+[✓] Device Replacement
+[✓] CurrentState Separation
+
+مرحله ۱۳ — CLOSED
+```
+
+
+============================================================================
+============================================================================
+
+# SANA GPS — تصمیمات قطعی Configuration Lifecycle
+
+## 1. هدف
+
+این سند محل نگهداری Configurationها، مالکیت آن‌ها، نحوه تغییر، Versioning، Audit و زمان اعمال Configuration در SANA GPS را مشخص می‌کند.
+
+اصل کلی:
+
+```text
+Environment
+→ زیرساخت و Secret
+
+Code
+→ منطق ثابت سیستم
+
+Database
+→ Configuration قابل مدیریت
+
+Runtime
+→ وضعیت لحظه‌ای
+```
+
+---
+
+# 2. چهار لایه Configuration و State
+
+SANA چهار مرز مشخص دارد:
+
+```text
+┌────────────────────────────┐
+│ Environment / Secrets      │
+│ .env / Secret Store        │
+└──────────────┬─────────────┘
+               │
+┌──────────────▼─────────────┐
+│ Code Configuration         │
+│ Decoder / Protocol / CRC   │
+└──────────────┬─────────────┘
+               │
+┌──────────────▼─────────────┐
+│ Database Configuration     │
+│ Listener / Rules / Timeout │
+└──────────────┬─────────────┘
+               │
+┌──────────────▼─────────────┐
+│ Runtime State               │
+│ Session / CurrentState      │
+└────────────────────────────┘
+```
+
+این چهار مفهوم نباید با یکدیگر مخلوط شوند.
+
+---
+
+# 3. Environment Configuration
+
+`.env` فقط برای Configurationهای مربوط به Environment و Infrastructure استفاده می‌شود.
+
+نمونه:
+
+```text
+DATABASE_URL
+DATABASE_PASSWORD
+
+APP_ENV
+DEBUG
+
+LOG_LEVEL
+
+DB_POOL_MIN
+DB_POOL_MAX
+
+PROCESSING_WORKERS
+MAX_PROCESSING_QUEUE
+
+SECRET_KEY
+```
+
+مقادیر می‌توانند بین:
+
+```text
+Development
+Staging
+Production
+```
+
+متفاوت باشند.
+
+---
+
+# 4. Secretها
+
+Secretهایی مانند:
+
+```text
+Database Password
+JWT Secret
+API Secret
+Encryption Key
+```
+
+در PostgreSQL Business Configuration ذخیره نمی‌شوند.
+
+در MVP:
+
+```text
+Environment / Secret Store
+```
+
+مرجع نگهداری Secretها است.
+
+Secret نباید در:
+
+```text
+Log
+Audit
+Error Message
+```
+
+به‌صورت Plain Text ثبت شود.
+
+---
+
+# 5. Configurationهایی که نباید در .env باشند
+
+Configuration مربوط به Device یا Business در `.env` قرار نمی‌گیرد.
+
+مثلاً:
+
+```text
+DEVICE_1001_PROTOCOL
+DEVICE_1002_PROTOCOL
+OFFLINE_TIMEOUT_DEVICE_1001
+DEVICE_1001_SAMPLING_INTERVAL
+```
+
+مجاز نیست.
+
+این موارد باید در Configuration Layer مناسب خودشان مدیریت شوند.
+
+---
+
+# 6. Code Configuration
+
+چیزهایی که بخشی از Logic نرم‌افزار هستند در Code قرار می‌گیرند.
+
+مثلاً:
+
+```text
+Protocol Decoder
+Framer
+CRC Algorithm
+Protocol Encoder
+Normalizer
+Unit Converter
+Protocol Mapping
+```
+
+این موارد Business Configuration نیستند.
+
+Admin Panel نباید بتواند منطق Decoder یا الگوریتم CRC را تغییر دهد.
+
+---
+
+# 7. Protocol Profile
+
+Protocol Profileها در Code تعریف می‌شوند.
+
+مثلاً:
+
+```text
+TELTONIKA_CODEC8_STANDARD_V1
+TELTONIKA_CODEC8_FUEL_V2
+GT06_STANDARD_V1
+```
+
+Database فقط Reference لازم را نگه می‌دارد:
+
+```text
+profile_code
+profile_version
+```
+
+---
+
+# 8. Profile Immutability
+
+Profile موجود نباید Silent Mutation شود.
+
+مثلاً اگر:
+
+```text
+Profile V1
+```
+
+امروز یک AVL ID را به:
+
+```text
+external_voltage
+```
+
+Map کند، نباید فردا همان V1 بدون Version جدید به مفهوم دیگری تغییر کند.
+
+روش صحیح:
+
+```text
+Profile V1
+Profile V2
+```
+
+است.
+
+در نتیجه Telemetryهای تاریخی قابل Trace باقی می‌مانند.
+
+---
+
+# 9. Database Configuration
+
+Configurationهایی که باید بدون تغییر Code قابل مدیریت باشند در Database قرار می‌گیرند.
+
+نمونه:
+
+```text
+Listener Configuration
+Offline Timeout
+Sampling Rules
+Event Thresholds
+Alert Rules
+Geofence Configuration
+Raw Packet Retention
+Device Overrides
+```
+
+این Configurationها از طریق Backend/Admin مدیریت می‌شوند.
+
+---
+
+# 10. Configuration Ownership
+
+هر Configuration باید Owner مشخص داشته باشد.
+
+مثلاً:
+
+```text
+Database Password
+→ Environment / DevOps
+
+Protocol Decoder
+→ Code / Developer
+
+Listener Port
+→ System Admin
+
+Device Protocol
+→ Device Configuration
+
+Offline Timeout
+→ System Configuration
+
+Tank Capacity
+→ Vehicle Configuration
+```
+
+یک Configuration نباید مالکیت مبهم داشته باشد.
+
+---
+
+# 11. Configuration Scope
+
+Configurationها می‌توانند Scope داشته باشند.
+
+Scopeهای مجاز بسته به نوع Configuration:
+
+```text
+GLOBAL
+DEVICE_MODEL
+DEVICE
+VEHICLE
+ORGANIZATION
+BRANCH
+```
+
+اما هر Configuration فقط Scopeهایی را که برای آن تعریف شده‌اند پشتیبانی می‌کند.
+
+همه Configurationها نباید در همه Scopeها قابل Override باشند.
+
+---
+
+# 12. Configuration Precedence
+
+برای Configurationهایی که Override دارند، ترتیب استاندارد:
+
+```text
+Global
+   ↓
+DeviceModel
+   ↓
+Device
+```
+
+است.
+
+مقدار Scope پایین‌تر، مقدار Scope بالاتر را Override می‌کند.
+
+مثال:
+
+```text
+Global:
+sampling_interval = 30
+
+DeviceModel:
+sampling_interval = 15
+
+Device:
+sampling_interval = 10
+```
+
+Effective Value:
+
+```text
+10
+```
+
+---
+
+# 13. Inherit / Explicit Disable / Explicit Value
+
+این سه حالت باید از هم جدا باشند:
+
+```text
+INHERIT
+DISABLED
+VALUE
+```
+
+مثلاً:
+
+```text
+Global = 30 sec
+
+Device = INHERIT
+```
+
+نتیجه:
+
+```text
+30 sec
+```
+
+ولی:
+
+```text
+Device = DISABLED
+```
+
+به معنی غیرفعال بودن است.
+
+`NULL` نباید به‌صورت عمومی هم معنی Disable تلقی شود.
+
+---
+
+# 14. Configuration Version
+
+Configurationهای مهم دارای Revision هستند.
+
+مثلاً:
+
+```text
+revision = 17
+```
+
+و بعد:
+
+```text
+revision = 18
+```
+
+Runtime می‌تواند تشخیص دهد Configuration فعلی مربوط به کدام Revision است.
+
+---
+
+# 15. Configuration History
+
+تغییر Configurationهای مهم باید قابل Audit باشند.
+
+حداقل اطلاعات:
+
+```text
+configuration
+old_value
+new_value
+changed_by
+changed_at
+revision
+```
+
+Secretها نباید با مقدار واقعی در Audit ذخیره شوند.
+
+---
+
+# 16. Apply Policy
+
+هر Configuration مشخص می‌کند چه زمانی اعمال می‌شود.
+
+سه حالت مفهومی:
+
+```text
+IMMEDIATE
+RESTART_REQUIRED
+DEPLOY_REQUIRED
+```
+
+---
+
+# 17. Immediate
+
+Configurationهایی که Runtime می‌تواند به‌صورت کنترل‌شده Reload کند.
+
+مثلاً:
+
+```text
+Offline Timeout
+Sampling Rules
+Event Threshold
+Alert Threshold
+```
+
+تغییر می‌کنند و Runtime می‌تواند Configuration جدید را دریافت کند.
+
+---
+
+# 18. Restart Required
+
+Configurationهایی که به Resource یا Socket وابسته‌اند.
+
+مثلاً:
+
+```text
+Listener Port
+Bind Address
+Transport
+```
+
+در MVP با:
+
+```text
+Database Change
+↓
+Restart sana-gps
+↓
+Load New Configuration
+```
+
+اعمال می‌شوند.
+
+Hot Reload عمومی برای Listenerها در MVP وجود ندارد.
+
+---
+
+# 19. Deploy Required
+
+Configurationهایی که بخشی از Code هستند:
+
+```text
+Decoder
+Framer
+CRC
+Normalizer
+Protocol Encoder
+Profile Mapping
+```
+
+با:
+
+```text
+Code Change
+↓
+Build/Test
+↓
+Deploy
+```
+
+اعمال می‌شوند.
+
+---
+
+# 20. Configuration Validation
+
+Configuration قبل از فعال شدن باید Validate شود.
+
+مثلاً:
+
+```text
+Port:
+1..65535
+
+Timeout:
+> 0
+
+Sampling Distance:
+>= 0
+
+Profile:
+must exist
+```
+
+Configuration نامعتبر نباید وارد Runtime شود.
+
+---
+
+# 21. Atomic Configuration Update
+
+تغییر Configuration باید به‌صورت Atomic انجام شود.
+
+جریان:
+
+```text
+New Configuration
+       ↓
+Validation
+       ↓
+Database Transaction
+       ↓
+COMMIT
+       ↓
+Runtime Apply
+```
+
+اگر Validation یا Commit شکست بخورد:
+
+```text
+Old Configuration
+```
+
+باقی می‌ماند.
+
+---
+
+# 22. Runtime Apply Failure
+
+ممکن است Configuration در Database معتبر باشد ولی Runtime نتواند آن را Apply کند.
+
+در این حالت:
+
+```text
+Database
+→ New Configuration
+
+Runtime
+→ Apply Failed
+```
+
+نباید Runtime وارد State نامعلوم شود.
+
+Runtime باید:
+
+```text
+Previous Applied Configuration
+```
+
+را حفظ کند و خطا را ثبت کند.
+
+بنابراین ممکن است برای مدت کوتاهی:
+
+```text
+DB Configuration
+≠
+Runtime Applied Configuration
+```
+
+باشد.
+
+---
+
+# 23. Configuration Cache
+
+Cache در صورت نیاز قابل استفاده است.
+
+اما:
+
+```text
+Database
+```
+
+همیشه Source of Truth است.
+
+Cache فقط برای:
+
+```text
+Performance
+```
+
+است.
+
+در صورت از دست رفتن Cache:
+
+```text
+Database
+↓
+Reload
+```
+
+انجام می‌شود.
+
+---
+
+# 24. Multi-Instance Configuration
+
+در آینده ممکن است:
+
+```text
+sana-gps #1
+sana-gps #2
+sana-gps #3
+```
+
+همزمان فعال باشند.
+
+همه باید Configuration یکسان و قابل Trace داشته باشند.
+
+بنابراین Configuration نباید فقط در Memory یک Instance ذخیره شود.
+
+---
+
+# 25. Configuration Change Notification
+
+برای Configurationهای Runtime می‌توان از PostgreSQL:
+
+```text
+LISTEN / NOTIFY
+```
+
+استفاده کرد.
+
+جریان:
+
+```text
+Admin
+ ↓
+Database Transaction
+ ↓
+COMMIT
+ ↓
+NOTIFY
+ ↓
+GPS Instances
+ ↓
+Reload
+```
+
+NOTIFY فقط Signal است.
+
+اگر Notification از دست برود:
+
+```text
+Periodic Reconciliation
+```
+
+Configuration را دوباره بررسی می‌کند.
+
+---
+
+# 26. Configuration Revision
+
+برای تشخیص تغییر Configuration می‌توان Revision داشت:
+
+```text
+revision 17
+→ offline_timeout = 300
+
+revision 18
+→ offline_timeout = 600
+```
+
+Runtime Revision فعلی خود را می‌داند.
+
+---
+
+# 27. Listener Configuration
+
+Listener در Database تعریف می‌شود:
+
+```text
+Listener
+├── id
+├── name
+├── transport
+├── bind_address
+├── port
+├── enabled
+└── allowed_protocols
+```
+
+مثلاً:
+
+```text
+Teltonika TCP
+0.0.0.0:5027
+enabled
+```
+
+---
+
+# 28. Listener Change
+
+در MVP:
+
+```text
+Admin changes Listener
+       ↓
+Database
+       ↓
+Restart sana-gps
+       ↓
+New Listener Configuration
+```
+
+Hot Reload عمومی Listener فعلاً وجود ندارد.
+
+---
+
+# 29. Offline Timeout
+
+`offline_timeout` یک Configuration مدیریتی است.
+
+مثلاً:
+
+```text
+offline_timeout = 300 seconds
+```
+
+در Database نگهداری می‌شود.
+
+Admin می‌تواند آن را تغییر دهد.
+
+این مقدار در `.env` قرار نمی‌گیرد.
+
+---
+
+# 30. Offline Timeout Change
+
+مثلاً:
+
+```text
+Old = 5 min
+New = 10 min
+```
+
+بعد از Apply شدن:
+
+```text
+Offline Detection
+→ از مقدار جدید استفاده می‌کند.
+```
+
+Eventهای تاریخی قبلی دوباره محاسبه نمی‌شوند.
+
+---
+
+# 31. Sampling Configuration
+
+Sampling Configuration شامل مواردی مانند:
+
+```text
+min_distance
+max_interval
+speed_change
+heading_change
+```
+
+است.
+
+Precedence:
+
+```text
+Global
+→ DeviceModel
+→ Device
+```
+
+تغییر Sampling فقط روی Telemetry آینده اثر دارد.
+
+LocationHistory قبلی دوباره Sampling نمی‌شود.
+
+---
+
+# 32. Raw Packet Retention
+
+Raw Packet Retention نیز Configuration است.
+
+مثلاً:
+
+```text
+raw_retention = 30 days
+```
+
+تغییر آن توسط Admin انجام می‌شود.
+
+Retention Job داده‌های منقضی‌شده را حذف می‌کند.
+
+`sana-gps` خودش مسئول اجرای DDL یا Partition Maintenance نیست.
+
+---
+
+# 33. Device Configuration
+
+Configurationهای فنی Device در Database نگهداری می‌شوند.
+
+مثلاً:
+
+```text
+Device
+├── profile_code
+├── profile_version
+├── enabled
+└── overrides
+```
+
+اما Runtime State با Configuration یکی نیست.
+
+---
+
+# 34. Runtime State ≠ Configuration
+
+Runtime State:
+
+```text
+Session
+CurrentState
+last_seen
+Connection State
+```
+
+Configuration:
+
+```text
+offline_timeout
+sampling_rule
+profile_code
+listener
+```
+
+این دو نباید با هم ادغام شوند.
+
+---
+
+# 35. Configuration و Historical Data
+
+تغییر Configuration نباید داده‌های تاریخی را به‌صورت خودکار بازتفسیر کند.
+
+مثلاً:
+
+```text
+Profile V1
+→ Telemetry گذشته
+
+Profile V2
+→ Telemetry آینده
+```
+
+Historical Data با Configuration زمان پردازش خودش باقی می‌ماند.
+
+---
+
+# 36. Configuration Traceability
+
+برای Configurationهایی که روی Interpretation داده اثر دارند، امکان Trace Configuration/Version باید وجود داشته باشد.
+
+مثلاً RawPacket:
+
+```text
+profile_code
+profile_version
+```
+
+را نگه می‌دارد.
+
+NormalizedTelemetry نباید با جزئیات غیرضروری Configuration آلوده شود.
+
+---
+
+# 37. Configuration و Device Replacement
+
+Configuration اختصاصی Device با Device دیگری منتقل نمی‌شود مگر اینکه صراحتاً Business Rule مربوط به آن Configuration چنین چیزی را تعریف کند.
+
+مثلاً:
+
+```text
+Device 100
+sampling_override = 10 sec
+```
+
+با تعویض Device:
+
+```text
+Device 200
+```
+
+این Override به‌صورت خودکار منتقل نمی‌شود.
+
+---
+
+# 38. Generic Key/Value
+
+یک Table عمومی:
+
+```text
+key
+value
+```
+
+نباید محل نگهداری تمام Configurationهای SANA باشد.
+
+برای Configurationهای مهم:
+
+```text
+Typed Tables
+Typed Fields
+```
+
+ترجیح داده می‌شوند.
+
+Generic Key/Value فقط برای موارد ساده و مشخص، در صورت نیاز، قابل استفاده است.
+
+---
+
+# 39. Configuration Security
+
+Admin بودن به‌تنهایی نباید به معنی دسترسی نامحدود Configuration باشد.
+
+در آینده Permissionهای مشخصی مانند:
+
+```text
+CONFIG_VIEW
+CONFIG_EDIT
+GPS_CONFIG_EDIT
+PROTOCOL_CONFIG_EDIT
+```
+
+قابل تعریف هستند.
+
+---
+
+# 40. Configuration Lifecycle
+
+چرخه کلی:
+
+```text
+CREATE
+   ↓
+VALIDATE
+   ↓
+ACTIVE
+   ↓
+UPDATE
+   ↓
+NEW REVISION
+   ↓
+ACTIVE
+```
+
+Configurationهای مهم History خود را حفظ می‌کنند.
+
+---
+
+# 41. Startup
+
+در Startup:
+
+```text
+Environment
+    ↓
+Typed Settings
+    ↓
+Database
+    ↓
+Load Configuration
+    ↓
+Validate
+    ↓
+Apply
+    ↓
+Start Runtime
+```
+
+اگر Configuration ضروری Invalid باشد:
+
+```text
+Startup Failure
+```
+
+به اجرای ناقص ترجیح داده می‌شود.
+
+---
+
+# 42. Configuration Ownership Matrix
+
+| Configuration         | محل                 | مالک تغییر    | Apply             |
+| --------------------- | ------------------- | ------------- | ----------------- |
+| DB Credentials        | Environment/Secret  | DevOps        | Restart           |
+| App Secret            | Environment/Secret  | DevOps        | Restart           |
+| Decoder               | Code                | Developer     | Deploy            |
+| CRC                   | Code                | Developer     | Deploy            |
+| Protocol Mapping      | Code                | Developer     | Deploy            |
+| Listener              | DB                  | Admin         | Restart           |
+| Offline Timeout       | DB                  | Admin         | Immediate         |
+| Sampling              | DB                  | Admin         | Immediate         |
+| Event Rules           | DB                  | Admin         | Immediate         |
+| Raw Retention         | DB                  | Admin         | Scheduled Job     |
+| Device Profile        | DB + Code Reference | Admin/Backend | Controlled Reload |
+| Vehicle Tank Capacity | Business DB         | Backend/Admin | Immediate         |
+
+---
+
+# 43. قواعد نهایی
+
+1. `.env` فقط برای Environment و Secret است.
+2. Secret در Business Configuration ذخیره نمی‌شود.
+3. Protocol Decoder و Logic در Code هستند.
+4. Database محل Configurationهای مدیریتی است.
+5. Runtime State با Configuration متفاوت است.
+6. هر Configuration Owner مشخص دارد.
+7. Scope هر Configuration از قبل مشخص می‌شود.
+8. Override استاندارد در موارد مجاز: Global → DeviceModel → Device.
+9. INHERIT، DISABLED و VALUE از هم جدا هستند.
+10. Configurationهای مهم Revision دارند.
+11. Configurationهای مهم Audit می‌شوند.
+12. Secretها در Audit با مقدار واقعی ذخیره نمی‌شوند.
+13. Configuration قبل از Apply Validation می‌شود.
+14. تغییر Configuration Atomic است.
+15. Runtime Apply Failure نباید Runtime را وارد State نامعلوم کند.
+16. Database Source of Truth است.
+17. Cache فقط Optimization است.
+18. Multi-Instance باید Configuration مشترک داشته باشد.
+19. NOTIFY فقط Signal است.
+20. Reconciliation مسیر پشتیبان NOTIFY است.
+21. Listener Change در MVP نیازمند Restart است.
+22. Hot Reload عمومی Listener در MVP نداریم.
+23. Configuration Code با Deploy تغییر می‌کند.
+24. تغییر Configuration تاریخی را خودکار بازتفسیر نمی‌کند.
+25. Profileهای Protocol Immutable هستند.
+26. Generic Key/Value برای کل Configuration سیستم استفاده نمی‌شود.
+27. Configuration Device به Device دیگری منتقل نمی‌شود مگر با Rule صریح.
+28. Configurationهای Runtime قابل Trace و Audit هستند.
+
+---
+
+# وضعیت
+
+```text
+[✓] Environment / Secret Boundary
+[✓] Code Configuration
+[✓] Database Configuration
+[✓] Runtime State Boundary
+[✓] Configuration Ownership
+[✓] Configuration Scope
+[✓] Precedence
+[✓] Version / Revision
+[✓] Audit
+[✓] Apply Policy
+[✓] Validation
+[✓] Atomic Update
+[✓] Runtime Reload
+[✓] Multi-Instance
+[✓] NOTIFY / Reconciliation
+[✓] Historical Traceability
+[✓] Security Boundary
+
+مرحله ۱۴ — CLOSED
+```
+
+**اصل نهایی:**
+
+> `.env` برای Environment، Code برای Logic، PostgreSQL برای Configuration قابل مدیریت و Runtime برای State لحظه‌ای است؛ هیچ‌کدام نباید جای دیگری را بگیرد.`
+
+
+============================================================================
+============================================================================
+
+# SANA GPS — تصمیمات قطعی Device Lifecycle و Provisioning
+
+## 1. هدف
+
+این سند چرخه عمر کامل Device در SANA را مشخص می‌کند؛ از ثبت و Provisioning تا فعال‌سازی، نصب روی Vehicle، تعمیر، تعویض و خروج دائمی.
+
+اصل اصلی:
+
+> **Device یک Entity مستقل با هویت مستقل است و Vehicle فقط یکی از ارتباط‌های زمانی آن با سیستم است.**
+
+---
+
+# 2. Device و Vehicle
+
+Device با Vehicle یکی نیست.
+
+```text
+Device
+   ↓
+ممکن است روی Vehicle نصب باشد
+```
+
+و:
+
+```text
+Vehicle
+   ↓
+Active Device
+```
+
+یک رابطه زمانی/Business است.
+
+Device می‌تواند:
+
+```text
+WAREHOUSE
+ACTIVE
+SUSPENDED
+REPAIR
+RETIRED
+```
+
+باشد، بدون اینکه هویت آن تغییر کند.
+
+---
+
+# 3. IMEI
+
+IMEI شناسه اصلی فنی/Business Device است.
+
+```text
+IMEI
+   ↓
+Device
+```
+
+اما:
+
+```text
+Device.id
+```
+
+Primary Key داخلی Database باقی می‌ماند.
+
+بنابراین:
+
+```text
+Device.id
+≠
+IMEI
+```
+
+IMEI باید در Database Unique باشد.
+
+---
+
+# 4. IMEI Immutable بودن
+
+پس از Provision شدن Device، IMEI نباید توسط Runtime یا User عادی تغییر کند.
+
+اصلاح IMEI اشتباه فقط از طریق عملیات مدیریتی کنترل‌شده و Audit‌شده مجاز است.
+
+تغییر عادی Lifecycle نباید باعث تغییر IMEI شود.
+
+---
+
+# 5. Device Status
+
+Status اصلی Business Device دقیقاً شامل این پنج وضعیت است:
+
+```text
+WAREHOUSE
+ACTIVE
+SUSPENDED
+REPAIR
+RETIRED
+```
+
+---
+
+# 6. Connection State مستقل است
+
+موارد زیر Device Status نیستند:
+
+```text
+ONLINE
+OFFLINE
+NEVER_SEEN
+```
+
+این‌ها Connection State هستند و از:
+
+```text
+last_seen
+offline_timeout
+```
+
+محاسبه می‌شوند.
+
+بنابراین:
+
+```text
+Device Lifecycle Status
+≠
+Connection State
+```
+
+---
+
+# 7. GPS State نیز مستقل است
+
+GPS State نیز با Lifecycle و Connection یکی نیست.
+
+مثلاً کاملاً ممکن است:
+
+```text
+Device Status = ACTIVE
+Connection     = ONLINE
+GPS            = NO_FIX
+```
+
+باشد.
+
+سه مفهوم مستقل هستند:
+
+```text
+Lifecycle
+Connection
+GPS
+```
+
+---
+
+# 8. WAREHOUSE
+
+Device ثبت‌شده ولی هنوز وارد عملیات فعال نشده است.
+
+مثلاً:
+
+```text
+Device 1001
+status = WAREHOUSE
+```
+
+Device در Warehouse:
+
+```text
+Active Vehicle Assignment
+```
+
+ندارد.
+
+---
+
+# 9. ACTIVE
+
+Device در وضعیت عملیاتی قرار دارد.
+
+Device فعال می‌تواند:
+
+* Session داشته باشد.
+* Telemetry دریافت کند.
+* CurrentState داشته باشد.
+* LocationHistory تولید کند.
+* Event تولید کند.
+* روی Vehicle نصب باشد.
+* بدون Vehicle نیز موقتاً وجود داشته باشد.
+
+بنابراین:
+
+```text
+ACTIVE
+```
+
+الزاماً به معنی نصب روی Vehicle نیست.
+
+---
+
+# 10. SUSPENDED
+
+Device موقتاً از عملیات خارج شده است.
+
+مثلاً:
+
+```text
+ACTIVE
+   ↓
+SUSPENDED
+```
+
+بعداً می‌تواند:
+
+```text
+SUSPENDED
+   ↓
+ACTIVE
+```
+
+شود.
+
+---
+
+# 11. REPAIR
+
+Device برای تعمیر از چرخه عملیاتی خارج شده است.
+
+```text
+ACTIVE
+   ↓
+REPAIR
+```
+
+در این وضعیت:
+
+* Device Operational نیست.
+* Session فعال نباید باقی بماند.
+* Assignment فعال باید بسته شود.
+* History حفظ می‌شود.
+
+بعد از تعمیر:
+
+```text
+REPAIR
+   ↓
+WAREHOUSE
+```
+
+---
+
+# 12. RETIRED
+
+Device دیگر وارد چرخه عملیاتی نمی‌شود.
+
+```text
+RETIRED
+```
+
+یک وضعیت نهایی است.
+
+در MVP:
+
+```text
+RETIRED
+→ Reactivation ندارد.
+```
+
+---
+
+# 13. حذف فیزیکی Device
+
+پس از ورود واقعی Device به SANA:
+
+```text
+DELETE
+```
+
+روش معمول Lifecycle نیست.
+
+به‌جای آن:
+
+```text
+RETIRED
+```
+
+استفاده می‌شود.
+
+هدف:
+
+* حفظ LocationHistory
+* حفظ Event
+* حفظ Trip
+* حفظ Command
+* حفظ Audit
+* حفظ هویت Device
+
+---
+
+# 14. Provisioning
+
+Provisioning یعنی ثبت سخت‌افزار واقعی در SANA.
+
+جریان:
+
+```text
+Physical Device
+      ↓
+Register
+      ↓
+IMEI
+      ↓
+DeviceModel
+      ↓
+Protocol/Profile
+      ↓
+Device
+      ↓
+WAREHOUSE
+```
+
+Unknown Device از طریق Packet به‌صورت خودکار Provision نمی‌شود.
+
+---
+
+# 15. Unknown Device
+
+اگر IMEI در SANA ثبت نشده باشد:
+
+```text
+IMEI
+ ↓
+Device Lookup
+ ↓
+NOT FOUND
+```
+
+نتیجه:
+
+```text
+Auto Provisioning = NO
+```
+
+Packet نباید وارد Telemetry Processing عادی شود.
+
+---
+
+# 16. Device Registration
+
+برای ثبت Device حداقل اطلاعات:
+
+```text
+IMEI
+DeviceModel
+Status
+```
+
+و Configuration فنی موردنیاز ذخیره می‌شود.
+
+پس از ایجاد:
+
+```text
+status = WAREHOUSE
+```
+
+و Device آماده چرخه Provisioning است.
+
+---
+
+# 17. DeviceModel
+
+DeviceModel نماینده خانواده سخت‌افزاری Device است.
+
+مثلاً:
+
+```text
+Teltonika FMB920
+GT06 Generic
+```
+
+DeviceModel می‌تواند به Protocol/Profile مناسب متصل شود.
+
+جریان:
+
+```text
+Device
+   ↓
+DeviceModel
+   ↓
+Protocol
+   ↓
+Codec
+   ↓
+Profile
+```
+
+---
+
+# 18. Activation
+
+Provisioning و Activation یکی نیستند.
+
+مثلاً:
+
+```text
+Register
+   ↓
+WAREHOUSE
+   ↓
+Vehicle Assignment
+   ↓
+ACTIVE
+```
+
+این تفکیک اجازه می‌دهد Device قبل از نصب یا استفاده در سیستم شناخته‌شده باشد.
+
+---
+
+# 19. DeviceVehicleAssignment
+
+ارتباط Device و Vehicle باید تاریخی باشد.
+
+مدل مفهومی:
+
+```text
+DeviceVehicleAssignment
+├── id
+├── device
+├── vehicle
+├── started_at
+├── ended_at
+├── source
+└── metadata
+```
+
+این Entity تاریخچه نصب Device را نگه می‌دارد.
+
+---
+
+# 20. محدودیت Assignment همزمان
+
+در هر لحظه:
+
+```text
+Device
+→ حداکثر یک Vehicle
+```
+
+و:
+
+```text
+Vehicle
+→ حداکثر یک Device
+```
+
+داریم.
+
+بنابراین Assignmentهای زمانی نباید Overlap داشته باشند.
+
+---
+
+# 21. مثال Assignment
+
+مثلاً:
+
+```text
+Device 100
+Vehicle A
+10:00 → 12:00
+```
+
+بعد:
+
+```text
+Device 100
+Vehicle B
+12:00 → 15:00
+```
+
+مجاز است.
+
+اما:
+
+```text
+Device 100
+Vehicle A
+10:00 → 12:00
+
+Device 100
+Vehicle B
+11:00 → 13:00
+```
+
+مجاز نیست.
+
+---
+
+# 22. تعویض Device روی Vehicle
+
+مثلاً:
+
+```text
+Vehicle A
+Device 100
+```
+
+تعویض می‌شود:
+
+```text
+Vehicle A
+Device 200
+```
+
+باید:
+
+```text
+Assignment Device 100
+→ ended_at = T
+```
+
+و:
+
+```text
+Assignment Device 200
+→ started_at = T
+```
+
+ثبت شود.
+
+History Device 100 هرگز به Device 200 منتقل نمی‌شود.
+
+---
+
+# 23. CurrentState و Assignment
+
+CurrentState همیشه متعلق به Device است.
+
+```text
+Device 100
+   ↓
+CurrentState 100
+```
+
+با تغییر Vehicle:
+
+```text
+Device 100
+Vehicle A → Vehicle B
+```
+
+CurrentState جابه‌جا نمی‌شود.
+
+Vehicle Live View در زمان Query:
+
+```text
+Vehicle
+   ↓
+Active Device Assignment
+   ↓
+Device
+   ↓
+CurrentState
+```
+
+را Resolve می‌کند.
+
+---
+
+# 24. LocationHistory و Vehicle
+
+LocationHistory نیز Device-owned است.
+
+برای تاریخچه Vehicle:
+
+```text
+Vehicle
+   ↓
+Temporal Assignments
+   ↓
+Device History
+```
+
+ترکیب می‌شود.
+
+بنابراین تعویض Device باعث از بین رفتن تاریخچه Vehicle نمی‌شود.
+
+---
+
+# 25. Device Replacement
+
+Device Replacement یک عملیات مستقل Business است.
+
+مثلاً:
+
+```text
+Vehicle A
+Device 100
+```
+
+تبدیل شود به:
+
+```text
+Vehicle A
+Device 200
+```
+
+اما Deviceهای 100 و 200 دو Entity مستقل باقی می‌مانند.
+
+---
+
+# 26. Return to Warehouse
+
+اگر Device از Vehicle جدا شود و سالم باشد:
+
+```text
+ACTIVE
+   ↓
+WAREHOUSE
+```
+
+و Assignment فعال بسته می‌شود.
+
+```text
+ended_at = T
+```
+
+---
+
+# 27. Return to Repair
+
+اگر Device خراب باشد:
+
+```text
+ACTIVE
+   ↓
+REPAIR
+```
+
+Assignment بسته می‌شود.
+
+پس از تعمیر:
+
+```text
+REPAIR
+   ↓
+WAREHOUSE
+```
+
+و بعداً می‌تواند دوباره استفاده شود.
+
+---
+
+# 28. Retire
+
+Device می‌تواند از:
+
+```text
+WAREHOUSE
+REPAIR
+SUSPENDED
+```
+
+به:
+
+```text
+RETIRED
+```
+
+برود.
+
+بعد از Retired:
+
+```text
+New Session        ❌
+New Assignment     ❌
+Normal Telemetry   ❌
+```
+
+---
+
+# 29. Lifecycle Transition
+
+Transitionهای اصلی:
+
+```text
+WAREHOUSE → ACTIVE
+ACTIVE → SUSPENDED
+SUSPENDED → ACTIVE
+ACTIVE → REPAIR
+REPAIR → WAREHOUSE
+
+WAREHOUSE → RETIRED
+REPAIR → RETIRED
+SUSPENDED → RETIRED
+```
+
+و:
+
+```text
+RETIRED → ACTIVE
+RETIRED → REPAIR
+```
+
+در MVP مجاز نیستند.
+
+---
+
+# 30. Session Fence
+
+ورود Device به وضعیت غیرعملیاتی:
+
+```text
+SUSPENDED
+REPAIR
+RETIRED
+```
+
+باید Session فعلی را:
+
+```text
+FENCE
+↓
+CLOSE
+```
+
+کند.
+
+این باعث می‌شود Connection قدیمی نتواند Runtime را ادامه دهد.
+
+---
+
+# 31. Telemetry Device غیرعملیاتی
+
+اگر Device در:
+
+```text
+REPAIR
+SUSPENDED
+RETIRED
+```
+
+Packet ارسال کند:
+
+```text
+Known Device
+but Not Allowed
+```
+
+نباید Telemetry عملیاتی ایجاد شود.
+
+یعنی:
+
+```text
+CurrentState       ❌
+LocationHistory    ❌
+Event              ❌
+Trip               ❌
+```
+
+Packet در صورت نیاز می‌تواند صرفاً برای Security/Debug با Retention مناسب ثبت شود.
+
+---
+
+# 32. Device Lifecycle Event
+
+تاریخچه تغییر Status در Entity مستقل:
+
+```text
+DeviceLifecycleEvent
+├── id
+├── device
+├── from_status
+├── to_status
+├── reason
+├── changed_by
+├── changed_at
+└── metadata
+```
+
+ثبت می‌شود.
+
+---
+
+# 33. Lifecycle Event با GPS Event متفاوت است
+
+مثلاً:
+
+```text
+Device
+ACTIVE
+ ↓
+REPAIR
+```
+
+یک Business/Audit Event است.
+
+بنابراین در:
+
+```text
+gps.event
+```
+
+قرار نمی‌گیرد.
+
+بلکه:
+
+```text
+DeviceLifecycleEvent
+```
+
+ثبت می‌شود.
+
+---
+
+# 34. Provisioning Audit
+
+عملیات‌های مهم باید قابل Audit باشند:
+
+```text
+Device Created
+IMEI Registered
+Model Assigned
+Activated
+Assigned to Vehicle
+Removed from Vehicle
+Returned to Warehouse
+Sent to Repair
+Retired
+```
+
+---
+
+# 35. IMEI Conflict
+
+Database باید Unique بودن IMEI را enforce کند.
+
+مثلاً:
+
+```text
+Device 100 → IMEI A
+Device 200 → IMEI A
+```
+
+مجاز نیست.
+
+---
+
+# 36. DeviceModel Change
+
+تغییر DeviceModel در Device عملیاتی یک تغییر عادی نیست.
+
+زیرا ممکن است:
+
+```text
+Protocol
+Codec
+Profile
+Normalization
+```
+
+را تغییر دهد.
+
+بنابراین تغییر DeviceModel باید:
+
+```text
+Controlled Administrative Operation
++
+Validation
++
+Audit
+```
+
+باشد.
+
+---
+
+# 37. Profile Change
+
+تغییر Profile نیز باید قابل Trace باشد.
+
+Telemetry تاریخی نباید با Profile جدید بازتفسیر شود.
+
+```text
+Profile V1
+→ Historical Telemetry
+
+Profile V2
+→ Future Telemetry
+```
+
+---
+
+# 38. Repair و Identity
+
+Device تعمیرشده همان Device قبلی است.
+
+مثلاً:
+
+```text
+Device 100
+REPAIR
+   ↓
+WAREHOUSE
+```
+
+شناسه:
+
+```text
+Device.id
+IMEI
+```
+
+تغییر نمی‌کند.
+
+---
+
+# 39. تعویض سخت‌افزار
+
+اگر سخت‌افزار واقعاً تعویض شود و IMEI جدید داشته باشد:
+
+```text
+Old Device
+IMEI A
+
+New Device
+IMEI B
+```
+
+این‌ها دو Device مستقل هستند.
+
+حتی اگر هر دو در یک Vehicle استفاده
+
+
+============================================================================
+============================================================================
+
+# SANA GPS — تصمیمات قطعی Device Lifecycle و Provisioning
+
+## 1. هدف
+
+این سند چرخه عمر کامل Device در SANA را مشخص می‌کند؛ از ثبت و Provisioning تا فعال‌سازی، نصب روی Vehicle، تعمیر، تعویض و خروج دائمی.
+
+اصل اصلی:
+
+> **Device یک Entity مستقل با هویت مستقل است و Vehicle فقط یکی از ارتباط‌های زمانی آن با سیستم است.**
+
+---
+
+# 2. Device و Vehicle
+
+Device با Vehicle یکی نیست.
+
+```text
+Device
+   ↓
+ممکن است روی Vehicle نصب باشد
+```
+
+و:
+
+```text
+Vehicle
+   ↓
+Active Device
+```
+
+یک رابطه زمانی/Business است.
+
+Device می‌تواند:
+
+```text
+WAREHOUSE
+ACTIVE
+SUSPENDED
+REPAIR
+RETIRED
+```
+
+باشد، بدون اینکه هویت آن تغییر کند.
+
+---
+
+# 3. IMEI
+
+IMEI شناسه اصلی فنی/Business Device است.
+
+```text
+IMEI
+   ↓
+Device
+```
+
+اما:
+
+```text
+Device.id
+```
+
+Primary Key داخلی Database باقی می‌ماند.
+
+بنابراین:
+
+```text
+Device.id
+≠
+IMEI
+```
+
+IMEI باید در Database Unique باشد.
+
+---
+
+# 4. IMEI Immutable بودن
+
+پس از Provision شدن Device، IMEI نباید توسط Runtime یا User عادی تغییر کند.
+
+اصلاح IMEI اشتباه فقط از طریق عملیات مدیریتی کنترل‌شده و Audit‌شده مجاز است.
+
+تغییر عادی Lifecycle نباید باعث تغییر IMEI شود.
+
+---
+
+# 5. Device Status
+
+Status اصلی Business Device دقیقاً شامل این پنج وضعیت است:
+
+```text
+WAREHOUSE
+ACTIVE
+SUSPENDED
+REPAIR
+RETIRED
+```
+
+---
+
+# 6. Connection State مستقل است
+
+موارد زیر Device Status نیستند:
+
+```text
+ONLINE
+OFFLINE
+NEVER_SEEN
+```
+
+این‌ها Connection State هستند و از:
+
+```text
+last_seen
+offline_timeout
+```
+
+محاسبه می‌شوند.
+
+بنابراین:
+
+```text
+Device Lifecycle Status
+≠
+Connection State
+```
+
+---
+
+# 7. GPS State نیز مستقل است
+
+GPS State نیز با Lifecycle و Connection یکی نیست.
+
+مثلاً کاملاً ممکن است:
+
+```text
+Device Status = ACTIVE
+Connection     = ONLINE
+GPS            = NO_FIX
+```
+
+باشد.
+
+سه مفهوم مستقل هستند:
+
+```text
+Lifecycle
+Connection
+GPS
+```
+
+---
+
+# 8. WAREHOUSE
+
+Device ثبت‌شده ولی هنوز وارد عملیات فعال نشده است.
+
+مثلاً:
+
+```text
+Device 1001
+status = WAREHOUSE
+```
+
+Device در Warehouse:
+
+```text
+Active Vehicle Assignment
+```
+
+ندارد.
+
+---
+
+# 9. ACTIVE
+
+Device در وضعیت عملیاتی قرار دارد.
+
+Device فعال می‌تواند:
+
+* Session داشته باشد.
+* Telemetry دریافت کند.
+* CurrentState داشته باشد.
+* LocationHistory تولید کند.
+* Event تولید کند.
+* روی Vehicle نصب باشد.
+* بدون Vehicle نیز موقتاً وجود داشته باشد.
+
+بنابراین:
+
+```text
+ACTIVE
+```
+
+الزاماً به معنی نصب روی Vehicle نیست.
+
+---
+
+# 10. SUSPENDED
+
+Device موقتاً از عملیات خارج شده است.
+
+مثلاً:
+
+```text
+ACTIVE
+   ↓
+SUSPENDED
+```
+
+بعداً می‌تواند:
+
+```text
+SUSPENDED
+   ↓
+ACTIVE
+```
+
+شود.
+
+---
+
+# 11. REPAIR
+
+Device برای تعمیر از چرخه عملیاتی خارج شده است.
+
+```text
+ACTIVE
+   ↓
+REPAIR
+```
+
+در این وضعیت:
+
+* Device Operational نیست.
+* Session فعال نباید باقی بماند.
+* Assignment فعال باید بسته شود.
+* History حفظ می‌شود.
+
+بعد از تعمیر:
+
+```text
+REPAIR
+   ↓
+WAREHOUSE
+```
+
+---
+
+# 12. RETIRED
+
+Device دیگر وارد چرخه عملیاتی نمی‌شود.
+
+```text
+RETIRED
+```
+
+یک وضعیت نهایی است.
+
+در MVP:
+
+```text
+RETIRED
+→ Reactivation ندارد.
+```
+
+---
+
+# 13. حذف فیزیکی Device
+
+پس از ورود واقعی Device به SANA:
+
+```text
+DELETE
+```
+
+روش معمول Lifecycle نیست.
+
+به‌جای آن:
+
+```text
+RETIRED
+```
+
+استفاده می‌شود.
+
+هدف:
+
+* حفظ LocationHistory
+* حفظ Event
+* حفظ Trip
+* حفظ Command
+* حفظ Audit
+* حفظ هویت Device
+
+---
+
+# 14. Provisioning
+
+Provisioning یعنی ثبت سخت‌افزار واقعی در SANA.
+
+جریان:
+
+```text
+Physical Device
+      ↓
+Register
+      ↓
+IMEI
+      ↓
+DeviceModel
+      ↓
+Protocol/Profile
+      ↓
+Device
+      ↓
+WAREHOUSE
+```
+
+Unknown Device از طریق Packet به‌صورت خودکار Provision نمی‌شود.
+
+---
+
+# 15. Unknown Device
+
+اگر IMEI در SANA ثبت نشده باشد:
+
+```text
+IMEI
+ ↓
+Device Lookup
+ ↓
+NOT FOUND
+```
+
+نتیجه:
+
+```text
+Auto Provisioning = NO
+```
+
+Packet نباید وارد Telemetry Processing عادی شود.
+
+---
+
+# 16. Device Registration
+
+برای ثبت Device حداقل اطلاعات:
+
+```text
+IMEI
+DeviceModel
+Status
+```
+
+و Configuration فنی موردنیاز ذخیره می‌شود.
+
+پس از ایجاد:
+
+```text
+status = WAREHOUSE
+```
+
+و Device آماده چرخه Provisioning است.
+
+---
+
+# 17. DeviceModel
+
+DeviceModel نماینده خانواده سخت‌افزاری Device است.
+
+مثلاً:
+
+```text
+Teltonika FMB920
+GT06 Generic
+```
+
+DeviceModel می‌تواند به Protocol/Profile مناسب متصل شود.
+
+جریان:
+
+```text
+Device
+   ↓
+DeviceModel
+   ↓
+Protocol
+   ↓
+Codec
+   ↓
+Profile
+```
+
+---
+
+# 18. Activation
+
+Provisioning و Activation یکی نیستند.
+
+مثلاً:
+
+```text
+Register
+   ↓
+WAREHOUSE
+   ↓
+Vehicle Assignment
+   ↓
+ACTIVE
+```
+
+این تفکیک اجازه می‌دهد Device قبل از نصب یا استفاده در سیستم شناخته‌شده باشد.
+
+---
+
+# 19. DeviceVehicleAssignment
+
+ارتباط Device و Vehicle باید تاریخی باشد.
+
+مدل مفهومی:
+
+```text
+DeviceVehicleAssignment
+├── id
+├── device
+├── vehicle
+├── started_at
+├── ended_at
+├── source
+└── metadata
+```
+
+این Entity تاریخچه نصب Device را نگه می‌دارد.
+
+---
+
+# 20. محدودیت Assignment همزمان
+
+در هر لحظه:
+
+```text
+Device
+→ حداکثر یک Vehicle
+```
+
+و:
+
+```text
+Vehicle
+→ حداکثر یک Device
+```
+
+داریم.
+
+بنابراین Assignmentهای زمانی نباید Overlap داشته باشند.
+
+---
+
+# 21. مثال Assignment
+
+مثلاً:
+
+```text
+Device 100
+Vehicle A
+10:00 → 12:00
+```
+
+بعد:
+
+```text
+Device 100
+Vehicle B
+12:00 → 15:00
+```
+
+مجاز است.
+
+اما:
+
+```text
+Device 100
+Vehicle A
+10:00 → 12:00
+
+Device 100
+Vehicle B
+11:00 → 13:00
+```
+
+مجاز نیست.
+
+---
+
+# 22. تعویض Device روی Vehicle
+
+مثلاً:
+
+```text
+Vehicle A
+Device 100
+```
+
+تعویض می‌شود:
+
+```text
+Vehicle A
+Device 200
+```
+
+باید:
+
+```text
+Assignment Device 100
+→ ended_at = T
+```
+
+و:
+
+```text
+Assignment Device 200
+→ started_at = T
+```
+
+ثبت شود.
+
+History Device 100 هرگز به Device 200 منتقل نمی‌شود.
+
+---
+
+# 23. CurrentState و Assignment
+
+CurrentState همیشه متعلق به Device است.
+
+```text
+Device 100
+   ↓
+CurrentState 100
+```
+
+با تغییر Vehicle:
+
+```text
+Device 100
+Vehicle A → Vehicle B
+```
+
+CurrentState جابه‌جا نمی‌شود.
+
+Vehicle Live View در زمان Query:
+
+```text
+Vehicle
+   ↓
+Active Device Assignment
+   ↓
+Device
+   ↓
+CurrentState
+```
+
+را Resolve می‌کند.
+
+---
+
+# 24. LocationHistory و Vehicle
+
+LocationHistory نیز Device-owned است.
+
+برای تاریخچه Vehicle:
+
+```text
+Vehicle
+   ↓
+Temporal Assignments
+   ↓
+Device History
+```
+
+ترکیب می‌شود.
+
+بنابراین تعویض Device باعث از بین رفتن تاریخچه Vehicle نمی‌شود.
+
+---
+
+# 25. Device Replacement
+
+Device Replacement یک عملیات مستقل Business است.
+
+مثلاً:
+
+```text
+Vehicle A
+Device 100
+```
+
+تبدیل شود به:
+
+```text
+Vehicle A
+Device 200
+```
+
+اما Deviceهای 100 و 200 دو Entity مستقل باقی می‌مانند.
+
+---
+
+# 26. Return to Warehouse
+
+اگر Device از Vehicle جدا شود و سالم باشد:
+
+```text
+ACTIVE
+   ↓
+WAREHOUSE
+```
+
+و Assignment فعال بسته می‌شود.
+
+```text
+ended_at = T
+```
+
+---
+
+# 27. Return to Repair
+
+اگر Device خراب باشد:
+
+```text
+ACTIVE
+   ↓
+REPAIR
+```
+
+Assignment بسته می‌شود.
+
+پس از تعمیر:
+
+```text
+REPAIR
+   ↓
+WAREHOUSE
+```
+
+و بعداً می‌تواند دوباره استفاده شود.
+
+---
+
+# 28. Retire
+
+Device می‌تواند از:
+
+```text
+WAREHOUSE
+REPAIR
+SUSPENDED
+```
+
+به:
+
+```text
+RETIRED
+```
+
+برود.
+
+بعد از Retired:
+
+```text
+New Session        ❌
+New Assignment     ❌
+Normal Telemetry   ❌
+```
+
+---
+
+# 29. Lifecycle Transition
+
+Transitionهای اصلی:
+
+```text
+WAREHOUSE → ACTIVE
+ACTIVE → SUSPENDED
+SUSPENDED → ACTIVE
+ACTIVE → REPAIR
+REPAIR → WAREHOUSE
+
+WAREHOUSE → RETIRED
+REPAIR → RETIRED
+SUSPENDED → RETIRED
+```
+
+و:
+
+```text
+RETIRED → ACTIVE
+RETIRED → REPAIR
+```
+
+در MVP مجاز نیستند.
+
+---
+
+# 30. Session Fence
+
+ورود Device به وضعیت غیرعملیاتی:
+
+```text
+SUSPENDED
+REPAIR
+RETIRED
+```
+
+باید Session فعلی را:
+
+```text
+FENCE
+↓
+CLOSE
+```
+
+کند.
+
+این باعث می‌شود Connection قدیمی نتواند Runtime را ادامه دهد.
+
+---
+
+# 31. Telemetry Device غیرعملیاتی
+
+اگر Device در:
+
+```text
+REPAIR
+SUSPENDED
+RETIRED
+```
+
+Packet ارسال کند:
+
+```text
+Known Device
+but Not Allowed
+```
+
+نباید Telemetry عملیاتی ایجاد شود.
+
+یعنی:
+
+```text
+CurrentState       ❌
+LocationHistory    ❌
+Event              ❌
+Trip               ❌
+```
+
+Packet در صورت نیاز می‌تواند صرفاً برای Security/Debug با Retention مناسب ثبت شود.
+
+---
+
+# 32. Device Lifecycle Event
+
+تاریخچه تغییر Status در Entity مستقل:
+
+```text
+DeviceLifecycleEvent
+├── id
+├── device
+├── from_status
+├── to_status
+├── reason
+├── changed_by
+├── changed_at
+└── metadata
+```
+
+ثبت می‌شود.
+
+---
+
+# 33. Lifecycle Event با GPS Event متفاوت است
+
+مثلاً:
+
+```text
+Device
+ACTIVE
+ ↓
+REPAIR
+```
+
+یک Business/Audit Event است.
+
+بنابراین در:
+
+```text
+gps.event
+```
+
+قرار نمی‌گیرد.
+
+بلکه:
+
+```text
+DeviceLifecycleEvent
+```
+
+ثبت می‌شود.
+
+---
+
+# 34. Provisioning Audit
+
+عملیات‌های مهم باید قابل Audit باشند:
+
+```text
+Device Created
+IMEI Registered
+Model Assigned
+Activated
+Assigned to Vehicle
+Removed from Vehicle
+Returned to Warehouse
+Sent to Repair
+Retired
+```
+
+---
+
+# 35. IMEI Conflict
+
+Database باید Unique بودن IMEI را enforce کند.
+
+مثلاً:
+
+```text
+Device 100 → IMEI A
+Device 200 → IMEI A
+```
+
+مجاز نیست.
+
+---
+
+# 36. DeviceModel Change
+
+تغییر DeviceModel در Device عملیاتی یک تغییر عادی نیست.
+
+زیرا ممکن است:
+
+```text
+Protocol
+Codec
+Profile
+Normalization
+```
+
+را تغییر دهد.
+
+بنابراین تغییر DeviceModel باید:
+
+```text
+Controlled Administrative Operation
++
+Validation
++
+Audit
+```
+
+باشد.
+
+---
+
+# 37. Profile Change
+
+تغییر Profile نیز باید قابل Trace باشد.
+
+Telemetry تاریخی نباید با Profile جدید بازتفسیر شود.
+
+```text
+Profile V1
+→ Historical Telemetry
+
+Profile V2
+→ Future Telemetry
+```
+
+---
+
+# 38. Repair و Identity
+
+Device تعمیرشده همان Device قبلی است.
+
+مثلاً:
+
+```text
+Device 100
+REPAIR
+   ↓
+WAREHOUSE
+```
+
+شناسه:
+
+```text
+Device.id
+IMEI
+```
+
+تغییر نمی‌کند.
+
+---
+
+# 39. تعویض سخت‌افزار
+
+اگر سخت‌افزار واقعاً تعویض شود و IMEI جدید داشته باشد:
+
+```text
+Old Device
+IMEI A
+
+New Device
+IMEI B
+```
+
+این‌ها دو Device مستقل هستند.
+
+حتی اگر هر دو در یک Vehicle استفاده شده باشند، تاریخچه Assignment مرز آن‌ها را مشخص می‌کند.
+
+---
+
+# 40. Subscription و Device Lifecycle
+
+Subscription مالک Lifecycle فیزیکی Device نیست.
+
+Subscription و Device Lifecycle دو Domain مستقل‌اند.
+
+```text
+Subscription
+→ Service / Commercial State
+
+Device Lifecycle
+→ Physical / Operational State
+```
+
+---
+
+# 41. Warehouse و Subscription
+
+Device می‌تواند در Warehouse باشد بدون اینکه Subscription فعال داشته باشد.
+
+بعداً:
+
+```text
+Subscription
++
+Vehicle
++
+Device Assignment
+```
+
+می‌توانند در فرآیند فروش/فعال‌سازی به هم متصل شوند.
+
+---
+
+# 42. ACTIVE بدون Vehicle
+
+وجود:
+
+```text
+ACTIVE
++
+No Vehicle
+```
+
+مجاز است.
+
+موارد کاربرد:
+
+* Device تستی
+* Device آماده نصب
+* Device آزمایشی
+* Device مستقل
+
+Lifecycle Device نباید به Vehicle وابسته باشد.
+
+---
+
+# 43. WAREHOUSE و Assignment
+
+Invariant:
+
+```text
+Device.status = WAREHOUSE
+```
+
+باید به معنی:
+
+```text
+No Active Vehicle Assignment
+```
+
+باشد.
+
+---
+
+# 44. Device Status و Assignment
+
+برای:
+
+```text
+ACTIVE
+```
+
+وجود Vehicle الزامی نیست.
+
+اما اگر Assignment فعال وجود داشته باشد:
+
+```text
+Device → max 1 Vehicle
+Vehicle → max 1 Device
+```
+
+باید برقرار باشد.
+
+---
+
+# 45. State Machine
+
+```text
+                         ┌─────────────┐
+                         │  WAREHOUSE  │
+                         └──────┬──────┘
+                                │
+                           activate
+                                │
+                                ▼
+                         ┌─────────────┐
+              ┌──────────│    ACTIVE   │──────────┐
+              │          └──────┬──────┘          │
+              │                 │                 │
+          suspend            repair           retire
+              │                 │                 │
+              ▼                 ▼                 ▼
+       ┌─────────────┐   ┌─────────────┐   ┌─────────────┐
+       │  SUSPENDED  │   │    REPAIR   │   │   RETIRED   │
+       └──────┬──────┘   └──────┬──────┘   └─────────────┘
+              │                 │
+            resume           repaired
+              │                 │
+              ▼                 ▼
+           ACTIVE           WAREHOUSE
+```
+
+---
+
+# 46. تفکیک سه State اصلی
+
+SANA سه مفهوم مستقل دارد:
+
+```text
+Device Lifecycle
+    ↓
+WAREHOUSE / ACTIVE / ...
+
+Connection State
+    ↓
+NEVER_SEEN / ONLINE / OFFLINE
+
+GPS State
+    ↓
+VALID / NO_FIX
+```
+
+هیچ‌کدام جایگزین دیگری نیست.
+
+---
+
+# 47. مدل نهایی Device
+
+```text
+Device
+├── id
+├── imei
+├── device_model
+├── status
+├── created_at
+├── updated_at
+└── ...
+```
+
+در کنار:
+
+```text
+DeviceLifecycleEvent
+```
+
+برای تاریخچه Status،
+
+و:
+
+```text
+DeviceVehicleAssignment
+```
+
+برای تاریخچه نصب روی Vehicle.
+
+---
+
+# 48. قواعد نهایی
+
+1. Device یک Entity مستقل است.
+2. Vehicle مالک Device نیست.
+3. IMEI شناسه اصلی فنی/Business Device است.
+4. Device.id شناسه داخلی Database است.
+5. IMEI Unique است.
+6. IMEI در Lifecycle عادی تغییر نمی‌کند.
+7. Device Status دقیقاً شامل WAREHOUSE، ACTIVE، SUSPENDED، REPAIR و RETIRED است.
+8. ONLINE/OFFLINE/NEVER_SEEN جزء Device Status نیستند.
+9. GPS State نیز مستقل از Device Status است.
+10. Unknown Device خودکار Provision نمی‌شود.
+11. Device بعد از ثبت فیزیکی Delete نمی‌شود و در صورت خروج RETIRED می‌شود.
+12. WAREHOUSE فاقد Active Vehicle Assignment است.
+13. ACTIVE می‌تواند بدون Vehicle باشد.
+14. Device و Vehicle رابطه زمانی دارند.
+15. Device در هر لحظه حداکثر یک Vehicle دارد.
+16. Vehicle در هر لحظه حداکثر یک Device دارد.
+17. Assignmentهای زمانی نباید Overlap داشته باشند.
+18. Device Replacement تاریخچه Device قبلی را منتقل نمی‌کند.
+19. CurrentState همیشه متعلق به Device باقی می‌ماند.
+20. LocationHistory همیشه متعلق به Device باقی می‌ماند.
+21. Lifecycle History در `DeviceLifecycleEvent` نگهداری می‌شود.
+22. Lifecycle Event با GPS Event یکی نیست.
+23. ورود به SUSPENDED/REPAIR/RETIRED باعث Fence/Close Session می‌شود.
+24. Device غیرعملیاتی نباید Telemetry عملیاتی تولید کند.
+25. DeviceModel Change باید کنترل‌شده و Audit‌شده باشد.
+26. Profile Change باید Versioned و قابل Trace باشد.
+27. Device تعمیرشده همان Device قبلی است.
+28. سخت‌افزار جدید با IMEI جدید یک Device جدید است.
+29. Subscription مالک Device Lifecycle نیست.
+30. RETIRED در MVP وضعیت نهایی است.
+31. RETIRED در MVP Reactivation ندارد.
+32. Lifecycle Transitionها باید توسط Backend و Database قابل کنترل باشند.
+33. Lifecycleهای مهم باید Audit شوند.
+
+---
+
+# وضعیت
+
+```text
+[✓] Device Identity
+[✓] IMEI
+[✓] Provisioning
+[✓] Device Status
+[✓] Connection State Separation
+[✓] GPS State Separation
+[✓] Warehouse
+[✓] Activation
+[✓] Suspension
+[✓] Repair
+[✓] Retirement
+[✓] Unknown Device Policy
+[✓] Device Replacement
+[✓] Vehicle Assignment Boundary
+[✓] Session Fencing
+[✓] Lifecycle Audit
+[✓] DeviceModel Change
+[✓] Profile Change
+[✓] Subscription Separation
+
+مرحله ۱۵ — CLOSED
+```
+
+**اصل نهایی:**
+
+> **Device هویت مستقل و تاریخی خود را حفظ می‌کند؛ Lifecycle، Connection و GPS State سه مفهوم مستقل‌اند؛ و هیچ تعویض Vehicle یا سخت‌افزار نباید باعث انتقال یا تخریب تاریخچه Device شود.**
+
+
+============================================================================
+============================================================================
+
+# SANA GPS — طراحی نهایی PostgreSQL Schema
+
+## مرحله ۱۷ — نقشه نهایی Schema بخش GPS
+
+## 1. هدف
+
+این سند ساختار نهایی Schema مربوط به GPS در PostgreSQL را مشخص می‌کند.
+
+هدف:
+
+* مشخص شدن Entityهای دائمی GPS
+* مشخص شدن مالکیت هر جدول
+* مشخص شدن FKها
+* مشخص شدن `ON DELETE`
+* مشخص شدن Indexها
+* مشخص شدن Constraintها
+* تفکیک Runtime از Historical Data
+* مشخص شدن Partitioning
+* جلوگیری از Duplicate Source of Truth
+* آماده‌سازی برای Migration واقعی
+
+اصل:
+
+> **Schema باید حداقل ساختار لازم برای اجرای SANA GPS را داشته باشد، ولی از ابتدا باید Integrity و Scale موردنیاز را تضمین کند.**
+
+---
+
+# 2. Database مشترک
+
+SANA در MVP یک PostgreSQL Database دارد:
+
+```text
+sana_db
+```
+
+ولی داده‌ها از نظر منطقی با Schema جدا می‌شوند.
+
+```text
+PostgreSQL
+│
+├── public
+│   └── Business / Core Data
+│
+└── gps
+    └── GPS Data
+```
+
+Database جدا برای `sana-gps` در MVP نداریم.
+
+---
+
+# 3. Schema اصلی GPS
+
+Schema:
+
+```text
+gps
+```
+
+مالک آن:
+
+```text
+sana_owner
+```
+
+است.
+
+Runtime Role:
+
+```text
+sana_gps
+```
+
+مالک Schema نیست.
+
+---
+
+# 4. Entityهای دائمی GPS
+
+Entityهای اصلی:
+
+```text
+gps.current_state
+gps.location_history
+
+gps.event
+gps.trip
+
+gps.raw_packet
+
+gps.geofence
+gps.geofence_version
+gps.geofence_assignment
+gps.vehicle_geofence_state
+
+gps.device_vehicle_assignment
+
+gps.command
+```
+
+این‌ها داده‌هایی هستند که باید در Database باقی بمانند.
+
+---
+
+# 5. Runtime-only Data
+
+موارد زیر در MVP جدول دائمی ندارند:
+
+```text
+Session
+TCP Connection
+UDP Connection
+Listener Runtime
+Worker
+Processing Queue
+Protocol Registry
+Decoder Runtime State
+```
+
+این موارد در Runtime `sana-gps` مدیریت می‌شوند.
+
+اگر در آینده نیاز واقعی ایجاد شود، برخی Runtime Stateها می‌توانند به Storage مستقل منتقل شوند.
+
+---
+
+# 6. Business Data در public
+
+داده‌های اصلی Business در:
+
+```text
+public
+```
+
+باقی می‌مانند.
+
+نمونه:
+
+```text
+public.device
+public.device_model
+public.vehicle
+public.accounts_user
+...
+```
+
+GPS به این Entityها Reference می‌دهد ولی مالک آن‌ها نیست.
+
+---
+
+# 7. Cross-Schema Foreign Key
+
+FK واقعی PostgreSQL بین Schemaها استفاده می‌شود.
+
+مثلاً:
+
+```text
+gps.current_state.device_id
+        ↓
+public.device.id
+```
+
+و:
+
+```text
+gps.location_history.device_id
+        ↓
+public.device.id
+```
+
+این FKها Database Integrity را تضمین می‌کنند.
+
+---
+
+# 8. DeviceVehicleAssignment
+
+رابطه زمانی Device و Vehicle:
+
+```text
+gps.device_vehicle_assignment
+```
+
+است.
+
+مدل:
+
+```text
+DeviceVehicleAssignment
+├── id
+├── device_id
+├── vehicle_id
+├── started_at
+├── ended_at
+├── source
+├── changed_by_id
+├── metadata
+├── created_at
+└── updated_at
+```
+
+---
+
+# 9. Assignment Foreign Keys
+
+```text
+device_id
+→ public.device.id
+```
+
+و:
+
+```text
+vehicle_id
+→ public.vehicle.id
+```
+
+هر دو:
+
+```text
+ON DELETE RESTRICT / PROTECT
+```
+
+هستند.
+
+Device یا Vehicle نباید با حذف فیزیکی، History را خراب کنند.
+
+---
+
+# 10. Assignment Temporal Constraint
+
+بازه زمانی:
+
+```text
+[started_at, ended_at)
+```
+
+است.
+
+قاعده:
+
+```text
+Same Device
+→ No overlapping assignments
+
+Same Vehicle
+→ No overlapping assignments
+```
+
+PostgreSQL با:
+
+```text
+EXCLUDE USING GIST
+```
+
+این Integrity را enforce می‌کند.
+
+---
+
+# 11. Assignment Indexها
+
+Indexهای اصلی:
+
+```text
+(device_id, started_at)
+(vehicle_id, started_at)
+```
+
+و برای Assignment فعال:
+
+```text
+(device_id)
+WHERE ended_at IS NULL
+```
+
+و:
+
+```text
+(vehicle_id)
+WHERE ended_at IS NULL
+```
+
+---
+
+# 12. CurrentState
+
+جدول:
+
+```text
+gps.current_state
+```
+
+یک Read Model است.
+
+رابطه:
+
+```text
+public.device
+      │
+      └── 1 : 1
+           │
+           ▼
+    gps.current_state
+```
+
+---
+
+# 13. CurrentState Schema
+
+ساختار:
+
+```text
+current_state
+├── id
+├── device_id
+│
+├── device_time
+├── server_received_at
+├── last_seen
+├── updated_at
+│
+├── latitude
+├── longitude
+├── geom
+├── gps_valid
+├── accuracy
+│
+├── last_valid_latitude
+├── last_valid_longitude
+├── last_valid_geom
+├── last_valid_device_time
+├── last_valid_server_received_at
+├── last_valid_accuracy
+│
+├── speed
+├── heading
+├── altitude
+├── motion
+├── ignition
+├── satellites
+│
+├── battery_voltage
+├── external_voltage
+├── gsm_signal
+│
+├── odometer
+├── engine_hours
+├── fuel_level
+│
+└── attributes
+```
+
+---
+
+# 14. CurrentState Constraints
+
+```text
+device_id UNIQUE NOT NULL
+```
+
+و:
+
+```text
+FOREIGN KEY
+→ public.device.id
+ON DELETE CASCADE
+```
+
+CurrentState قابل Rebuild است، بنابراین Cascade در صورت حذف فیزیکی Device قابل قبول است؛ هرچند حذف عادی Device در Lifecycle انجام نمی‌شود.
+
+---
+
+# 15. CurrentState Spatial Data
+
+موقعیت فعلی:
+
+```text
+latitude
+longitude
+geom
+```
+
+است.
+
+`geom`:
+
+```text
+geometry(Point, 4326)
+```
+
+است.
+
+`geom` از:
+
+```text
+latitude
+longitude
+```
+
+تولید می‌شود و نباید منبع مستقل دیگری ایجاد کند.
+
+---
+
+# 16. CurrentState Last Valid Position
+
+آخرین GPS معتبر:
+
+```text
+last_valid_latitude
+last_valid_longitude
+last_valid_geom
+last_valid_device_time
+last_valid_server_received_at
+last_valid_accuracy
+```
+
+است.
+
+این اطلاعات برای جلوگیری از Query دائمی History در Live View نگهداری می‌شوند.
+
+---
+
+# 17. CurrentState Attributes
+
+```text
+attributes JSONB NOT NULL DEFAULT '{}'
+```
+
+است.
+
+فقط Attributeهای انتخاب‌شده و Allowlisted در این بخش قرار می‌گیرند.
+
+CurrentState محل Full Telemetry یا Raw Protocol Data نیست.
+
+---
+
+# 18. CurrentState Indexها
+
+حداقل:
+
+```text
+UNIQUE(device_id)
+```
+
+برای Lookup اصلی کافی است.
+
+Index فضایی:
+
+```text
+GIST(geom)
+```
+
+فقط در صورت نیاز Queryهای Spatial روی CurrentState ایجاد می‌شود.
+
+برای Live Map معمولاً Query اصلی بر اساس Device/Permission است، بنابراین از Indexگذاری غیرضروری خودداری می‌کنیم.
+
+---
+
+# 19. LocationHistory
+
+جدول:
+
+```text
+gps.location_history
+```
+
+منبع تاریخی Location است.
+
+هر رکورد یک Point تاریخی را نشان می‌دهد.
+
+---
+
+# 20. LocationHistory Schema
+
+```text
+location_history
+├── id
+├── device_id
+├── device_time
+├── server_received_at
+├── latitude
+├── longitude
+├── geom
+├── gps_valid
+├── accuracy
+├── speed
+├── heading
+├── altitude
+├── motion
+├── ignition
+├── odometer
+├── engine_hours
+├── fuel_level
+└── attributes
+```
+
+---
+
+# 21. LocationHistory Ownership
+
+```text
+device_id
+→ public.device.id
+```
+
+با:
+
+```text
+ON DELETE RESTRICT / PROTECT
+```
+
+است.
+
+History نباید با حذف Device از بین برود.
+
+---
+
+# 22. LocationHistory Immutable
+
+بعد از ثبت:
+
+```text
+LocationHistory
+```
+
+نباید Runtime آن را:
+
+```text
+UPDATE
+DELETE
+```
+
+کند.
+
+Role:
+
+```text
+sana_gps
+```
+
+فقط:
+
+```text
+SELECT
+INSERT
+```
+
+دارد.
+
+اصلاح تاریخی در MVP مسیر Runtime نیست.
+
+---
+
+# 23. LocationHistory Partitioning
+
+LocationHistory تنها جدول Partition شده اصلی GPS است.
+
+Partition:
+
+```text
+RANGE(device_time)
+```
+
+و دوره:
+
+```text
+MONTHLY
+```
+
+است.
+
+مثلاً:
+
+```text
+location_history_2026_10
+location_history_2026_11
+location_history_2026_12
+```
+
+---
+
+# 24. Parent Table
+
+Parent:
+
+```text
+gps.location_history
+```
+
+است.
+
+Partitionهای ماهانه زیر آن قرار می‌گیرند.
+
+`sana-gps` همیشه به Parent می‌نویسد:
+
+```text
+INSERT INTO gps.location_history
+```
+
+و PostgreSQL رکورد را به Partition صحیح هدایت می‌کند.
+
+---
+
+# 25. Partition Maintenance
+
+ساخت و حذف Partition توسط:
+
+```text
+Migration / Maintenance Job
+```
+
+انجام می‌شود.
+
+`sana-gps` اجازه:
+
+```text
+CREATE PARTITION
+DROP PARTITION
+ALTER TABLE
+```
+
+ندارد.
+
+---
+
+# 26. LocationHistory Index
+
+Index اصلی:
+
+```text
+(device_id, device_time)
+```
+
+است.
+
+برای Queryهای Historical بسیار مهم است.
+
+Index فضایی:
+
+```text
+GIST(geom)
+```
+
+در صورت نیاز Spatial Query ایجاد می‌شود.
+
+---
+
+# 27. LocationHistory Unique Constraint
+
+این Constraint ایجاد نمی‌شود:
+
+```text
+UNIQUE(device_id, device_time)
+```
+
+چون:
+
+* چند Telemetry ممکن است Timestamp یکسان داشته باشند.
+* Resolution Device ممکن است پایین باشد.
+* چند Record می‌تواند یک `device_time` داشته باشد.
+* Packet Identity با Telemetry Identity متفاوت است.
+
+---
+
+# 28. Event
+
+جدول:
+
+```text
+gps.event
+```
+
+برای رخدادهای معنادار GPS است.
+
+---
+
+# 29. Event Schema
+
+```text
+event
+├── id
+├── device_id
+├── type
+├── source
+├── mode
+├── occurred_at
+├── started_at
+├── ended_at
+├── device_time
+├── server_received_at
+├── latitude
+├── longitude
+├── gps_valid
+├── attributes
+├── telemetry_reference
+└── raw_packet_reference
+```
+
+---
+
+# 30. Event Type
+
+Event Type به‌صورت Code/Business Enum کنترل می‌شود.
+
+نمونه:
+
+```text
+DEVICE_ONLINE
+DEVICE_OFFLINE
+IGNITION_ON
+IGNITION_OFF
+MOTION_STARTED
+MOTION_STOPPED
+TRIP_STARTED
+TRIP_ENDED
+OVERSPEED
+GEOFENCE_ENTER
+GEOFENCE_EXIT
+```
+
+Database نباید Protocol-specific Event Name دریافت کند.
+
+---
+
+# 31. Event Mode
+
+```text
+POINT
+STATE
+```
+
+است.
+
+Point Event:
+
+```text
+occurred_at
+```
+
+State Event:
+
+```text
+started_at
+ended_at
+```
+
+---
+
+# 32. Active State Event
+
+برای هر:
+
+```text
+device + event_type
+```
+
+حداکثر یک State Event فعال داریم.
+
+Constraint مفهومی:
+
+```text
+UNIQUE(device_id, type)
+WHERE ended_at IS NULL
+AND mode = STATE
+```
+
+---
+
+# 33. Event Source
+
+```text
+DEVICE
+SANA
+SYSTEM
+```
+
+است.
+
+این مشخص می‌کند Event از کجا ایجاد شده است.
+
+---
+
+# 34. Event Foreign Key
+
+```text
+device_id
+→ public.device.id
+ON DELETE RESTRICT
+```
+
+History Event باید باقی بماند.
+
+---
+
+# 35. Event References
+
+`telemetry_reference` و `raw_packet_reference` برای Traceability هستند.
+
+این Referenceها نباید باعث Coupling غیرضروری شوند.
+
+اگر RawPacket به‌دلیل Retention حذف شود، Event نباید حذف شود.
+
+بنابراین Reference به RawPacket در صورت نیاز می‌تواند nullable باشد.
+
+---
+
+# 36. Trip
+
+جدول:
+
+```text
+gps.trip
+```
+
+برای سفرهای پردازش‌شده است.
+
+---
+
+# 37. Trip Schema
+
+مدل مفهومی:
+
+```text
+trip
+├── id
+├── number
+├── device_id
+├── status
+├── started_at
+├── ended_at
+├── start_latitude
+├── start_longitude
+├── start_geom
+├── end_latitude
+├── end_longitude
+├── end_geom
+├── distance
+├── moving_duration
+├── stopped_duration
+├── unknown_duration
+├── max_speed
+├── start_odometer
+├── end_odometer
+├── start_engine_hours
+├── end_engine_hours
+├── start_fuel_level
+├── end_fuel_level
+├── attributes
+├── created_at
+└── updated_at
+```
+
+---
+
+# 38. Trip Ownership
+
+Trip متعلق به Device است:
+
+```text
+trip.device_id
+→ public.device.id
+```
+
+با:
+
+```text
+ON DELETE RESTRICT
+```
+
+---
+
+# 39. Trip Number
+
+دو شناسه:
+
+```text
+id
+number
+```
+
+داریم.
+
+`id`:
+
+```text
+BIGINT
+```
+
+و `number`:
+
+```text
+UNIQUE
+IMMUTABLE
+Human-readable
+```
+
+است.
+
+Gap در Number مجاز است.
+
+---
+
+# 40. Trip Status
+
+در MVP:
+
+```text
+ACTIVE
+COMPLETED
+```
+
+کافی است.
+
+Stateهای Processing مثل:
+
+```text
+PENDING_START
+PENDING_END
+```
+
+Runtime/Engine State هستند و الزاماً لازم نیست به‌عنوان Status دائمی Trip ذخیره شوند؛ در صورت نیاز Implementation می‌تواند آن‌ها را نگه دارد.
+
+---
+
+# 41. Completed Trip
+
+Trip کامل‌شده در MVP:
+
+```text
+IMMUTABLE
+```
+
+است.
+
+یعنی Runtime نباید Trip Completed را با Packet قدیمی دوباره باز کند یا Split/Merge کند.
+
+---
+
+# 42. RawPacket
+
+جدول:
+
+```text
+gps.raw_packet
+```
+
+برای نگهداری موقت داده خام Protocol است.
+
+---
+
+# 43. RawPacket Schema
+
+حداقل:
+
+```text
+raw_packet
+├── id
+├── device_id
+├── received_at
+├── raw_data
+├── fingerprint
+├── protocol
+├── codec
+├── profile_code
+├── profile_version
+└── metadata
+```
+
+---
+
+# 44. RawPacket Ownership
+
+```text
+device_id
+→ public.device.id
+```
+
+اما به دلیل Retention کوتاه‌مدت و ماهیت فنی، در طراحی Lifecycle می‌تواند:
+
+```text
+ON DELETE SET NULL
+```
+
+باشد.
+
+---
+
+# 45. RawPacket Immutable
+
+RawPacket بعد از Insert:
+
+```text
+UPDATE ❌
+DELETE توسط Runtime ❌
+```
+
+است.
+
+Retention Job مسئول حذف آن است.
+
+---
+
+# 46. RawPacket Fingerprint
+
+برای Deduplication:
+
+```text
+SHA-256
+```
+
+یا معادل امن آن استفاده می‌شود.
+
+Fingerprint باید روی Representation استاندارد Raw Packet ساخته شود.
+
+---
+
+# 47. RawPacket Duplicate
+
+برای تشخیص Duplicate:
+
+```text
+device_id
++
+fingerprint
+```
+
+سیگنال اصلی است.
+
+اما Constraint Unique دائمی الزاماً ایجاد نمی‌کنیم، چون Retention و Replay Lifecycle می‌تواند باعث نیاز به نگهداری مجدد Fingerprint شود.
+
+Deduplication منطق Application + Database را با هم استفاده می‌کند.
+
+---
+
+# 48. Geofence
+
+جداول:
+
+```text
+gps.geofence
+gps.geofence_version
+gps.geofence_assignment
+gps.vehicle_geofence_state
+```
+
+هستند.
+
+---
+
+# 49. Geofence
+
+`geofence` هویت Business Geofence را نگه می‌دارد.
+
+مفهوم:
+
+```text
+Geofence
+├── id
+├── name
+├── owner_scope
+├── active
+├── created_at
+└── updated_at
+```
+
+Geometry داخل Version نگهداری می‌شود.
+
+---
+
+# 50. GeofenceVersion
+
+Geometry تاریخی:
+
+```text
+gps.geofence_version
+```
+
+است.
+
+مثلاً:
+
+```text
+Geofence A
+Version 1
+Version 2
+Version 3
+```
+
+هر Version Immutable است.
+
+---
+
+# 51. Geometry
+
+MVP:
+
+```text
+POLYGON
+CIRCLE
+```
+
+پشتیبانی می‌شود.
+
+Line Geofence در MVP نداریم.
+
+Geometry با:
+
+```text
+PostGIS
+SRID 4326
+```
+
+ذخیره می‌شود.
+
+---
+
+# 52. GeofenceAssignment
+
+Assignment به:
+
+```text
+Vehicle
+```
+
+انجام می‌شود، نه Device.
+
+```text
+Vehicle
+   ↓
+GeofenceAssignment
+   ↓
+Geofence
+```
+
+در Runtime:
+
+```text
+Vehicle
+   ↓
+Active Device
+```
+
+Resolve می‌شود.
+
+---
+
+# 53. VehicleGeofenceState
+
+Runtime State مربوط به Geofence:
+
+```text
+gps.vehicle_geofence_state
+```
+
+است.
+
+این State برای جلوگیری از تولید Event تکراری ضروری است.
+
+مثلاً:
+
+```text
+OUTSIDE
+INSIDE
+ENTER_PENDING
+EXIT_PENDING
+UNCERTAIN
+UNOBSERVED
+```
+
+---
+
+# 54. Command
+
+Command نیز Entity دائمی GPS است:
+
+```text
+gps.command
+```
+
+اما مالکیت Business آن با Backend است.
+
+`sana-backend` Command را ایجاد می‌کند.
+
+`sana-gps` آن را اجرا می‌کند.
+
+---
+
+# 55. Command Schema
+
+مدل:
+
+```text
+command
+├── id
+├── device_id
+├── type
+├── status
+├── source
+├── requested_by
+├── payload
+├── result
+├── error_code
+├── attempts
+├── session_generation
+├── created_at
+├── updated_at
+├── expires_at
+├── sent_at
+├── acknowledged_at
+└── completed_at
+```
+
+---
+
+# 56. Command Ownership
+
+```text
+device_id
+→ public.device.id
+ON DELETE RESTRICT
+```
+
+Command به Device تعلق دارد، نه Vehicle.
+
+تعویض Device Commandهای قبلی را منتقل نمی‌کند.
+
+---
+
+# 57. Command Status
+
+Stateهای اصلی:
+
+```text
+PENDING
+QUEUED
+SENDING
+SENT
+ACKNOWLEDGED
+COMPLETED
+FAILED
+CANCELLED
+EXPIRED
+```
+
+State Transition مطابق State Machine تأییدشده Stage 13 است.
+
+---
+
+# 58. Command Payload
+
+```text
+payload JSONB
+```
+
+است.
+
+Payload باید توسط Backend بر اساس Command Type Validation شود.
+
+Raw Protocol Bytes در Payload قرار نمی‌گیرد.
+
+---
+
+# 59. Command Result
+
+```text
+result JSONB
+```
+
+برای نتیجه Device/Protocol است.
+
+Telemetry و Event همچنان Entityهای مستقل هستند.
+
+---
+
+# 60. Command Indexها
+
+Indexهای اصلی:
+
+```text
+(device_id, status, created_at)
+(status, expires_at)
+(device_id, created_at)
+(requested_by, created_at)
+```
+
+فقط در صورت تأیید Queryهای واقعی در Migration نهایی نگهداری می‌شوند.
+
+---
+
+# 61. DeviceLifecycleEvent
+
+تاریخچه تغییر وضعیت Device:
+
+```text
+DeviceLifecycleEvent
+```
+
+از جنس Business/Audit است.
+
+بهتر است در:
+
+```text
+public
+```
+
+یا Schema Business نگهداری شود، نه `gps.event`.
+
+چون این Event از GPS Telemetry ایجاد نشده است.
+
+در این مرحله:
+
+```text
+public.device_lifecycle_event
+```
+
+به‌عنوان محل مناسب در نظر گرفته می‌شود.
+
+---
+
+# 62. تفاوت DeviceLifecycleEvent و gps.event
+
+```text
+gps.event
+→ GPS / Telemetry / Runtime Meaning
+
+device_lifecycle_event
+→ Business / Administrative History
+```
+
+این دو نباید ادغام شوند.
+
+---
+
+# 63. Tables نهایی GPS
+
+پس Schema `gps` در MVP شامل:
+
+```text
+gps.current_state
+gps.location_history
+gps.event
+gps.trip
+gps.raw_packet
+
+gps.device_vehicle_assignment
+
+gps.geofence
+gps.geofence_version
+gps.geofence_assignment
+gps.vehicle_geofence_state
+
+gps.command
+```
+
+است.
+
+---
+
+# 64. Tables خارج از gps
+
+Business Lifecycle:
+
+```text
+public.device
+public.vehicle
+public.device_model
+public.device_lifecycle_event
+```
+
+و سایر Entityهای Business در:
+
+```text
+public
+```
+
+باقی می‌مانند.
+
+---
+
+# 65. FK Map
+
+ساختار اصلی:
+
+```text
+public.device
+    │
+    ├──────────────► gps.current_state
+    │
+    ├──────────────► gps.location_history
+    │
+    ├──────────────► gps.event
+    │
+    ├──────────────► gps.trip
+    │
+    ├──────────────► gps.raw_packet
+    │
+    ├──────────────► gps.device_vehicle_assignment
+    │
+    └──────────────► gps.command
+```
+
+Vehicle:
+
+```text
+public.vehicle
+    │
+    ├──────────────► gps.device_vehicle_assignment
+    │
+    └──────────────► gps.geofence_assignment
+```
+
+Geofence:
+
+```text
+gps.geofence
+    │
+    ├──────────────► gps.geofence_version
+    │
+    └──────────────► gps.geofence_assignment
+```
+
+---
+
+# 66. ON DELETE Policy
+
+| Entity               | Parent   | Policy   |
+| -------------------- | -------- | -------- |
+| CurrentState         | Device   | CASCADE  |
+| LocationHistory      | Device   | RESTRICT |
+| Event                | Device   | RESTRICT |
+| Trip                 | Device   | RESTRICT |
+| RawPacket            | Device   | SET NULL |
+| Command              | Device   | RESTRICT |
+| Assignment           | Device   | RESTRICT |
+| Assignment           | Vehicle  | RESTRICT |
+| GeofenceVersion      | Geofence | RESTRICT |
+| GeofenceAssignment   | Geofence | RESTRICT |
+| GeofenceAssignment   | Vehicle  | RESTRICT |
+| VehicleGeofenceState | Vehicle  | RESTRICT |
+
+اصل:
+
+> هر داده‌ای که Historical یا Audit است نباید با حذف Parent به‌صورت تصادفی از بین برود.
+
+---
+
+# 67. BIGINT Strategy
+
+تمام Entityهای اصلی GPS از:
+
+```text
+BIGINT
+```
+
+با:
+
+```text
+GENERATED BY DEFAULT AS IDENTITY
+```
+
+یا معادل Django `BigAutoField` استفاده می‌کنند.
+
+UUID در MVP برای Internal PK استفاده نمی‌شود.
+
+---
+
+# 68. Timestamp Strategy
+
+Timestampهای Server:
+
+```text
+TIMESTAMPTZ
+```
+
+هستند.
+
+تمام Timestampهای داخلی SANA:
+
+```text
+UTC
+```
+
+هستند.
+
+نمایش Local Time فقط در API/Frontend انجام می‌شود.
+
+---
+
+# 69. JSONB Strategy
+
+JSONB فقط برای اطلاعات واقعاً Dynamic:
+
+```text
+attributes
+metadata
+payload
+result
+```
+
+است.
+
+اطلاعات اصلی و قابل Query باید Typed Column باشند.
+
+مثلاً:
+
+```text
+speed
+latitude
+device_time
+status
+```
+
+نباید داخل JSONB قرار بگیرند.
+
+---
+
+# 70. Index Strategy
+
+اصل:
+
+> ابتدا Queryهای واقعی را مشخص می‌کنیم، سپس Index ایجاد می‌کنیم.
+
+Indexهای قطعی اولیه:
+
+```text
+CurrentState:
+UNIQUE(device_id)
+
+LocationHistory:
+(device_id, device_time)
+
+Event:
+(device_id, type, started_at)
+(device_id, occurred_at)
+
+Trip:
+(device_id, started_at)
+
+Assignment:
+(device_id, started_at)
+(vehicle_id, started_at)
+
+RawPacket:
+(device_id, received_at)
+(device_id, fingerprint)
+
+Command:
+(device_id, status, created_at)
+(status, expires_at)
+```
+
+Spatial Indexها:
+
+```text
+GIST(geom)
+```
+
+برای جداولی که واقعاً Spatial Query دارند.
+
+---
+
+# 71. Partition Strategy
+
+فقط:
+
+```text
+gps.location_history
+```
+
+در MVP Partition می‌شود.
+
+بر اساس:
+
+```text
+RANGE(device_time)
+```
+
+و:
+
+```text
+MONTHLY
+```
+
+---
+
+# 72. چرا Event Partition نمی‌شود؟
+
+Event حجم بسیار کمتری نسبت به LocationHistory دارد و Lifecycle آن بیشتر Event-centric است.
+
+در MVP Partition کردن Event Complexity غیرضروری ایجاد می‌کند.
+
+اگر حجم واقعی در آینده نشان دهد، Partitioning بعداً قابل اضافه شدن است.
+
+---
+
+# 73. چرا CurrentState Partition نمی‌شود؟
+
+CurrentState:
+
+```text
+One Row Per Device
+```
+
+است.
+
+بنابراین Partitioning برای آن هیچ مزیت معناداری در MVP ندارد.
+
+---
+
+# 74. چرا Trip Partition نمی‌شود؟
+
+Trip نیز نسبت به LocationHistory کم‌حجم است.
+
+Queryها معمولاً:
+
+```text
+Device
++
+Time Range
+```
+
+هستند و Index معمولی کافی است.
+
+---
+
+# 75. RawPacket Retention
+
+RawPacket دائمی نیست.
+
+Retention توسط:
+
+```text
+received_at
+```
+
+مدیریت می‌شود.
+
+مثلاً:
+
+```text
+7 days
+30 days
+```
+
+بر اساس Configuration.
+
+---
+
+# 76. Historical Retention
+
+LocationHistory، Event و Trip در MVP Retention کوتاه‌مدت ندارند.
+
+این داده‌ها Historical Data اصلی SANA هستند.
+
+Retention تجاری/قانونی آن‌ها بعداً به‌صورت مستقل تصمیم‌گیری می‌شود.
+
+---
+
+# 77. Runtime Permissions
+
+`sana-gps`:
+
+```text
+CurrentState
+→ SELECT / INSERT / UPDATE
+
+LocationHistory
+→ SELECT / INSERT
+
+Event
+→ SELECT / INSERT / UPDATE
+
+Trip
+→ SELECT / INSERT / UPDATE
+
+RawPacket
+→ SELECT / INSERT
+
+Assignment
+→ SELECT
+
+Geofence
+→ SELECT
+
+Command
+→ SELECT / UPDATE
+```
+
+برای Command، ایجاد Command توسط Backend انجام می‌شود؛ GPS فقط آن را Consume و State آن را Update می‌کند.
+
+---
+
+# 78. Backend Permissions
+
+`sana-backend`:
+
+```text
+CurrentState
+→ SELECT
+
+LocationHistory
+→ SELECT
+
+Event
+→ SELECT
+
+Trip
+→ SELECT
+
+RawPacket
+→ NO ACCESS by default
+
+Assignment
+→ CRUD
+
+Geofence
+→ CRUD
+
+Command
+→ INSERT / SELECT / UPDATE
+```
+
+Backend مالک Business Command است.
+
+---
+
+# 79. Migration Ownership
+
+تمام:
+
+```text
+CREATE
+ALTER
+DROP
+INDEX
+CONSTRAINT
+PARTITION
+GRANT
+```
+
+توسط:
+
+```text
+sana_migrator
+```
+
+انجام می‌شود.
+
+Runtime هیچ‌گونه DDL ندارد.
+
+---
+
+# 80. Final Architecture
+
+```text
+                         PostgreSQL
+                              │
+             ┌────────────────┴────────────────┐
+             │                                 │
+          public                              gps
+             │                                 │
+     ┌───────┼────────┐              ┌─────────┼─────────┐
+     │       │        │              │         │         │
+   Device  Vehicle  User       CurrentState  Event    Trip
+     │       │                       │         │         │
+     │       └───────┐               │         │         │
+     │               │               │         │         │
+     └───────────────┼───────────────┼─────────┼─────────┤
+                     │               │
+             DeviceVehicleAssignment │
+                                     │
+                              LocationHistory
+```
+
+و:
+
+```text
+gps
+├── current_state
+├── location_history
+├── event
+├── trip
+├── raw_packet
+├── device_vehicle_assignment
+├── geofence
+├── geofence_version
+├── geofence_assignment
+├── vehicle_geofence_state
+└── command
+```
+
+---
+
+# 81. Source of Truth نهایی
+
+| مفهوم                  | Source of Truth                       |
+| ---------------------- | ------------------------------------- |
+| Device Identity        | `public.device`                       |
+| Device Lifecycle       | `public.device` + Lifecycle Event     |
+| Device ↔ Vehicle       | `gps.device_vehicle_assignment`       |
+| Current Device State   | `gps.current_state`                   |
+| Location History       | `gps.location_history`                |
+| GPS Event              | `gps.event`                           |
+| Trip                   | `gps.trip`                            |
+| Raw Protocol Data      | `gps.raw_packet`                      |
+| Geofence Definition    | `gps.geofence` + Version              |
+| Geofence Assignment    | `gps.geofence_assignment`             |
+| Geofence Runtime State | `gps.vehicle_geofence_state`          |
+| Command                | `gps.command`                         |
+| Connection State       | Computed from Runtime/`last_seen`     |
+| Session                | Runtime Memory                        |
+| Protocol Decoder       | Code                                  |
+| Protocol Profile       | Code + Device Configuration Reference |
+
+---
+
+# 82. اصل مهم Schema
+
+نباید یک مفهوم را در چند جدول به‌عنوان Source of Truth نگه داریم.
+
+مثلاً:
+
+```text
+Device ↔ Vehicle
+```
+
+فقط:
+
+```text
+DeviceVehicleAssignment
+```
+
+مرجع رابطه است.
+
+و:
+
+```text
+CurrentState
+```
+
+نباید یک `vehicle_id` مستقل به‌عنوان Source of Truth داشته باشد.
+
+همچنین:
+
+```text
+LocationHistory
+```
+
+نباید Vehicle ID ذخیره کند.
+
+---
+
+# 83. وضعیت نهایی
+
+```text
+[✓] gps Schema
+[✓] Business / GPS Boundary
+[✓] CurrentState
+[✓] LocationHistory
+[✓] Event
+[✓] Trip
+[✓] RawPacket
+[✓] DeviceVehicleAssignment
+[✓] Geofence
+[✓] GeofenceVersion
+[✓] GeofenceAssignment
+[✓] VehicleGeofenceState
+[✓] Command
+[✓] Cross-Schema FK
+[✓] ON DELETE Policies
+[✓] BIGINT / Identity
+[✓] TIMESTAMPTZ / UTC
+[✓] JSONB Boundary
+[✓] Index Strategy
+[✓] Partition Strategy
+[✓] Retention Boundary
+[✓] Runtime Permissions
+[✓] Migration Ownership
+[✓] Source of Truth
+[✓] Runtime / Historical Separation
+
+مرحله ۱۷ — CLOSED
+```
+
+## اصل نهایی
+
+> **Schema `gps` باید داده‌های GPS را از Business Data جدا کند، ولی در همان PostgreSQL با Foreign Keyهای واقعی به Entityهای Business متصل بماند. هر مفهوم فقط یک Source of Truth دارد؛ Runtime ساده می‌ماند، Historical Data محافظت می‌شود و Partitioning فقط جایی استفاده می‌شود که واقعاً لازم است.**
+
+
+============================================================================
+============================================================================
+
+# SANA GPS — تصمیمات قطعی Device Lifecycle ↔ GPS Runtime
+
+## بخش ۱۹ معماری GPS
+
+این سند مشخص می‌کند تغییر وضعیت تجاری و Lifecycle یک Device در SANA چه اثری روی:
+
+* `sana-gps`
+* Connection
+* Session
+* Telemetry
+* CurrentState
+* LocationHistory
+* Event
+* Command
+* Device Assignment
+
+دارد.
+
+اصل بنیادی:
+
+> **Device Lifecycle مالک Business است؛ sana-gps فقط از وضعیت Lifecycle برای تصمیم‌گیری درباره پذیرش یا رد Runtime Traffic استفاده می‌کند.**
+
+---
+
+# 1. دو مفهوم مستقل
+
+در SANA دو وضعیت متفاوت داریم:
+
+### Business Lifecycle
+
+وضعیت واقعی Device در سیستم:
+
+```text
+WAREHOUSE
+ACTIVE
+SUSPENDED
+REPAIR
+RETURNED
+RETIRED
+```
+
+این وضعیت توسط:
+
+```text
+sana-backend
+```
+
+مدیریت می‌شود.
+
+---
+
+### GPS Runtime State
+
+وضعیت ارتباط Device با GPS Service:
+
+```text
+NO_SESSION
+CONNECTED
+ACTIVE_SESSION
+FENCED
+DISCONNECTED
+```
+
+این وضعیت Runtime است و توسط:
+
+```text
+sana-gps
+```
+
+مدیریت می‌شود.
+
+این دو نباید با یکدیگر یکی شوند.
+
+---
+
+# 2. Source of Truth
+
+برای Lifecycle:
+
+```text
+public.device
++
+public.device_lifecycle_event
+```
+
+Source of Truth هستند.
+
+برای Session:
+
+```text
+sana-gps Runtime Session Manager
+```
+
+Source of Truth است.
+
+برای CurrentState:
+
+```text
+gps.current_state
+```
+
+Source of Truth Snapshot است.
+
+بنابراین:
+
+```text
+Device Status
+→ Business
+
+Session Status
+→ Runtime
+```
+
+---
+
+# 3. Device Lifecycle Event
+
+هر تغییر مهم Lifecycle باید در Business ثبت شود:
+
+```text
+public.device_lifecycle_event
+```
+
+مثلاً:
+
+```text
+WAREHOUSE
+    ↓
+ACTIVE
+```
+
+یا:
+
+```text
+ACTIVE
+    ↓
+REPAIR
+```
+
+GPS Runtime نباید خودش Lifecycle Event تجاری ایجاد کند.
+
+---
+
+# 4. sana-gps فقط Lifecycle را Consume می‌کند
+
+جریان:
+
+```text
+sana-backend
+      │
+      │ Device Lifecycle Change
+      ▼
+public.device
+      │
+      ▼
+sana-gps
+```
+
+`sana-gps` می‌تواند وضعیت فعلی Device را هنگام Login/Packet بررسی کند.
+
+در آینده می‌توان Notification/Signal داخلی برای تغییر فوری Lifecycle اضافه کرد.
+
+در MVP نیازی به Redis یا Message Broker نداریم.
+
+---
+
+# 5. WAREHOUSE
+
+Device در Warehouse هنوز در اختیار سیستم است ولی برای Runtime عملیاتی نیست.
+
+قاعده:
+
+```text
+Device Status = WAREHOUSE
+```
+
+نتیجه:
+
+```text
+GPS Connection
+→ Reject
+```
+
+اگر Device به Port وصل شود:
+
+```text
+IMEI
+   ↓
+Device Lookup
+   ↓
+WAREHOUSE
+   ↓
+Reject
+```
+
+نباید Session فعال ایجاد شود.
+
+---
+
+# 6. WAREHOUSE و ACK
+
+برای Device موجود در Warehouse:
+
+```text
+Valid Device
+≠
+Allowed Runtime Device
+```
+
+بنابراین:
+
+```text
+Login ACK
+→ موفق ارسال نمی‌شود
+```
+
+و:
+
+```text
+AVL ACK
+→ موفق ارسال نمی‌شود
+```
+
+زیرا Device مجاز به Runtime نیست.
+
+---
+
+# 7. ACTIVE
+
+وضعیت اصلی عملیاتی:
+
+```text
+ACTIVE
+```
+
+است.
+
+در این وضعیت Device اجازه دارد:
+
+```text
+Connect
+Authenticate
+Create Session
+Send Telemetry
+Receive Command
+Update CurrentState
+Write LocationHistory
+Create Event
+```
+
+را انجام دهد.
+
+---
+
+# 8. SUSPENDED
+
+Suspended به معنی غیرفعال شدن موقت عملیاتی Device است.
+
+قاعده:
+
+```text
+SUSPENDED
+→ No new active GPS Session
+```
+
+اگر Session فعال وجود داشته باشد:
+
+```text
+Lifecycle Change
+      ↓
+SUSPENDED
+      ↓
+Fence Current Session
+      ↓
+Close Connection
+```
+
+---
+
+# 9. REPAIR
+
+Device در Repair نباید Telemetry عملیاتی تولید کند.
+
+قاعده:
+
+```text
+REPAIR
+→ No Runtime Session
+```
+
+اگر Device قبل از Repair متصل بوده:
+
+```text
+ACTIVE Session
+      ↓
+REPAIR
+      ↓
+Fence
+      ↓
+Close
+```
+
+---
+
+# 10. RETURNED
+
+Returned یعنی Device دیگر در چرخه عملیاتی فعلی SANA قرار ندارد.
+
+مثلاً:
+
+```text
+Customer
+   ↓
+Device
+   ↓
+Returned
+```
+
+در این وضعیت:
+
+```text
+New Session
+→ Reject
+```
+
+و Session قبلی:
+
+```text
+Fence + Close
+```
+
+می‌شود.
+
+---
+
+# 11. RETIRED
+
+Retired یک وضعیت دائمی/نهایی برای Device است.
+
+قاعده:
+
+```text
+RETIRED
+→ No Runtime
+→ No New Session
+→ No Telemetry Processing
+→ No Command
+```
+
+تاریخچه قبلی باقی می‌ماند.
+
+---
+
+# 12. Lifecycle Matrix
+
+| Device Lifecycle | New Connection | Existing Session | Telemetry | Command |
+| ---------------- | -------------- | ---------------- | --------- | ------- |
+| `WAREHOUSE`      | Reject         | None             | Reject    | No      |
+| `ACTIVE`         | Allow          | Allow            | Allow     | Allow   |
+| `SUSPENDED`      | Reject         | Fence/Close      | Reject    | No      |
+| `REPAIR`         | Reject         | Fence/Close      | Reject    | No      |
+| `RETURNED`       | Reject         | Fence/Close      | Reject    | No      |
+| `RETIRED`        | Reject         | Fence/Close      | Reject    | No      |
+
+---
+
+# 13. ACTIVE شدن Device
+
+وقتی Device از:
+
+```text
+WAREHOUSE
+```
+
+به:
+
+```text
+ACTIVE
+```
+
+تغییر می‌کند، SANA نباید خودش Session ایجاد کند.
+
+یعنی:
+
+```text
+ACTIVE
+≠
+Connected
+```
+
+Device باید خودش:
+
+```text
+Connect
+```
+
+کند.
+
+سپس:
+
+```text
+IMEI
+→ Authentication
+→ Session
+```
+
+ایجاد می‌شود.
+
+---
+
+# 14. SUSPENDED شدن Device
+
+اگر Device در حالت:
+
+```text
+ACTIVE
+```
+
+باشد و Suspend شود:
+
+```text
+ACTIVE
+   ↓
+SUSPENDED
+```
+
+باید Session فعال آن Device Fence شود.
+
+جریان:
+
+```text
+Lifecycle Change
+       ↓
+SUSPENDED
+       ↓
+Session Fence
+       ↓
+Connection Close
+```
+
+---
+
+# 15. چرا فقط Reject Packet کافی نیست؟
+
+اگر فقط Packetهای بعدی را Reject کنیم ولی Connection باز بماند:
+
+```text
+TCP Connection
+   ↓
+Device suspended
+   ↓
+Connection remains open
+```
+
+این باعث مصرف منابع و Sessionهای بی‌مصرف می‌شود.
+
+بنابراین برای Lifecycleهای غیرعملیاتی:
+
+```text
+Fence
++
+Close
+```
+
+ترجیح داده می‌شود.
+
+---
+
+# 16. Lifecycle Change و Race Condition
+
+ممکن است همزمان:
+
+```text
+Packet
+```
+
+و:
+
+```text
+Device → SUSPENDED
+```
+
+رخ دهند.
+
+بنابراین فقط بررسی Local Memory کافی نیست.
+
+هر Telemetry باید قبل از Side Effectهای مهم وضعیت معتبر بودن Session و Device را داشته باشد.
+
+مثلاً:
+
+```text
+Session Generation
++
+Device Runtime Eligibility
+```
+
+بررسی می‌شود.
+
+---
+
+# 17. Session Generation
+
+همان مکانیزم قبلی همچنان مرجع است:
+
+```text
+Device
+   ↓
+Session Generation
+```
+
+مثلاً:
+
+```text
+Generation 15
+```
+
+اگر Device Suspend شود:
+
+```text
+Generation 15
+→ Fenced
+```
+
+هر Work Item قدیمی که:
+
+```text
+generation = 15
+```
+
+داشته باشد، دیگر اجازه Side Effect ندارد.
+
+---
+
+# 18. Lifecycle Fence
+
+Fence باید جلوی این موارد را بگیرد:
+
+```text
+CurrentState Update
+LocationHistory Insert
+Event Creation
+Trip Update
+Command Send
+last_seen Update
+```
+
+یعنی:
+
+```text
+Old Session
+   ↓
+Lifecycle no longer valid
+   ↓
+NO SIDE EFFECT
+```
+
+---
+
+# 19. Packet در حال Processing
+
+ممکن است Packet قبل از Suspend دریافت شده باشد ولی Worker هنوز آن را پردازش نکرده باشد.
+
+مثلاً:
+
+```text
+10:00:00 Packet received
+10:00:01 Device suspended
+10:00:02 Worker starts
+```
+
+Worker نباید صرفاً چون Packet قبل از Suspend دریافت شده، بدون بررسی آن را پردازش کند.
+
+Session/Runtime validity باید دوباره بررسی شود.
+
+---
+
+# 20. Transaction Boundary
+
+برای جلوگیری از Race، تصمیم نهایی باید در Transaction Database نیز محافظت شود.
+
+مثلاً:
+
+```text
+BEGIN
+   ↓
+Verify Device Runtime Eligibility
+   ↓
+Verify Session Generation
+   ↓
+Process Telemetry
+   ↓
+COMMIT
+```
+
+اگر Lifecycle در همین فاصله تغییر کرده باشد، Processing باید Fail/Abort شود.
+
+---
+
+# 21. Lifecycle و Historical Data
+
+Suspend شدن Device نباید تاریخچه را حذف کند.
+
+مثلاً:
+
+```text
+Device 100
+ACTIVE
+10:00 → Location A
+10:05 → Location B
+
+SUSPENDED
+```
+
+Location History قبلی:
+
+```text
+A
+B
+```
+
+باقی می‌ماند.
+
+---
+
+# 22. CurrentState بعد از Suspend
+
+CurrentState نباید حذف شود.
+
+مثلاً:
+
+```text
+Device
+CurrentState
+last_valid_position = X
+```
+
+بعد:
+
+```text
+Device → SUSPENDED
+```
+
+CurrentState همچنان وجود دارد.
+
+اما:
+
+```text
+connection_state
+```
+
+از روی `last_seen` و زمان جاری ممکن است:
+
+```text
+OFFLINE
+```
+
+محاسبه شود.
+
+---
+
+# 23. آیا Current Position پاک شود؟
+
+خیر.
+
+Suspend شدن Device به معنی:
+
+```text
+GPS Fix = false
+```
+
+نیست.
+
+بنابراین SANA نباید صرفاً به دلیل Lifecycle:
+
+```text
+latitude = NULL
+longitude = NULL
+```
+
+کند.
+
+آخرین Snapshot واقعی باقی می‌ماند.
+
+---
+
+# 24. تفاوت Suspend و GPS No-Fix
+
+این دو کاملاً متفاوت هستند:
+
+```text
+SUSPENDED
+→ Business Lifecycle
+
+GPS_NO_FIX
+→ GPS State
+```
+
+بنابراین:
+
+```text
+SUSPENDED ≠ GPS_NO_FIX
+```
+
+---
+
+# 25. تفاوت Suspend و Offline
+
+همچنین:
+
+```text
+SUSPENDED ≠ OFFLINE
+```
+
+ممکن است Device Suspend شود و بلافاصله Connection بسته شود.
+
+ولی علت:
+
+```text
+Lifecycle Change
+```
+
+است، نه الزاماً:
+
+```text
+Communication Timeout
+```
+
+بنابراین Event Engine نباید Suspend را به‌صورت خودکار `DEVICE_OFFLINE` تفسیر کند.
+
+---
+
+# 26. Lifecycle Event و GPS Event
+
+مثلاً:
+
+```text
+Device
+ACTIVE → SUSPENDED
+```
+
+این یک:
+
+```text
+DeviceLifecycleEvent
+```
+
+است.
+
+نباید خودکار تبدیل شود به:
+
+```text
+gps.event = DEVICE_OFFLINE
+```
+
+مگر اینکه واقعاً Event ارتباطی Offline طبق Rule خودش رخ داده باشد.
+
+---
+
+# 27. Device Replacement
+
+تعویض Device یک نقطه مهم Lifecycle/Assignment است.
+
+مثلاً:
+
+```text
+Vehicle A
+   ↓
+Device 100
+```
+
+تعویض:
+
+```text
+Device 100
+   ↓
+Device 200
+```
+
+Device 100 نباید به Device 200 تبدیل شود.
+
+بلکه:
+
+```text
+Device 100
+→ Historical
+
+Device 200
+→ New Active Device
+```
+
+---
+
+# 28. Session هنگام Replacement
+
+برای Device قبلی:
+
+```text
+Fence Session
+Close Connection
+```
+
+برای Device جدید:
+
+```text
+No automatic Session
+```
+
+Device جدید باید خودش:
+
+```text
+Connect
+Authenticate
+```
+
+کند.
+
+---
+
+# 29. CurrentState در Replacement
+
+CurrentState هر Device مستقل است.
+
+بنابراین:
+
+```text
+Device 100
+CurrentState = Position A
+```
+
+و:
+
+```text
+Device 200
+CurrentState = NULL
+```
+
+تا اولین Telemetry.
+
+نباید:
+
+```text
+Device 100 CurrentState
+→ Device 200
+```
+
+Copy شود.
+
+---
+
+# 30. LocationHistory در Replacement
+
+تاریخچه Device قبلی:
+
+```text
+Device 100
+LocationHistory
+```
+
+باقی می‌ماند.
+
+Device جدید:
+
+```text
+Device 200
+LocationHistory
+```
+
+را از نقطه شروع خودش ایجاد می‌کند.
+
+Vehicle History در آینده با:
+
+```text
+DeviceVehicleAssignment
++
+Device LocationHistory
+```
+
+ساخته می‌شود.
+
+---
+
+# 31. Assignment و Lifecycle یکی نیستند
+
+این دو مفهوم مستقل‌اند:
+
+```text
+DeviceVehicleAssignment
+→ Device به کدام Vehicle متصل است؟
+
+DeviceLifecycle
+→ Device در چه وضعیت تجاری/عملیاتی است؟
+```
+
+ممکن است:
+
+```text
+Device = ACTIVE
+Assignment = NULL
+```
+
+باشد.
+
+مثلاً Device آماده نصب است.
+
+همچنین:
+
+```text
+Device = SUSPENDED
+Assignment = Vehicle A
+```
+
+نیز ممکن است وجود داشته باشد.
+
+---
+
+# 32. Active Device بدون Vehicle
+
+Device می‌تواند:
+
+```text
+ACTIVE
+```
+
+باشد ولی هنوز به Vehicle تخصیص داده نشده باشد.
+
+در این وضعیت:
+
+```text
+GPS Runtime
+→ Allowed
+```
+
+ولی:
+
+```text
+Vehicle Live View
+→ No Vehicle Mapping
+```
+
+خواهد داشت.
+
+---
+
+# 33. Assignment Change
+
+تغییر Vehicle به‌تنهایی الزاماً Session را قطع نمی‌کند.
+
+مثلاً:
+
+```text
+Device 100
+Vehicle A
+```
+
+به:
+
+```text
+Device 100
+Vehicle B
+```
+
+تغییر کند.
+
+Session Device همچنان می‌تواند فعال بماند.
+
+زیرا:
+
+```text
+Assignment
+≠
+Connection Identity
+```
+
+---
+
+# 34. Lifecycle Change باید Session را کنترل کند
+
+ولی تغییر Lifecycleهای غیرعملیاتی:
+
+```text
+SUSPENDED
+REPAIR
+RETURNED
+RETIRED
+```
+
+باید Runtime را Fence کند.
+
+پس:
+
+```text
+Assignment Change
+→ معمولاً Session را قطع نمی‌کند
+
+Lifecycle Operationality Change
+→ می‌تواند Session را Fence کند
+```
+
+---
+
+# 35. Command و Lifecycle
+
+Command فقط برای Device عملیاتی مجاز است.
+
+مثلاً:
+
+```text
+ACTIVE
+→ Command allowed
+```
+
+اما:
+
+```text
+WAREHOUSE
+SUSPENDED
+REPAIR
+RETURNED
+RETIRED
+```
+
+نباید Command جدید دریافت کنند.
+
+---
+
+# 36. Commandهای قبلی هنگام Suspend
+
+فرض کنیم:
+
+```text
+Command #100
+status = QUEUED
+```
+
+و Device Suspend شود.
+
+Command نباید ارسال شود.
+
+در زمان Claim:
+
+```text
+Device Lifecycle
+→ SUSPENDED
+```
+
+پس:
+
+```text
+Command
+→ remain QUEUED
+```
+
+یا در صورت Rule مربوطه:
+
+```text
+CANCELLED
+```
+
+شود.
+
+در MVP پیشنهاد می‌کنیم:
+
+```text
+Suspend
+→ Command جدید ارسال نشود
+→ Commandهای Queue شده تا Expiry باقی بمانند
+```
+
+ولی Commandهای expired طبق Scheduler:
+
+```text
+EXPIRED
+```
+
+می‌شوند.
+
+---
+
+# 37. Command در حال Sending
+
+اگر Command همزمان با Suspend در حال ارسال باشد:
+
+```text
+SENDING
+```
+
+Race ممکن است رخ دهد.
+
+بنابراین Session Generation و Device Runtime Check باید هنگام Claim/Send استفاده شوند.
+
+اگر Send قبل از Fence واقعاً انجام شده باشد، ممکن است Device Command را دریافت کرده باشد.
+
+SANA نباید ادعا کند:
+
+```text
+Command definitely not sent
+```
+
+مگر اینکه واقعاً نتیجه مشخص باشد.
+
+---
+
+# 38. Telemetry بعد از Suspend
+
+اگر Device پس از Suspend هنوز Packet بفرستد:
+
+```text
+Device
+→ SUSPENDED
+```
+
+Packet:
+
+```text
+Reject / Ignore Runtime Side Effects
+```
+
+می‌شود.
+
+اما Raw Packet در صورت Policy نگهداری می‌تواند ثبت شود، چون Raw Packet برای Debug و Audit است.
+
+نکته:
+
+```text
+Raw Packet
+≠
+Telemetry Accepted
+```
+
+---
+
+# 39. Raw Packet برای Device غیرعملیاتی
+
+اگر Device شناخته‌شده ولی:
+
+```text
+SUSPENDED
+```
+
+باشد، می‌توان Raw Packet را برای Debug/Audit ذخیره کرد، ولی:
+
+```text
+LocationHistory
+CurrentState
+Event
+Trip
+```
+
+نباید از آن ساخته شود.
+
+در صورت نیاز به کاهش Storage، این رفتار می‌تواند Configuration شود.
+
+---
+
+# 40. Unknown Device
+
+Unknown Device با Device شناخته‌شده ولی غیرعملیاتی متفاوت است.
+
+```text
+UNKNOWN
+→ No Device
+```
+
+پس:
+
+```text
+No Raw Packet persistence by default
+No Session
+No Telemetry
+No ACK
+```
+
+زیرا نمی‌خواهیم مهاجم بتواند Storage را با IMEIهای جعلی پر کند.
+
+---
+
+# 41. DeviceModel / Protocol هنگام Lifecycle
+
+Lifecycle روی Protocol Resolution نیز اثر دارد.
+
+اما ترتیب همچنان:
+
+```text
+Identity
+→ Device Lookup
+→ Lifecycle Check
+→ Protocol Resolution
+→ Decode
+```
+
+است.
+
+اگر Device:
+
+```text
+SUSPENDED
+```
+
+باشد، نباید برای آن Decode کامل و پرهزینه انجام شود.
+
+---
+
+# 42. Fast Reject
+
+برای Deviceهای غیرمجاز/غیرعملیاتی:
+
+```text
+IMEI
+ ↓
+Device Lookup
+ ↓
+Lifecycle Check
+ ↓
+Reject
+```
+
+باید تا حد امکان سریع انجام شود.
+
+این برای جلوگیری از مصرف CPU و Memory روی Traffic غیرمجاز مهم است.
+
+---
+
+# 43. Device Lifecycle و Session Registry
+
+Session Manager باید بتواند:
+
+```text
+Fence(device_id)
+```
+
+انجام دهد.
+
+مثلاً:
+
+```text
+Lifecycle Change
+      ↓
+SessionManager.fence(device_id)
+      ↓
+generation++
+      ↓
+close active connection
+```
+
+جزئیات اجرای آن در Runtime خواهد بود.
+
+---
+
+# 44. Lifecycle Event Propagation
+
+در MVP لازم نیست Kafka/Redis داشته باشیم.
+
+دو روش قابل قبول:
+
+### هنگام Packet
+
+```text
+Device Lookup
+→ Current Lifecycle
+```
+
+### Signal آینده
+
+```text
+Backend
+→ PostgreSQL NOTIFY
+→ sana-gps
+→ Session Fence
+```
+
+در MVP می‌توانیم از ترکیب:
+
+```text
+DB state check
++
+PostgreSQL NOTIFY برای کاهش تأخیر
+```
+
+استفاده کنیم.
+
+NOTIFY فقط Signal است؛ Database همچنان Source of Truth است.
+
+---
+
+# 45. Restart sana-gps
+
+اگر `sana-gps` Restart شود:
+
+```text
+Session Registry
+→ Lost
+```
+
+Sessionهای قبلی معتبر نیستند.
+
+Device باید دوباره:
+
+```text
+Connect
+Authenticate
+```
+
+کند.
+
+در Startup نباید Session قبلی را از Database Restore کنیم.
+
+---
+
+# 46. Restart و Lifecycle
+
+بعد از Restart:
+
+```text
+Device Lifecycle
+→ Database
+```
+
+دوباره خوانده می‌شود.
+
+اگر:
+
+```text
+ACTIVE
+```
+
+باشد:
+
+```text
+Allow new connection
+```
+
+اگر:
+
+```text
+SUSPENDED
+```
+
+باشد:
+
+```text
+Reject
+```
+
+---
+
+# 47. Lifecycle و CurrentState Recovery
+
+CurrentState قابل Rebuild است.
+
+اما Lifecycle از CurrentState استخراج نمی‌شود.
+
+یعنی:
+
+```text
+CurrentState
+≠
+Device Lifecycle
+```
+
+Lifecycle همیشه از:
+
+```text
+public.device
+```
+
+خوانده می‌شود.
+
+---
+
+# 48. Lifecycle و Historical Reports
+
+تغییر Lifecycle نباید تاریخچه Telemetry را حذف یا Rewrite کند.
+
+مثلاً:
+
+```text
+Device
+ACTIVE
+Jan → Location History
+
+REPAIR
+Feb
+
+ACTIVE
+Mar → New Location History
+```
+
+تاریخچه January همچنان معتبر است.
+
+---
+
+# 49. Retired Device
+
+Retired به معنی حذف تاریخی Device نیست.
+
+بلکه:
+
+```text
+Runtime Disabled
++
+Historical Preserved
+```
+
+است.
+
+پس:
+
+```text
+Device
+→ Retired
+```
+
+ولی:
+
+```text
+LocationHistory
+Event
+Trip
+Lifecycle History
+```
+
+باقی می‌مانند.
+
+---
+
+# 50. Physical Delete
+
+Device در طراحی SANA نباید به‌صورت عادی Physical Delete شود.
+
+به‌جای:
+
+```text
+DELETE Device
+```
+
+از Lifecycle:
+
+```text
+RETIRED
+```
+
+استفاده می‌شود.
+
+این موضوع برای حفظ:
+
+```text
+IMEI History
+Telemetry
+Event
+Trip
+Assignment
+Audit
+```
+
+ضروری است.
+
+---
+
+# 51. Device ID Reuse
+
+IMEI و Device Identity نباید بعد از Retire برای Device دیگری Reuse شود.
+
+مثلاً:
+
+```text
+Device 100
+IMEI 123456789
+RETIRED
+```
+
+نباید:
+
+```text
+Device 200
+IMEI 123456789
+```
+
+شود.
+
+IMEI همچنان Identity تاریخی Device قبلی است.
+
+---
+
+# 52. Lifecycle State Machine
+
+مدل مفهومی:
+
+```text
+                    ┌─────────────┐
+                    │   WAREHOUSE │
+                    └──────┬──────┘
+                           │ activate
+                           ▼
+                    ┌─────────────┐
+                    │    ACTIVE   │
+                    └──┬─────┬────┘
+                       │     │
+                 suspend│     │repair
+                       ▼     ▼
+                 SUSPENDED  REPAIR
+                       │     │
+                       └──┬──┘
+                          │
+                          ▼
+                      RETURNED
+                          │
+                          ▼
+                       RETIRED
+```
+
+Transitions دقیق Business در Backend کنترل می‌شوند.
+
+GPS فقط Runtime Effect آن‌ها را اجرا می‌کند.
+
+---
+
+# 53. Runtime State Machine
+
+برای GPS:
+
+```text
+NO_SESSION
+    │
+    │ valid connection
+    ▼
+CONNECTED
+    │
+    │ authenticated
+    ▼
+ACTIVE_SESSION
+    │
+    ├── disconnect ───────► DISCONNECTED
+    │
+    ├── lifecycle change ─► FENCED
+    │
+    └── new session ──────► FENCED
+```
+
+و:
+
+```text
+FENCED
+→ Connection Closed
+→ No Side Effects
+```
+
+---
+
+# 54. Business و Runtime Matrix
+
+| Lifecycle | Session | Telemetry | CurrentState | History  | Command |
+| --------- | ------- | --------- | ------------ | -------- | ------- |
+| WAREHOUSE | Reject  | Reject    | Preserve     | Preserve | No      |
+| ACTIVE    | Allow   | Allow     | Update       | Write    | Allow   |
+| SUSPENDED | Fence   | Reject    | Preserve     | No new   | No      |
+| REPAIR    | Fence   | Reject    | Preserve     | No new   | No      |
+| RETURNED  | Fence   | Reject    | Preserve     | No new   | No      |
+| RETIRED   | Fence   | Reject    | Preserve     | Preserve | No      |
+
+---
+
+# 55. نکته مهم درباره Preserve
+
+`Preserve` به این معنی نیست که Snapshot یا History دوباره نوشته شود.
+
+یعنی:
+
+```text
+Lifecycle Change
+→ CurrentState Delete ❌
+→ History Delete ❌
+```
+
+فقط Runtime Processing متوقف می‌شود.
+
+---
+
+# 56. Device فعال بدون اتصال
+
+این حالت کاملاً معتبر است:
+
+```text
+Lifecycle = ACTIVE
+Session = NO_SESSION
+```
+
+مثلاً:
+
+* دستگاه خاموش است.
+* اینترنت ندارد.
+* هنوز نصب نشده.
+* خارج از شبکه است.
+
+پس:
+
+```text
+ACTIVE ≠ ONLINE
+```
+
+---
+
+# 57. Device Suspended با Last Seen
+
+این نیز معتبر است:
+
+```text
+Lifecycle = SUSPENDED
+last_seen = 10:30
+```
+
+آخرین زمان ارتباط واقعی همچنان حفظ می‌شود.
+
+Connection State فعلی ممکن است:
+
+```text
+OFFLINE
+```
+
+محاسبه شود، ولی علت قطع ارتباط:
+
+```text
+Lifecycle Suspension
+```
+
+است.
+
+---
+
+# 58. اصل Event
+
+Lifecycle Event و GPS Event نباید ادغام شوند:
+
+```text
+public.device_lifecycle_event
+→ Business Lifecycle
+
+gps.event
+→ Operational/Telemetry Event
+```
+
+این تفکیک برای Audit و گزارش‌گیری بسیار مهم است.
+
+---
+
+# 59. Source of Truth نهایی
+
+```text
+Device Lifecycle
+→ public.device
+
+Lifecycle History
+→ public.device_lifecycle_event
+
+Device ↔ Vehicle
+→ gps.device_vehicle_assignment
+
+GPS Session
+→ sana-gps Runtime
+
+Current Snapshot
+→ gps.current_state
+
+Location History
+→ gps.location_history
+
+GPS Events
+→ gps.event
+
+Commands
+→ gps.command
+```
+
+هیچ Entity نباید Source of Truth Entity دیگری شود.
+
+---
+
+# 60. اصل نهایی مرحله ۱۹
+
+> **Business Lifecycle تعیین می‌کند Device از نظر SANA مجاز به فعالیت GPS هست یا نه؛ Runtime Session تعیین می‌کند Device در حال حاضر چگونه به sana-gps متصل است. تغییر Lifecycleهای غیرعملیاتی باید Session را Fence و Connection را Close کند، اما نباید تاریخچه یا CurrentState را حذف کند. Assignment با Lifecycle مستقل است و تعویض Device باعث انتقال Session، CurrentState یا History بین Deviceها نمی‌شود.**
+
+---
+
+# 61. وضعیت مرحله
+
+```text
+[✓] Business Lifecycle vs Runtime State
+[✓] WAREHOUSE
+[✓] ACTIVE
+[✓] SUSPENDED
+[✓] REPAIR
+[✓] RETURNED
+[✓] RETIRED
+[✓] Session Fencing
+[✓] Session Generation
+[✓] Telemetry Rejection
+[✓] CurrentState Preservation
+[✓] Historical Preservation
+[✓] Device Replacement
+[✓] Assignment Independence
+[✓] Command Interaction
+[✓] Unknown Device
+[✓] Restart Behavior
+[✓] Lifecycle/Session Race Protection
+[✓] Physical Delete Policy
+[✓] IMEI Identity Preservation
+
+مرحله ۱۹ — CLOSED
+```
+
+### نتیجه معماری
+
+```text
+                 Business
+                    │
+                    ▼
+             public.device
+                    │
+          ┌─────────┴─────────┐
+          │                   │
+          ▼                   ▼
+     Lifecycle           Assignment
+          │                   │
+          ▼                   ▼
+      sana-gps            Vehicle View
+          │
+          ▼
+       Session
+          │
+    ┌─────┴─────┐
+    ▼           ▼
+Telemetry     Command
+    │
+    ▼
+┌──────────────────────────────┐
+│ CurrentState                 │
+│ LocationHistory              │
+│ Event                        │
+│ Trip                         │
+└──────────────────────────────┘
+```
+
+**مرحله ۱۹ — Device Lifecycle ↔ GPS Runtime — CLOSED**
+
+
+============================================================================
+============================================================================
+
+# SANA GPS — اصلاح نهایی تعارض Trip و DeviceVehicleAssignment
+
+## 1. مسئله
+
+در طراحی قبلی دو اصل داشتیم:
+
+```text
+Trip
+→ متعلق به Device
+
+DeviceVehicleAssignment
+→ رابطه زمانی Device و Vehicle
+```
+
+همچنین تصمیم گرفته شده بود که تغییر Assignment می‌تواند مرز Trip باشد.
+
+برای جلوگیری از ابهام، تعریف دقیق Trip نهایی می‌شود.
+
+---
+
+# 2. تعریف نهایی Trip
+
+در SANA:
+
+> **Trip یک سفر عملیاتی متعلق به Device است که در یک بازه زمانی مشخص و تحت یک Device↔Vehicle Assignment ثابت شکل می‌گیرد.**
+
+بنابراین Trip همزمان دو Context دارد:
+
+```text
+Trip Identity
+→ Device
+
+Vehicle Context
+→ Assignment در بازه Trip
+```
+
+Trip از نظر مالکیت به Vehicle وابسته نیست.
+
+اما برای گزارش‌گیری Vehicle، Assignment زمانی Trip مشخص می‌کند که Trip در آن Vehicle انجام شده است.
+
+---
+
+# 3. Assignment یک Hard Boundary برای Trip است
+
+اگر Assignment تغییر کند:
+
+```text
+Vehicle A
+    ↓
+Vehicle B
+```
+
+Trip فعال باید در زمان تغییر Assignment بسته شود.
+
+یعنی:
+
+```text
+Assignment Change
+        ↓
+Trip Boundary
+```
+
+حتی اگر Device از نظر فیزیکی همچنان در حال حرکت باشد.
+
+---
+
+# 4. مثال
+
+فرض کنیم:
+
+```text
+Device 100
+Vehicle A
+```
+
+از:
+
+```text
+10:00
+```
+
+Trip شروع می‌شود.
+
+در:
+
+```text
+10:30
+```
+
+Device بدون توقف به Vehicle B منتقل می‌شود.
+
+و در:
+
+```text
+10:31
+```
+
+همچنان در حال حرکت است.
+
+نتیجه:
+
+```text
+Trip #500
+Device 100
+Assignment → Vehicle A
+started_at = 10:00
+ended_at   = 10:30
+status     = COMPLETED
+```
+
+و بعد:
+
+```text
+Trip #501
+Device 100
+Assignment → Vehicle B
+started_at = 10:30
+ended_at   = NULL
+status     = ACTIVE
+```
+
+---
+
+# 5. نکته بسیار مهم
+
+این به معنی قطع شدن Telemetry نیست.
+
+در این مثال:
+
+```text
+10:29
+LocationHistory
+
+10:30
+LocationHistory
+
+10:31
+LocationHistory
+```
+
+همه همچنان متعلق به:
+
+```text
+Device 100
+```
+
+هستند.
+
+بنابراین:
+
+```text
+Assignment Boundary
+≠
+Telemetry Gap
+```
+
+و:
+
+```text
+Assignment Boundary
+≠
+GPS Disconnect
+```
+
+---
+
+# 6. Trip فیزیکی و Trip عملیاتی
+
+باید بین این دو مفهوم تفاوت قائل شویم.
+
+### Physical Movement
+
+حرکت واقعی Device/خودرو:
+
+```text
+10:00 → 11:00
+```
+
+ممکن است کاملاً پیوسته باشد.
+
+### Operational Trip
+
+Trip در SANA:
+
+```text
+10:00 → 10:30
+10:30 → 11:00
+```
+
+می‌تواند به دلیل تغییر Assignment به دو Trip تقسیم شود.
+
+پس:
+
+```text
+Physical Movement
+≠
+Operational Trip
+```
+
+---
+
+# 7. چرا Trip را در Assignment Change نمی‌توانیم باز نگه داریم؟
+
+فرض کنیم Trip را نبندیم:
+
+```text
+Trip #500
+10:00 → 11:00
+Device 100
+```
+
+ولی:
+
+```text
+10:30
+Vehicle A → Vehicle B
+```
+
+در این صورت یک Trip واحد همزمان در:
+
+```text
+Vehicle A
+10:00 → 10:30
+
+Vehicle B
+10:30 → 11:00
+```
+
+قرار می‌گیرد.
+
+این باعث می‌شود:
+
+* گزارش Vehicle پیچیده شود.
+* Ownership زمانی Trip مبهم شود.
+* Start/End Context یک Trip تغییر کند.
+* Permission تاریخی پیچیده‌تر شود.
+* Aggregation Vehicle نیازمند Segment کردن Trip شود.
+
+برای MVP این پیچیدگی را نمی‌پذیریم.
+
+---
+
+# 8. بنابراین Assignment Boundary قطعی است
+
+قاعده:
+
+```text
+Trip Active
++
+Assignment Ends
+        ↓
+Trip COMPLETED
+```
+
+و:
+
+```text
+New Assignment
++
+Future Movement
+        ↓
+Potential New Trip
+```
+
+Trip جدید لزوماً در همان لحظه ایجاد نمی‌شود.
+
+اگر Device بعد از Assignment جدید هنوز شرایط شروع Trip را نداشته باشد:
+
+```text
+NO_TRIP / PENDING_START
+```
+
+باقی می‌ماند.
+
+---
+
+# 9. Assignment Change به‌تنهایی Trip جدید نمی‌سازد
+
+این نکته مهم است.
+
+اگر:
+
+```text
+Vehicle A → Vehicle B
+```
+
+تغییر کند ولی Device:
+
+```text
+Stopped
+```
+
+باشد، نباید صرفاً به دلیل Assignment یک Trip جدید بسازیم.
+
+در نتیجه:
+
+```text
+Assignment Change
+→ پایان Trip فعلی
+
+Assignment Change
+≠
+شروع قطعی Trip جدید
+```
+
+Trip جدید فقط وقتی شروع می‌شود که Ruleهای معمول Trip Start برقرار شوند.
+
+---
+
+# 10. اگر Trip فعال وجود نداشته باشد
+
+اگر:
+
+```text
+Device
+Assignment A
+No Active Trip
+```
+
+و Assignment تغییر کند:
+
+```text
+A → B
+```
+
+هیچ Tripای بسته نمی‌شود.
+
+فقط Context Assignment تغییر می‌کند.
+
+سپس Telemetry آینده طبق Ruleهای معمول Trip بررسی می‌شود.
+
+---
+
+# 11. اگر Device در حال حرکت باشد
+
+مثلاً:
+
+```text
+10:00 → MOVING
+10:10 → MOVING
+10:20 → MOVING
+```
+
+و در:
+
+```text
+10:20
+Assignment Change
+```
+
+رخ دهد.
+
+Trip قبلی:
+
+```text
+10:00 → 10:20
+```
+
+بسته می‌شود.
+
+Trip جدید:
+
+```text
+10:20
+```
+
+به‌صورت خودکار ایجاد نمی‌شود؛ بلکه اولین Telemetry بعد از Assignment Change باید شرایط Start را داشته باشد.
+
+---
+
+# 12. Timestamp مرز Trip
+
+Assignment Boundary با زمان دقیق:
+
+```text
+assignment_change_at
+```
+
+مشخص می‌شود.
+
+این زمان باید همان زمان Commit تغییر Assignment در Server باشد، مگر اینکه Assignment به‌صورت Administrative Backdated ثبت شده باشد.
+
+برای Assignment عادی Runtime:
+
+```text
+Trip End
+=
+Assignment End
+```
+
+است.
+
+---
+
+# 13. Backdated Assignment
+
+اگر Admin یک Assignment را با تاریخ گذشته ثبت کند:
+
+```text
+Assignment
+started_at = yesterday
+```
+
+این تغییر نباید در MVP باعث بازسازی خودکار Tripهای قبلی شود.
+
+قاعده:
+
+```text
+Backdated Assignment
+→ Historical Context Change
+
+Automatic Trip Rebuild
+→ خارج از MVP
+```
+
+اگر نیاز به Rebuild وجود داشته باشد، باید یک فرآیند صریح Recalculation/Backfill در آینده طراحی شود.
+
+---
+
+# 14. Device Replacement
+
+Device Replacement نیز Assignment Boundary ایجاد می‌کند.
+
+مثلاً:
+
+```text
+Vehicle A
+Device 100
+10:00 → 12:00
+```
+
+و:
+
+```text
+Vehicle A
+Device 200
+12:00 → ...
+```
+
+Trip فعال Device 100 در:
+
+```text
+12:00
+```
+
+بسته می‌شود.
+
+Device 200 بعد از اولین Telemetry مناسب می‌تواند Trip جدید ایجاد کند.
+
+---
+
+# 15. Vehicle Context در Trip
+
+Trip می‌تواند برای Query سریع یک Context مشتق‌شده داشته باشد، اما:
+
+> **Assignment همچنان Source of Truth است.**
+
+یعنی اگر در آینده در Trip چیزی مانند:
+
+```text
+vehicle_id
+```
+
+به‌صورت denormalized ذخیره شود، نباید Source of Truth رابطه محسوب شود.
+
+در MVP ترجیح:
+
+```text
+Trip
+→ device_id
+
+Assignment
+→ vehicle context
+```
+
+است.
+
+---
+
+# 16. Trip Historical Query
+
+برای نمایش Tripهای یک Vehicle:
+
+```text
+Vehicle
+   ↓
+DeviceVehicleAssignment
+   ↓
+Trip
+   ↓
+Assignment overlap
+   ↓
+Vehicle Trips
+```
+
+چون Trip از ابتدا با Assignment Boundary ساخته شده، Query بسیار ساده‌تر و قابل اعتمادتر می‌شود.
+
+---
+
+# 17. Trip Distance
+
+Assignment Boundary باعث حذف Telemetry نمی‌شود.
+
+مثلاً:
+
+```text
+Trip #500
+10:00 → 10:30
+Distance = 42 km
+
+Trip #501
+10:30 → 11:00
+Distance = 18 km
+```
+
+LocationHistory بین این دو Trip همچنان پیوسته است.
+
+در صورت نیاز:
+
+```text
+Vehicle Total
+= 42 + 18
+= 60 km
+```
+
+محاسبه می‌شود.
+
+---
+
+# 18. Trip Engine
+
+Trip Engine باید Assignment Boundary را به‌عنوان یکی از Inputهای خود داشته باشد:
+
+```text
+Telemetry
+Assignment Context
+Trip State
+```
+
+و منطق:
+
+```text
+Active Trip
+      │
+      ├── normal telemetry
+      │       ↓
+      │    continue
+      │
+      └── assignment ends
+              ↓
+          COMPLETE
+```
+
+---
+
+# 19. Event نیز همان Boundary را رعایت می‌کند
+
+State Eventهای فعال نیز در Assignment Boundary بسته می‌شوند.
+
+مثلاً:
+
+```text
+OVERSPEED
+10:20 → NULL
+```
+
+در:
+
+```text
+10:30 Assignment Change
+```
+
+به:
+
+```text
+OVERSPEED
+10:20 → 10:30
+```
+
+تبدیل می‌شود.
+
+اگر بعد از Assignment جدید دوباره Overspeed ادامه داشته باشد:
+
+```text
+OVERSPEED #2
+10:31 → ...
+```
+
+ایجاد می‌شود.
+
+---
+
+# 20. Point Event
+
+Point Event نیازی به بسته شدن ندارد.
+
+مثلاً:
+
+```text
+IGNITION_ON
+occurred_at = 10:30:05
+```
+
+Assignment در:
+
+```text
+10:30:00
+```
+
+تغییر کرده است.
+
+این Event متعلق به:
+
+```text
+Device
+```
+
+است و در Historical Vehicle Query مربوط به Vehicle جدید دیده می‌شود.
+
+---
+
+# 21. CurrentState
+
+Assignment Change هیچ CurrentState جدیدی ایجاد نمی‌کند.
+
+مثلاً:
+
+```text
+Device 100
+speed = 80
+```
+
+و سپس:
+
+```text
+Vehicle A → Vehicle B
+```
+
+CurrentState همچنان:
+
+```text
+speed = 80
+```
+
+باقی می‌ماند.
+
+فقط:
+
+```text
+Current Vehicle Context
+```
+
+تغییر می‌کند.
+
+---
+
+# 22. WebSocket
+
+Assignment Change باید بعد از Commit به Live Clients اطلاع داده شود.
+
+اما این پیام:
+
+```text
+DEVICE_ASSIGNMENT_CHANGED
+```
+
+است، نه Telemetry Update.
+
+بعد از آن، Client باید Context جدید را استفاده کند.
+
+---
+
+# 23. Live Map
+
+قبل:
+
+```text
+Vehicle A
+→ Device 100
+→ CurrentState 100
+```
+
+بعد:
+
+```text
+Vehicle B
+→ Device 100
+→ CurrentState 100
+```
+
+CurrentState تغییر نکرده است.
+
+فقط Vehicle Context تغییر کرده است.
+
+---
+
+# 24. اصل بسیار مهم
+
+سه چیز نباید با هم اشتباه شوند:
+
+```text
+Device Identity
+→ چه دستگاهی است؟
+
+Assignment
+→ در این لحظه متعلق به کدام Vehicle است؟
+
+Trip
+→ یک سفر عملیاتی در یک Assignment ثابت
+```
+
+این سه مفهوم مستقل هستند.
+
+---
+
+# 25. مثال نهایی کامل
+
+```text
+Device 100
+```
+
+### Assignment 1
+
+```text
+Vehicle A
+10:00 → 10:30
+```
+
+### Trip 1
+
+```text
+10:00 → 10:30
+42 km
+```
+
+### Assignment 2
+
+```text
+Vehicle B
+10:30 → 11:00
+```
+
+### Trip 2
+
+```text
+10:30 → 11:00
+18 km
+```
+
+LocationHistory:
+
+```text
+10:00
+10:05
+10:10
+10:20
+10:30
+10:40
+10:50
+11:00
+```
+
+همه:
+
+```text
+device_id = 100
+```
+
+هستند.
+
+پس:
+
+```text
+Trip
+→ تقسیم شده
+
+LocationHistory
+→ تقسیم نشده
+
+Device
+→ همان Device
+
+Session
+→ قطع نشده
+
+CurrentState
+→ همان Snapshot
+
+Assignment
+→ Context تغییر کرده
+```
+
+---
+
+# 26. قاعده نهایی Trip
+
+```text
+Trip belongs to Device.
+
+Trip operates within one stable
+DeviceVehicleAssignment interval.
+
+Assignment End
+→ Active Trip completes.
+
+Assignment Start
+→ Does NOT automatically start a Trip.
+
+Future movement
+→ may start a new Trip.
+
+Telemetry/LocationHistory
+→ continue independently.
+
+Session
+→ remains connected.
+
+CurrentState
+→ remains Device-owned.
+```
+
+---
+
+# 27. اصلاح تصمیم قبلی
+
+از این لحظه عبارت:
+
+```text
+"Assignment Change can be a Trip Boundary"
+```
+
+به شکل دقیق‌تر زیر ثبت می‌شود:
+
+> **Assignment Change یک Hard Boundary برای Trip است. هر Trip فقط در محدوده یک DeviceVehicleAssignment قرار می‌گیرد. در نتیجه تغییر Assignment، Trip فعال را در همان لحظه Complete می‌کند، اما به‌تنهایی Trip جدید ایجاد نمی‌کند.**
+
+این تصمیم با Device-owned بودن Trip، Vehicle Historical Reporting و Device-owned بودن LocationHistory کاملاً سازگار است.
+
+---
+
+# 28. وضعیت نهایی
+
+```text
+[✓] Trip belongs to Device
+[✓] Assignment is temporal context
+[✓] One Trip = one stable Assignment interval
+[✓] Assignment End = Trip Hard Boundary
+[✓] Assignment Start ≠ automatic Trip Start
+[✓] Telemetry continues
+[✓] LocationHistory continues
+[✓] Session continues
+[✓] CurrentState remains unchanged
+[✓] Vehicle Historical Query remains deterministic
+[✓] State Events close at Assignment Boundary
+[✓] Point Events remain Device-owned
+[✓] Device Replacement creates Assignment Boundary
+[✓] Backdated Assignment does not auto-rebuild Trip in MVP
+
+### تصمیم قطعی
+
+Assignment Boundary
+        ↓
+Complete Active Trip
+        ↓
+Future Telemetry
+        ↓
+Normal Trip Start Rules
+        ↓
+Potential New Trip
+```
+
+**تعارض Trip و Assignment در SANA — CLOSED**
+
+
+============================================================================
+============================================================================
+
+# SANA GPS — تصمیمات قطعی WebSocket و Live Map
+
+## مرحله ۲۱ معماری GPS
+
+هدف:
+
+> **WebSocket فقط کانال Delivery برای CurrentStateهای Commit‌شده است؛ CurrentState و DeviceVehicleAssignment منابع داده هستند، Backend مسئول Permission و Delivery است و Frontend مسئول Presentation است.**
+
+---
+
+# 1. واژه‌های قطعی
+
+برای جلوگیری از چندنامی، اصطلاحات زیر در کل SANA استاندارد هستند.
+
+| اصطلاح                  | معنی قطعی                                                  |
+| ----------------------- | ---------------------------------------------------------- |
+| `CurrentState`          | آخرین وضعیت Snapshot یک Device                             |
+| `CurrentState Snapshot` | محتوای فعلی `CurrentState` در یک لحظه                      |
+| `state_version`         | شماره نسخه Snapshot مربوط به همان Device                   |
+| `Snapshot Update`       | تغییر پذیرفته‌شده در CurrentState                          |
+| `Delta`                 | پیام WebSocket که فقط تغییرات CurrentState را منتقل می‌کند |
+| `Signal`                | اعلان غیرقابل‌اتکای تغییر برای شروع Read از Database       |
+| `NOTIFY`                | مکانیزم PostgreSQL برای ارسال Signal                       |
+| `Reconciliation`        | همگام‌سازی Backend با وضعیت فعلی Database                  |
+| `Resync`                | همگام‌سازی Client با CurrentState فعلی                     |
+| `Source of Truth`       | منبع اصلی و معتبر داده                                     |
+| `Delivery`              | انتقال داده از Backend به Client                           |
+| `Permission`            | کنترل دسترسی Server-side                                   |
+| `Projection`            | مدل سبک مخصوص مصرف Live Map یا Client                      |
+| `Connection State`      | وضعیت محاسبه‌شده ارتباط Device با Server                   |
+| `Device Time`           | زمان گزارش‌شده توسط Device                                 |
+| `Server Received Time`  | زمان دریافت Packet در Server                               |
+
+---
+
+# 2. مالکیت WebSocket
+
+WebSocket متعلق به:
+
+```text
+sana-backend
+```
+
+است.
+
+`sana-gps` مستقیماً با Browser ارتباط WebSocket ندارد.
+
+```text
+sana-gps
+→ GPS Runtime
+
+sana-backend
+→ API
+→ Permission
+→ WebSocket
+```
+
+---
+
+# 3. CurrentState منبع وضعیت لحظه‌ای
+
+مسیر صحیح:
+
+```text
+Telemetry
+   ↓
+Database Transaction
+   ↓
+CurrentState
+   ↓
+COMMIT
+   ↓
+NOTIFY Signal
+   ↓
+Backend
+   ↓
+Read CurrentState
+   ↓
+Permission
+   ↓
+WebSocket Delivery
+```
+
+WebSocket فقط CurrentStateای را ارسال می‌کند که در Database Commit شده است.
+
+---
+
+# 4. PostgreSQL NOTIFY
+
+در MVP از:
+
+```text
+PostgreSQL LISTEN / NOTIFY
+```
+
+به‌عنوان Signal سریع استفاده می‌کنیم.
+
+مثلاً:
+
+```json
+{
+  "device_id": 125
+}
+```
+
+اما:
+
+```text
+NOTIFY ≠ Queue
+NOTIFY ≠ Source of Truth
+NOTIFY ≠ Durable Message
+NOTIFY ≠ Event Log
+NOTIFY ≠ WebSocket Message
+```
+
+وظیفه NOTIFY فقط این است:
+
+> به Backend اطلاع دهد که احتمالاً State مربوط به یک Device تغییر کرده است.
+
+Backend سپس CurrentState را از PostgreSQL می‌خواند.
+
+---
+
+# 5. NOTIFY قابل اتکا برای Delivery نیست
+
+ممکن است Signal از دست برود.
+
+```text
+Backend disconnected
+       ↓
+CurrentState updated
+       ↓
+NOTIFY
+       ↓
+Backend did not receive Signal
+```
+
+اما:
+
+```text
+gps.current_state
+```
+
+در PostgreSQL باقی می‌ماند.
+
+بنابراین:
+
+```text
+NOTIFY Loss
+≠
+CurrentState Loss
+```
+
+---
+
+# 6. Reconciliation
+
+`Reconciliation` مکانیزم Recovery داخلی Backend است.
+
+تعریف قطعی:
+
+> **Reconciliation یعنی مقایسه و همگام‌سازی وضعیت موردنیاز Backend با CurrentState موجود در PostgreSQL.**
+
+---
+
+# 7. Resync
+
+`Resync` با `Reconciliation` متفاوت است.
+
+### Reconciliation
+
+Backend را با Database هماهنگ می‌کند:
+
+```text
+Backend
+   ↓
+PostgreSQL
+   ↓
+CurrentState
+```
+
+### Resync
+
+Client را با CurrentState فعلی هماهنگ می‌کند:
+
+```text
+Client
+   ↓
+Backend
+   ↓
+CurrentState
+   ↓
+Client
+```
+
+بنابراین:
+
+```text
+Reconciliation ≠ Resync
+```
+
+---
+
+# 8. Permission
+
+Permission کاملاً Server-side است.
+
+مدل صحیح:
+
+```text
+User
+ ↓
+Permission
+ ↓
+Allowed Devices / Vehicles
+ ↓
+WebSocket
+ ↓
+Authorized Data
+```
+
+Device غیرمجاز نباید به Browser ارسال شود.
+
+Subscription هرگز Permission ایجاد نمی‌کند.
+
+---
+
+# 9. Subscription
+
+Client می‌تواند درخواست Subscription بدهد:
+
+```json
+{
+  "type": "SUBSCRIBE_DEVICES",
+  "request_id": "req_123",
+  "devices": [125, 126]
+}
+```
+
+یا:
+
+```json
+{
+  "type": "SUBSCRIBE_VEHICLES",
+  "request_id": "req_124",
+  "vehicles": [10, 20, 30]
+}
+```
+
+Backend ابتدا Permission را بررسی می‌کند.
+
+---
+
+# 10. WebSocket Protocol Version
+
+تمام Messageها دارای:
+
+```text
+protocol_version
+```
+
+هستند.
+
+نسخه اولیه:
+
+```text
+protocol_version = 1
+```
+
+است.
+
+این Version مربوط به **قرارداد WebSocket** است و با:
+
+```text
+state_version
+profile_version
+device_time
+```
+
+متفاوت است.
+
+---
+
+# 11. Message Envelope
+
+تمام پیام‌های WebSocket از Envelope استاندارد استفاده می‌کنند.
+
+ساختار:
+
+```json
+{
+  "protocol_version": 1,
+  "type": "MESSAGE_TYPE",
+  "request_id": "req_123",
+  "message_id": "msg_456",
+  "server_timestamp": "2026-10-06T10:00:03.125Z",
+  "data": {}
+}
+```
+
+فیلدها:
+
+| Field              |    Required | Meaning                         |
+| ------------------ | ----------: | ------------------------------- |
+| `protocol_version` |         Yes | نسخه قرارداد WebSocket          |
+| `type`             |         Yes | نوع Message                     |
+| `request_id`       | Conditional | شناسه Request مربوطه            |
+| `message_id`       |         Yes | شناسه یکتای Message Server      |
+| `server_timestamp` |         Yes | زمان تولید Message توسط Backend |
+| `data`             |         Yes | Payload مخصوص Message           |
+
+---
+
+# 12. request_id
+
+`request_id` توسط Client برای Requestهایی که نیاز به Response دارند تولید می‌شود.
+
+مثلاً:
+
+```json
+{
+  "protocol_version": 1,
+  "type": "SUBSCRIBE_DEVICES",
+  "request_id": "req_123",
+  "data": {
+    "devices": [125, 126]
+  }
+}
+```
+
+Backend Response همان:
+
+```text
+request_id = req_123
+```
+
+را برمی‌گرداند.
+
+این باعث می‌شود Client بتواند Response را به Request مربوطه متصل کند.
+
+---
+
+# 13. message_id
+
+هر Message صادرشده توسط Backend دارای:
+
+```text
+message_id
+```
+
+است.
+
+این شناسه برای:
+
+* Debug
+* Logging
+* Traceability
+* Correlation
+
+است.
+
+`message_id` معیار Ordering State نیست.
+
+Ordering State با:
+
+```text
+device_id + state_version
+```
+
+انجام می‌شود.
+
+---
+
+# 14. server_timestamp
+
+```text
+server_timestamp
+```
+
+زمان تولید Message توسط Backend است.
+
+این مقدار:
+
+```text
+device_time
+```
+
+نیست.
+
+مثلاً:
+
+```json
+{
+  "server_timestamp": "2026-10-06T10:00:03Z"
+}
+```
+
+فقط زمان Server را نشان می‌دهد.
+
+تمام Timestampهای Protocol:
+
+```text
+UTC / ISO-8601
+```
+
+هستند.
+
+---
+
+# 15. Client → Server Messages
+
+در MVP پیام‌های Client:
+
+```text
+AUTH
+SUBSCRIBE_DEVICES
+SUBSCRIBE_VEHICLES
+UNSUBSCRIBE
+RESYNC
+SET_VIEWPORT
+PING
+```
+
+هستند.
+
+---
+
+# 16. AUTH
+
+اگر Authentication خارج از WebSocket انجام نشده باشد، Client می‌تواند Authentication را روی WebSocket انجام دهد.
+
+```json
+{
+  "protocol_version": 1,
+  "type": "AUTH",
+  "request_id": "req_001",
+  "data": {
+    "token": "..."
+  }
+}
+```
+
+Response موفق:
+
+```json
+{
+  "protocol_version": 1,
+  "type": "AUTH_ACK",
+  "request_id": "req_001",
+  "data": {
+    "authenticated": true
+  }
+}
+```
+
+Token واقعی نباید در Log ذخیره شود.
+
+اگر Authentication شکست بخورد:
+
+```text
+ERROR
+```
+
+ارسال می‌شود و Connection می‌تواند بسته شود.
+
+---
+
+# 17. SUBSCRIBE_DEVICES
+
+Request:
+
+```json
+{
+  "protocol_version": 1,
+  "type": "SUBSCRIBE_DEVICES",
+  "request_id": "req_100",
+  "data": {
+    "device_ids": [125, 126, 127]
+  }
+}
+```
+
+Backend:
+
+1. Authentication را بررسی می‌کند.
+2. Permission را بررسی می‌کند.
+3. Deviceهای مجاز را مشخص می‌کند.
+4. Subscription را ثبت می‌کند.
+5. CurrentState Snapshot را می‌خواند.
+6. Snapshot اولیه را ارسال می‌کند.
+
+---
+
+# 18. SUBSCRIBE_DEVICES Response
+
+```json
+{
+  "protocol_version": 1,
+  "type": "SUBSCRIPTION_ACK",
+  "request_id": "req_100",
+  "data": {
+    "scope": "DEVICES",
+    "requested_device_ids": [125, 126, 127],
+    "accepted_device_ids": [125, 126],
+    "rejected_device_ids": [127]
+  }
+}
+```
+
+Device غیرمجاز در Response می‌تواند با دلیل عمومی:
+
+```text
+FORBIDDEN
+```
+
+مشخص شود.
+
+نباید اطلاعات حساس درباره Device غیرمجاز افشا شود.
+
+---
+
+# 19. SUBSCRIBE_VEHICLES
+
+Request:
+
+```json
+{
+  "protocol_version": 1,
+  "type": "SUBSCRIBE_VEHICLES",
+  "request_id": "req_200",
+  "data": {
+    "vehicle_ids": [10, 20]
+  }
+}
+```
+
+Backend رابطه را از:
+
+```text
+DeviceVehicleAssignment
+```
+
+Resolve می‌کند.
+
+سپس:
+
+```text
+Vehicle
+   ↓
+Active Device
+   ↓
+CurrentState
+```
+
+را پیدا می‌کند.
+
+---
+
+# 20. Subscription و Assignment
+
+Subscription به Vehicle باید Dynamic باشد.
+
+یعنی اگر:
+
+```text
+Vehicle 10
+→ Device 125
+```
+
+و بعد:
+
+```text
+Vehicle 10
+→ Device 200
+```
+
+شود، Subscription مربوط به Vehicle 10 باید Device فعال جدید را در نظر بگیرد.
+
+Source of Truth همچنان:
+
+```text
+gps.device_vehicle_assignment
+```
+
+است.
+
+---
+
+# 21. UNSUBSCRIBE
+
+Request:
+
+```json
+{
+  "protocol_version": 1,
+  "type": "UNSUBSCRIBE",
+  "request_id": "req_300",
+  "data": {
+    "scope": "DEVICES",
+    "ids": [125, 126]
+  }
+}
+```
+
+یا:
+
+```json
+{
+  "protocol_version": 1,
+  "type": "UNSUBSCRIBE",
+  "request_id": "req_301",
+  "data": {
+    "scope": "VEHICLES",
+    "ids": [10]
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "protocol_version": 1,
+  "type": "SUBSCRIPTION_ACK",
+  "request_id": "req_300",
+  "data": {
+    "action": "UNSUBSCRIBE"
+  }
+}
+```
+
+---
+
+# 22. SET_VIEWPORT
+
+برای کاهش Delivery غیرضروری در Live Map:
+
+```json
+{
+  "protocol_version": 1,
+  "type": "SET_VIEWPORT",
+  "request_id": "req_400",
+  "data": {
+    "north": 35.80,
+    "south": 35.60,
+    "east": 51.60,
+    "west": 51.20
+  }
+}
+```
+
+Viewport فقط یک Optimization برای Delivery است.
+
+Viewport Permission را تغییر نمی‌دهد.
+
+Backend هرگز نباید Device غیرمجاز را صرفاً به دلیل Viewport ارسال کند.
+
+---
+
+# 23. RESYNC
+
+Client وقتی:
+
+* Gap در `state_version` تشخیص دهد،
+* Reconnect کند،
+* احتمال از دست رفتن Message داشته باشد،
+
+می‌تواند درخواست Resync بدهد.
+
+Request:
+
+```json
+{
+  "protocol_version": 1,
+  "type": "RESYNC",
+  "request_id": "req_500",
+  "data": {
+    "devices": [
+      {
+        "device_id": 125,
+        "state_version": 104
+      },
+      {
+        "device_id": 126,
+        "state_version": 88
+      }
+    ]
+  }
+}
+```
+
+---
+
+# 24. RESYNC Response
+
+Backend فقط Deviceهای مجاز را بررسی می‌کند.
+
+برای هر Device که Snapshot جدیدتر دارد:
+
+```text
+DEVICE_STATE
+```
+
+ارسال می‌شود.
+
+اگر Version برابر باشد:
+
+```text
+No State Delivery
+```
+
+لازم نیست Snapshot دوباره ارسال شود، مگر Client صراحتاً Full Resync بخواهد.
+
+---
+
+# 25. Full Resync
+
+Client می‌تواند:
+
+```json
+{
+  "protocol_version": 1,
+  "type": "RESYNC",
+  "request_id": "req_501",
+  "data": {
+    "full": true,
+    "device_ids": [125, 126]
+  }
+}
+```
+
+ارسال کند.
+
+در این حالت Backend Snapshot فعلی را بدون توجه به Version محلی Client ارسال می‌کند.
+
+---
+
+# 26. PING
+
+Client:
+
+```json
+{
+  "protocol_version": 1,
+  "type": "PING",
+  "request_id": "req_600",
+  "data": {}
+}
+```
+
+Server:
+
+```json
+{
+  "protocol_version": 1,
+  "type": "PONG",
+  "request_id": "req_600",
+  "data": {}
+}
+```
+
+PING مربوط به:
+
+```text
+WebSocket Connection
+```
+
+است و با Device Heartbeat ارتباطی ندارد.
+
+---
+
+# 27. Server → Client Messages
+
+پیام‌های اصلی Server:
+
+```text
+AUTH_ACK
+SUBSCRIPTION_ACK
+DEVICE_STATE
+DEVICE_STATE_DELTA
+DEVICE_ASSIGNMENT_CHANGED
+CONNECTION_STATE_CHANGED
+ERROR
+PONG
+```
+
+---
+
+# 28. DEVICE_STATE
+
+`DEVICE_STATE` یک Snapshot کامل از Projection موردنیاز Client است.
+
+نمونه:
+
+```json
+{
+  "protocol_version": 1,
+  "type": "DEVICE_STATE",
+  "message_id": "msg_1001",
+  "server_timestamp": "2026-10-06T10:00:03Z",
+  "data": {
+    "device_id": 125,
+    "state_version": 1043,
+    "device_time": "2026-10-06T09:59:58Z",
+    "server_received_at": "2026-10-06T10:00:03Z",
+    "last_seen": "2026-10-06T10:00:03Z",
+    "connection_state": "ONLINE",
+    "position": {
+      "latitude": 35.700000,
+      "longitude": 51.400000,
+      "gps_valid": true,
+      "accuracy": 5.2
+    },
+    "speed": 82.4,
+    "heading": 140.0,
+    "motion": "MOVING",
+    "ignition": true,
+    "satellites": 14
+  }
+}
+```
+
+---
+
+# 29. DEVICE_STATE Projection
+
+Projection استاندارد MVP:
+
+```text
+device_id
+vehicle_id
+state_version
+
+device_time
+server_received_at
+last_seen
+connection_state
+
+position
+├── latitude
+├── longitude
+├── gps_valid
+└── accuracy
+
+speed
+heading
+motion
+ignition
+satellites
+
+battery_voltage
+external_voltage
+gsm_signal
+
+odometer
+engine_hours
+fuel_level
+
+selected attributes
+```
+
+Backend می‌تواند در آینده Projectionهای مختلف داشته باشد، ولی Semantics CurrentState باید یکسان بماند.
+
+---
+
+# 30. Position Contract
+
+اگر:
+
+```text
+gps_valid = true
+```
+
+باشد:
+
+```json
+{
+  "position": {
+    "latitude": 35.700000,
+    "longitude": 51.400000,
+    "gps_valid": true,
+    "accuracy": 5.2
+  }
+}
+```
+
+اگر:
+
+```text
+gps_valid = false
+```
+
+باشد:
+
+```json
+{
+  "position": {
+    "latitude": null,
+    "longitude": null,
+    "gps_valid": false,
+    "accuracy": null
+  }
+}
+```
+
+Last Valid Position در صورت نیاز به‌صورت مفهوم جداگانه ارائه می‌شود و نباید با Position فعلی مخلوط شود.
+
+---
+
+# 31. DEVICE_STATE_DELTA
+
+Delta فقط تغییرات Projection را منتقل می‌کند.
+
+نمونه:
+
+```json
+{
+  "protocol_version": 1,
+  "type": "DEVICE_STATE_DELTA",
+  "message_id": "msg_1002",
+  "server_timestamp": "2026-10-06T10:00:05Z",
+  "data": {
+    "device_id": 125,
+    "state_version": 1044,
+    "changed": {
+      "speed": 90.0,
+      "heading": 145.0
+    }
+  }
+}
+```
+
+Client باید Delta را فقط روی Snapshot قبلی همان Device اعمال کند.
+
+---
+
+# 32. Delta بدون Snapshot معتبر
+
+اگر Client Snapshot پایه را ندارد:
+
+```text
+DEVICE_STATE_DELTA
+```
+
+را نباید به‌صورت مستقل اعمال کند.
+
+Client باید:
+
+```text
+RESYNC
+```
+
+درخواست کند.
+
+---
+
+# 33. Delta Version
+
+اگر Client دارد:
+
+```text
+state_version = 1043
+```
+
+و Delta دریافت کند:
+
+```text
+state_version = 1044
+```
+
+مجاز است.
+
+اما اگر:
+
+```text
+Client = 1043
+Delta = 1046
+```
+
+باشد:
+
+```text
+Gap
+```
+
+وجود دارد و Client باید:
+
+```text
+RESYNC
+```
+
+کند.
+
+---
+
+# 34. Delta فقط برای CurrentState
+
+Delta فقط برای:
+
+```text
+CurrentState Projection
+```
+
+است.
+
+Delta برای:
+
+```text
+Event
+Trip
+Alert
+Notification
+Command
+```
+
+در MVP تعریف نمی‌شود.
+
+---
+
+# 35. DEVICE_ASSIGNMENT_CHANGED
+
+این Message تغییر Context Device/Vehicle را اعلام می‌کند.
+
+نمونه:
+
+```json
+{
+  "protocol_version": 1,
+  "type": "DEVICE_ASSIGNMENT_CHANGED",
+  "message_id": "msg_2001",
+  "server_timestamp": "2026-10-06T10:30:00Z",
+  "data": {
+    "device_id": 125,
+    "previous_vehicle_id": 10,
+    "current_vehicle_id": 20,
+    "effective_at": "2026-10-06T10:30:00Z"
+  }
+}
+```
+
+این Message:
+
+```text
+state_version
+```
+
+ندارد.
+
+زیرا Assignment Version با CurrentState Version یکی نیست.
+
+---
+
+# 36. Assignment Change و State
+
+مثلاً:
+
+```text
+Device 125
+state_version = 100
+```
+
+Assignment تغییر می‌کند.
+
+پس از Assignment:
+
+```text
+state_version = 100
+```
+
+همچنان معتبر است.
+
+اما:
+
+```text
+DEVICE_ASSIGNMENT_CHANGED
+```
+
+پیام جداگانه ارسال می‌شود.
+
+---
+
+# 37. CONNECTION_STATE_CHANGED
+
+Connection State از:
+
+```text
+last_seen
++
+offline_timeout
+```
+
+محاسبه می‌شود.
+
+نمونه:
+
+```json
+{
+  "protocol_version": 1,
+  "type": "CONNECTION_STATE_CHANGED",
+  "message_id": "msg_3001",
+  "server_timestamp": "2026-10-06T10:35:00Z",
+  "data": {
+    "device_id": 125,
+    "connection_state": "OFFLINE",
+    "last_seen": "2026-10-06T10:29:00Z"
+  }
+}
+```
+
+این Message:
+
+```text
+state_version
+```
+
+ندارد.
+
+---
+
+# 38. Connection State Values
+
+مقادیر:
+
+```text
+NEVER_SEEN
+ONLINE
+OFFLINE
+```
+
+هستند.
+
+`connection_state` در Database ذخیره نمی‌شود.
+
+---
+
+# 39. ERROR
+
+تمام خطاهای WebSocket از Contract مشخص استفاده می‌کنند.
+
+نمونه:
+
+```json
+{
+  "protocol_version": 1,
+  "type": "ERROR",
+  "request_id": "req_500",
+  "message_id": "msg_error_1",
+  "server_timestamp": "2026-10-06T10:40:00Z",
+  "data": {
+    "code": "FORBIDDEN",
+    "message": "Access denied",
+    "details": {}
+  }
+}
+```
+
+---
+
+# 40. Error Codeهای اولیه
+
+```text
+AUTH_REQUIRED
+AUTH_FAILED
+INVALID_MESSAGE
+UNSUPPORTED_PROTOCOL_VERSION
+UNKNOWN_MESSAGE_TYPE
+
+FORBIDDEN
+DEVICE_NOT_FOUND
+VEHICLE_NOT_FOUND
+
+INVALID_SUBSCRIPTION
+INVALID_DEVICE_ID
+INVALID_VEHICLE_ID
+
+INVALID_VIEWPORT
+
+RESYNC_REQUIRED
+RESYNC_FAILED
+
+RATE_LIMITED
+SERVER_UNAVAILABLE
+INTERNAL_ERROR
+```
+
+پیام Error نباید اطلاعات داخلی Database، SQL، Stack Trace، Token یا Secret را افشا کند.
+
+---
+
+# 41. Error Handling
+
+خطاهای Request-specific:
+
+```text
+request_id
+```
+
+دارند.
+
+مثلاً:
+
+```text
+SUBSCRIBE_DEVICES
+→ ERROR
+→ همان request_id
+```
+
+خطاهای Connection-level ممکن است `request_id` نداشته باشند.
+
+---
+
+# 42. Unknown Message Type
+
+اگر Client پیام ناشناخته بفرستد:
+
+```json
+{
+  "type": "UNKNOWN_TYPE"
+}
+```
+
+Backend:
+
+```text
+ERROR
+code = UNKNOWN_MESSAGE_TYPE
+```
+
+ارسال می‌کند.
+
+Connection لزوماً برای یک Message ناشناخته بسته نمی‌شود، مگر اینکه رفتار Client مخرب یا غیرقابل‌قبول باشد.
+
+---
+
+# 43. Unsupported Protocol Version
+
+اگر:
+
+```text
+protocol_version
+```
+
+پشتیبانی نشود:
+
+```text
+ERROR
+code = UNSUPPORTED_PROTOCOL_VERSION
+```
+
+ارسال می‌شود.
+
+در صورت ناسازگاری بنیادی، Backend می‌تواند Connection را ببندد.
+
+---
+
+# 44. Message Size Limit
+
+WebSocket Message دارای حداکثر اندازه مشخص خواهد بود.
+
+Message بزرگ نباید باعث مصرف نامحدود Memory شود.
+
+قاعده:
+
+```text
+MAX_WEBSOCKET_MESSAGE_SIZE
+```
+
+باید Configurable باشد.
+
+Payloadهای غیرضروری و Attributes بزرگ نباید وارد Live Map Projection شوند.
+
+---
+
+# 45. Rate Limit
+
+برای Clientها محدودیت منطقی روی Requestهای:
+
+```text
+SUBSCRIBE
+RESYNC
+SET_VIEWPORT
+PING
+```
+
+اعمال می‌شود.
+
+خصوصاً:
+
+```text
+RESYNC
+```
+
+نباید بتواند به‌صورت نامحدود Database Query ایجاد کند.
+
+---
+
+# 46. Subscription Limit
+
+Client نباید بتواند بدون محدودیت:
+
+```text
+10000
+20000
+...
+```
+
+Subscription ایجاد کند.
+
+حدود اولیه:
+
+```text
+MAX_SUBSCRIBED_DEVICES
+MAX_SUBSCRIBED_VEHICLES
+```
+
+قابل تنظیم هستند.
+
+مقدار دقیق در مرحله Performance/Load Test تعیین می‌شود.
+
+---
+
+# 47. WebSocket Backpressure
+
+اگر Client کند باشد:
+
+```text
+Backend
+   ↓
+WebSocket Buffer
+   ↓
+Client Slow
+```
+
+Backend نباید بدون محدودیت پیام در Memory نگه دارد.
+
+برای Live State:
+
+> **آخرین State از Stateهای قدیمی مهم‌تر است.**
+
+بنابراین در صورت فشار شدید می‌توان:
+
+```text
+Old Pending State Updates
+```
+
+را Coalesce کرد و آخرین Snapshot را نگه داشت.
+
+---
+
+# 48. Coalescing
+
+مثلاً:
+
+```text
+state_version 100
+state_version 101
+state_version 102
+state_version 103
+```
+
+در زمان کوتاه تولید شده‌اند.
+
+اگر Client هنوز:
+
+```text
+100
+```
+
+است، Backend الزاماً نباید چهار Message جدا ارسال کند.
+
+می‌تواند آخرین Snapshot:
+
+```text
+103
+```
+
+را ارسال کند.
+
+Client پس از دریافت:
+
+```text
+103
+```
+
+در وضعیت صحیح قرار می‌گیرد.
+
+اگر Delta Gap ایجاد شود:
+
+```text
+RESYNC
+```
+
+انجام می‌شود.
+
+---
+
+# 49. NOTIFY و Coalescing
+
+ممکن است:
+
+```text
+NOTIFY
+NOTIFY
+NOTIFY
+```
+
+برای یک Device دریافت شود.
+
+Backend می‌تواند آنها را Coalesce کند:
+
+```text
+Device 125
+→ Read CurrentState once
+```
+
+و فقط آخرین State را برای Client ارسال کند.
+
+---
+
+# 50. Initial Snapshot Race
+
+ترتیب قطعی:
+
+```text
+1. Authentication
+2. Permission
+3. Register Subscription
+4. Read CurrentState
+5. Send DEVICE_STATE
+6. Deliver newer State Updates
+```
+
+اگر Update بین مرحله 4 و 5 رخ دهد، Backend باید با Version آن را تشخیص دهد.
+
+Temporary Buffer می‌تواند برای عبور از این Race استفاده شود.
+
+---
+
+# 51. Temporary Buffer
+
+Temporary Buffer:
+
+* Durable نیست.
+* Source of Truth نیست.
+* History نیست.
+* فقط برای Initial Snapshot Race است.
+
+اگر Connection از بین برود:
+
+```text
+Buffer
+→ Discard
+```
+
+Client بعد از Reconnect:
+
+```text
+RESYNC
+```
+
+می‌کند.
+
+---
+
+# 52. Client State Machine
+
+برای هر Device، Client مفهوماً:
+
+```text
+UNKNOWN
+   ↓
+SNAPSHOT_RECEIVED
+   ↓
+LIVE
+```
+
+دارد.
+
+اگر Gap تشخیص داده شود:
+
+```text
+LIVE
+ ↓
+RESYNC_REQUIRED
+ ↓
+SNAPSHOT_RECEIVED
+ ↓
+LIVE
+```
+
+اگر Connection قطع شود:
+
+```text
+LIVE
+ ↓
+DISCONNECTED
+ ↓
+RECONNECT
+ ↓
+RESYNC
+ ↓
+LIVE
+```
+
+---
+
+# 53. Client Version Rule
+
+Client برای هر Device آخرین:
+
+```text
+state_version
+```
+
+را نگه می‌دارد.
+
+اگر پیام:
+
+```text
+incoming_version <= local_version
+```
+
+باشد:
+
+```text
+Ignore
+```
+
+اگر:
+
+```text
+incoming_version == local_version + 1
+```
+
+باشد:
+
+```text
+Accept
+```
+
+اگر:
+
+```text
+incoming_version > local_version + 1
+```
+
+باشد:
+
+```text
+RESYNC
+```
+
+---
+
+# 54. Snapshot Acceptance
+
+`DEVICE_STATE` یک Snapshot است.
+
+اگر:
+
+```text
+incoming_version > local_version
+```
+
+باشد:
+
+```text
+Replace Local Snapshot
+```
+
+اگر:
+
+```text
+incoming_version < local_version
+```
+
+باشد:
+
+```text
+Ignore
+```
+
+Client نباید Snapshot قدیمی را روی Snapshot جدید بنویسد.
+
+---
+
+# 55. CurrentState Version اولیه
+
+برای Device تازه ساخته‌شده:
+
+```text
+state_version = 0
+```
+
+است.
+
+قبل از اولین Snapshot:
+
+```text
+device_time = NULL
+last_seen = NULL
+state_version = 0
+```
+
+بعد از اولین CurrentState Update:
+
+```text
+state_version = 1
+```
+
+---
+
+# 56. Heartbeat
+
+Heartbeat معمولی Device:
+
+```text
+last_seen
+```
+
+را ممکن است Update کند.
+
+اما:
+
+```text
+state_version
+```
+
+را افزایش نمی‌دهد.
+
+Heartbeat Device با:
+
+```text
+PING
+PONG
+```
+
+WebSocket یکی نیست.
+
+---
+
+# 57. GPS No-Fix
+
+اگر Telemetry جدیدتر باشد:
+
+```text
+gps_valid = false
+```
+
+CurrentState Snapshot Update می‌شود:
+
+```text
+latitude = NULL
+longitude = NULL
+gps_valid = false
+```
+
+و:
+
+```text
+state_version += 1
+```
+
+اما:
+
+```text
+last_valid_position
+```
+
+حفظ می‌شود.
+
+---
+
+# 58. Device Replacement
+
+اگر Device تغییر کند:
+
+```text
+Vehicle A
+→ Device 100
+```
+
+به:
+
+```text
+Vehicle A
+→ Device 200
+```
+
+تبدیل شود:
+
+```text
+DEVICE_ASSIGNMENT_CHANGED
+```
+
+ارسال می‌شود.
+
+CurrentState Device 200 مستقل است:
+
+```text
+state_version = 0
+```
+
+تا اولین Snapshot آن.
+
+Version Device 100 هیچ ارتباطی با Device 200 ندارد.
+
+---
+
+# 59. Marker Clustering
+
+Clustering در Frontend انجام می‌شود.
+
+Backend فقط Stateهای مجاز را ارسال می‌کند.
+
+Frontend بر اساس:
+
+```text
+Zoom
+Viewport
+Position
+```
+
+Cluster ایجاد می‌کند.
+
+---
+
+# 60. Historical Map
+
+Historical Map مستقل از WebSocket است:
+
+```text
+LocationHistory
+   ↓
+REST API
+   ↓
+Polyline / Playback
+```
+
+Live Map:
+
+```text
+CurrentState
+   ↓
+WebSocket
+```
+
+---
+
+# 61. WebSocket Business Logic ندارد
+
+WebSocket نباید انجام دهد:
+
+```text
+Trip Detection
+Event Detection
+Geofence Detection
+Fuel Calculation
+```
+
+وظیفه:
+
+```text
+CurrentState Read
+→ Permission
+→ Projection
+→ Delivery
+```
+
+است.
+
+---
+
+# 62. Message Contract Summary
+
+## Client → Server
+
+| Type                 | `request_id` | Response                    | کاربرد              |
+| -------------------- | -----------: | --------------------------- | ------------------- |
+| `AUTH`               |          Yes | `AUTH_ACK` / `ERROR`        | Authentication      |
+| `SUBSCRIBE_DEVICES`  |          Yes | `SUBSCRIPTION_ACK`          | Subscribe Device    |
+| `SUBSCRIBE_VEHICLES` |          Yes | `SUBSCRIPTION_ACK`          | Subscribe Vehicle   |
+| `UNSUBSCRIBE`        |          Yes | `SUBSCRIPTION_ACK`          | حذف Subscription    |
+| `SET_VIEWPORT`       |          Yes | `SUBSCRIPTION_ACK` یا Error | بهینه‌سازی Delivery |
+| `RESYNC`             |          Yes | `DEVICE_STATE` / Error      | Recovery Client     |
+| `PING`               |          Yes | `PONG`                      | Connection Health   |
+
+## Server → Client
+
+| Type                        |   `request_id` | `state_version` | کاربرد                 |
+| --------------------------- | -------------: | --------------: | ---------------------- |
+| `AUTH_ACK`                  |            Yes |              No | Authentication Result  |
+| `SUBSCRIPTION_ACK`          |            Yes |              No | Subscription Result    |
+| `DEVICE_STATE`              | No/Conditional |             Yes | Snapshot               |
+| `DEVICE_STATE_DELTA`        |             No |             Yes | State Delta            |
+| `DEVICE_ASSIGNMENT_CHANGED` |             No |              No | Vehicle Context Change |
+| `CONNECTION_STATE_CHANGED`  |             No |              No | Connection State       |
+| `PONG`                      |            Yes |              No | Ping Response          |
+| `ERROR`                     |    Conditional |              No | Error                  |
+
+---
+
+# 63. Contract نمونه کامل Live Flow
+
+### مرحله ۱ — Subscribe
+
+```json
+{
+  "protocol_version": 1,
+  "type": "SUBSCRIBE_DEVICES",
+  "request_id": "req_100",
+  "data": {
+    "device_ids": [125]
+  }
+}
+```
+
+### مرحله ۲ — ACK
+
+```json
+{
+  "protocol_version": 1,
+  "type": "SUBSCRIPTION_ACK",
+  "request_id": "req_100",
+  "message_id": "msg_1",
+  "server_timestamp": "2026-10-06T10:00:00Z",
+  "data": {
+    "scope": "DEVICES",
+    "accepted_device_ids": [125],
+    "rejected_device_ids": []
+  }
+}
+```
+
+### مرحله ۳ — Initial Snapshot
+
+```json
+{
+  "protocol_version": 1,
+  "type": "DEVICE_STATE",
+  "message_id": "msg_2",
+  "server_timestamp": "2026-10-06T10:00:00Z",
+  "data": {
+    "device_id": 125,
+    "state_version": 100,
+    "device_time": "2026-10-06T09:59:58Z",
+    "last_seen": "2026-10-06T10:00:00Z",
+    "connection_state": "ONLINE",
+    "position": {
+      "latitude": 35.700000,
+      "longitude": 51.400000,
+      "gps_valid": true
+    },
+    "speed": 80,
+    "heading": 140,
+    "ignition": true,
+    "motion": "MOVING"
+  }
+}
+```
+
+### مرحله ۴ — State Update
+
+```json
+{
+  "protocol_version": 1,
+  "type": "DEVICE_STATE_DELTA",
+  "message_id": "msg_3",
+  "server_timestamp": "2026-10-06T10:00:05Z",
+  "data": {
+    "device_id": 125,
+    "state_version": 101,
+    "changed": {
+      "speed": 85
+    }
+  }
+}
+```
+
+### مرحله ۵ — Assignment Change
+
+```json
+{
+  "protocol_version": 1,
+  "type": "DEVICE_ASSIGNMENT_CHANGED",
+  "message_id": "msg_4",
+  "server_timestamp": "2026-10-06T10:30:00Z",
+  "data": {
+    "device_id": 125,
+    "previous_vehicle_id": 10,
+    "current_vehicle_id": 20,
+    "effective_at": "2026-10-06T10:30:00Z"
+  }
+}
+```
+
+### مرحله ۶ — Connection State
+
+```json
+{
+  "protocol_version": 1,
+  "type": "CONNECTION_STATE_CHANGED",
+  "message_id": "msg_5",
+  "server_timestamp": "2026-10-06T10:35:00Z",
+  "data": {
+    "device_id": 125,
+    "connection_state": "OFFLINE",
+    "last_seen": "2026-10-06T10:29:59Z"
+  }
+}
+```
+
+---
+
+# 64. قواعد قطعی WebSocket
+
+```text
+[✓] WebSocket در sana-backend است
+[✓] sana-gps مستقیماً WebSocket ندارد
+[✓] CurrentState منبع وضعیت لحظه‌ای است
+[✓] WebSocket فقط Stateهای Commit‌شده را Delivery می‌کند
+[✓] NOTIFY فقط Signal است
+[✓] Reconciliation برای Recovery Backend است
+[✓] Resync برای Recovery Client است
+[✓] Permission کاملاً Server-side است
+[✓] Subscription منبع Permission نیست
+
+[✓] protocol_version نسخه قرارداد WebSocket است
+[✓] state_version نسخه CurrentState همان Device است
+[✓] message_id شناسه Message است
+[✓] request_id برای Correlation Request/Response است
+[✓] server_timestamp زمان تولید Message توسط Backend است
+
+[✓] DEVICE_STATE یک Snapshot است
+[✓] DEVICE_STATE_DELTA فقط تغییرات Snapshot است
+[✓] Delta بدون Snapshot معتبر قابل اعمال نیست
+[✓] Gap باعث RESYNC می‌شود
+[✓] Reconnect با Snapshot انجام می‌شود
+
+[✓] state_version از 0 شروع می‌شود
+[✓] اولین Snapshot Update باعث 0 → 1 می‌شود
+[✓] state_version فقط با Snapshot Update افزایش می‌یابد
+[✓] state_version هیچ‌گاه کاهش نمی‌یابد
+[✓] Duplicate باعث افزایش state_version نمی‌شود
+[✓] Heartbeat باعث افزایش state_version نمی‌شود
+[✓] Assignment Change باعث افزایش state_version نمی‌شود
+[✓] Connection State باعث افزایش state_version نمی‌شود
+
+[✓] Assignment Change Message مستقل دارد
+[✓] Connection State Message مستقل دارد
+[✓] Historical Map مستقل از WebSocket است
+[✓] Marker Clustering در Frontend است
+[✓] WebSocket Business Logic ندارد
+
+[✓] Message Size محدود است
+[✓] Subscription محدود است
+[✓] RESYNC محدود و کنترل‌شده است
+[✓] Client کند نباید Memory نامحدود مصرف کند
+[✓] Stateهای قدیمی در فشار شدید قابل Coalesce هستند
+[✓] Temporary Buffer فقط برای Initial Snapshot Race است
+[✓] Temporary Buffer Durable نیست
+[✓] PostgreSQL Source of Truth باقی می‌ماند
+```
+
+---
+
+# اصل نهایی
+
+> **WebSocket در SANA یک Delivery Channel برای وضعیت لحظه‌ای است، نه Source of Truth و نه Event Stream. `DEVICE_STATE` Snapshot کامل و `DEVICE_STATE_DELTA` تغییرات Snapshot هستند. `state_version` فقط نسخه CurrentState همان Device است و از صفر شروع می‌شود. Client با Version Gap را تشخیص می‌دهد و در صورت نیاز `RESYNC` می‌کند. `NOTIFY` فقط Signal است، `Reconciliation` Backend را با PostgreSQL هماهنگ می‌کند و `Resync` Client را با CurrentState هماهنگ می‌کند.**
+
+> **هیچ‌کدام از این مکانیزم‌ها در MVP مسئول Replay تاریخچه Event، Alert، Notification یا Deltaهای قدیمی نیستند. PostgreSQL و Entityهای اصلی SANA همچنان Source of Truth باقی می‌مانند.**
+
+**قرارداد کامل WebSocket شامل Envelope، Message Typeها، Request/Response، Snapshot، Delta، Versioning، Permission، Subscription، Resync، Error، Backpressure و نمونه Flow به‌عنوان قرارداد رسمی مرحله ۲۱ ثبت شد.**
+
+
+============================================================================
+============================================================================
+
+# SANA GPS — Stage 22
+
+# طراحی نهایی Command Runtime
+
+## وضعیت
+
+```text
+Stage: 22
+Status: CLOSED
+Scope: Command Runtime
+```
+
+هدف این بخش طراحی کامل مسیر اجرای Command از ایجاد توسط Backend تا ارسال به GPS Device و دریافت نتیجه است.
+
+اصل اصلی:
+
+> `sana-backend` مالک Business Command است و `sana-gps` فقط مسئول اجرای فنی Command روی Device است.
+
+---
+
+# 1. مرز مسئولیت
+
+معماری:
+
+```text
+sana-backend
+      ↓
+gps.command
+      ↓
+sana-gps
+      ↓
+Active Session
+      ↓
+Protocol Encoder
+      ↓
+Transport
+      ↓
+GPS Device
+```
+
+### sana-backend
+
+مسئول:
+
+* Authentication
+* Authorization
+* Permission
+* Business Validation
+* ایجاد Command
+* تعیین Device
+* ثبت درخواست کاربر
+* Cancel کردن Command در محدوده مجاز
+* نمایش وضعیت Command
+
+### sana-gps
+
+مسئول:
+
+* دریافت Command از Database
+* Queue/Scheduler
+* Claim
+* بررسی Lifecycle و Session
+* پیدا کردن Session مناسب
+* Encoding
+* ارسال Bytes
+* دریافت ACK/Response
+* تشخیص نتیجه فنی
+* Retry فنی
+* Timeout
+* ثبت وضعیت اجرای Command
+
+`sana-gps` نباید خودش تصمیم Business برای ایجاد Command بگیرد.
+
+همچنین Backend هرگز مستقیماً به Socket دستگاه دسترسی ندارد.
+
+---
+
+# 2. Source of Truth
+
+جدول:
+
+```text
+gps.command
+```
+
+Source of Truth دائمی Command است.
+
+Runtime Memory فقط برای:
+
+* Scheduling
+* Session lookup
+* In-flight execution
+* Timeout handling
+* Transport state
+
+استفاده می‌شود.
+
+اگر `sana-gps` Restart شود، وضعیت Command از PostgreSQL قابل بازیابی است.
+
+---
+
+# 3. مدل Command
+
+مدل نهایی:
+
+```text
+gps.command
+├── id
+├── device_id
+├── type
+├── status
+├── source
+├── requested_by
+├── payload
+├── result
+├── error_code
+├── attempts
+├── session_generation
+├── created_at
+├── updated_at
+├── expires_at
+├── sent_at
+├── acknowledged_at
+└── completed_at
+```
+
+---
+
+# 4. مالکیت Command
+
+Command همیشه متعلق به Device است.
+
+```text
+Command
+   ↓
+Device
+```
+
+اگر Command از UI مربوط به Vehicle ایجاد شود، Backend در لحظه ایجاد Command، Device فعال مربوط به Vehicle را Resolve می‌کند.
+
+بعد از ایجاد:
+
+```text
+command.device_id
+```
+
+ثابت می‌ماند.
+
+اگر بعداً Device خودرو عوض شود، Command به Device جدید منتقل نمی‌شود.
+
+---
+
+# 5. Command State Machine
+
+چرخه اصلی:
+
+```text
+PENDING
+   ↓
+QUEUED
+   ↓
+SENDING
+   ↓
+SENT
+   ↓
+ACKNOWLEDGED
+   ↓
+COMPLETED
+```
+
+مسیرهای خطا:
+
+```text
+PENDING → CANCELLED
+
+QUEUED → CANCELLED
+
+QUEUED → EXPIRED
+
+SENDING → FAILED
+
+SENT → FAILED
+
+SENT → QUEUED
+```
+
+و:
+
+```text
+ACKNOWLEDGED
+      ↓
+COMPLETED
+```
+
+یا در صورت عدم تکمیل:
+
+```text
+ACKNOWLEDGED
+      ↓
+FAILED
+```
+
+---
+
+# 6. معنی Statusها
+
+### PENDING
+
+Backend Command را ایجاد کرده ولی Runtime هنوز آن را قبول نکرده است.
+
+### QUEUED
+
+`sana-gps` Command را برای اجرا پذیرفته و Command منتظر Session/Execution است.
+
+### SENDING
+
+Command توسط Worker به‌صورت Atomic Claim شده و اجرای آن در حال انجام است.
+
+### SENT
+
+Bytes با موفقیت به Transport تحویل داده شده‌اند.
+
+این وضعیت به معنی اجرای موفق روی Device نیست.
+
+### ACKNOWLEDGED
+
+Device/Protocol پاسخ ACK معتبر داده است.
+
+### COMPLETED
+
+اجرای واقعی Command طبق قرارداد آن Command اثبات شده است.
+
+### FAILED
+
+اجرای Command شکست خورده است.
+
+### CANCELLED
+
+Command قبل از Execution لغو شده است.
+
+### EXPIRED
+
+مهلت اجرای Command تمام شده است.
+
+---
+
+# 7. ACK با Completion متفاوت است
+
+این دو مفهوم یکی نیستند:
+
+```text
+ACK
+→ Device دریافت Command را تأیید کرد.
+
+COMPLETED
+→ نتیجه اجرای Command مشخص و موفق است.
+```
+
+مثلاً:
+
+```text
+REBOOT
+```
+
+ممکن است ACK داشته باشد ولی اثبات اینکه Device واقعاً Reboot شده، از Telemetry/Response بعدی مشخص شود.
+
+بنابراین:
+
+```text
+ACKNOWLEDGED ≠ COMPLETED
+```
+
+البته اگر Protocol فقط ACK داشته باشد و اطلاعات Completion ارائه نکند، بر اساس قرارداد Command می‌توان `ACKNOWLEDGED` را وضعیت نهایی موفق در نظر گرفت.
+
+---
+
+# 8. Command Type Registry
+
+تعریف رفتار Commandها در Code انجام می‌شود.
+
+Registry می‌تواند برای هر Command مشخص کند:
+
+```text
+side_effect
+retry_policy
+ack_required
+completion_required
+payload_schema
+timeout
+```
+
+نمونه:
+
+```text
+REQUEST_POSITION
+→ read-only
+→ retryable
+
+GET_STATUS
+→ read-only
+→ retryable
+
+GET_CONFIGURATION
+→ read-only
+→ retryable
+
+REBOOT
+→ side-effect
+→ no automatic retry by default
+
+SET_OUTPUT
+→ side-effect
+→ no automatic retry by default
+```
+
+---
+
+# 9. Commandهای اولیه
+
+Command Typeهای اولیه:
+
+```text
+REQUEST_POSITION
+GET_STATUS
+GET_CONFIGURATION
+REBOOT
+SET_OUTPUT
+```
+
+این نام‌ها Domain-level هستند.
+
+Protocol-specific encoding در `sana-gps` انجام می‌شود.
+
+---
+
+# 10. Payload
+
+Payload آزاد و Arbitrary JSON نیست.
+
+برای هر Command Schema مشخص وجود دارد.
+
+### بدون Payload
+
+```text
+REQUEST_POSITION
+GET_STATUS
+GET_CONFIGURATION
+REBOOT
+```
+
+مثلاً:
+
+```json
+{}
+```
+
+### SET_OUTPUT
+
+```json
+{
+  "output": 1,
+  "state": true
+}
+```
+
+Backend مسئول Business Validation است.
+
+`sana-gps` مسئول Technical/Protocol Validation است.
+
+Raw Protocol Bytes هرگز نباید از Client وارد Payload شوند.
+
+---
+
+# 11. Payload و Result
+
+### payload
+
+Intent موردنظر است:
+
+```text
+چه کاری می‌خواهیم انجام شود؟
+```
+
+### result
+
+نتیجه Normalize‌شده اجرای Command است:
+
+```text
+چه اتفاقی افتاد؟
+```
+
+Raw Protocol Response در صورت نیاز در `RawPacket` نگهداری می‌شود.
+
+---
+
+# 12. Permission
+
+Authorization فقط در `sana-backend` انجام می‌شود.
+
+جریان:
+
+```text
+User
+ ↓
+Authentication
+ ↓
+Device Access
+ ↓
+Command Permission
+ ↓
+Create Command
+```
+
+مثلاً:
+
+```text
+device.view
+device.command
+```
+
+در MVP کافی هستند.
+
+Commandهای حساس در آینده می‌توانند Permission اختصاصی داشته باشند.
+
+---
+
+# 13. sana-gps به Permission Business وابسته نیست
+
+`sana-gps` نباید User Permission را محاسبه کند.
+
+ولی به‌عنوان Second Line of Defense موارد زیر را بررسی می‌کند:
+
+```text
+Device Lifecycle
+Session
+Command Type
+Payload
+Protocol Capability
+```
+
+---
+
+# 14. Lifecycle Gate
+
+Device باید برای اجرای Command در وضعیت:
+
+```text
+ACTIVE
+```
+
+باشد.
+
+در وضعیت:
+
+```text
+WAREHOUSE
+SUSPENDED
+REPAIR
+RETURNED
+RETIRED
+```
+
+Command نباید اجرا شود.
+
+در این حالت Runtime می‌تواند Commandهای:
+
+```text
+PENDING
+QUEUED
+```
+
+را طبق Policy به:
+
+```text
+CANCELLED
+```
+
+تبدیل کند.
+
+این کار از اجرای Command قدیمی روی Device نامعتبر جلوگیری می‌کند.
+
+---
+
+# 15. Session Gate
+
+Command فقط باید روی Session همان Device اجرا شود.
+
+```text
+command.device_id
+==
+session.device_id
+```
+
+باید برقرار باشد.
+
+همچنین:
+
+```text
+command.session_generation
+==
+current_session.generation
+```
+
+باید برقرار باشد.
+
+Session قدیمی نباید بتواند Command جدید را اجرا کند.
+
+---
+
+# 16. Session Generation
+
+هر Session یک:
+
+```text
+generation
+```
+
+دارد.
+
+وقتی Device دوباره Connect می‌شود:
+
+```text
+generation + 1
+```
+
+می‌شود.
+
+مثلاً:
+
+```text
+Session 10
+generation = 7
+```
+
+بعد reconnect:
+
+```text
+Session 11
+generation = 8
+```
+
+Commandهای وابسته به Generation قدیمی نمی‌توانند روی Session جدید بدون Claim مجدد اجرا شوند.
+
+---
+
+# 17. Offline Device
+
+Offline بودن Device به معنی Failure فوری Command نیست.
+
+اگر Device Offline باشد:
+
+```text
+Command
+→ QUEUED
+```
+
+باقی می‌ماند.
+
+تا زمانی که:
+
+```text
+expires_at
+```
+
+نرسیده باشد، Scheduler می‌تواند پس از اتصال Device دوباره آن را اجرا کند.
+
+بنابراین:
+
+```text
+Offline
+≠
+Failed
+```
+
+---
+
+# 18. Command Expiration
+
+هر Command دارای:
+
+```text
+expires_at
+```
+
+است.
+
+اگر:
+
+```text
+now >= expires_at
+```
+
+باشد:
+
+```text
+PENDING / QUEUED
+        ↓
+EXPIRED
+```
+
+Command منقضی‌شده هرگز نباید ارسال شود.
+
+---
+
+# 19. Scheduler
+
+Command Scheduler یک Loop مرکزی است.
+
+Scheduler نباید برای هر Command یک Timer جداگانه ایجاد کند.
+
+ساختار:
+
+```text
+PostgreSQL
+    ↓
+Scheduler
+    ↓
+Find Eligible Commands
+    ↓
+Atomic Claim
+    ↓
+Worker
+```
+
+---
+
+# 20. PostgreSQL NOTIFY
+
+Backend بعد از Commit Command می‌تواند:
+
+```text
+NOTIFY
+```
+
+ارسال کند.
+
+اما:
+
+> `NOTIFY` Source of Truth نیست.
+
+NOTIFY فقط یک Signal سریع برای بیدار کردن Scheduler است.
+
+اگر Notification از دست برود:
+
+```text
+Scheduler Reconciliation
+```
+
+دوباره PostgreSQL را بررسی می‌کند.
+
+بنابراین:
+
+```text
+NOTIFY
+≠ Queue
+≠ Durable Message
+```
+
+---
+
+# 21. Reconciliation
+
+Scheduler باید به‌صورت دوره‌ای Commandهای واجد شرایط را دوباره از Database پیدا کند.
+
+مثلاً:
+
+```text
+PENDING
+QUEUED
+Retryable
+Expired
+```
+
+بنابراین اگر:
+
+* NOTIFY از دست رفت
+* sana-gps Restart شد
+* Connection لحظه‌ای قطع شد
+
+Command قابل بازیابی است.
+
+---
+
+# 22. Queueing
+
+MVP از Queue جداگانه استفاده نمی‌کند.
+
+یعنی:
+
+```text
+Kafka ❌
+RabbitMQ ❌
+Redis Queue ❌
+Celery ❌
+Disk Queue ❌
+```
+
+صف پایدار:
+
+```text
+gps.command
+```
+
+است.
+
+در آینده اگر حجم نیاز داشته باشد:
+
+```text
+PostgreSQL
+   ↓
+Queue / Worker Layer
+```
+
+قابل اضافه شدن است.
+
+Contract Command تغییر نمی‌کند.
+
+---
+
+# 23. Atomic Claim
+
+Scheduler نباید Command را فقط در Memory Claim کند.
+
+Claim باید در PostgreSQL به‌صورت Atomic باشد.
+
+مفهوم:
+
+```sql
+UPDATE gps.command
+SET
+    status = 'SENDING',
+    attempts = attempts + 1,
+    session_generation = :generation
+WHERE id = :command_id
+  AND status = 'QUEUED'
+  AND expires_at > CURRENT_TIMESTAMP;
+```
+
+اگر Update موفق باشد:
+
+```text
+Worker
+→ Command را Claim کرده است.
+```
+
+اگر:
+
+```text
+0 rows updated
+```
+
+باشد:
+
+```text
+Command دیگر قابل Claim نیست.
+```
+
+این مکانیزم برای Multi-Instance شدن `sana-gps` ضروری است.
+
+---
+
+# 24. One In-Flight Command per Device
+
+در MVP برای هر Device حداکثر یک Command در حال اجرای واقعی داریم.
+
+مثلاً:
+
+```text
+Device 100
+ └── SET_OUTPUT
+```
+
+تا زمانی که وضعیت آن مشخص نشده، Command بعدی اجرا نمی‌شود.
+
+این قانون Matching ACK را بسیار ساده‌تر و امن‌تر می‌کند.
+
+در آینده در صورت نیاز می‌توان Concurrency Policy پیشرفته‌تر اضافه کرد.
+
+---
+
+# 25. FIFO
+
+در MVP Priority پیچیده نداریم.
+
+Commandهای واجد شرایط برای یک Device بر اساس:
+
+```text
+created_at ASC
+```
+
+پردازش می‌شوند.
+
+یعنی قدیمی‌ترین Command معتبر اول اجرا می‌شود.
+
+Command منقضی‌شده از صف قابل اجرا حذف می‌شود.
+
+---
+
+# 26. Batch Size
+
+Scheduler نباید تمام Commandهای Database را یک‌جا Load کند.
+
+Batch محدود استفاده می‌شود.
+
+مثلاً:
+
+```text
+LIMIT 50
+```
+
+مقدار اولیه قابل تنظیم است.
+
+هدف:
+
+* کنترل Memory
+* کنترل DB Load
+* جلوگیری از Burst
+* امکان Scale
+
+---
+
+# 27. Retry
+
+Retry بر اساس Command Type است.
+
+### Query Command
+
+مثل:
+
+```text
+REQUEST_POSITION
+GET_STATUS
+GET_CONFIGURATION
+```
+
+می‌تواند Retry شود.
+
+### Side-effect Command
+
+مثل:
+
+```text
+REBOOT
+SET_OUTPUT
+```
+
+به‌صورت پیش‌فرض Auto Retry نمی‌شود.
+
+دلیل:
+
+اگر Bytes ارسال شده باشند ولی ACK نرسیده باشد، مشخص نیست Device Command را اجرا کرده یا نه.
+
+Retry کورکورانه ممکن است Side Effect را دوباره اجرا کند.
+
+---
+
+# 28. Retry Backoff
+
+Retry باید:
+
+```text
+bounded
+```
+
+باشد.
+
+مثلاً:
+
+```text
+attempt 1
+↓
+short delay
+
+attempt 2
+↓
+longer delay
+
+attempt 3
+↓
+FAIL
+```
+
+Backoff و Jitter قابل تنظیم هستند.
+
+Retry نامحدود ممنوع است.
+
+---
+
+# 29. Disconnect قبل از Send
+
+اگر Session قبل از ارسال واقعی Command از بین برود:
+
+```text
+SENDING
+   ↓
+QUEUED
+```
+
+می‌تواند برگردد.
+
+Command روی Session جدید دوباره Claim می‌شود.
+
+---
+
+# 30. Disconnect هنگام/بعد از Send
+
+اگر Connection هنگام یا بعد از ارسال قطع شود، Delivery نامطمئن است.
+
+یعنی:
+
+```text
+Command sent?
+Device received?
+Device executed?
+```
+
+ممکن است مشخص نباشد.
+
+برای Query:
+
+```text
+Retry
+```
+
+می‌تواند مجاز باشد.
+
+برای Side Effect:
+
+```text
+FAILED
+```
+
+به‌صورت محافظه‌کارانه ثبت می‌شود.
+
+---
+
+# 31. ACK Timeout
+
+اگر ACK در زمان تعیین‌شده دریافت نشود:
+
+### Query
+
+```text
+SENT
+ ↓
+ACK_TIMEOUT
+ ↓
+QUEUED
+```
+
+در صورت باقی بودن:
+
+```text
+expires_at
+```
+
+و Retry Policy.
+
+### Side Effect
+
+```text
+SENT
+ ↓
+FAILED
+error_code = ACK_TIMEOUT
+```
+
+---
+
+# 32. Completion Timeout
+
+اگر:
+
+```text
+ACKNOWLEDGED
+```
+
+شد ولی Completion مورد انتظار دریافت نشد:
+
+```text
+ACKNOWLEDGED
+       ↓
+COMPLETION_TIMEOUT
+       ↓
+FAILED
+```
+
+برای Side Effect نباید به‌صورت خودکار دوباره اجرا شود.
+
+---
+
+# 33. Crash بعد از Send
+
+ممکن است Process بعد از:
+
+```text
+Transport.send()
+```
+
+و قبل از ثبت نتیجه Crash کند.
+
+در این حالت:
+
+```text
+Delivery = UNKNOWN
+```
+
+است.
+
+برای Side Effect:
+
+```text
+Automatic Retry ❌
+```
+
+برای Query طبق Retry Policy قابل بررسی است.
+
+این یکی از دلایل اصلی محافظه‌کار بودن Command Runtime است.
+
+---
+
+# 34. Response Matching
+
+اگر Protocol دارای:
+
+```text
+Command ID
+Sequence
+Correlation ID
+```
+
+باشد، برای Matching استفاده می‌شود.
+
+اگر Protocol چنین قابلیتی نداشته باشد، قانون:
+
+```text
+One In-Flight Command per Device
+```
+
+Matching را ساده و قابل اعتماد می‌کند.
+
+Telemetry معمولی نباید به‌صورت تصادفی ACK Command تلقی شود.
+
+---
+
+# 35. ACK و Telemetry مستقل
+
+ممکن است Device بعد از Command هم:
+
+```text
+ACK
+```
+
+و هم:
+
+```text
+Telemetry
+```
+
+ارسال کند.
+
+این دو Pipeline مستقل دارند:
+
+```text
+Command Response
+→ Command Runtime
+
+Telemetry
+→ Telemetry Pipeline
+```
+
+Command مستقیماً CurrentState را تغییر نمی‌دهد.
+
+اگر وضعیت واقعی Device تغییر کرده باشد، Telemetry/Response استانداردشده آن را مشخص می‌کند.
+
+---
+
+# 36. Command Encoder
+
+مسیر:
+
+```text
+Domain Command
+     ↓
+Protocol Encoder
+     ↓
+Raw Bytes
+```
+
+Encoder مسئول:
+
+* Protocol Encoding
+* Validation فنی
+* تولید Bytes
+
+است.
+
+Encoder نباید:
+
+```text
+Database Query
+```
+
+انجام دهد.
+
+---
+
+# 37. Session Manager
+
+Session Manager مسئول پیدا کردن Session مناسب Device است.
+
+```text
+Command
+   ↓
+Session Manager
+   ↓
+Active Session
+```
+
+اگر Session وجود نداشته باشد:
+
+```text
+Command → QUEUED
+```
+
+می‌ماند.
+
+---
+
+# 38. Transport
+
+Transport فقط مسئول Network است.
+
+```text
+Encoder
+   ↓
+Bytes
+   ↓
+Transport
+   ↓
+TCP / UDP
+```
+
+Transport نباید Business Logic Command را بداند.
+
+---
+
+# 39. Scheduler به Socket دست نمی‌زند
+
+Scheduler فقط:
+
+```text
+Find
+Claim
+Schedule
+```
+
+می‌کند.
+
+مسیر صحیح:
+
+```text
+Scheduler
+ ↓
+Worker
+ ↓
+Session Manager
+ ↓
+Encoder
+ ↓
+Transport
+```
+
+Scheduler مستقیماً با TCP Socket کار نمی‌کند.
+
+---
+
+# 40. Command Result
+
+`result` باید Normalize‌شده و قابل استفاده توسط Backend باشد.
+
+مثلاً:
+
+```json
+{
+  "position": {
+    "latitude": 35.7,
+    "longitude": 51.4
+  }
+}
+```
+
+یا:
+
+```json
+{
+  "status": "OK"
+}
+```
+
+Raw Response در صورت نیاز در RawPacket قابل نگهداری است.
+
+---
+
+# 41. Error Codes
+
+Error Codeهای استاندارد اولیه:
+
+```text
+DEVICE_OFFLINE
+COMMAND_EXPIRED
+COMMAND_CANCELLED
+UNSUPPORTED_COMMAND
+SESSION_UNAVAILABLE
+SEND_FAILED
+ACK_TIMEOUT
+COMPLETION_TIMEOUT
+DEVICE_REJECTED
+PROTOCOL_ERROR
+ENCODING_ERROR
+LIFECYCLE_BLOCKED
+SESSION_MISMATCH
+SESSION_GENERATION_MISMATCH
+```
+
+---
+
+# 42. Command Observability
+
+`gps.command` خودش منبع Audit است.
+
+اطلاعاتی مانند:
+
+```text
+status
+source
+requested_by
+payload
+result
+error_code
+attempts
+session_generation
+timestamps
+```
+
+برای Trace کافی است.
+
+در MVP جدول جداگانه:
+
+```text
+command_attempt
+command_state_history
+```
+
+نمی‌سازیم.
+
+در آینده در صورت نیاز قابل اضافه شدن هستند.
+
+---
+
+# 43. Attempts
+
+```text
+attempts
+```
+
+تعداد تلاش‌های اجرای Command است.
+
+`sent_at` زمان آخرین Send موفق را نگه می‌دارد.
+
+اگر Attempt بدون Send واقعی شکست بخورد، بسته به تعریف دقیق Implementation باید شمارش آن با Policy نهایی هماهنگ شود؛ اصل این است که تعداد Execution Attempt قابل مشاهده باشد.
+
+---
+
+# 44. Traceability
+
+برای Trace Command از این شناسه‌ها استفاده می‌شود:
+
+```text
+command_id
+device_id
+session_id
+session_generation
+```
+
+`connection_id` Runtime/Log-level است و لزوماً در Database ذخیره نمی‌شود.
+
+---
+
+# 45. Logging
+
+Transitionهای مهم باید Structured Log شوند:
+
+```text
+COMMAND_CREATED
+COMMAND_QUEUED
+COMMAND_CLAIMED
+COMMAND_SENT
+COMMAND_ACKNOWLEDGED
+COMMAND_COMPLETED
+COMMAND_FAILED
+COMMAND_RETRY
+COMMAND_EXPIRED
+COMMAND_CANCELLED
+```
+
+نباید:
+
+* Raw secrets
+* Credential
+* Token
+* اطلاعات حساس غیرضروری
+
+در Log ثبت شود.
+
+---
+
+# 46. Metrics
+
+حداقل Metrics:
+
+```text
+commands_created
+commands_queued
+commands_sent
+commands_acknowledged
+commands_completed
+commands_failed
+commands_expired
+commands_cancelled
+commands_retried
+
+command_ack_timeout
+command_send_failure
+command_encoding_failure
+```
+
+Latency:
+
+```text
+Create → Send
+Send → ACK
+ACK → Complete
+Create → Complete
+```
+
+نیز باید قابل اندازه‌گیری باشد.
+
+---
+
+# 47. Scheduler Lifecycle
+
+Scheduler باید:
+
+```text
+Startup
+   ↓
+Load Pending/Queued
+   ↓
+Reconcile
+   ↓
+Schedule
+   ↓
+Wait for NOTIFY / Poll
+```
+
+کار کند.
+
+در Shutdown:
+
+```text
+Stop accepting new work
+↓
+Finish safe in-flight work
+↓
+Persist state
+↓
+Close
+```
+
+Commandهای ناتمام از PostgreSQL قابل بازیابی هستند.
+
+---
+
+# 48. Scheduler Reconciliation
+
+در هر چرخه Scheduler باید بتواند:
+
+```text
+PENDING
+QUEUED
+Retryable
+Expired
+```
+
+را بررسی کند.
+
+بنابراین Restart باعث از بین رفتن Queue نمی‌شود.
+
+---
+
+# 49. Multi-Instance
+
+معماری باید از ابتدا قابلیت:
+
+```text
+sana-gps #1
+sana-gps #2
+...
+```
+
+را داشته باشد.
+
+هر Instance می‌تواند Scheduler داشته باشد.
+
+Atomic Claim در PostgreSQL تضمین می‌کند که یک Command همزمان توسط دو Instance اجرا نشود.
+
+---
+
+# 50. Future Queue Layer
+
+در صورت رشد سیستم:
+
+```text
+PostgreSQL
+      ↓
+Queue
+      ↓
+Workers
+      ↓
+Session Manager
+```
+
+قابل اضافه شدن است.
+
+اما Domain Command و State Machine تغییر نمی‌کنند.
+
+---
+
+# 51. چیزهایی که در MVP نداریم
+
+عمداً این موارد را اضافه نمی‌کنیم:
+
+```text
+Kafka
+RabbitMQ
+Redis Queue
+Celery
+Disk Queue
+Complex Priority Queue
+Command Attempt Table
+Command State History Table
+Distributed Lock Service
+Per-device Timer
+Per-command Timer
+Complex Command Dependency Graph
+```
+
+هدف:
+
+> Minimal but Reliable.
+
+---
+
+# 52. معماری نهایی
+
+```text
+                    sana-backend
+                         │
+                         │ Create Command
+                         ▼
+                  ┌──────────────┐
+                  │ gps.command  │
+                  └──────┬───────┘
+                         │
+                  NOTIFY / Poll
+                         │
+                         ▼
+                ┌──────────────────┐
+                │ Command Scheduler│
+                └────────┬─────────┘
+                         │
+                    Atomic Claim
+                         │
+                         ▼
+                  Command Worker
+                         │
+                         ▼
+                  Session Manager
+                         │
+                         ▼
+                  Protocol Encoder
+                         │
+                         ▼
+                     Transport
+                         │
+                         ▼
+                    GPS Device
+                         │
+                  ACK / Response
+                         │
+                         ▼
+                  Command Runtime
+                         │
+                         ▼
+                  gps.command
+```
+
+---
+
+# 53. اصل نهایی Command Runtime
+
+> **PostgreSQL صف پایدار و Source of Truth است؛ NOTIFY فقط Signal است؛ Scheduler مسئول پیدا کردن و Claim کردن Command است؛ Session Manager مسئول اتصال به Device است؛ Encoder مسئول تبدیل Command به Protocol Bytes است؛ Transport مسئول شبکه است؛ و نتیجه واقعی اجرای Command باید از ACK/Response/Telemetry معتبر مشخص شود.**
+
+---
+
+# 54. قواعد نهایی
+
+1. `sana-backend` مالک Business Command است.
+2. `sana-gps` مالک اجرای فنی Command است.
+3. `gps.command` Source of Truth است.
+4. Command همیشه Device-owned است.
+5. Vehicle فقط در لحظه ایجاد Command برای Resolve کردن Device استفاده می‌شود.
+6. Command بعد از ایجاد به Device دیگری منتقل نمی‌شود.
+7. Permission فقط در Backend است.
+8. Lifecycle و Session Safety در sana-gps نیز بررسی می‌شوند.
+9. Device برای اجرای Command باید ACTIVE باشد.
+10. Offline باعث Failure فوری Command نمی‌شود.
+11. `expires_at` سقف عمر Command است.
+12. Command منقضی‌شده ارسال نمی‌شود.
+13. One In-Flight Command per Device در MVP برقرار است.
+14. Commandهای یک Device به‌صورت FIFO اجرا می‌شوند.
+15. Scheduler مرکزی است و Per-Command Timer نداریم.
+16. NOTIFY فقط Signal است.
+17. Reconciliation از Database Queue را قابل بازیابی می‌کند.
+18. Claim باید Atomic باشد.
+19. Multi-Instance با PostgreSQL قابل پشتیبانی است.
+20. Query Commandها Retryable هستند.
+21. Side-effect Commandها Auto Retry ندارند مگر Policy صریح.
+22. ACK و Completion دو مفهوم مستقل‌اند.
+23. Crash بعد از Send ممکن است Delivery را Unknown کند.
+24. Side-effect در وضعیت Unknown خودکار Retry نمی‌شود.
+25. Command مستقیماً CurrentState را تغییر نمی‌دهد.
+26. ACK و Telemetry Pipeline مستقل دارند.
+27. Encoder نباید Database Query انجام دهد.
+28. Scheduler نباید مستقیماً Socket را مدیریت کند.
+29. Raw Protocol Bytes از Client پذیرفته نمی‌شوند.
+30. Error Codeها استاندارد و قابل Trace هستند.
+31. `gps.command` منبع Audit اصلی Command است.
+32. در MVP Command Attempt History جداگانه نداریم.
+33. Retry bounded و دارای Backoff/Jitter است.
+34. PostgreSQL Queue در MVP کافی است.
+35. Kafka/RabbitMQ/Redis/Celery/Disk Queue در MVP نداریم.
+36. معماری برای اضافه کردن Queue در آینده باز گذاشته شده است.
+
+---
+
+# 55. وضعیت Stage 22
+
+```text
+[✓] Command Ownership
+[✓] Command State Machine
+[✓] Command Types
+[✓] Payload Contract
+[✓] Permission Boundary
+[✓] Lifecycle Gate
+[✓] Session Generation
+[✓] Offline Handling
+[✓] Expiration
+[✓] Retry Policy
+[✓] ACK / Completion
+[✓] Session Disconnect
+[✓] Crash / Unknown Delivery
+[✓] Command Encoding
+[✓] Response Matching
+[✓] Observability
+[✓] Audit
+[✓] Scheduler
+[✓] PostgreSQL Queue
+[✓] NOTIFY
+[✓] Reconciliation
+[✓] Atomic Claim
+[✓] Multi-Instance Safety
+[✓] FIFO
+[✓] One In-Flight per Device
+[✓] Future Queue Architecture
+```
+
+# Stage 22 — CLOSED
+
+**Command Runtime از نظر معماری نهایی و آماده ورود به Implementation است.**
+
+
+============================================================================
+============================================================================
+
+# SANA GPS
+
+# Stage 23 تا Stage 26
+
+# نهایی‌سازی طراحی، MVP Scope و Architecture Freeze
+
+---
+
+# وضعیت کلی
+
+```text
+Stage 23 — Telemetry Processing Pipeline     CLOSED
+Stage 24 — Observability / Health             CLOSED
+Stage 25 — Security / Authentication         CLOSED
+Stage 26 — MVP Scope / Architecture Freeze  CLOSED
+```
+
+از پایان این سند:
+
+> **فاز طراحی معماری SANA GPS بسته شده و Implementation می‌تواند شروع شود.**
+
+---
+
+# ============================================================
+
+# Stage 23 — TELEMETRY PROCESSING PIPELINE
+
+# ============================================================
+
+## 1. هدف
+
+Telemetry Pipeline مسیر کامل تبدیل Packet خام GPS به داده معتبر و قابل ذخیره SANA است.
+
+مسیر نهایی:
+
+```text
+TCP / UDP
+   ↓
+Connection
+   ↓
+Session
+   ↓
+Framing
+   ↓
+Device Identification
+   ↓
+Device Lookup
+   ↓
+Protocol / Codec Resolution
+   ↓
+Decode
+   ↓
+Normalize
+   ↓
+Validate
+   ↓
+Deduplicate
+   ↓
+Ordering
+   ↓
+Sampling
+   ↓
+BEGIN TRANSACTION
+   ├── LocationHistory
+   ├── CurrentState
+   ├── Event
+   └── Trip
+   ↓
+COMMIT
+   ↓
+ACK
+   ↓
+NOTIFY
+   ↓
+Post-Commit Consumers
+```
+
+---
+
+# 2. مرحله Connection
+
+Transport فقط وظیفه Network دارد.
+
+TCP:
+
+```text
+Byte Stream
+```
+
+UDP:
+
+```text
+Datagram
+```
+
+Transport نباید:
+
+* Device را شناسایی کند.
+* Protocol را Decode کند.
+* Business Logic اجرا کند.
+* Database را مستقیماً تغییر دهد.
+
+---
+
+# 3. Session
+
+بعد از شناسایی معتبر Device:
+
+```text
+Connection
+   ↓
+Session
+```
+
+Session شامل:
+
+```text
+session_id
+device_id
+connection_id
+protocol
+generation
+state
+```
+
+است.
+
+هر Device حداکثر یک Session فعال دارد.
+
+Session قدیمی با Session Generation فنس می‌شود.
+
+---
+
+# 4. Framing
+
+Framer وظیفه تشخیص Message/Frame کامل را دارد.
+
+برای TCP:
+
+```text
+partial frame
+→ buffer
+→ complete frame
+```
+
+و:
+
+```text
+multiple frames
+→ split
+```
+
+برای UDP:
+
+```text
+datagram
+→ one/multiple protocol messages
+```
+
+Framer نباید Semantic Telemetry را تفسیر کند.
+
+---
+
+# 5. Device Identification
+
+قبل از Decode کامل:
+
+```text
+Identity
+   ↓
+Device Lookup
+```
+
+انجام می‌شود.
+
+در MVP:
+
+```text
+IMEI
+```
+
+شناسه اصلی Gateway است.
+
+Device ناشناس:
+
+```text
+No Session
+No Telemetry
+No ACK success
+No Raw persistence by default
+```
+
+---
+
+# 6. Protocol / Codec Resolution
+
+مسیر:
+
+```text
+Device
+ ↓
+DeviceModel
+ ↓
+Protocol
+ ↓
+Codec
+ ↓
+Profile
+```
+
+Protocol و Codec در Code پیاده‌سازی می‌شوند.
+
+Database فقط Configuration/Reference لازم را نگه می‌دارد.
+
+Profile:
+
+```text
+Mapping / Normalization
+```
+
+را مشخص می‌کند.
+
+Profile مسئول Framing نیست.
+
+---
+
+# 7. Decode
+
+Decoder:
+
+```text
+Raw Frame
+   ↓
+Protocol Message
+```
+
+تبدیل می‌کند.
+
+Decoder مسئول:
+
+* Parse
+* Structural Validation
+* استخراج Protocol Fields
+* استخراج ACK/Response
+
+است.
+
+Decoder نباید:
+
+```text
+Database Query
+Business Logic
+Vehicle Logic
+Permission
+Event Rule
+```
+
+انجام دهد.
+
+---
+
+# 8. Normalize
+
+Normalizer:
+
+```text
+Protocol Message
+      ↓
+NormalizedTelemetry
+```
+
+تبدیل می‌کند.
+
+خروجی استاندارد:
+
+```text
+device_id
+device_time
+server_received_at
+
+latitude
+longitude
+gps_valid
+accuracy
+altitude
+satellites
+
+speed
+heading
+motion
+ignition
+
+battery_voltage
+external_voltage
+gsm_signal
+
+odometer
+engine_hours
+fuel_level
+
+attributes
+```
+
+تمام واحدها به واحد استاندارد SANA تبدیل می‌شوند.
+
+---
+
+# 9. Validate
+
+Validation دو سطح دارد.
+
+### Field Validation
+
+اگر یک Field خراب باشد:
+
+```text
+Invalid Field
+   ↓
+NULL
+```
+
+مثلاً:
+
+```text
+invalid altitude
+```
+
+لزومی ندارد کل Telemetry حذف شود.
+
+### Record Validation
+
+اگر ساختار Record قابل استفاده نباشد:
+
+```text
+Invalid Record
+```
+
+می‌شود.
+
+### Packet Validation
+
+اگر Packet ساختاری/Protocolی خراب باشد:
+
+```text
+Packet Rejected
+```
+
+می‌شود.
+
+---
+
+# 10. Deduplication
+
+Dedup قبل از Business Processing انجام می‌شود.
+
+```text
+Decode
+ ↓
+Normalize
+ ↓
+Validate
+ ↓
+Dedup
+ ↓
+Ordering
+```
+
+Exact duplicate:
+
+```text
+No LocationHistory duplicate
+No Event duplicate
+No Trip side effect
+No CurrentState side effect
+```
+
+Fingerprint اصلی Raw Packet:
+
+```text
+SHA-256
+```
+
+است.
+
+Dedup دائمی و بی‌نهایت نیست.
+
+---
+
+# 11. Ordering
+
+ترتیب تاریخی Telemetry:
+
+```text
+device_time
+```
+
+است.
+
+ترتیب رسیدن:
+
+```text
+server_received_at
+```
+
+است.
+
+این دو هرگز یکی فرض نمی‌شوند.
+
+Packet قدیمی:
+
+```text
+CurrentState → No Rollback
+```
+
+ولی:
+
+```text
+LocationHistory
+```
+
+ممکن است همچنان آن را بپذیرد.
+
+---
+
+# 12. Sampling
+
+Sampling فقط برای:
+
+```text
+LocationHistory
+```
+
+است.
+
+Sampling نباید باعث از بین رفتن:
+
+```text
+Event
+Trip Boundary
+CurrentState
+Important State Changes
+```
+
+شود.
+
+نمونه معیارها:
+
+```text
+minimum distance
+maximum interval
+speed change
+heading change
+state boundary
+```
+
+Location History نباید تبدیل به Packet History شود.
+
+---
+
+# 13. Transaction Boundary
+
+بعد از اینکه Decode/Normalize/Validate/Dedup/Ordering/Sampling انجام شد:
+
+```text
+BEGIN
+```
+
+و داده‌های وابسته در یک Transaction پردازش می‌شوند:
+
+```text
+LocationHistory
+CurrentState
+Event
+Trip
+```
+
+سپس:
+
+```text
+COMMIT
+```
+
+---
+
+# 14. چرا Transaction بعد از Processing است؟
+
+کارهای سنگین و غیر DB:
+
+```text
+Decode
+Normalize
+Validation
+Dedup
+Ordering
+Sampling
+```
+
+نباید Connection Database را بی‌جهت اشغال کنند.
+
+بنابراین:
+
+```text
+Processing
+   ↓
+Short DB Transaction
+```
+
+اصل است.
+
+---
+
+# 15. Transaction Failure
+
+اگر Transaction شکست بخورد:
+
+```text
+LocationHistory
+CurrentState
+Event
+Trip
+```
+
+نباید Partial Commit شوند.
+
+نتیجه:
+
+```text
+ROLLBACK
+```
+
+و Packet در صورت خطای قابل Retry دوباره Processing می‌شود.
+
+---
+
+# 16. Retry Classification
+
+### Transient Error
+
+مانند:
+
+```text
+temporary DB failure
+connection reset
+deadlock
+temporary timeout
+```
+
+→ Retry محدود.
+
+### Permanent Error
+
+مانند:
+
+```text
+invalid data
+unsupported protocol
+invalid profile
+constraint violation ناشی از داده
+```
+
+→ Retry نامحدود ممنوع.
+
+---
+
+# 17. ACK
+
+برای Protocolهایی مثل Teltonika:
+
+> ACK موفق فقط بعد از Commit موفق Database ارسال می‌شود.
+
+```text
+Telemetry
+ ↓
+DB Transaction
+ ↓
+COMMIT
+ ↓
+ACK
+```
+
+اگر DB Commit نشود:
+
+```text
+Successful ACK ❌
+```
+
+Duplicateی که قبلاً Commit شده:
+
+```text
+No side effect
+ACK allowed
+```
+
+---
+
+# 18. Post-Commit Consumers
+
+بعد از Commit:
+
+```text
+NOTIFY
+WebSocket
+Geofence
+Alert
+Notification
+```
+
+اجرا می‌شوند.
+
+این Consumerها نباید داخل Transaction اصلی قرار بگیرند.
+
+اصل:
+
+```text
+Commit
+ ↓
+Consumers
+```
+
+---
+
+# 19. NOTIFY
+
+PostgreSQL NOTIFY:
+
+```text
+Signal
+```
+
+است.
+
+نه:
+
+```text
+Queue
+Source of Truth
+Durable Event Stream
+WebSocket Message
+```
+
+اگر NOTIFY از دست برود:
+
+```text
+Reconciliation
+```
+
+باید وضعیت را از Database پیدا کند.
+
+---
+
+# 20. Batch
+
+اگر Packet چند Telemetry Record داشته باشد:
+
+```text
+Packet
+ ├── Record 1
+ ├── Record 2
+ ├── Record 3
+ └── Record N
+```
+
+تمام Recordها:
+
+```text
+Decode
+Normalize
+Validate
+Dedup
+Ordering
+```
+
+می‌شوند.
+
+در MVP:
+
+```text
+One valid batch
+→ One PostgreSQL Transaction
+```
+
+است.
+
+---
+
+# 21. Huge Packet
+
+Packet بزرگ‌تر از:
+
+```text
+MAX_FRAME_SIZE
+```
+
+پذیرفته نمی‌شود.
+
+MVP آن را:
+
+```text
+Reject
+```
+
+می‌کند.
+
+Silent Chunking نداریم.
+
+---
+
+# 22. Event Processing
+
+Event Engine بعد از Dedup و Ordering قرار دارد.
+
+```text
+Telemetry
+ ↓
+Dedup
+ ↓
+Ordering
+ ↓
+Event
+```
+
+Eventهای Telemetry-based با:
+
+```text
+device_time
+```
+
+کار می‌کنند.
+
+Eventهای Server-side مثل:
+
+```text
+DEVICE_OFFLINE
+```
+
+با Server Time کار می‌کنند.
+
+Event Watermark مستقل از CurrentState است.
+
+---
+
+# 23. Trip Processing
+
+Trip نیز بعد از:
+
+```text
+LocationHistory / Movement Processing
+```
+
+محاسبه می‌شود.
+
+Trip:
+
+```text
+Device-owned
+```
+
+است.
+
+Vehicle فقط از:
+
+```text
+DeviceVehicleAssignment
+```
+
+به Trip Context اضافه می‌شود.
+
+---
+
+# 24. CurrentState
+
+CurrentState فقط Snapshot جدیدتر را می‌پذیرد:
+
+```text
+incoming.device_time
+>
+current.device_time
+```
+
+و Update آن:
+
+```text
+Atomic Conditional Update
+```
+
+است.
+
+Packet قدیمی نمی‌تواند Snapshot را Rollback کند.
+
+---
+
+# 25. Last Seen
+
+`last_seen` با:
+
+```text
+server_received_at
+```
+
+کار می‌کند.
+
+بنابراین:
+
+```text
+Telemetry Ordering
+≠
+Communication Activity
+```
+
+است.
+
+Heartbeat معتبر نیز می‌تواند Communication Activity را به‌روز کند، بدون اینکه Telemetry CurrentState را تغییر دهد.
+
+---
+
+# 26. GPS No-Fix
+
+اگر:
+
+```text
+gps_valid = false
+```
+
+و Packet جدید باشد:
+
+```text
+Current Position
+→ NULL
+```
+
+اما:
+
+```text
+Last Valid Position
+→ حفظ می‌شود
+```
+
+GPS No-Fix برابر Offline نیست.
+
+---
+
+# 27. Pipeline Error Boundary
+
+هر مرحله باید Error مشخص داشته باشد.
+
+نمونه:
+
+```text
+UNKNOWN_DEVICE
+UNKNOWN_PROTOCOL
+UNKNOWN_CODEC
+PROFILE_NOT_FOUND
+PROFILE_INCOMPATIBLE
+
+FRAME_ERROR
+DECODE_ERROR
+NORMALIZATION_ERROR
+VALIDATION_ERROR
+DUPLICATE_PACKET
+ORDERING_REJECTED
+
+DB_TRANSIENT_ERROR
+DB_PERMANENT_ERROR
+TRANSACTION_FAILED
+```
+
+خطا نباید باعث Crash کردن کل GPS Runtime شود.
+
+---
+
+# 28. Pipeline نهایی
+
+```text
+                 TCP / UDP
+                     │
+                     ▼
+                Connection
+                     │
+                     ▼
+                   Session
+                     │
+                     ▼
+                  Framing
+                     │
+                     ▼
+             Device Identification
+                     │
+                     ▼
+               Device Lookup
+                     │
+                     ▼
+            Protocol / Codec
+                     │
+                     ▼
+                   Decode
+                     │
+                     ▼
+                 Normalize
+                     │
+                     ▼
+                 Validate
+                     │
+                     ▼
+                Deduplicate
+                     │
+                     ▼
+                  Ordering
+                     │
+                     ▼
+                  Sampling
+                     │
+                     ▼
+              ┌──────────────┐
+              │ DB Transaction│
+              └──────┬───────┘
+                     │
+       ┌─────────────┼─────────────┐
+       ▼             ▼             ▼
+ LocationHistory CurrentState    Event
+                     │
+                     ▼
+                    Trip
+                     │
+                     ▼
+                   COMMIT
+                     │
+          ┌──────────┼──────────┐
+          ▼          ▼          ▼
+        ACK       NOTIFY     Consumers
+```
+
+---
+
+# ============================================================
+
+# Stage 24 — OBSERVABILITY / LOGGING / METRICS / HEALTH
+
+# ============================================================
+
+## 29. اصل
+
+GPS Runtime بدون Observability قابل Production نیست.
+
+اما Observability نباید تبدیل به سیستم پیچیده جداگانه شود.
+
+MVP:
+
+```text
+Structured Logs
+Metrics
+Health
+Readiness
+```
+
+کافی است.
+
+---
+
+# 30. Structured Logging
+
+Logها باید Machine-readable باشند.
+
+حداقل Context:
+
+```text
+timestamp
+level
+service
+event
+device_id
+session_id
+protocol
+codec
+command_id
+packet_fingerprint
+error_code
+```
+
+هرکدام که مرتبط باشند.
+
+---
+
+# 31. Log Level
+
+سطوح:
+
+```text
+DEBUG
+INFO
+WARNING
+ERROR
+CRITICAL
+```
+
+### DEBUG
+
+جزئیات Development/Protocol Debug.
+
+### INFO
+
+رویدادهای عادی مهم:
+
+```text
+startup
+listener started
+session created
+session closed
+command sent
+```
+
+### WARNING
+
+شرایط غیرعادی ولی قابل ادامه:
+
+```text
+duplicate
+old packet
+retry
+temporary DB failure
+unknown optional field
+```
+
+### ERROR
+
+Processing/operation failure.
+
+### CRITICAL
+
+Failureی که Service را نمی‌تواند به‌صورت صحیح ادامه دهد.
+
+---
+
+# 32. Raw Packet Logging
+
+Raw Packet نباید در Log عادی Dump شود.
+
+Raw Data فقط در:
+
+```text
+gps.raw_packet
+```
+
+و با Retention مشخص نگهداری می‌شود.
+
+در Log:
+
+```text
+packet_id
+fingerprint
+device_id
+protocol
+```
+
+کافی است.
+
+---
+
+# 33. Metrics
+
+### Transport
+
+```text
+tcp_connections
+udp_datagrams
+connection_errors
+bytes_received
+bytes_sent
+```
+
+### Session
+
+```text
+sessions_active
+sessions_created
+sessions_closed
+session_replacements
+session_fenced
+```
+
+### Packet
+
+```text
+packets_received
+packets_decoded
+packets_rejected
+packets_duplicate
+packets_out_of_order
+```
+
+### Telemetry
+
+```text
+telemetry_records_received
+telemetry_records_valid
+telemetry_records_invalid
+```
+
+### Database
+
+```text
+db_transactions
+db_transaction_success
+db_transaction_failure
+db_retry
+db_latency
+db_pool_in_use
+db_pool_available
+```
+
+### ACK
+
+```text
+ack_sent
+ack_suppressed
+ack_failure
+ack_latency
+```
+
+### Command
+
+تمام Metrics تعریف‌شده Stage 22.
+
+### Event/Trip
+
+```text
+events_created
+events_closed
+trips_started
+trips_completed
+```
+
+---
+
+# 34. Queue/Backpressure Metrics
+
+```text
+processing_queue_size
+processing_queue_max
+processing_queue_rejected
+tcp_backpressure
+udp_dropped
+```
+
+باید قابل مشاهده باشند.
+
+---
+
+# 35. Health
+
+سه مفهوم:
+
+```text
+Liveness
+Readiness
+Health
+```
+
+### Liveness
+
+آیا Process زنده است؟
+
+### Readiness
+
+آیا Service آماده دریافت Traffic است؟
+
+### Health
+
+آیا وابستگی‌های اصلی سالم هستند؟
+
+---
+
+# 36. Readiness
+
+sana-gps فقط زمانی Ready است که:
+
+```text
+Configuration Loaded
+DB Connected
+Required Schema Available
+Protocol Registry Ready
+Session Manager Ready
+Processing Pipeline Ready
+Required Listeners Bound
+```
+
+باشد.
+
+اگر DB قطع شود:
+
+```text
+Readiness
+→ NOT READY
+```
+
+می‌تواند شود.
+
+---
+
+# 37. Liveness
+
+DB Down نباید لزوماً باعث شود Process فوراً Crash کند.
+
+Process می‌تواند:
+
+```text
+Alive
+Not Ready
+```
+
+باشد و Recovery را انجام دهد.
+
+---
+
+# 38. Health Checks
+
+حداقل:
+
+```text
+Database
+PostgreSQL Pool
+Listeners
+Protocol Registry
+Processing Queue
+```
+
+بررسی شوند.
+
+---
+
+# 39. Alerting Thresholds
+
+در MVP Alerting خارجی پیچیده نمی‌سازیم.
+
+ولی Metrics باید امکان تشخیص:
+
+```text
+DB failure spike
+packet rejection spike
+queue saturation
+UDP drops
+ACK failure spike
+session explosion
+memory pressure
+```
+
+را فراهم کنند.
+
+---
+
+# 40. Correlation
+
+برای Trace کردن یک جریان:
+
+```text
+device_id
+session_id
+packet_id/fingerprint
+command_id
+```
+
+استفاده می‌شود.
+
+این شناسه‌ها باید در Logها در صورت وجود حفظ شوند.
+
+---
+
+# 41. No Sensitive Logging
+
+در Log نباید:
+
+```text
+password
+token
+secret
+API key
+private credential
+```
+
+ثبت شود.
+
+Payload Command نیز فقط در صورت امن و لازم بودن Log می‌شود؛ Source of Truth آن Database است.
+
+---
+
+# ============================================================
+
+# Stage 25 — SECURITY / AUTHENTICATION
+
+# ============================================================
+
+# 42. Security Boundary
+
+امنیت در دو لایه است:
+
+```text
+sana-backend
+→ Business Authorization
+
+sana-gps
+→ Device/Protocol Technical Security
+```
+
+---
+
+# 43. Device Identity
+
+در Gateway:
+
+```text
+IMEI
+```
+
+شناسه اصلی Device است.
+
+ولی IMEI به‌تنهایی Security کامل نیست.
+
+Device باید:
+
+```text
+Registered
+Allowed
+Lifecycle = ACTIVE
+```
+
+باشد.
+
+---
+
+# 44. Unknown Device
+
+Unknown Device:
+
+```text
+No Session
+No Telemetry
+No ACK success
+No Command
+No Raw persistence by default
+```
+
+و باید سریع Reject شود.
+
+---
+
+# 45. Lifecycle Security
+
+برای Runtime:
+
+```text
+ACTIVE
+```
+
+شرط اصلی پذیرش Telemetry/Command است.
+
+این وضعیت‌ها Block هستند:
+
+```text
+WAREHOUSE
+SUSPENDED
+REPAIR
+RETURNED
+RETIRED
+```
+
+Session قبلی نیز باید Fence شود.
+
+---
+
+# 46. Session Security
+
+Session باید به:
+
+```text
+device_id
+generation
+protocol
+```
+
+متصل باشد.
+
+هیچ Session نباید بتواند برای Device دیگر کار کند.
+
+---
+
+# 47. Old Session Protection
+
+وقتی Session جدید معتبر ایجاد شد:
+
+```text
+generation++
+```
+
+و Session قبلی:
+
+```text
+FENCED
+```
+
+می‌شود.
+
+Packet/Command/Heartbeat Session قدیمی نباید Side Effect ایجاد کند.
+
+---
+
+# 48. Protocol Security
+
+Protocol Decoder نباید اعتماد کند که:
+
+```text
+port = protocol
+```
+
+است.
+
+Port فقط Routing Hint است.
+
+Protocol باید از:
+
+```text
+Device Configuration
+Protocol Detection
+Packet Structure
+```
+
+تعیین شود.
+
+---
+
+# 49. Input Validation
+
+همه ورودی‌های Device:
+
+```text
+Untrusted Input
+```
+
+هستند.
+
+بنابراین:
+
+* Length محدود
+* Frame محدود
+* Field Validation
+* Integer Range
+* Decimal Range
+* String Length
+* JSON/Attribute محدود
+* Payload محدود
+
+باید اعمال شود.
+
+---
+
+# 50. Resource Protection
+
+برای جلوگیری از Abuse:
+
+```text
+MAX_FRAME_SIZE
+MAX_BUFFER_SIZE
+MAX_PROCESSING_QUEUE
+MAX_ATTRIBUTES_SIZE
+MAX_COMMAND_PAYLOAD
+MAX_BATCH_SIZE
+```
+
+تعریف می‌شوند.
+
+MVP Rate Limit پیچیده روی تمام Protocolها ندارد، ولی Connection/Resource Limits الزامی هستند.
+
+---
+
+# 51. Database Security
+
+Runtime Roleها:
+
+```text
+sana_gps
+sana_backend
+```
+
+مالک Schema نیستند.
+
+DDL ندارند.
+
+`sana-gps` به Business Data دسترسی کامل ندارد.
+
+PostgreSQL لایه دوم Security است.
+
+---
+
+# 52. Backend Authorization
+
+کاربر:
+
+```text
+Authentication
+ ↓
+Device Permission
+ ↓
+Command Permission
+ ↓
+Create Command
+```
+
+می‌کند.
+
+sana-gps نباید Permission User را دوباره پیاده‌سازی کند.
+
+---
+
+# 53. Command Security
+
+Client فقط:
+
+```text
+Domain Command
+```
+
+می‌فرستد.
+
+Raw Protocol Bytes ممنوع است.
+
+Backend:
+
+```text
+Validate Payload
+Authorize
+Create Command
+```
+
+و sana-gps:
+
+```text
+Validate Technical Capability
+Encode
+Execute
+```
+
+می‌کند.
+
+---
+
+# 54. Secrets
+
+Secrets از:
+
+```text
+Environment
+Secret Management
+```
+
+می‌آیند.
+
+در:
+
+```text
+Git
+Logs
+Source Code
+Database Payload
+```
+
+قرار نمی‌گیرند مگر اینکه صراحتاً بخشی از یک Credential Configuration امن باشند.
+
+---
+
+# 55. Failure Mode
+
+در صورت DB Failure:
+
+```text
+Authentication Fail-Open ❌
+```
+
+نباید اتفاق بیفتد.
+
+اگر وضعیت Device قابل اطمینان نیست:
+
+```text
+Reject / Delay
+```
+
+امن‌تر از پذیرش کورکورانه است.
+
+---
+
+# 56. Security Principle
+
+اصل:
+
+> **Authentication/Authorization در Backend و Device/Protocol Validation در GPS Runtime است؛ هیچ‌کدام جای دیگری را نمی‌گیرد.**
+
+---
+
+# ============================================================
+
+# Stage 26 — MVP SCOPE + ARCHITECTURE FREEZE
+
+# ============================================================
+
+# 57. هدف MVP
+
+MVP باید بتواند یک GPS واقعی را:
+
+```text
+Connect
+Identify
+Decode
+Normalize
+Store
+Track
+```
+
+کند.
+
+بدون اینکه از همان ابتدا تمام قابلیت‌های Fleet Management را پیاده کنیم.
+
+---
+
+# 58. اولین Vertical Slice
+
+اولین Slice:
+
+```text
+Teltonika Device
+       ↓
+TCP
+       ↓
+Session
+       ↓
+IMEI
+       ↓
+Device Lookup
+       ↓
+Codec 8 Framing
+       ↓
+Codec 8 Decode
+       ↓
+Normalize
+       ↓
+Validate
+       ↓
+Dedup
+       ↓
+Ordering
+       ↓
+PostgreSQL
+       ↓
+CurrentState
+       ↓
+LocationHistory
+       ↓
+Event
+       ↓
+ACK
+```
+
+این Slice باید با Device واقعی تست شود.
+
+---
+
+# 59. MVP Protocol
+
+برای شروع:
+
+```text
+Teltonika TCP
+Codec 8
+```
+
+پیاده‌سازی می‌شود.
+
+GT06 و سایر Protocolها بعد از تثبیت Pipeline اضافه می‌شوند.
+
+---
+
+# 60. MVP Data
+
+در MVP:
+
+```text
+Location
+Speed
+Heading
+Altitude
+Satellites
+Ignition
+Motion
+Battery Voltage
+External Voltage
+GSM Signal
+Odometer
+Engine Hours
+Fuel Level
+```
+
+طبق قابلیت Device/Protocol ذخیره می‌شوند.
+
+---
+
+# 61. MVP Historical Data
+
+```text
+LocationHistory
+Event
+```
+
+فعال هستند.
+
+Trip نیز طبق طراحی نهایی در MVP قرار دارد، ولی بعد از پایدار شدن Ingestion/History فعال می‌شود.
+
+---
+
+# 62. MVP CurrentState
+
+از همان اولین Vertical Slice:
+
+```text
+CurrentState
+```
+
+باید ساخته شود.
+
+هدف:
+
+```text
+Live Device State
+```
+
+---
+
+# 63. MVP WebSocket
+
+بعد از پایدار شدن Ingestion:
+
+```text
+CurrentState
+ ↓
+PostgreSQL NOTIFY
+ ↓
+sana-backend
+ ↓
+WebSocket
+ ↓
+sana-panel
+```
+
+پیاده‌سازی می‌شود.
+
+`sana-gps` مستقیماً Browser WebSocket ندارد.
+
+---
+
+# 64. MVP Permission
+
+WebSocket و REST باید Permission را Server-side اعمال کنند.
+
+Device غیرمجاز نباید داده دریافت کند.
+
+---
+
+# 65. MVP Geofence
+
+Geofence از نظر معماری طراحی شده، اما در اولین Vertical Slice اجرا نمی‌شود.
+
+ترتیب Implementation:
+
+```text
+Ingestion
+ ↓
+CurrentState
+ ↓
+LocationHistory
+ ↓
+Event
+ ↓
+WebSocket
+ ↓
+Trip
+ ↓
+Geofence
+```
+
+---
+
+# 66. MVP Alert
+
+Alert Engine بعد از Event پایدار می‌شود.
+
+در اولین Slice لازم نیست.
+
+---
+
+# 67. MVP Command
+
+Command Runtime طراحی شده و در MVP معماری آن آماده است.
+
+اما Implementation Command بعد از پایدار شدن:
+
+```text
+Session
+Transport
+Protocol Encoder
+```
+
+انجام می‌شود.
+
+---
+
+# 68. MVPهایی که عمداً نداریم
+
+```text
+Kafka
+RabbitMQ
+Redis
+Celery
+PgBouncer
+Distributed Lock Service
+Complex Queue
+AI
+Machine Learning
+Traffic Analysis
+ETA
+Map Matching
+Behavior Scoring
+Advanced Fuel Analytics
+Historical Full Replay
+Automatic Historical Recalculation
+```
+
+---
+
+# 69. Repository Structure
+
+ساختار نهایی اولیه:
+
+```text
+SANA/
+├── sana-backend/
+├── sana-panel/
+├── sana-gps/
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── config.py
+│   │   │
+│   │   ├── transport/
+│   │   ├── session/
+│   │   ├── protocols/
+│   │   ├── types/
+│   │   ├── processing/
+│   │   ├── repositories/
+│   │   └── database/
+│   │
+│   ├── tests/
+│   ├── requirements.txt
+│   └── README.md
+│
+├── telemetry.md
+└── README.MD
+```
+
+از ایجاد Layer/Folder غیرضروری جلوگیری می‌شود.
+
+---
+
+# 70. Implementation Order
+
+ترتیب رسمی کدنویسی:
+
+```text
+1. sana-gps Bootstrap
+2. Config
+3. PostgreSQL Pool
+4. Database Schema / Migration Integration
+5. Repository Layer
+6. Transport TCP
+7. Session Manager
+8. Teltonika Framing
+9. IMEI Identification
+10. Device Lookup
+11. Codec 8 Decoder
+12. Normalizer
+13. Validation
+14. Deduplication
+15. Ordering
+16. LocationHistory
+17. CurrentState
+18. Event
+19. ACK
+20. Real Device Test
+```
+
+بعد:
+
+```text
+21. WebSocket
+22. Live Map
+23. Trip
+24. Command Runtime
+25. Geofence
+26. Alert
+```
+
+---
+
+# 71. Definition of Done — اولین Vertical Slice
+
+اولین Slice زمانی Complete است که:
+
+```text
+[✓] Device واقعی وصل شود
+[✓] IMEI شناسایی شود
+[✓] Session ایجاد شود
+[✓] Teltonika Frame درست Parse شود
+[✓] Codec 8 Decode شود
+[✓] Telemetry Normalize شود
+[✓] Validation انجام شود
+[✓] Duplicate کنترل شود
+[✓] Out-of-order کنترل شود
+[✓] LocationHistory ذخیره شود
+[✓] CurrentState Update شود
+[✓] Event ایجاد شود
+[✓] ACK بعد از Commit ارسال شود
+[✓] DB Failure باعث ACK موفق نشود
+[✓] Duplicate باعث Side Effect دوباره نشود
+[✓] Old Packet CurrentState را Rollback نکند
+```
+
+---
+
+# 72. Definition of Done — Live System
+
+بعد از Vertical Slice:
+
+```text
+[✓] چند Device همزمان
+[✓] CurrentState
+[✓] WebSocket
+[✓] Permission
+[✓] Live Map
+[✓] Connection State
+[✓] Offline
+[✓] GPS No-Fix
+[✓] Location History
+[✓] Trip
+```
+
+تست می‌شوند.
+
+---
+
+# 73. Architecture Freeze
+
+از این مرحله به بعد تصمیمات زیر Frozen هستند:
+
+```text
+Service Boundary
+Database Boundary
+PostgreSQL
+gps Schema
+CurrentState
+LocationHistory
+Event
+Trip
+DeviceVehicleAssignment
+Device Lifecycle
+Session
+Protocol Architecture
+Telemetry Pipeline
+Command Runtime
+WebSocket
+Permission Boundary
+PostgreSQL Roles
+Connection Pooling
+ACK Policy
+Deduplication
+Ordering
+Sampling
+```
+
+تغییر این موارد فقط در صورت مشاهده مشکل واقعی در Implementation یا تست واقعی انجام می‌شود.
+
+---
+
+# 74. چیزهایی که دیگر نباید قبل از Coding دوباره طراحی شوند
+
+تا زمانی که Implementation مشکل واقعی نشان نداده:
+
+```text
+❌ تغییر Database به NoSQL
+❌ اضافه کردن Kafka
+❌ اضافه کردن Redis
+❌ اضافه کردن RabbitMQ
+❌ تبدیل sana-gps به Django Service
+❌ انتقال WebSocket به sana-gps
+❌ انتقال Permission به sana-gps
+❌ تغییر Device Ownership
+❌ تبدیل CurrentState به History
+❌ یکی کردن Event و Alert
+❌ یکی کردن Alarm و Event
+❌ یکی کردن Vehicle و Device History
+```
+
+---
+
+# 75. اصل نهایی معماری SANA GPS
+
+> **Minimal but Powerful**
+
+یعنی:
+
+```text
+Simple Runtime
++
+Strong Database Guarantees
++
+Clear Ownership
++
+Deterministic Processing
++
+Safe Concurrency
++
+Recoverable State
++
+Real Device Testing
+```
+
+نه:
+
+```text
+Maximum Number of Services
+```
+
+---
+
+# 76. معماری نهایی
+
+```text
+                       GPS DEVICES
+                            │
+                     TCP / UDP
+                            │
+                            ▼
+                       sana-gps
+                            │
+             ┌──────────────┼──────────────┐
+             │              │              │
+             ▼              ▼              ▼
+          Session        Decoder       Processing
+             │              │              │
+             └──────────────┼──────────────┘
+                            ▼
+                  Normalized Telemetry
+                            │
+                 ┌──────────┼──────────┐
+                 │          │          │
+                 ▼          ▼          ▼
+          LocationHistory CurrentState Event
+                 │          │          │
+                 └──────────┼──────────┘
+                            ▼
+                           Trip
+
+                            │
+                            ▼
+                        PostgreSQL
+                            │
+             ┌──────────────┼──────────────┐
+             │              │              │
+             ▼              ▼              ▼
+         sana-backend    WebSocket      Command
+             │              │              │
+             ▼              ▼              ▼
+          REST API       Live Map       Device
+```
+
+---
+
+# 77. وضعیت نهایی طراحی
+
+```text
+Stage 1   Architecture Foundation       CLOSED
+Stage 2   Normalized Telemetry          CLOSED
+Stage 3   PostgreSQL / Permissions      CLOSED
+Stage 4   Protocol Architecture         CLOSED
+Stage 5   Location History              CLOSED
+Stage 6   CurrentState                  CLOSED
+Stage 7   Event                         CLOSED
+Stage 8   Batch / Dedup / Replay        CLOSED
+Stage 9   Trip                          CLOSED
+Stage 10  Device Assignment             CLOSED
+Stage 11  Device Lifecycle              CLOSED
+Stage 12  Geofence                      CLOSED
+Stage 13  Alert                         CLOSED
+Stage 14  Failure / Backpressure        CLOSED
+Stage 15  Configuration                 CLOSED
+Stage 16  Transport                     CLOSED
+Stage 17  Concurrency                   CLOSED
+Stage 18  WebSocket / Live Map          CLOSED
+Stage 19  Command Runtime               CLOSED
+Stage 20  Telemetry Pipeline            CLOSED
+Stage 21  Observability                 CLOSED
+Stage 22  Security                      CLOSED
+Stage 23  MVP Scope / Freeze             CLOSED
+```
+
+شماره‌گذاری فوق صرفاً نمای کلی وضعیت فازهاست؛ در اسناد اجرایی، Stageهای اخیر با شماره‌های 23 تا 26 ثبت شده‌اند.
+
+---
+
+# 78. FINAL ARCHITECTURE FREEZE
+
+در این نقطه:
+
+```text
+ARCHITECTURE = FROZEN
+```
+
+و:
+
+```text
+DESIGN PHASE = COMPLETE
+```
+
+است.
+
+از اینجا به بعد:
+
+```text
+Design
+   ↓
+Implementation
+   ↓
+Real Device Test
+   ↓
+Bug / Reality Feedback
+   ↓
+Controlled Revision
+```
+
+خواهد بود.
+
+تغییر معماری فقط بر اساس مشکل واقعی و مستند انجام می‌شود، نه بر اساس حدس یا پیچیده‌تر کردن سیستم.
+
+---
+
+# 79. اولین کار بعد از Freeze
+
+Implementation با Repository واقعی SANA شروع می‌شود.
+
+ابتدا وضعیت فعلی GitHub و Working Tree بررسی می‌شود، سپس:
+
+```text
+sana-gps/
+```
+
+ایجاد می‌شود.
+
+بعد اولین Vertical Slice:
+
+```text
+Teltonika TCP
+    ↓
+Session
+    ↓
+IMEI
+    ↓
+Codec 8
+    ↓
+Normalize
+    ↓
+Validate
+    ↓
+Dedup
+    ↓
+Ordering
+    ↓
+PostgreSQL
+    ↓
+CurrentState
+    ↓
+LocationHistory
+    ↓
+Event
+    ↓
+ACK
+```
+
+پیاده‌سازی و با **دستگاه واقعی** تست خواهد شد.
+
+---
+
+# FINAL STATUS
+
+```text
+┌────────────────────────────────────────────┐
+│                                            │
+│       SANA GPS DESIGN PHASE COMPLETE      │
+│                                            │
+│              ARCHITECTURE FROZEN          │
+│                                            │
+│          READY FOR IMPLEMENTATION          │
+│                                            │
+└────────────────────────────────────────────┘
+```
+
+**فاز طراحی SANA GPS بسته شد.**
+
+**مرحله بعد: شروع Implementation واقعی `sana-gps`.**
+
+
+============================================================================
+============================================================================
+
 
 
 ### طراحی شده، Implementation باقی مانده
