@@ -807,13 +807,14 @@ speed
 km/h
 ```
 
-تمام Protocol Decoderها باید در صورت دریافت واحدهای دیگر، مقدار را به `km/h` تبدیل کنند.
+Protocol Decoder فقط مقدار و واحد/نمایش Protocol را استخراج می‌کند؛ تبدیل واحد متعلق به Normalizer است.
 
 مثلاً:
 
 ```text
 Device → knots
-Decoder → km/h
+Decoder → ProtocolMessage(speed=..., unit=knots)
+Normalizer → km/h
 NormalizedTelemetry.speed → km/h
 ```
 
