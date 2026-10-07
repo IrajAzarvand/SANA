@@ -18118,7 +18118,13 @@ RawPacket
 ```text
 Raw Packet
       ↓
+Framer / Protocol Detection
+      ↓
 Protocol Decoder
+      ↓
+ProtocolMessage
+      ↓
+Normalizer
       ↓
 NormalizedTelemetry
       ↓
