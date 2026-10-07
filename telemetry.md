@@ -2,7 +2,7 @@
 
 > این سند شامل تصمیماتی است که تا این مرحله درباره معماری GPS، دریافت داده و ساختار `Normalized Telemetry` در پروژه SANA قطعی شده‌اند.
 >
-> **وضعیت:** تصمیمات معماری قطعی تا مرحله Time + Location + GPS Fix
+> **وضعیت:** سند تجمیعی تصمیمات معماری قطعی GPS/Telemetry تا مرحله Protocol Decoder و Normalization؛ Implementation هنوز شروع نشده است.
 
 ---
 
@@ -28,6 +28,7 @@ SANA/
 * ACK
 * تشخیص Protocol
 * Protocol Decoder
+* Protocol Normalizer
 * تبدیل داده پروتکل به ساختار استاندارد SANA
 * اعتبارسنجی فنی داده
 * نگهداری موقت Raw Packet
@@ -62,7 +63,13 @@ TCP / UDP
     ↓
 sana-gps
     ↓
+Framing / Protocol Detection
+    ↓
 Protocol Decoder
+    ↓
+ProtocolMessage
+    ↓
+Normalizer
     ↓
 Normalized Telemetry
     ↓
@@ -357,10 +364,10 @@ gps_valid
 
 ```text
 satellites
-gps_accuracy
+accuracy
 ```
 
-هر دو `satellites` و `gps_accuracy` می‌توانند NULL باشند، چون همه دستگاه‌ها این اطلاعات را ارائه نمی‌کنند.
+هر دو `satellites` و `accuracy` می‌توانند NULL باشند، چون همه دستگاه‌ها این اطلاعات را ارائه نمی‌کنند.
 
 ---
 
@@ -433,33 +440,37 @@ end   = 09:15:10
 
 ---
 
-# 16. Protocol Decoder
+# 16. مرز Protocol Decoder و Normalizer
 
-هر Protocol ممکن است GPS Fix را به شکل متفاوتی اعلام کند.
+هر Protocol ممکن است GPS Fix و سایر Telemetryها را به شکل متفاوتی اعلام کند.
 
-بنابراین تبدیل اطلاعات Protocol-specific به:
-
-```text
-gps_valid
-latitude
-longitude
-satellites
-gps_accuracy
-```
-
-وظیفه Decoder است.
-
-یعنی:
+مرز معماری قطعی SANA این است:
 
 ```text
-Protocol Packet
+Raw Protocol Frame
+      ↓
+Framer
       ↓
 Protocol Decoder
+      ↓
+ProtocolMessage
+      ↓
+Normalizer
       ↓
 NormalizedTelemetry
 ```
 
-بعد از Decoder، بخش‌های بعدی سیستم نباید مجبور باشند جزئیات Protocol خاص را بدانند.
+### Protocol Decoder
+
+Decoder مسئول Parse، Decode، Message Type، Protocol Metadata و ساختار Protocol-specific است.
+
+Decoder مستقیماً `NormalizedTelemetry` تولید نمی‌کند و نباید منطق Domain یا Database داشته باشد.
+
+### Normalizer
+
+Normalizer مسئول Field Mapping، Unit Conversion، Representation Conversion و تبدیل ProtocolMessage به مفاهیم استاندارد SANA است.
+
+بعد از Normalizer، لایه‌های بعدی نباید مجبور باشند جزئیات Protocol خاص را بدانند.
 
 ---
 
@@ -475,7 +486,7 @@ NormalizedTelemetry
 ├── latitude            NULLABLE
 ├── longitude           NULLABLE
 ├── gps_valid           REQUIRED
-├── gps_accuracy        NULLABLE
+├── accuracy        NULLABLE
 ├── satellites          NULLABLE
 └── ...
 ```
@@ -708,47 +719,40 @@ End Date/Time
 
 ---
 
-# 28. ترتیب فعلی طراحی
+# 28. وضعیت فعلی طراحی Telemetry
 
-تا این مرحله ابتدا این بخش‌ها را مشخص کرده‌ایم:
-
-```text
-1. Device
-2. device_time
-3. server_received_at
-4. latitude
-5. longitude
-6. gps_valid
-7. gps_accuracy
-8. satellites
-```
-
-مرحله بعدی طراحی:
+موارد زیر تا این مرحله به‌صورت قطعی طراحی شده‌اند:
 
 ```text
-9. speed
-10. heading
-11. altitude
-12. motion
+Time
+Location
+GPS Fix
+Speed
+Heading
+Altitude
+Motion
+Ignition
+Battery Voltage
+External Voltage
+GSM Signal
+Odometer
+Engine Hours
+Fuel Level
+Attributes
+CurrentState
+LocationHistory
+Event
+Trip
+Protocol Decoder
+ProtocolMessage
+Normalizer
+Validation
+Deduplication
+Temporal Ordering
+Sampling
 ```
 
-بعد از آن سراغ:
-
-```text
-13. ignition
-14. battery_voltage
-15. external_voltage
-16. gsm_signal
-17. odometer
-18. engine_hours
-19. fuel
-20. temperature
-21. alarm
-22. inputs / outputs
-23. attributes
-```
-
-خواهیم رفت.
+مواردی که هنوز تصمیم مستقل و نهایی درباره آن‌ها لازم است، نباید با تصمیمات بالا مخلوط شوند.
 
 ---
 
@@ -1120,7 +1124,7 @@ NormalizedTelemetry
 ├── latitude            NULLABLE
 ├── longitude           NULLABLE
 ├── gps_valid           REQUIRED
-├── gps_accuracy        NULLABLE
+├── accuracy        NULLABLE
 ├── satellites          NULLABLE
 │
 ├── speed               NULLABLE
@@ -1505,6 +1509,10 @@ Protocol Decoder وظیفه تبدیل اطلاعات مختلف Protocolها ب
 Protocol Packet
       ↓
 Protocol Decoder
+      ↓
+ProtocolMessage
+      ↓
+Normalizer
       ↓
 NormalizedTelemetry
       ↓
@@ -11445,7 +11453,7 @@ heading
 altitude
 satellites
 gps_valid
-gps_accuracy
+accuracy
 ignition
 battery_voltage
 external_voltage
@@ -11493,7 +11501,6 @@ ignition
 و:
 
 ```text
-fuel
 temperature
 door
 custom_io
@@ -11502,7 +11509,9 @@ cellular details
 ...
 ```
 
-در attributes قرار بگیرند، در صورتی که فیلد عمومی استانداردی برایشان تعریف نشده باشد.
+در attributes قرار بگیرند، در صورتی که فیلد عمومی استاندارد SANA برایشان تعریف نشده باشد.
+
+مواردی که قبلاً به‌عنوان فیلد استاندارد قطعی شده‌اند، مانند `fuel_level`، `engine_hours` و `odometer`، به‌عنوان فیلد استاندارد خودشان باقی می‌مانند.
 
 ---
 
@@ -11569,7 +11578,7 @@ speed
 heading
 ignition
 gps_valid
-gps_accuracy
+accuracy
 satellites
 ```
 
@@ -12142,7 +12151,7 @@ server_received_at
 latitude
 longitude
 gps_valid
-gps_accuracy
+accuracy
 attributes
 telemetry_reference
 raw_packet_reference
@@ -12322,7 +12331,7 @@ gps_valid = false
 
 باشد، تصمیم مکانی گرفته نمی‌شود.
 
-`gps_accuracy` بر حسب متر ذخیره می‌شود.
+`accuracy` بر حسب متر ذخیره می‌شود.
 
 همچنین:
 
@@ -21701,12 +21710,13 @@ Login می‌تواند Session را Bind کند.
 
 Heartbeat می‌تواند `last_activity` را تغییر دهد.
 
-اما Heartbeat به‌تنهایی:
+Heartbeat معتبر همچنین می‌تواند طبق سیاست ارتباطی SANA، `last_seen` را جلو ببرد؛ اما به‌تنهایی:
 
-* CurrentState
+* CurrentState telemetry snapshot
 * LocationHistory
 * Trip
-* last_seen
+* device_time
+* server_received_at مربوط به آخرین Telemetry
 
 را تغییر نمی‌دهد.
 
@@ -22097,9 +22107,23 @@ ProtocolResponse
 
 Decoder به Socket دسترسی ندارد.
 
-ACK می‌تواند قبل از Database Transaction ارسال شود.
+زمان ارسال ACK به semantics همان Protocol وابسته است.
 
-Duplicate نیز ممکن است همچنان نیاز به ACK داشته باشد.
+برای Teltonika در تصمیم نهایی SANA:
+
+```text
+Login ACK
+→ بعد از پذیرش IMEI/Device معتبر
+
+AVL ACK
+→ بعد از موفقیت Transaction و COMMIT
+
+Duplicate
+→ در صورت نیاز Protocol می‌تواند ACK دریافت کند،
+   ولی هیچ Side Effect جدیدی ایجاد نمی‌کند.
+```
+
+Session/Transport مسئول ارسال Response است.
 
 ---
 
@@ -22575,6 +22599,10 @@ Persistent State
 ============================================================================
 
 
-### هنوز طراحی نشده
+### طراحی شده، Implementation باقی مانده
 
 * Protocol Decoder implementation
+* Protocol Normalizer implementation
+* Processing Pipeline implementation
+* PostgreSQL Repository implementation
+* Integration Tests با Packetهای واقعی
