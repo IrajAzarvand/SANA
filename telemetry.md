@@ -1114,11 +1114,20 @@ speed = 0
 ```text
 gps_valid = false
 speed = NULL
+motion = NULL
 ```
 
-در این شرایط Motion ممکن است قابل تعیین نباشد.
+در این شرایط Motion می‌تواند نامشخص باشد.
 
-این موضوع در طراحی State Engine باید مدیریت شود.
+قاعده استاندارد SANA:
+
+```text
+motion = true  → حرکت تشخیص داده شده
+motion = false → عدم حرکت تشخیص داده شده
+motion = NULL  → حرکت قابل تعیین نیست
+```
+
+این موضوع در State Engine مدیریت می‌شود.
 
 ---
 
