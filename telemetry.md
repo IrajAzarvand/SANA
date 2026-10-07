@@ -37669,6 +37669,8 @@ trips_completed
 
 # 34. Queue/Backpressure Metrics
 
+در MVP منظور از Processing Queue فقط Queue محدود (bounded) و in-process داخل `sana-gps` است؛ این مفهوم به معنی Kafka، RabbitMQ، Redis، Celery یا Message Broker خارجی نیست.
+
 ```text
 processing_queue_size
 processing_queue_max
@@ -37677,9 +37679,9 @@ tcp_backpressure
 udp_dropped
 ```
 
-باید قابل مشاهده باشند.
+این Queue فقط برای کنترل backpressure و جداسازی کوتاه‌مدت مراحل پردازش استفاده می‌شود و Source of Truth محسوب نمی‌شود.
 
----
+باید قابل مشاهده باشد.
 
 # 35. Health
 
