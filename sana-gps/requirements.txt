@@ -1,1 +1,2 @@
-# Bootstrap stage uses Python standard library only.
+psycopg[binary]>=3.2,<4
+psycopg-pool>=3.2,<4
