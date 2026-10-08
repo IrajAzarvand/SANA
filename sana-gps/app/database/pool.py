@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
+from typing import Iterator
+
+from psycopg import Connection
 from psycopg_pool import ConnectionPool
 
 from app.config import DatabaseConfig
@@ -24,6 +28,12 @@ class DatabaseConnectionPool:
         except Exception:
             self._pool.close()
             raise
+
+    @contextmanager
+    def connection(self) -> Iterator[Connection]:
+        """Borrow one pooled PostgreSQL connection for a repository operation."""
+        with self._pool.connection() as connection:
+            yield connection
 
     def close(self) -> None:
         self._pool.close()
