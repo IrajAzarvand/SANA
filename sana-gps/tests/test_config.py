@@ -71,6 +71,20 @@ class AppConfigTests(unittest.TestCase):
             ):
                 AppConfig.from_env()
 
+    def test_rejects_non_finite_timeout(self):
+        env = {
+            "SANA_GPS_DB_NAME": "sana_db",
+            "SANA_GPS_DB_USER": "sana_user",
+            "SANA_GPS_DB_PASSWORD": "secret",
+            "SANA_GPS_TCP_IDLE_TIMEOUT": "nan",
+        }
+
+        with patch.dict(os.environ, env, clear=False):
+            with self.assertRaisesRegex(
+                ConfigurationError, "SANA_GPS_TCP_IDLE_TIMEOUT must be a finite number"
+            ):
+                AppConfig.from_env()
+
     def test_rejects_invalid_pool_range(self):
         env = {
             "SANA_GPS_DB_NAME": "sana_db",
