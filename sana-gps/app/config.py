@@ -5,7 +5,8 @@ from dataclasses import dataclass
 
 
 _DEFAULT_HOST = "0.0.0.0"
-_DEFAULT_PORT = 9000
+_DEFAULT_TCP_PORT = 9000
+_DEFAULT_UDP_PORT = 9001
 _DEFAULT_LOG_LEVEL = "INFO"
 _ALLOWED_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
 
@@ -86,7 +87,8 @@ class DatabaseConfig:
 @dataclass(frozen=True, slots=True)
 class AppConfig:
     host: str = _DEFAULT_HOST
-    port: int = _DEFAULT_PORT
+    tcp_port: int = _DEFAULT_TCP_PORT
+    udp_port: int = _DEFAULT_UDP_PORT
     log_level: str = _DEFAULT_LOG_LEVEL
     database: DatabaseConfig | None = None
 
@@ -96,8 +98,11 @@ class AppConfig:
         if not host:
             raise ConfigurationError("SANA_GPS_HOST must not be empty")
 
-        port = _parse_int_env(
-            "SANA_GPS_PORT", _DEFAULT_PORT, minimum=1, maximum=65535
+        tcp_port = _parse_int_env(
+            "SANA_GPS_TCP_PORT", _DEFAULT_TCP_PORT, minimum=1, maximum=65535
+        )
+        udp_port = _parse_int_env(
+            "SANA_GPS_UDP_PORT", _DEFAULT_UDP_PORT, minimum=1, maximum=65535
         )
 
         log_level = os.getenv(
@@ -111,7 +116,8 @@ class AppConfig:
 
         return cls(
             host=host,
-            port=port,
+            tcp_port=tcp_port,
+            udp_port=udp_port,
             log_level=log_level,
             database=DatabaseConfig.from_env(),
         )
