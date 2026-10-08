@@ -33,6 +33,11 @@ async def run(
         config.udp_port,
         session_manager,
         on_data,
+        tcp_idle_timeout=config.tcp_idle_timeout,
+        udp_session_timeout=config.udp_session_timeout,
+        max_tcp_connections=config.max_tcp_connections,
+        max_udp_sessions=config.max_udp_sessions,
+        max_datagram_size=config.max_datagram_size,
     )
 
     try:
