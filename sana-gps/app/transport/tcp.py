@@ -88,7 +88,8 @@ class TCPListener:
         if self._server is None:
             return
 
-        self._server.close()
+        server = self._server
+        server.close()
         self._server = None
 
         tasks = tuple(self._connections)
@@ -98,7 +99,7 @@ class TCPListener:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
-        await self._server.wait_closed()
+        await server.wait_closed()
 
         self._session_manager.clear_closed()
 
