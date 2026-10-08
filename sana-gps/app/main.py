@@ -6,6 +6,7 @@ import sys
 
 from app.config import AppConfig, ConfigurationError
 from app.database.pool import DatabaseConnectionPool
+from app.diagnostics.capture import RawCapture
 from app.transport.server import TransportServer
 from app.transport.session import SessionManager
 
@@ -22,10 +23,16 @@ async def run(
 
     database_pool = DatabaseConnectionPool(config.database)
     session_manager = SessionManager()
+    capture = RawCapture(config.capture_file) if config.capture_file else None
 
     async def on_data(session, data: bytes) -> None:
+        if capture is not None:
+            capture.write(
+                transport=session.transport.value,
+                remote=session.remote_address,
+                data=data,
+            )
         # Protocol handling starts in Stage 4.
-        return None
 
     transport_server = TransportServer(
         config.host,
@@ -51,6 +58,8 @@ async def run(
         print("TCP port:", config.tcp_port)
         print("UDP port:", config.udp_port)
         print("Log level:", config.log_level)
+        if capture is not None:
+            print("Raw capture:", capture.path)
         print("SANA GPS ready")
 
         if shutdown_event is None:
