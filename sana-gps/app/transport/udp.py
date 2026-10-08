@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 
-from app.transport.session import Session, SessionManager, TransportType
+from app.transport.session import Session, SessionManager, SessionState, TransportType
 
 
 DatagramHandler = Callable[[Session, bytes], Awaitable[None]]
@@ -26,7 +26,7 @@ class UDPListener:
         self._on_datagram = on_datagram
         self._transport: asyncio.DatagramTransport | None = None
         self._protocol: _UDPProtocol | None = None
-        self._receive_task: asyncio.Task[None] | None = None
+        self._handler_tasks: set[asyncio.Task[None]] = set()
         self._sessions_by_endpoint: dict[Address, Session] = {}
 
     async def start(self) -> None:
@@ -53,6 +53,13 @@ class UDPListener:
 
         transport.close()
 
+        tasks = tuple(self._handler_tasks)
+        for task in tasks:
+            task.cancel()
+
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
         for session in tuple(self._sessions_by_endpoint.values()):
             session.close()
 
@@ -68,7 +75,7 @@ class UDPListener:
             return
 
         session = self._sessions_by_endpoint.get(address)
-        if session is None or session.state.value == "closed":
+        if session is None or session.state is SessionState.CLOSED:
             session = self._session_manager.create(
                 transport=TransportType.UDP,
                 remote_address=address,
@@ -79,6 +86,22 @@ class UDPListener:
 
         session.activity()
         await self._on_datagram(session, data)
+
+    def _track_handler_task(self, task: asyncio.Task[None]) -> None:
+        self._handler_tasks.add(task)
+        task.add_done_callback(self._handler_tasks.discard)
+        task.add_done_callback(self._consume_task_exception)
+
+    @staticmethod
+    def _consume_task_exception(task: asyncio.Task[None]) -> None:
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            # Structured transport logging will be added with observability.
+            # The callback prevents unhandled-task warnings at this stage.
+            pass
 
     @staticmethod
     def _is_address(value: object) -> bool:
@@ -93,12 +116,8 @@ class UDPListener:
 class _UDPProtocol(asyncio.DatagramProtocol):
     def __init__(self, listener: UDPListener) -> None:
         self._listener = listener
-        self._loop_task: asyncio.Task[None] | None = None
 
-    def connection_made(
-        self,
-        transport: asyncio.BaseTransport,
-    ) -> None:
+    def connection_made(self, transport: asyncio.BaseTransport) -> None:
         if not isinstance(transport, asyncio.DatagramTransport):
             raise TypeError("Expected asyncio.DatagramTransport")
 
@@ -110,23 +129,11 @@ class _UDPProtocol(asyncio.DatagramProtocol):
         task = asyncio.create_task(
             self._listener._handle_datagram(data, addr)
         )
-        task.add_done_callback(self._consume_task_exception)
+        self._listener._track_handler_task(task)
 
     def error_received(self, exc: Exception) -> None:
-        # Transport errors are surfaced by the event loop; no protocol logic
-        # belongs in the transport layer.
+        # Protocol-specific error handling does not belong in transport.
         return
 
     def connection_lost(self, exc: Exception | None) -> None:
         return
-
-    @staticmethod
-    def _consume_task_exception(task: asyncio.Task[None]) -> None:
-        try:
-            task.result()
-        except asyncio.CancelledError:
-            pass
-        except Exception:
-            # The listener will gain structured logging/error handling in a
-            # later stage. For now, avoid leaking task exceptions.
-            pass
