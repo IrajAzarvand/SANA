@@ -55,10 +55,6 @@ class TeltonikaHandler:
 
             # AVL decoding and the post-commit record-count response belong
             # to the next processing stage. Do not acknowledge telemetry yet.
-            response = None
-
-        if session.device_id is not None:
-            self._framers.pop(session.id, None)
 
         return response
 
