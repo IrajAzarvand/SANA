@@ -36,7 +36,7 @@ def test_find_by_imei_returns_none_for_unknown_device() -> None:
     connection = Mock()
     connection.execute.return_value.fetchone.return_value = None
 
-    pool = Mock()
+    pool = MagicMock()
     pool.connection.return_value.__enter__.return_value = connection
 
     assert DeviceRepository(pool).find_by_imei("000000000000000") is None
