@@ -99,3 +99,26 @@ async def test_tcp_listener_stop_closes_active_connections():
 
     assert manager.active_count() == 0
     assert reader.at_eof() or writer.is_closing()
+
+
+@pytest.mark.asyncio
+async def test_tcp_listener_stop_is_idempotent_and_listener_can_restart():
+    async def on_data(session, data):
+        return None
+
+    manager = SessionManager()
+    listener = TCPListener("127.0.0.1", 0, manager, on_data)
+
+    await listener.start()
+    assert listener._server is not None
+
+    await listener.stop()
+    assert listener._server is None
+
+    await listener.stop()
+
+    await listener.start()
+    assert listener._server is not None
+
+    await listener.stop()
+    assert listener._server is None
