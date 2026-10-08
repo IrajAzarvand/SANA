@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from app.protocols.framing import FramingBuffer, FramingBufferOverflowError
+from app.protocols.framing import FramingBuffer
 from app.protocols.types import ProtocolFrame, ProtocolId
 
 
@@ -80,9 +80,7 @@ class TeltonikaFramer:
         data_length = int.from_bytes(header[4:8], "big")
 
         if data_length < 3:
-            raise TeltonikaFrameError(
-                "Teltonika AVL data field is too short"
-            )
+            raise TeltonikaFrameError("Teltonika AVL data field is too short")
 
         if data_length > self.MAX_AVL_DATA_LENGTH:
             raise TeltonikaFrameError(
