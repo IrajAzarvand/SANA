@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from uuid import UUID, uuid4
 
+from app.protocols.types import ProtocolId
+
 
 class TransportType(str, Enum):
     TCP = "tcp"
@@ -36,6 +38,30 @@ class Session:
         default_factory=lambda: datetime.now(timezone.utc)
     )
     state: SessionState = SessionState.NEW
+    device_id: int | None = None
+    device_imei: str | None = None
+    protocol: ProtocolId | None = None
+    authenticated_at: datetime | None = None
+
+    def bind_device(
+        self,
+        *,
+        device_id: int,
+        imei: str,
+        protocol: ProtocolId,
+    ) -> None:
+        """Bind a runtime session to a registered SANA device."""
+        if self.state not in {SessionState.CONNECTED, SessionState.ACTIVE}:
+            raise SessionStateError(
+                "Session must be CONNECTED or ACTIVE to bind a device"
+            )
+        if self.device_id is not None:
+            raise SessionStateError("Session is already bound to a device")
+
+        self.device_id = device_id
+        self.device_imei = imei
+        self.protocol = protocol
+        self.authenticated_at = datetime.now(timezone.utc)
 
     def connect(self) -> None:
         self._transition(SessionState.CONNECTED)
