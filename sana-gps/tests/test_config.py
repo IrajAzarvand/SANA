@@ -6,6 +6,21 @@ from app.config import AppConfig, ConfigurationError
 
 
 class AppConfigTests(unittest.TestCase):
+    def test_loads_transport_configuration_from_environment(self):
+        env = {
+            "SANA_GPS_TCP_PORT": "9100",
+            "SANA_GPS_UDP_PORT": "9101",
+            "SANA_GPS_DB_NAME": "sana_db",
+            "SANA_GPS_DB_USER": "sana_user",
+            "SANA_GPS_DB_PASSWORD": "secret",
+        }
+
+        with patch.dict(os.environ, env, clear=False):
+            config = AppConfig.from_env()
+
+        self.assertEqual(config.tcp_port, 9100)
+        self.assertEqual(config.udp_port, 9101)
+
     def test_loads_database_configuration_from_environment(self):
         env = {
             "SANA_GPS_DB_NAME": "sana_db",
