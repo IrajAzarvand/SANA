@@ -125,3 +125,98 @@ async def test_udp_listener_stop_is_idempotent_and_can_restart() -> None:
         await listener.stop()
 
     assert manager.active_count() == 0
+
+
+@pytest.mark.asyncio
+async def test_udp_listener_expires_idle_sessions():
+    manager = SessionManager()
+    received = asyncio.Event()
+
+    async def on_datagram(session, data):
+        received.set()
+
+    listener = UDPListener(
+        "127.0.0.1", 0, manager, on_datagram, session_timeout=0.05
+    )
+    await listener.start()
+    try:
+        address = listener._transport.get_extra_info("sockname")
+        client, _ = await asyncio.get_running_loop().create_datagram_endpoint(
+            asyncio.DatagramProtocol, remote_addr=address
+        )
+        try:
+            client.sendto(b"hello")
+            await asyncio.wait_for(received.wait(), timeout=1)
+            assert manager.active_count() == 1
+            await asyncio.sleep(0.15)
+            assert manager.active_count() == 0
+        finally:
+            client.close()
+    finally:
+        await listener.stop()
+
+
+@pytest.mark.asyncio
+async def test_udp_listener_rejects_oversized_datagrams():
+    manager = SessionManager()
+    received = asyncio.Event()
+
+    async def on_datagram(session, data):
+        received.set()
+
+    listener = UDPListener(
+        "127.0.0.1", 0, manager, on_datagram, max_datagram_size=4
+    )
+    await listener.start()
+    try:
+        address = listener._transport.get_extra_info("sockname")
+        client, _ = await asyncio.get_running_loop().create_datagram_endpoint(
+            asyncio.DatagramProtocol, remote_addr=address
+        )
+        try:
+            client.sendto(b"12345")
+            await asyncio.sleep(0.05)
+            assert not received.is_set()
+            assert manager.active_count() == 0
+        finally:
+            client.close()
+    finally:
+        await listener.stop()
+
+
+@pytest.mark.asyncio
+async def test_udp_listener_rejects_new_sessions_over_limit():
+    manager = SessionManager()
+    received = asyncio.Event()
+
+    async def on_datagram(session, data):
+        received.set()
+
+    listener = UDPListener(
+        "127.0.0.1", 0, manager, on_datagram, max_sessions=1
+    )
+    await listener.start()
+    try:
+        address = listener._transport.get_extra_info("sockname")
+        loop = asyncio.get_running_loop()
+        client_a, _ = await loop.create_datagram_endpoint(
+            asyncio.DatagramProtocol,
+            local_addr=("127.0.0.1", 0),
+            remote_addr=address,
+        )
+        client_b, _ = await loop.create_datagram_endpoint(
+            asyncio.DatagramProtocol,
+            local_addr=("127.0.0.1", 0),
+            remote_addr=address,
+        )
+        try:
+            client_a.sendto(b"a")
+            await asyncio.sleep(0.05)
+            client_b.sendto(b"b")
+            await asyncio.sleep(0.05)
+            assert manager.active_count() == 1
+        finally:
+            client_a.close()
+            client_b.close()
+    finally:
+        await listener.stop()
