@@ -51,7 +51,10 @@ class TCPConnection:
         self._closed = True
         self._session.close()
         self._writer.close()
-        await self._writer.wait_closed()
+        try:
+            await asyncio.wait_for(self._writer.wait_closed(), timeout=1.0)
+        except asyncio.TimeoutError:
+            pass
 
 
 class TCPListener:
