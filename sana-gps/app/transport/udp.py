@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from datetime import datetime, timezone
 
 from app.transport.session import Session, SessionManager, SessionState, TransportType
 
@@ -19,15 +20,23 @@ class UDPListener:
         port: int,
         session_manager: SessionManager,
         on_datagram: DatagramHandler,
+        *,
+        session_timeout: float = 300.0,
+        max_sessions: int = 10000,
+        max_datagram_size: int = 8192,
     ) -> None:
         self._host = host
         self._port = port
         self._session_manager = session_manager
         self._on_datagram = on_datagram
+        self._session_timeout = session_timeout
+        self._max_sessions = max_sessions
+        self._max_datagram_size = max_datagram_size
         self._transport: asyncio.DatagramTransport | None = None
         self._protocol: _UDPProtocol | None = None
         self._handler_tasks: set[asyncio.Task[None]] = set()
         self._sessions_by_endpoint: dict[Address, Session] = {}
+        self._cleanup_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
         if self._transport is not None:
@@ -42,6 +51,7 @@ class UDPListener:
 
         self._protocol = protocol
         self._transport = transport
+        self._cleanup_task = asyncio.create_task(self._cleanup_loop())
 
     async def stop(self) -> None:
         transport = self._transport
@@ -50,6 +60,11 @@ class UDPListener:
 
         self._transport = None
         self._protocol = None
+
+        if self._cleanup_task is not None:
+            self._cleanup_task.cancel()
+            await asyncio.gather(self._cleanup_task, return_exceptions=True)
+            self._cleanup_task = None
 
         transport.close()
 
@@ -66,6 +81,29 @@ class UDPListener:
         self._sessions_by_endpoint.clear()
         self._session_manager.clear_closed()
 
+    async def _cleanup_loop(self) -> None:
+        interval = min(max(self._session_timeout / 2, 0.1), 30.0)
+        try:
+            while True:
+                await asyncio.sleep(interval)
+                self._expire_idle_sessions()
+        except asyncio.CancelledError:
+            raise
+
+    def _expire_idle_sessions(self) -> None:
+        now = datetime.now(timezone.utc)
+        expired = [
+            endpoint
+            for endpoint, session in self._sessions_by_endpoint.items()
+            if (now - session.last_activity_at).total_seconds()
+            >= self._session_timeout
+        ]
+
+        for endpoint in expired:
+            session = self._sessions_by_endpoint.pop(endpoint)
+            session.close()
+            self._session_manager.remove(session.id)
+
     async def _handle_datagram(
         self,
         data: bytes,
@@ -74,8 +112,14 @@ class UDPListener:
         if not self._is_address(address):
             return
 
+        if len(data) > self._max_datagram_size:
+            return
+
         session = self._sessions_by_endpoint.get(address)
         if session is None or session.state is SessionState.CLOSED:
+            if len(self._sessions_by_endpoint) >= self._max_sessions:
+                return
+
             session = self._session_manager.create(
                 transport=TransportType.UDP,
                 remote_address=address,
