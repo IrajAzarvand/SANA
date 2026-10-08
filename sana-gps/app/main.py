@@ -47,14 +47,16 @@ async def run(
 
         device = device_repository.find_by_imei(identification.imei)
         if device is None:
+            # Registration in SANA is the source of truth for whether a
+            # device is allowed to communicate with the GPS service.
             return ProtocolResponse(b"\x00")
 
         if device.protocol.strip().lower() != ProtocolId.TELTONIKA.value:
             return ProtocolResponse(b"\x00")
 
-        if not device.handshake_allowed:
-            return ProtocolResponse(b"\x00")
-
+        # Management status, subscription state, ownership, warehouse state,
+        # repair/test state, and similar business concerns do not block the
+        # GPS handshake. A registered device may connect whenever needed.
         session.bind_device(
             device_id=device.id,
             imei=device.imei,
