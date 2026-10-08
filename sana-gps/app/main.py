@@ -7,8 +7,8 @@ import sys
 from app.config import AppConfig, ConfigurationError
 from app.database.pool import DatabaseConnectionPool
 from app.diagnostics.capture import RawCapture
-from app.protocols.teltonika.identifier import TeltonikaIdentifier
-from app.protocols.types import ProtocolId, ProtocolResponse
+from app.protocols.teltonika.handler import TeltonikaHandler
+from app.protocols.types import ProtocolResponse
 from app.repositories.device import DeviceRepository
 from app.transport.server import TransportServer
 from app.transport.session import SessionManager
@@ -27,7 +27,7 @@ async def run(
     database_pool = DatabaseConnectionPool(config.database)
     session_manager = SessionManager()
     device_repository = DeviceRepository(database_pool)
-    teltonika_identifier = TeltonikaIdentifier()
+    teltonika_handler = TeltonikaHandler(device_repository)
     capture = RawCapture(config.capture_file) if config.capture_file else None
 
     async def on_data(session, data: bytes) -> ProtocolResponse | None:
@@ -38,33 +38,7 @@ async def run(
                 data=data,
             )
 
-        if session.device_id is not None:
-            # The next stages will frame/decode AVL packets.
-            return None
-
-        try:
-            identification = teltonika_identifier.identify(data)
-        except ValueError:
-            return ProtocolResponse(b"\x00")
-
-        device = device_repository.find_by_imei(identification.imei)
-        if device is None:
-            # Registration in SANA is the source of truth for whether a
-            # device is allowed to communicate with the GPS service.
-            return ProtocolResponse(b"\x00")
-
-        if device.protocol.strip().lower() != ProtocolId.TELTONIKA.value:
-            return ProtocolResponse(b"\x00")
-
-        # Management status, subscription state, ownership, warehouse state,
-        # repair/test state, and similar business concerns do not block the
-        # GPS handshake. A registered device may connect whenever needed.
-        session.bind_device(
-            device_id=device.id,
-            imei=device.imei,
-            protocol=ProtocolId.TELTONIKA,
-        )
-        return ProtocolResponse(b"\x01")
+        return await teltonika_handler.handle(session, data)
 
     transport_server = TransportServer(
         config.host,
