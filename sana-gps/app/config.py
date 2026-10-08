@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass
 
@@ -165,6 +166,8 @@ def _parse_float_env(
         value = float(raw_value)
     except ValueError as exc:
         raise ConfigurationError(f"{name} must be a number") from exc
+    if not math.isfinite(value):
+        raise ConfigurationError(f"{name} must be a finite number")
     if minimum is not None and value < minimum:
         raise ConfigurationError(f"{name} must be at least {minimum}")
     return value
