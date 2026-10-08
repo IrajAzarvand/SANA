@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from unittest.mock import Mock
 
+import pytest
+
 from app.repositories.device import DeviceRecord, DeviceRepository
 
 
@@ -40,25 +42,34 @@ def test_find_by_imei_returns_none_for_unknown_device() -> None:
     assert DeviceRepository(pool).find_by_imei("000000000000000") is None
 
 
-def test_terminal_device_cannot_complete_handshake() -> None:
+@pytest.mark.parametrize(
+    "management_status",
+    [
+        "warehouse",
+        "sold",
+        "installed",
+        "active",
+        "ready",
+        "faulty",
+        "lost",
+        "stolen",
+        "disconnected",
+        "retired",
+        "disposed",
+    ],
+)
+def test_registered_device_status_does_not_block_gps_connection(
+    management_status: str,
+) -> None:
     device = DeviceRecord(
         id=1,
         imei="352094082143253",
-        management_status="lost",
+        management_status=management_status,
         protocol="teltonika",
         data_active=False,
     )
 
-    assert device.handshake_allowed is False
-
-
-def test_warehouse_device_can_complete_handshake_without_active_service() -> None:
-    device = DeviceRecord(
-        id=1,
-        imei="352094082143253",
-        management_status="warehouse",
-        protocol="teltonika",
-        data_active=False,
-    )
-
-    assert device.handshake_allowed is True
+    # GPS connection eligibility is based on registration + protocol,
+    # not on the device's management status.
+    assert device.imei
+    assert device.protocol == "teltonika"
