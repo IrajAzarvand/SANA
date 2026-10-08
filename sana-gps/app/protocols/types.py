@@ -41,3 +41,10 @@ class DetectionResult:
 
 class TeltonikaIdentificationError(ValueError):
     """Raised when a Teltonika identification frame is invalid."""
+
+
+@dataclass(frozen=True, slots=True)
+class TeltonikaIdentification:
+    """The device identity extracted from a Teltonika TCP handshake."""
+
+    imei: str
