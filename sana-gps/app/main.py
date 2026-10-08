@@ -60,7 +60,6 @@ async def run(
             imei=device.imei,
             protocol=ProtocolId.TELTONIKA,
         )
-        session.activate()
         return ProtocolResponse(b"\x01")
 
     transport_server = TransportServer(
