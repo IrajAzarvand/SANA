@@ -20,9 +20,24 @@ class TransportServer:
         udp_port: int,
         session_manager: SessionManager,
         on_data: TransportDataHandler,
+        *,
+        tcp_idle_timeout: float = 300.0,
+        udp_session_timeout: float = 300.0,
+        max_tcp_connections: int = 100,
+        max_udp_sessions: int = 10000,
+        max_datagram_size: int = 8192,
     ) -> None:
-        self._tcp_listener = TCPListener(host, tcp_port, session_manager, on_data)
-        self._udp_listener = UDPListener(host, udp_port, session_manager, on_data)
+        self._tcp_listener = TCPListener(
+            host, tcp_port, session_manager, on_data,
+            idle_timeout=tcp_idle_timeout,
+            max_connections=max_tcp_connections,
+        )
+        self._udp_listener = UDPListener(
+            host, udp_port, session_manager, on_data,
+            session_timeout=udp_session_timeout,
+            max_sessions=max_udp_sessions,
+            max_datagram_size=max_datagram_size,
+        )
         self._started = False
 
     async def start(self) -> None:
