@@ -37,3 +37,7 @@ class DetectionResult:
     @classmethod
     def unknown(cls) -> "DetectionResult":
         return cls(protocol=ProtocolId.UNKNOWN, matched=False)
+
+
+class TeltonikaIdentificationError(ValueError):
+    """Raised when a Teltonika identification frame is invalid."""
