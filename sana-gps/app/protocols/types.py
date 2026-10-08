@@ -21,6 +21,13 @@ class ProtocolFrame:
 
 
 @dataclass(frozen=True, slots=True)
+class ProtocolResponse:
+    """Generic bytes to send back to a GPS device."""
+
+    data: bytes
+
+
+@dataclass(frozen=True, slots=True)
 class DetectionResult:
     """The outcome of protocol detection for a candidate payload."""
 
