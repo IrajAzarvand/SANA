@@ -53,13 +53,15 @@ export default function Devices() {
           onChange={setActiveTab}
           tabs={[
             { value: 'devices', label: 'دستگاه‌ها' },
-            { value: 'models',  label: 'مدل‌های دستگاه' },
+            ...(isSiteAdmin
+              ? [{ value: 'models', label: 'مدل‌های دستگاه' }]
+              : []),
           ]}
         />
       </Card>
 
       {activeTab === 'devices' && <DevicesTab />}
-      {activeTab === 'models'  && <DeviceModelsTab />}
+      {activeTab === 'models' && isSiteAdmin && <DeviceModelsTab />}
     </div>
   );
 }
