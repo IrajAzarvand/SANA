@@ -90,6 +90,7 @@ class DeviceSerializer(serializers.ModelSerializer):
     owner_name = serializers.CharField(source='owner_user.full_name', read_only=True)
     vehicle_plate = serializers.CharField(source='vehicle.plate', read_only=True)
     management_status = serializers.SerializerMethodField()
+    data_active = serializers.BooleanField(source='is_data_active', read_only=True)
 
     def get_management_status(self, obj):
         if obj.is_in_warehouse:
@@ -109,6 +110,7 @@ class DeviceSerializer(serializers.ModelSerializer):
             'vehicle', 'vehicle_plate',
             'sim_number',
             'management_status',
+            'data_active',
             'installed_at',
             'created_at', 'updated_at',
         ]
@@ -167,6 +169,9 @@ class DeviceListSerializer(serializers.ModelSerializer):
     replacement_device_imei = serializers.SerializerMethodField()
     replacement_relation_direction = serializers.SerializerMethodField()
 
+    # وضعیت دریافت داده از GPS
+    data_active = serializers.BooleanField(source='is_data_active', read_only=True)
+
     # وضعیت انبار
     is_in_warehouse = serializers.BooleanField(read_only=True)
 
@@ -186,6 +191,7 @@ class DeviceListSerializer(serializers.ModelSerializer):
             'subscription_device_type', 'subscription_device_type_display',
             'replacement_device_id', 'replacement_device_imei', 'replacement_relation_direction',
             'management_status',
+            'data_active',
             'is_in_warehouse',
             'created_at',
         ]
