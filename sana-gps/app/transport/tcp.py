@@ -3,10 +3,11 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 
+from app.protocols.types import ProtocolResponse
 from app.transport.session import Session, SessionManager, TransportType
 
 
-ConnectionHandler = Callable[[Session, bytes], Awaitable[None]]
+ConnectionHandler = Callable[[Session, bytes], Awaitable[ProtocolResponse | None]]
 
 
 class TCPConnection:
@@ -49,7 +50,10 @@ class TCPConnection:
                     break
 
                 self._session.activity()
-                await self._on_data(self._session, data)
+                response = await self._on_data(self._session, data)
+                if response is not None:
+                    self._writer.write(response.data)
+                    await self._writer.drain()
         finally:
             await self.close()
 
