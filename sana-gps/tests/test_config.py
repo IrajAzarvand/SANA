@@ -21,6 +21,25 @@ class AppConfigTests(unittest.TestCase):
         self.assertEqual(config.tcp_port, 9100)
         self.assertEqual(config.udp_port, 9101)
 
+    def test_loads_transport_limits_from_environment(self):
+        env = {
+            "SANA_GPS_TCP_IDLE_TIMEOUT": "12.5",
+            "SANA_GPS_UDP_SESSION_TIMEOUT": "20",
+            "SANA_GPS_MAX_TCP_CONNECTIONS": "3",
+            "SANA_GPS_MAX_UDP_SESSIONS": "50",
+            "SANA_GPS_MAX_DATAGRAM_SIZE": "4096",
+            "SANA_GPS_DB_NAME": "sana_db",
+            "SANA_GPS_DB_USER": "sana_user",
+            "SANA_GPS_DB_PASSWORD": "secret",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            config = AppConfig.from_env()
+        self.assertEqual(config.tcp_idle_timeout, 12.5)
+        self.assertEqual(config.udp_session_timeout, 20.0)
+        self.assertEqual(config.max_tcp_connections, 3)
+        self.assertEqual(config.max_udp_sessions, 50)
+        self.assertEqual(config.max_datagram_size, 4096)
+
     def test_loads_database_configuration_from_environment(self):
         env = {
             "SANA_GPS_DB_NAME": "sana_db",
