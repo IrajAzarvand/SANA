@@ -69,7 +69,7 @@ class TCPListener:
         self._session_manager = session_manager
         self._on_data = on_data
         self._server: asyncio.AbstractServer | None = None
-        self._connections: set[asyncio.Task[None]] = set()
+        self._connections: dict[asyncio.Task[None], TCPConnection] = {}
 
     async def start(self) -> None:
         if self._server is not None:
@@ -89,9 +89,12 @@ class TCPListener:
         await self._server.wait_closed()
         self._server = None
 
-        connections = tuple(self._connections)
-        if connections:
-            await asyncio.gather(*connections, return_exceptions=True)
+        connections = tuple(self._connections.items())
+        for _, connection in connections:
+            await connection.close()
+        tasks = tuple(task for task, _ in connections)
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
         self._session_manager.clear_closed()
 
     async def _accept_client(
@@ -113,27 +116,14 @@ class TCPListener:
             local_address=local if self._is_address(local) else None,
         )
 
-        task = asyncio.create_task(
-            self._run_connection(reader, writer, session)
-        )
-        self._connections.add(task)
-        task.add_done_callback(self._connections.discard)
+        connection = TCPConnection(reader, writer, session, self._on_data)
+        task = asyncio.create_task(self._run_connection(connection))
+        self._connections[task] = connection
+        task.add_done_callback(self._connections.pop)
 
-    async def _run_connection(
-        self,
-        reader: asyncio.StreamReader,
-        writer: asyncio.StreamWriter,
-        session: Session,
-    ) -> None:
-        connection = TCPConnection(
-            reader=reader,
-            writer=writer,
-            session=session,
-            on_data=self._on_data,
-        )
+    async def _run_connection(self, connection: TCPConnection) -> None:
         await connection.run()
-
-        self._session_manager.remove(session.id)
+        self._session_manager.remove(connection.session.id)
 
     @staticmethod
     def _is_address(value: object) -> bool:
