@@ -101,6 +101,7 @@ class AppConfig:
     max_tcp_connections: int = _DEFAULT_MAX_TCP_CONNECTIONS
     max_udp_sessions: int = _DEFAULT_MAX_UDP_SESSIONS
     max_datagram_size: int = _DEFAULT_MAX_DATAGRAM_SIZE
+    capture_file: str | None = None
     database: DatabaseConfig | None = None
 
     @classmethod
@@ -132,6 +133,8 @@ class AppConfig:
             "SANA_GPS_MAX_DATAGRAM_SIZE", _DEFAULT_MAX_DATAGRAM_SIZE, minimum=1
         )
 
+        capture_file = os.getenv("SANA_GPS_CAPTURE_FILE", "").strip() or None
+
         log_level = os.getenv(
             "SANA_GPS_LOG_LEVEL", _DEFAULT_LOG_LEVEL
         ).strip().upper()
@@ -151,6 +154,7 @@ class AppConfig:
             max_tcp_connections=max_tcp_connections,
             max_udp_sessions=max_udp_sessions,
             max_datagram_size=max_datagram_size,
+            capture_file=capture_file,
             database=DatabaseConfig.from_env(),
         )
 
