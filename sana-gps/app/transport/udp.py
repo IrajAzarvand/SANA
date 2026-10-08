@@ -4,10 +4,11 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 
+from app.protocols.types import ProtocolResponse
 from app.transport.session import Session, SessionManager, SessionState, TransportType
 
 
-DatagramHandler = Callable[[Session, bytes], Awaitable[None]]
+DatagramHandler = Callable[[Session, bytes], Awaitable[ProtocolResponse | None]]
 Address = tuple[str, int]
 
 
@@ -129,7 +130,9 @@ class UDPListener:
             self._sessions_by_endpoint[address] = session
 
         session.activity()
-        await self._on_datagram(session, data)
+        response = await self._on_datagram(session, data)
+        if response is not None and self._transport is not None:
+            self._transport.sendto(response.data, address)
 
     def _track_handler_task(self, task: asyncio.Task[None]) -> None:
         self._handler_tasks.add(task)
