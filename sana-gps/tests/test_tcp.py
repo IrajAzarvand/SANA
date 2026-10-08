@@ -122,3 +122,55 @@ async def test_tcp_listener_stop_is_idempotent_and_listener_can_restart():
 
     await listener.stop()
     assert listener._server is None
+
+
+@pytest.mark.asyncio
+async def test_tcp_listener_closes_idle_connection():
+    manager = SessionManager()
+    data_received = asyncio.Event()
+
+    async def on_data(session, data):
+        data_received.set()
+
+    listener = TCPListener(
+        "127.0.0.1", 0, manager, on_data, idle_timeout=0.05
+    )
+    await listener.start()
+    port = listener._server.sockets[0].getsockname()[1]
+
+    reader, writer = await asyncio.open_connection("127.0.0.1", port)
+    try:
+        await asyncio.sleep(0.1)
+        assert reader.at_eof() or writer.is_closing()
+        assert manager.active_count() == 0
+    finally:
+        writer.close()
+        await writer.wait_closed()
+        await listener.stop()
+
+
+@pytest.mark.asyncio
+async def test_tcp_listener_rejects_connections_over_limit():
+    manager = SessionManager()
+
+    async def on_data(session, data):
+        return None
+
+    listener = TCPListener(
+        "127.0.0.1", 0, manager, on_data, max_connections=1
+    )
+    await listener.start()
+    port = listener._server.sockets[0].getsockname()[1]
+
+    reader_a, writer_a = await asyncio.open_connection("127.0.0.1", port)
+    reader_b, writer_b = await asyncio.open_connection("127.0.0.1", port)
+    try:
+        await asyncio.sleep(0.05)
+        assert manager.active_count() <= 1
+        assert writer_b.is_closing() or reader_b.at_eof()
+    finally:
+        writer_a.close()
+        writer_b.close()
+        await writer_a.wait_closed()
+        await writer_b.wait_closed()
+        await listener.stop()
