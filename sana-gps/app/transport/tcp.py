@@ -89,12 +89,13 @@ class TCPListener:
         await self._server.wait_closed()
         self._server = None
 
-        connections = tuple(self._connections.items())
-        for _, connection in connections:
-            await connection.close()
-        tasks = tuple(task for task, _ in connections)
+        tasks = tuple(self._connections)
+        for task in tasks:
+            task.cancel()
+
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+
         self._session_manager.clear_closed()
 
     async def _accept_client(
