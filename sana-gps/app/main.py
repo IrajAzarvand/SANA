@@ -7,7 +7,8 @@ import sys
 from app.config import AppConfig, ConfigurationError
 from app.database.pool import DatabaseConnectionPool
 from app.diagnostics.capture import RawCapture
-from app.protocols.types import ProtocolId, ProtocolResponse, TeltonikaIdentifier
+from app.protocols.teltonika.identifier import TeltonikaIdentifier
+from app.protocols.types import ProtocolId, ProtocolResponse
 from app.repositories.device import DeviceRepository
 from app.transport.server import TransportServer
 from app.transport.session import SessionManager
@@ -36,6 +37,7 @@ async def run(
                 remote=session.remote_address,
                 data=data,
             )
+
         if session.device_id is not None:
             # The next stages will frame/decode AVL packets.
             return None
