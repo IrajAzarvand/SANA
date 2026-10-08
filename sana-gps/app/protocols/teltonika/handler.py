@@ -6,7 +6,7 @@ from app.protocols.teltonika.framer import TeltonikaFrameError, TeltonikaFramer
 from app.protocols.teltonika.identifier import TeltonikaIdentifier
 from app.protocols.types import ProtocolFrame, ProtocolId, ProtocolResponse
 from app.repositories.device import DeviceRepository
-from app.transport.session import Session
+from app.transport.session import Session, SessionState
 
 
 class TeltonikaHandler:
@@ -21,17 +21,21 @@ class TeltonikaHandler:
         self._device_repository = device_repository
         self._identifier = TeltonikaIdentifier()
         self._max_buffer_size = max_buffer_size
-        self._framers: dict[UUID, TeltonikaFramer] = {}
+        self._framers: dict[UUID, tuple[Session, TeltonikaFramer]] = {}
 
     async def handle(
         self,
         session: Session,
         data: bytes,
     ) -> ProtocolResponse | None:
-        framer = self._framers.setdefault(
-            session.id,
-            TeltonikaFramer(max_buffer_size=self._max_buffer_size),
-        )
+        self._cleanup_closed_sessions()
+
+        entry = self._framers.get(session.id)
+        if entry is None:
+            framer = TeltonikaFramer(max_buffer_size=self._max_buffer_size)
+            self._framers[session.id] = (session, framer)
+        else:
+            framer = entry[1]
 
         try:
             frames = framer.feed(data)
@@ -84,3 +88,12 @@ class TeltonikaHandler:
 
     def _forget(self, session: Session) -> None:
         self._framers.pop(session.id, None)
+
+    def _cleanup_closed_sessions(self) -> None:
+        closed_ids = [
+            session_id
+            for session_id, (session, _) in self._framers.items()
+            if session.state is SessionState.CLOSED
+        ]
+        for session_id in closed_ids:
+            self._framers.pop(session_id, None)
