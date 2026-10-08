@@ -22,7 +22,9 @@ def test_framer_extracts_identification_frame() -> None:
 def test_framer_waits_for_split_identification_frame() -> None:
     framer = TeltonikaFramer()
     assert framer.feed(IMEI_FRAME[:7]) == ()
-    assert framer.feed(IMEI_FRAME[7:]) == ()
+    frames = framer.feed(IMEI_FRAME[7:])
+    assert len(frames) == 1
+    assert frames[0].data == IMEI_FRAME
 
 
 def test_framer_extracts_avl_after_identification() -> None:
@@ -40,7 +42,9 @@ def test_framer_handles_split_avl_frame() -> None:
     avl = _avl_frame(b"\x08\x01\x00\x00\x01")
     split = len(avl) // 2
     assert framer.feed(avl[:split]) == ()
-    assert framer.feed(avl[split:]) == ()
+    frames = framer.feed(avl[split:])
+    assert len(frames) == 1
+    assert frames[0].data == avl
 
 
 def test_framer_handles_multiple_avl_frames_in_one_tcp_read() -> None:
