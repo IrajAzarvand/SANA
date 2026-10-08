@@ -10,6 +10,7 @@ class AppConfigTests(unittest.TestCase):
         env = {
             "SANA_GPS_TCP_PORT": "9100",
             "SANA_GPS_UDP_PORT": "9101",
+            "SANA_GPS_CAPTURE_FILE": "/tmp/sana-gps-capture.log",
             "SANA_GPS_DB_NAME": "sana_db",
             "SANA_GPS_DB_USER": "sana_user",
             "SANA_GPS_DB_PASSWORD": "secret",
@@ -20,6 +21,7 @@ class AppConfigTests(unittest.TestCase):
 
         self.assertEqual(config.tcp_port, 9100)
         self.assertEqual(config.udp_port, 9101)
+        self.assertEqual(config.capture_file, "/tmp/sana-gps-capture.log")
 
     def test_loads_transport_limits_from_environment(self):
         env = {
