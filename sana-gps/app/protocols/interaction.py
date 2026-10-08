@@ -1,20 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Protocol
 
-from app.protocols.types import ProtocolFrame, ProtocolId
-
-
-@dataclass(frozen=True, slots=True)
-class ProtocolResponse:
-    """Protocol-defined bytes that should be sent back to a device."""
-
-    data: bytes
-
-    def __post_init__(self) -> None:
-        if not self.data:
-            raise ValueError("ProtocolResponse data must not be empty")
+from app.protocols.types import ProtocolFrame, ProtocolId, ProtocolResponse
 
 
 class ProtocolInteraction(Protocol):
