@@ -5,14 +5,6 @@ from dataclasses import dataclass
 from app.database.pool import DatabaseConnectionPool
 
 
-_TERMINAL_MANAGEMENT_STATUSES = frozenset({
-    "lost",
-    "stolen",
-    "retired",
-    "disposed",
-})
-
-
 @dataclass(frozen=True, slots=True)
 class DeviceRecord:
     id: int
@@ -20,11 +12,6 @@ class DeviceRecord:
     management_status: str
     protocol: str
     data_active: bool
-
-    @property
-    def handshake_allowed(self) -> bool:
-        """Whether the registered device may complete protocol handshake."""
-        return self.management_status not in _TERMINAL_MANAGEMENT_STATUSES
 
 
 class DeviceRepository:
