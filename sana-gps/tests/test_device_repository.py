@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 
@@ -17,7 +17,7 @@ def test_find_by_imei_returns_registered_device() -> None:
         False,
     )
 
-    pool = Mock()
+    pool = MagicMock()
     pool.connection.return_value.__enter__.return_value = connection
 
     device = DeviceRepository(pool).find_by_imei("352094082143253")
