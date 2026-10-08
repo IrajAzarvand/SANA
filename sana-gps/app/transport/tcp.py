@@ -154,6 +154,10 @@ class TCPListener:
         self._connections[task] = connection
         task.add_done_callback(self._connection_task_done)
 
+    def _connection_task_done(self, task: asyncio.Task[None]) -> None:
+        self._connections.pop(task, None)
+
+
     async def _run_connection(self, connection: TCPConnection) -> None:
         try:
             await connection.run()
