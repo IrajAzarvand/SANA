@@ -8,6 +8,11 @@ _DEFAULT_HOST = "0.0.0.0"
 _DEFAULT_TCP_PORT = 9000
 _DEFAULT_UDP_PORT = 9001
 _DEFAULT_LOG_LEVEL = "INFO"
+_DEFAULT_TCP_IDLE_TIMEOUT = 300.0
+_DEFAULT_UDP_SESSION_TIMEOUT = 300.0
+_DEFAULT_MAX_TCP_CONNECTIONS = 100
+_DEFAULT_MAX_UDP_SESSIONS = 10000
+_DEFAULT_MAX_DATAGRAM_SIZE = 8192
 _ALLOWED_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
 
 _DEFAULT_DB_HOST = "127.0.0.1"
@@ -90,6 +95,11 @@ class AppConfig:
     tcp_port: int = _DEFAULT_TCP_PORT
     udp_port: int = _DEFAULT_UDP_PORT
     log_level: str = _DEFAULT_LOG_LEVEL
+    tcp_idle_timeout: float = _DEFAULT_TCP_IDLE_TIMEOUT
+    udp_session_timeout: float = _DEFAULT_UDP_SESSION_TIMEOUT
+    max_tcp_connections: int = _DEFAULT_MAX_TCP_CONNECTIONS
+    max_udp_sessions: int = _DEFAULT_MAX_UDP_SESSIONS
+    max_datagram_size: int = _DEFAULT_MAX_DATAGRAM_SIZE
     database: DatabaseConfig | None = None
 
     @classmethod
@@ -103,6 +113,22 @@ class AppConfig:
         )
         udp_port = _parse_int_env(
             "SANA_GPS_UDP_PORT", _DEFAULT_UDP_PORT, minimum=1, maximum=65535
+        )
+
+        tcp_idle_timeout = _parse_float_env(
+            "SANA_GPS_TCP_IDLE_TIMEOUT", _DEFAULT_TCP_IDLE_TIMEOUT, minimum=0.1
+        )
+        udp_session_timeout = _parse_float_env(
+            "SANA_GPS_UDP_SESSION_TIMEOUT", _DEFAULT_UDP_SESSION_TIMEOUT, minimum=0.1
+        )
+        max_tcp_connections = _parse_int_env(
+            "SANA_GPS_MAX_TCP_CONNECTIONS", _DEFAULT_MAX_TCP_CONNECTIONS, minimum=1
+        )
+        max_udp_sessions = _parse_int_env(
+            "SANA_GPS_MAX_UDP_SESSIONS", _DEFAULT_MAX_UDP_SESSIONS, minimum=1
+        )
+        max_datagram_size = _parse_int_env(
+            "SANA_GPS_MAX_DATAGRAM_SIZE", _DEFAULT_MAX_DATAGRAM_SIZE, minimum=1
         )
 
         log_level = os.getenv(
@@ -119,8 +145,29 @@ class AppConfig:
             tcp_port=tcp_port,
             udp_port=udp_port,
             log_level=log_level,
+            tcp_idle_timeout=tcp_idle_timeout,
+            udp_session_timeout=udp_session_timeout,
+            max_tcp_connections=max_tcp_connections,
+            max_udp_sessions=max_udp_sessions,
+            max_datagram_size=max_datagram_size,
             database=DatabaseConfig.from_env(),
         )
+
+
+def _parse_float_env(
+    name: str,
+    default: float,
+    *,
+    minimum: float | None = None,
+) -> float:
+    raw_value = os.getenv(name, str(default)).strip()
+    try:
+        value = float(raw_value)
+    except ValueError as exc:
+        raise ConfigurationError(f"{name} must be a number") from exc
+    if minimum is not None and value < minimum:
+        raise ConfigurationError(f"{name} must be at least {minimum}")
+    return value
 
 
 def _parse_int_env(
