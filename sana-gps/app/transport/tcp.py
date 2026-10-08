@@ -18,11 +18,13 @@ class TCPConnection:
         writer: asyncio.StreamWriter,
         session: Session,
         on_data: ConnectionHandler,
+        idle_timeout: float,
     ) -> None:
         self._reader = reader
         self._writer = writer
         self._session = session
         self._on_data = on_data
+        self._idle_timeout = idle_timeout
         self._closed = False
 
     @property
@@ -35,7 +37,14 @@ class TCPConnection:
 
         try:
             while not self._reader.at_eof():
-                data = await self._reader.read(4096)
+                try:
+                    data = await asyncio.wait_for(
+                        self._reader.read(4096),
+                        timeout=self._idle_timeout,
+                    )
+                except asyncio.TimeoutError:
+                    break
+
                 if not data:
                     break
 
@@ -66,11 +75,16 @@ class TCPListener:
         port: int,
         session_manager: SessionManager,
         on_data: ConnectionHandler,
+        *,
+        idle_timeout: float = 300.0,
+        max_connections: int = 100,
     ) -> None:
         self._host = host
         self._port = port
         self._session_manager = session_manager
         self._on_data = on_data
+        self._idle_timeout = idle_timeout
+        self._max_connections = max_connections
         self._server: asyncio.AbstractServer | None = None
         self._connections: dict[asyncio.Task[None], TCPConnection] = {}
 
@@ -100,7 +114,6 @@ class TCPListener:
             await asyncio.gather(*tasks, return_exceptions=True)
 
         await server.wait_closed()
-
         self._session_manager.clear_closed()
 
     async def _accept_client(
@@ -108,6 +121,14 @@ class TCPListener:
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
     ) -> None:
+        if len(self._connections) >= self._max_connections:
+            writer.close()
+            try:
+                await asyncio.wait_for(writer.wait_closed(), timeout=1.0)
+            except asyncio.TimeoutError:
+                pass
+            return
+
         peer = writer.get_extra_info("peername")
         local = writer.get_extra_info("sockname")
 
@@ -122,14 +143,22 @@ class TCPListener:
             local_address=local if self._is_address(local) else None,
         )
 
-        connection = TCPConnection(reader, writer, session, self._on_data)
+        connection = TCPConnection(
+            reader,
+            writer,
+            session,
+            self._on_data,
+            self._idle_timeout,
+        )
         task = asyncio.create_task(self._run_connection(connection))
         self._connections[task] = connection
         task.add_done_callback(self._connections.pop)
 
     async def _run_connection(self, connection: TCPConnection) -> None:
-        await connection.run()
-        self._session_manager.remove(connection.session.id)
+        try:
+            await connection.run()
+        finally:
+            self._session_manager.remove(connection.session.id)
 
     @staticmethod
     def _is_address(value: object) -> bool:
