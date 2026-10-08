@@ -38,6 +38,7 @@ const managementStatusMap = {
 
 export default function Devices() {
   const [activeTab, setActiveTab] = useState('devices');
+  const { isSiteAdmin } = useAuth();
 
   return (
     <div className="space-y-6">
@@ -279,7 +280,8 @@ function DevicesTab() {
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">قرارداد</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">نوع ارتباط</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">خودرو</th>
-                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">وضعیت</th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">وضعیت مدیریتی</th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">وضعیت دریافت داده</th>
                   <th className="w-12"></th>
                 </tr>
               </thead>
@@ -341,6 +343,14 @@ function DevicesTab() {
                        </td>
                       <td className="py-3 px-4">
                         <Badge variant={mgmt.variant}>{mgmt.label}</Badge>
+                      </td>
+                      <td className="py-3 px-4">
+                        <Badge variant={d.data_active ? 'success' : 'muted'}>
+                          <span className="inline-flex items-center gap-1.5">
+                            <Activity size={12} />
+                            {d.data_active ? 'دریافت داده فعال' : 'دریافت داده غیرفعال'}
+                          </span>
+                        </Badge>
                       </td>
                       <td className="py-3 px-2">
                         <ActionMenu items={getMenuItems(d)} />
