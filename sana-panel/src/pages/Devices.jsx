@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
-  Search, Plus, Cpu, Pencil, Trash2 , Hash, Phone, Eye, Boxes, History, Activity,
+  Search, Plus, Cpu, Pencil, Trash2 , Hash, Phone, Eye, History, Activity,
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
@@ -13,13 +13,11 @@ import EmptyState from '../components/EmptyState';
 import ActionMenu from '../components/ActionMenu';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
-import Tabs from '../components/Tabs';
 import AddDeviceModal from '../components/AddDeviceModal';
 import DeviceHistoryModal from '../components/DeviceHistoryModal';
 import { useAuth } from '../context/AuthContext';
 import { useSearchParams } from 'react-router-dom';
 import { devicesAPI } from '../api/services/fleet';
-import { deviceModelsAPI } from '../api/services/deviceModels';
 import { useApi } from '../hooks/useApi';
 
 const managementStatusMap = {
@@ -37,31 +35,13 @@ const managementStatusMap = {
 };
 
 export default function Devices() {
-  const [activeTab, setActiveTab] = useState('devices');
-  const { isSiteAdmin } = useAuth();
-
   return (
     <div className="space-y-6">
       <PageHeader
         title="دستگاه‌ها"
-        subtitle="مدیریت دستگاه‌های GPS و مدل‌های آن‌ها"
+        subtitle="ثبت و مدیریت دستگاه‌ها با IMEI؛ شناسایی پروتکل به‌صورت خودکار"
       />
-
-      <Card>
-        <Tabs
-          activeTab={activeTab}
-          onChange={setActiveTab}
-          tabs={[
-            { value: 'devices', label: 'دستگاه‌ها' },
-            ...(isSiteAdmin
-              ? [{ value: 'models', label: 'مدل‌های دستگاه' }]
-              : []),
-          ]}
-        />
-      </Card>
-
-      {activeTab === 'devices' && <DevicesTab />}
-      {activeTab === 'models' && isSiteAdmin && <DeviceModelsTab />}
+      <DevicesTab />
     </div>
   );
 }
@@ -78,9 +58,7 @@ function DevicesTab() {
   const [editingDevice, setEditingDevice] = useState(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [editForm, setEditForm] = useState({
-    imei: '', device_model: '', sim_number: '',
-  });
+  const [editForm, setEditForm] = useState({ imei: '' });
   const [deviceHistoryId, setDeviceHistoryId] = useState(null);
 
   const { isSiteAdmin, isPersonal } = useAuth();
@@ -91,18 +69,7 @@ function DevicesTab() {
     return Array.isArray(result) ? result : result.results || [];
   }, []);
 
-  const fetchModels = useCallback(async () => {
-    try {
-      const result = await deviceModelsAPI.list();
-      return Array.isArray(result) ? result : result.results || [];
-    } catch {
-      return [];
-    }
-  }, []);
-
   const { data: devices, loading, error, refetch } = useApi(fetchDevices, []);
-  const { data: deviceModels } = useApi(fetchModels, []);
-
   const filtered = useMemo(() => {
     if (!devices) return [];
     return devices.filter((d) => {
@@ -116,13 +83,6 @@ function DevicesTab() {
     });
   }, [devices, search, filterStatus, filterWarehouse]);
 
-  const modelOptions = useMemo(() => {
-    return (deviceModels || []).map((m) => ({
-      value: m.id,
-      label: `${m.manufacturer} ${m.name}`,
-    }));
-  }, [deviceModels]);
-
   const statusOptions = useMemo(() => {
     return Object.entries(managementStatusMap).map(([value, { label }]) => ({
       value, label,
@@ -133,7 +93,7 @@ function DevicesTab() {
     e.preventDefault();
     setSaving(true);
     try {
-      await devicesAPI.update(editingDevice.id, editForm);
+      await devicesAPI.update(editingDevice.id, { imei: editForm.imei });
       setEditModalOpen(false);
       setEditingDevice(null);
       refetch();
@@ -147,11 +107,7 @@ function DevicesTab() {
 
   const handleEdit = (device) => {
     setEditingDevice(device);
-    setEditForm({
-      imei: device.imei,
-      device_model: device.device_model || '',
-      sim_number: device.sim_number || '',
-    });
+    setEditForm({ imei: device.imei });
     setEditModalOpen(true);
   };
 
@@ -274,7 +230,6 @@ function DevicesTab() {
               <thead>
                 <tr className="border-b border-border-base">
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">IMEI</th>
-                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">مدل</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">SIM</th>
                   {isSiteAdmin && (
                     <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">مشتری</th>
@@ -290,10 +245,6 @@ function DevicesTab() {
               <tbody>
                 {filtered.map((d) => {
                   const mgmt = managementStatusMap[d.management_status] || managementStatusMap.warehouse;
-                  const modelLabel = d.device_model_manufacturer && d.device_model_name
-                    ? `${d.device_model_manufacturer} ${d.device_model_name}`
-                    : '—';
-
                   return (
                     <tr id={`device-row-${d.id}`} key={d.id} className="border-b border-border-base last:border-0 hover:bg-bg-hover transition-colors">
                       <td className="py-3 px-4">
@@ -302,7 +253,6 @@ function DevicesTab() {
                           {d.imei}
                         </div>
                       </td>
-                      <td className="py-3 px-4 text-text-secondary text-xs">{modelLabel}</td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-1.5 font-mono text-xs text-text-secondary">
                           <Phone size={12} className="text-text-muted" />
@@ -411,238 +361,11 @@ function DevicesTab() {
               placeholder="۱۵ رقم"
               required
             />
-            <Select
-              label="مدل دستگاه"
-              placeholder="انتخاب کنید..."
-              value={editForm.device_model}
-              onChange={(e) => setEditForm({ ...editForm, device_model: e.target.value })}
-              options={modelOptions}
-            />
             <Input
               label="شماره SIM"
               value={editForm.sim_number}
               onChange={(e) => setEditForm({ ...editForm, sim_number: e.target.value })}
               placeholder="۰۹xxxxxxxxx"
-            />
-          </form>
-        </Modal>
-      )}
-    </div>
-  );
-}
-
-/* ═══════════════════════════════════════════════
-   تب ۲ — مدل‌های دستگاه
-   ═══════════════════════════════════════════════ */
-
-function DeviceModelsTab() {
-  const [search, setSearch] = useState('');
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingModel, setEditingModel] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({
-    manufacturer: '', name: '', code: '', protocol: '',
-  });
-
-  const { isSiteAdmin } = useAuth();
-
-  const fetchModels = useCallback(async () => {
-    const result = await deviceModelsAPI.list();
-    return Array.isArray(result) ? result : result.results || [];
-  }, []);
-
-  const { data: models, loading, error, refetch } = useApi(fetchModels, []);
-
-  const filtered = useMemo(() => {
-    if (!models) return [];
-    if (!search) return models;
-    return models.filter((m) =>
-      m.name.includes(search) ||
-      m.manufacturer.includes(search) ||
-      m.code.includes(search) ||
-      m.protocol.includes(search)
-    );
-  }, [models, search]);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      if (editingModel) {
-        await deviceModelsAPI.update(editingModel.id, form);
-      } else {
-        await deviceModelsAPI.create(form);
-      }
-      setModalOpen(false);
-      setEditingModel(null);
-      setForm({ manufacturer: '', name: '', code: '', protocol: '' });
-      refetch();
-    } catch (err) {
-      console.error('Error saving model:', err);
-      const errData = err.response?.data;
-      const errMsg = errData
-        ? Object.entries(errData).map(([k, v]) => `${k}: ${Array.isArray(v) ? v[0] : v}`).join('\n')
-        : 'لطفاً دوباره تلاش کنید';
-      alert('خطا در ذخیره مدل:\n' + errMsg);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleEdit = (model) => {
-    setEditingModel(model);
-    setForm({
-      manufacturer: model.manufacturer,
-      name: model.name,
-      code: model.code,
-      protocol: model.protocol,
-    });
-    setModalOpen(true);
-  };
-
-  const handleDelete = async (id) => {
-    if (!confirm('آیا از حذف این مدل اطمینان دارید؟')) return;
-    try {
-      await deviceModelsAPI.delete(id);
-      refetch();
-    } catch (err) {
-      console.error('Error deleting model:', err);
-      const errMsg = err.response?.data?.detail || 'خطا در حذف مدل. ممکنه دستگاه‌هایی از این مدل استفاده کنن.';
-      alert(errMsg);
-    }
-  };
-
-  const getMenuItems = (model) => [
-    {
-      label: 'ویرایش',
-      icon: Pencil,
-      onClick: () => handleEdit(model),
-    },
-    {
-      label: 'حذف',
-      icon: Trash2,
-      variant: 'danger',
-      onClick: () => handleDelete(model.id),
-    },
-  ];
-
-  if (loading) return <Card><LoadingSpinner /></Card>;
-  if (error) return <Card><ErrorState error={error} onRetry={refetch} /></Card>;
-
-  return (
-    <div className="space-y-6">
-      <Card>
-        <Input
-          icon={Search}
-          placeholder="جستجوی نام، سازنده، کد یا پروتکل..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      </Card>
-
-      {isSiteAdmin && (
-        <div className="flex justify-end">
-          <Button icon={Plus} onClick={() => {
-            setEditingModel(null);
-            setForm({ manufacturer: '', name: '', code: '', protocol: '' });
-            setModalOpen(true);
-          }}>
-            افزودن مدل جدید
-          </Button>
-        </div>
-      )}
-
-      <Card>
-        {filtered.length === 0 ? (
-          <EmptyState
-            icon={Boxes}
-            title="مدلی یافت نشد"
-            description="هنوز مدلی ثبت نشده یا با فیلترهای فعلی مطابقت ندارد."
-          />
-        ) : (
-          <div className="overflow-x-auto -m-5">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border-base">
-                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">سازنده</th>
-                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">نام</th>
-                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">کد</th>
-                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">پروتکل</th>
-                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">تعداد دستگاه</th>
-                  <th className="w-12"></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((m) => (
-                  <tr key={m.id} className="border-b border-border-base last:border-0 hover:bg-bg-hover transition-colors">
-                    <td className="py-3 px-4 text-text-primary">{m.manufacturer}</td>
-                    <td className="py-3 px-4 text-text-primary">{m.name}</td>
-                    <td className="py-3 px-4 text-text-secondary font-mono text-xs">{m.code}</td>
-                    <td className="py-3 px-4">
-                      <Badge variant="brand">{m.protocol}</Badge>
-                    </td>
-                    <td className="py-3 px-4 text-text-secondary font-mono text-xs">
-                      {m.devices_count || 0}
-                    </td>
-                    <td className="py-3 px-2">
-                      {isSiteAdmin && <ActionMenu items={getMenuItems(m)} />}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
-
-      {isSiteAdmin && (
-        <Modal
-          open={modalOpen}
-          onClose={() => {
-            setModalOpen(false);
-            setEditingModel(null);
-          }}
-          title={editingModel ? 'ویرایش مدل' : 'افزودن مدل جدید'}
-          footer={
-            <>
-              <Button variant="secondary" onClick={() => {
-                setModalOpen(false);
-                setEditingModel(null);
-              }} disabled={saving}>
-                انصراف
-              </Button>
-              <Button type="submit" form="add-model-form" disabled={saving}>
-                {saving ? 'در حال ذخیره...' : 'ذخیره'}
-              </Button>
-            </>
-          }
-        >
-          <form id="add-model-form" onSubmit={handleSubmit} className="space-y-4">
-            <Input
-              label="سازنده"
-              value={form.manufacturer}
-              onChange={(e) => setForm({ ...form, manufacturer: e.target.value })}
-              placeholder="مثلاً Teltonika"
-              required
-            />
-            <Input
-              label="نام مدل"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              placeholder="مثلاً FMB920"
-              required
-            />
-            <Input
-              label="کد مدل"
-              value={form.code}
-              onChange={(e) => setForm({ ...form, code: e.target.value })}
-              placeholder="مثلاً FMB920"
-            />
-            <Input
-              label="پروتکل"
-              value={form.protocol}
-              onChange={(e) => setForm({ ...form, protocol: e.target.value })}
-              placeholder="مثلاً teltonika"
             />
           </form>
         </Modal>
