@@ -58,7 +58,7 @@ function DevicesTab() {
   const [editingDevice, setEditingDevice] = useState(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [editForm, setEditForm] = useState({ imei: '' });
+  const [editForm, setEditForm] = useState({ imei: '', sim_number: '' });
   const [deviceHistoryId, setDeviceHistoryId] = useState(null);
 
   const { isSiteAdmin, isPersonal } = useAuth();
@@ -93,7 +93,7 @@ function DevicesTab() {
     e.preventDefault();
     setSaving(true);
     try {
-      await devicesAPI.update(editingDevice.id, { imei: editForm.imei });
+      await devicesAPI.update(editingDevice.id, { imei: editForm.imei, sim_number: editForm.sim_number });
       setEditModalOpen(false);
       setEditingDevice(null);
       refetch();
@@ -107,7 +107,7 @@ function DevicesTab() {
 
   const handleEdit = (device) => {
     setEditingDevice(device);
-    setEditForm({ imei: device.imei });
+    setEditForm({ imei: device.imei, sim_number: device.sim_number || '' });
     setEditModalOpen(true);
   };
 
@@ -360,6 +360,12 @@ function DevicesTab() {
               onChange={(e) => setEditForm({ ...editForm, imei: e.target.value })}
               placeholder="۱۵ رقم"
               required
+            />
+            <Input
+              label="شماره SIM"
+              value={editForm.sim_number}
+              onChange={(e) => setEditForm({ ...editForm, sim_number: e.target.value })}
+              placeholder="۰۹xxxxxxxxx"
             />
             <Input
               label="شماره SIM"
