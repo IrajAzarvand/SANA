@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import VehicleType, Vehicle, DeviceModel, Device, Driver
+from .models import VehicleType, Vehicle, Device, Driver
 
 
 # ═══════════════════════════════════════════════
@@ -12,20 +12,13 @@ from .models import VehicleType, Vehicle, DeviceModel, Device, Driver
 # @admin.register(Driver)
 
 
-@admin.register(DeviceModel)
-class DeviceModelAdmin(admin.ModelAdmin):
-    list_display = ['manufacturer', 'name', 'code', 'protocol']
-    list_filter = ['manufacturer', 'protocol']
-    search_fields = ['name', 'code']
-
-
 @admin.register(Device)
 class DeviceAdmin(admin.ModelAdmin):
     list_display = [
-        'imei', 'device_model', 'get_customer',
+        'imei', 'protocol', 'get_customer',
         'vehicle', 'management_status', 'created_at',
     ]
-    list_filter = ['management_status', 'device_model']
+    list_filter = ['management_status', 'protocol']
     search_fields = ['imei', 'sim_number']
     ordering = ['-created_at']
     raw_id_fields = ['organization', 'owner_user', 'branch', 'vehicle']
