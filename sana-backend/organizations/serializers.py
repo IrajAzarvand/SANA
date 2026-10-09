@@ -92,8 +92,8 @@ class BranchListSerializer(serializers.ModelSerializer):
 
 class SubscriptionDeviceSerializer(serializers.ModelSerializer):
     device_imei = serializers.CharField(source='device.imei', read_only=True)
-    device_model = serializers.CharField(source='device.device_model.name', read_only=True)
-    device_model_manufacturer = serializers.CharField(source='device.device_model.manufacturer', read_only=True)
+    device_model = serializers.CharField(source='device.device_model.name', read_only=True, allow_null=True)
+    device_model_manufacturer = serializers.CharField(source='device.device_model.manufacturer', read_only=True, allow_null=True)
     device_sim = serializers.CharField(source='device.sim_number', read_only=True)
     vehicle_plate = serializers.CharField(source='device.vehicle.plate', read_only=True)
     management_status = serializers.CharField(source='device.management_status', read_only=True)
