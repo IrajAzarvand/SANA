@@ -76,8 +76,16 @@ class TeltonikaHandler:
         if device is None:
             return ProtocolResponse(b"\x00")
 
-        if device.protocol.strip().lower() != ProtocolId.TELTONIKA.value:
+        known_protocol = (device.protocol or "").strip().lower()
+        if known_protocol and known_protocol != ProtocolId.TELTONIKA.value:
             return ProtocolResponse(b"\x00")
+
+        # A valid Teltonika identification frame identifies the protocol.
+        if not known_protocol:
+            self._device_repository.set_detected_protocol(
+                device.id,
+                ProtocolId.TELTONIKA.value,
+            )
 
         session.bind_device(
             device_id=device.id,
