@@ -91,14 +91,7 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
         <div className="bg-info/10 border border-info/30 rounded-field p-3 flex items-start gap-2">
           <Package size={16} className="text-info flex-shrink-0 mt-0.5" />
           <p className="text-xs text-text-secondary leading-relaxed">
-            فقط IMEI ثبت می‌شود. پروتکل پس از اولین ارتباط معتبر دستگاه، در صورت پشتیبانی، به‌صورت خودکار شناسایی می‌شود.
-          </p>
-        </div>
-
-        <div className="bg-info/10 border border-info/30 rounded-field p-3 flex items-start gap-2">
-          <Package size={16} className="text-info flex-shrink-0 mt-0.5" />
-          <p className="text-xs text-text-secondary leading-relaxed">
-            دستگاه به انبار سانا اضافه می‌شود. بعد از ذخیره، در لیست دستگاه‌های موجود نمایش داده می‌شود.
+            دستگاه با همین IMEI به انبار سانا اضافه می‌شود. پروتکل پس از اولین ارتباط معتبر، در صورت پشتیبانی، به‌صورت خودکار شناسایی می‌شود.
           </p>
         </div>
       </form>
