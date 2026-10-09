@@ -70,7 +70,7 @@ async def test_unknown_protocol_is_detected_and_persisted_from_valid_imei_handsh
     response = await handler.handle(session, IMEI_FRAME)
 
     assert response is not None
-    assert response.data == b"\\x01"
+    assert response.data == b"\x01"
     assert session.device_id == 7
     assert repository.detected_protocols == [(7, "teltonika")]
 
