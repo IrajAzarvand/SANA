@@ -83,18 +83,14 @@ class VehicleViewSet(viewsets.ModelViewSet):
         return super().get_permissions()
 
 
-class DeviceModelViewSet(viewsets.ModelViewSet):
+class DeviceModelViewSet(viewsets.ReadOnlyModelViewSet):
+    """Legacy model metadata is readable, but model CRUD is no longer part of device registration."""
     queryset = DeviceModel.objects.all()
     serializer_class = DeviceModelSerializer
     permission_classes = [IsAuthenticated]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['manufacturer', 'name', 'code', 'protocol']
     ordering_fields = ['manufacturer', 'name', 'created_at']
-
-    def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsSiteAdmin()]
-        return super().get_permissions()
 
 
 class DeviceViewSet(viewsets.ModelViewSet):
