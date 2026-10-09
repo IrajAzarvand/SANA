@@ -1,11 +1,9 @@
-import { useState, useEffect } from 'react';
-import { Plus, Package, Hash, Phone, Boxes } from 'lucide-react';
+import { useState } from 'react';
+import { Package, Hash } from 'lucide-react';
 import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
-import Select from './Select';
-import { devicesAPI, deviceModelsAPI } from '../api/services/fleet';
-import AddDeviceModelModal from './AddDeviceModelModal';
+import { devicesAPI } from '../api/services/fleet';
 
 /**
  * مودال افزودن دستگاه جدید به انبار
@@ -17,49 +15,9 @@ import AddDeviceModelModal from './AddDeviceModelModal';
  * @param {Function} onSuccess - callback با device جدید
  */
 export default function AddDeviceModal({ open, onClose, onSuccess }) {
-  const [form, setForm] = useState({
-    imei: '',
-    device_model: '',
-    sim_number: '',
-  });
-  const [models, setModels] = useState([]);
-  const [modelsLoading, setModelsLoading] = useState(false);
+  const [form, setForm] = useState({ imei: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [addModelModalOpen, setAddModelModalOpen] = useState(false);
-
-  // لود مدل‌ها وقتی Modal باز می‌شه
-  useEffect(() => {
-    if (!open) return;
-
-    const fetchModels = async () => {
-      setModelsLoading(true);
-      try {
-        const result = await deviceModelsAPI.list();
-        const list = Array.isArray(result) ? result : result.results || [];
-        setModels(list);
-      } catch (e) {
-        console.error('Error fetching models:', e);
-      } finally {
-        setModelsLoading(false);
-      }
-    };
-
-    fetchModels();
-  }, [open]);
-
-  const handleModelCreated = (createdModel) => {
-    setModels((current) => [...current, createdModel]);
-    setForm((current) => ({
-      ...current,
-      device_model: createdModel.id,
-    }));
-  };
-
-  const modelOptions = models.map((m) => ({
-    value: m.id,
-    label: `${m.manufacturer} ${m.name}`,
-  }));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -68,16 +26,14 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
 
     try {
       const payload = {
-        imei: form.imei,
-        device_model: form.device_model || null,
-        sim_number: form.sim_number,
+        imei: form.imei.trim(),
         management_status: 'warehouse',
       };
 
       const created = await devicesAPI.create(payload);
 
       // پاک کردن فرم
-      setForm({ imei: '', device_model: '', sim_number: '' });
+      setForm({ imei: '' });
 
       // کال بک موفقیت
       if (onSuccess) onSuccess(created);
@@ -132,42 +88,12 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
           required
         />
 
-        <div>
-          <Select
-            label="مدل دستگاه"
-            placeholder={modelsLoading ? 'در حال بارگذاری...' : 'انتخاب کنید...'}
-            value={form.device_model}
-            onChange={(e) => setForm({ ...form, device_model: e.target.value })}
-            options={modelOptions}
-            disabled={modelsLoading}
-          />
-          <div className="flex items-center justify-between gap-3 mt-2">
-            {models.length === 0 && !modelsLoading ? (
-              <p className="text-[10px] text-warning">
-                هنوز مدلی تعریف نشده است.
-              </p>
-            ) : (
-              <span />
-            )}
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              icon={Plus}
-              onClick={() => setAddModelModalOpen(true)}
-            >
-              افزودن مدل جدید
-            </Button>
-          </div>
+        <div className="bg-info/10 border border-info/30 rounded-field p-3 flex items-start gap-2">
+          <Package size={16} className="text-info flex-shrink-0 mt-0.5" />
+          <p className="text-xs text-text-secondary leading-relaxed">
+            فقط IMEI ثبت می‌شود. پروتکل پس از اولین ارتباط معتبر دستگاه، در صورت پشتیبانی، به‌صورت خودکار شناسایی می‌شود.
+          </p>
         </div>
-
-        <Input
-          label="شماره SIM"
-          value={form.sim_number}
-          onChange={(e) => setForm({ ...form, sim_number: e.target.value })}
-          placeholder="۰۹xxxxxxxxx"
-          icon={Phone}
-        />
 
         <div className="bg-info/10 border border-info/30 rounded-field p-3 flex items-start gap-2">
           <Package size={16} className="text-info flex-shrink-0 mt-0.5" />
@@ -177,11 +103,6 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
         </div>
       </form>
 
-      <AddDeviceModelModal
-        open={addModelModalOpen}
-        onClose={() => setAddModelModalOpen(false)}
-        onSuccess={handleModelCreated}
-      />
     </Modal>
   );
 }
