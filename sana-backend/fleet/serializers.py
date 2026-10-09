@@ -115,7 +115,7 @@ class DeviceSerializer(serializers.ModelSerializer):
             'installed_at',
             'created_at', 'updated_at',
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'device_model', 'protocol']
         extra_kwargs = {
             'organization': {'required': False, 'allow_null': True},
             'owner_user': {'required': False, 'allow_null': True},
