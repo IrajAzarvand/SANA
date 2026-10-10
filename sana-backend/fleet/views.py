@@ -1,9 +1,10 @@
 from django.utils import timezone
-from django.db.models import Exists, OuterRef, Prefetch, Q
+from django.db.models import Exists, OuterRef, Prefetch, Q, Subquery, DateTimeField
+from django.db.models.functions import Greatest
 from rest_framework import viewsets, filters
 from rest_framework.permissions import IsAuthenticated
 
-from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation, DeviceCustomerAccessPeriod, DriverVehicleAssignment
+from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation, DeviceCustomerAccessPeriod, DriverVehicleAssignment, GPSTelemetry, GT06Position
 from .serializers import (
     VehicleTypeSerializer,
     VehicleSerializer,
@@ -122,6 +123,32 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 to_attr='_replacement_relations_as_replacement',
             ),
         )
+
+        # One lightweight latest-received timestamp per telemetry source lets the
+        # device list reflect GPS traffic without exposing GPS runtime to clients.
+        if self.action == 'list':
+            latest_telemetry = GPSTelemetry.objects.filter(
+                device_id=OuterRef('pk')
+            ).order_by('-received_at', '-id')
+            latest_gt06 = GT06Position.objects.filter(
+                device_id=OuterRef('pk')
+            ).order_by('-received_at', '-id')
+            qs = qs.annotate(
+                _latest_telemetry_received_at=Subquery(
+                    latest_telemetry.values('received_at')[:1],
+                    output_field=DateTimeField(),
+                ),
+                _latest_gt06_received_at=Subquery(
+                    latest_gt06.values('received_at')[:1],
+                    output_field=DateTimeField(),
+                ),
+            ).annotate(
+                last_data_received_at=Greatest(
+                    '_latest_telemetry_received_at',
+                    '_latest_gt06_received_at',
+                    output_field=DateTimeField(),
+                )
+            )
 
         if user.is_site_admin:
             pass

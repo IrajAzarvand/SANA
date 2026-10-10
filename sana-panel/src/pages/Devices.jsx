@@ -20,6 +20,19 @@ import { useSearchParams } from 'react-router-dom';
 import { devicesAPI } from '../api/services/fleet';
 import { useApi } from '../hooks/useApi';
 
+const protocolLabelMap = {
+  teltonika: 'Teltonika',
+  gt06: 'GT06',
+  'hq*': 'HQ',
+};
+
+const formatReceivedAt = (value) => {
+  if (!value) return 'هنوز داده‌ای دریافت نشده';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString('fa-IR', { dateStyle: 'short', timeStyle: 'medium' });
+};
+
 const managementStatusMap = {
   warehouse:    { label: 'در انبار',      variant: 'info'    },
   sold:         { label: 'فروخته شده',    variant: 'brand'   },
@@ -69,7 +82,35 @@ function DevicesTab() {
     return Array.isArray(result) ? result : result.results || [];
   }, []);
 
-  const { data: devices, loading, error, refetch } = useApi(fetchDevices, []);
+  const { data: devices, loading, error, refetch } = useApi(
+    fetchDevices,
+    [],
+    { keepDataOnRefetch: true },
+  );
+
+  // Keep the device table current while it is open; pause background polling
+  // when the browser tab is hidden to avoid unnecessary API traffic.
+  useEffect(() => {
+    let cancelled = false;
+    let timer = null;
+
+    const poll = async () => {
+      if (!cancelled && document.visibilityState === 'visible') {
+        try {
+          await refetch();
+        } catch {
+          // useApi stores the error; the next poll will retry automatically.
+        }
+      }
+      if (!cancelled) timer = window.setTimeout(poll, 5000);
+    };
+
+    timer = window.setTimeout(poll, 5000);
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [refetch]);
   const filtered = useMemo(() => {
     if (!devices) return [];
     return devices.filter((d) => {
@@ -230,6 +271,7 @@ function DevicesTab() {
               <thead>
                 <tr className="border-b border-border-base">
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">IMEI</th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">پروتکل شناسایی‌شده</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">SIM</th>
                   {isSiteAdmin && (
                     <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">مشتری</th>
@@ -238,7 +280,8 @@ function DevicesTab() {
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">نوع ارتباط</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">خودرو</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">وضعیت مدیریتی</th>
-                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">وضعیت دریافت داده</th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">آخرین دریافت GPS</th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">وضعیت قرارداد داده</th>
                   <th className="w-12"></th>
                 </tr>
               </thead>
@@ -252,6 +295,11 @@ function DevicesTab() {
                           <Hash size={12} className="text-text-muted" />
                           {d.imei}
                         </div>
+                      </td>
+                      <td className="py-3 px-4">
+                        <Badge variant={d.protocol ? 'brand' : 'muted'}>
+                          {protocolLabelMap[(d.protocol || '').toLowerCase()] || d.protocol || 'در انتظار شناسایی'}
+                        </Badge>
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-1.5 font-mono text-xs text-text-secondary">
@@ -295,6 +343,11 @@ function DevicesTab() {
                        </td>
                       <td className="py-3 px-4">
                         <Badge variant={mgmt.variant}>{mgmt.label}</Badge>
+                      </td>
+                      <td className="py-3 px-4 text-xs text-text-secondary whitespace-nowrap" title={d.last_data_received_at || ''}>
+                        <span className={d.last_data_received_at ? 'text-text-primary' : 'text-text-muted'}>
+                          {formatReceivedAt(d.last_data_received_at)}
+                        </span>
                       </td>
                       <td className="py-3 px-4">
                         <Badge variant={d.data_active ? 'success' : 'muted'}>

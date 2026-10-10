@@ -32,12 +32,13 @@ async def run(
     database_pool = DatabaseConnectionPool(config.database)
     session_manager = SessionManager()
     device_repository = DeviceRepository(database_pool)
-    teltonika_handler = TeltonikaHandler(device_repository)
+    telemetry_repository = GPSTelemetryRepository(database_pool)
+    teltonika_handler = TeltonikaHandler(device_repository, telemetry_repository)
     gt06_handler = GT06Handler(
         device_repository,
         GT06PositionRepository(database_pool),
     )
-    hq_handler = HQHandler(device_repository, GPSTelemetryRepository(database_pool))
+    hq_handler = HQHandler(device_repository, telemetry_repository)
     capture = RawCapture(config.capture_file) if config.capture_file else None
     gt06_capture = RawCapture(config.gt06_capture_file) if config.gt06_capture_file else None
 
