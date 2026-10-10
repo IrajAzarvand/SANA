@@ -1,5 +1,7 @@
 from unittest.mock import Mock
 
+import pytest
+
 from app.protocols.gt06 import crc16_itu
 from app.protocols.gt06_handler import GT06Handler
 from app.repositories.device import DeviceRecord
@@ -20,15 +22,17 @@ def active_session() -> Session:
     return session
 
 
+@pytest.mark.asyncio
 async def test_gt06_login_binds_registered_device_and_acknowledges():
     device_repository = Mock()
-    device_repository.find_by_imei.return_value = DeviceRecord(
+    device = DeviceRecord(
         id=9,
         imei="9176515406",
         management_status="active",
         protocol="",
         data_active=True,
     )
+    device_repository.find_by_imei.side_effect = lambda value: device if value == device.imei else None
     positions = Mock()
     handler = GT06Handler(device_repository, positions)
     session = active_session()
@@ -43,15 +47,17 @@ async def test_gt06_login_binds_registered_device_and_acknowledges():
     device_repository.set_detected_protocol.assert_called_once_with(9, "gt06")
 
 
+@pytest.mark.asyncio
 async def test_gt06_position_is_persisted_after_login():
     device_repository = Mock()
-    device_repository.find_by_imei.return_value = DeviceRecord(
+    device = DeviceRecord(
         id=9,
         imei="9176515406",
         management_status="active",
         protocol="gt06",
         data_active=True,
     )
+    device_repository.find_by_imei.side_effect = lambda value: device if value == device.imei else None
     positions = Mock()
     handler = GT06Handler(device_repository, positions)
     session = active_session()
