@@ -30,7 +30,7 @@ source sana-backend/venv/bin/activate
 cd sana-backend
 python manage.py migrate
 cd ..
-../sana-backend/venv/bin/python -m pytest -q sana-gps/tests
+sana-backend/venv/bin/python -m pytest -q sana-gps/tests
 sudo systemctl restart sana-gps
 sudo systemctl status sana-gps --no-pager
 sudo ss -lntup | grep -E ':(8000|9000|9001)\b'
