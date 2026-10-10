@@ -8,8 +8,10 @@ from app.config import AppConfig, ConfigurationError
 from app.database.pool import DatabaseConnectionPool
 from app.diagnostics.capture import RawCapture
 from app.protocols.teltonika.handler import TeltonikaHandler
+from app.protocols.gt06_handler import GT06Handler
 from app.protocols.types import ProtocolResponse
 from app.repositories.device import DeviceRepository
+from app.repositories.gt06_position import GT06PositionRepository
 from app.transport.server import TransportServer
 from app.transport.session import SessionManager
 
@@ -28,7 +30,12 @@ async def run(
     session_manager = SessionManager()
     device_repository = DeviceRepository(database_pool)
     teltonika_handler = TeltonikaHandler(device_repository)
+    gt06_handler = GT06Handler(
+        device_repository,
+        GT06PositionRepository(database_pool),
+    )
     capture = RawCapture(config.capture_file) if config.capture_file else None
+    gt06_capture = RawCapture(config.gt06_capture_file) if config.gt06_capture_file else None
 
     async def on_data(session, data: bytes) -> ProtocolResponse | None:
         if capture is not None:
@@ -39,6 +46,15 @@ async def run(
             )
 
         return await teltonika_handler.handle(session, data)
+
+    async def on_gt06_data(session, data: bytes) -> ProtocolResponse | None:
+        if gt06_capture is not None:
+            gt06_capture.write(
+                transport="tcp-gt06",
+                remote=session.remote_address,
+                data=data,
+            )
+        return await gt06_handler.handle(session, data)
 
     transport_server = TransportServer(
         config.host,
@@ -51,6 +67,8 @@ async def run(
         max_tcp_connections=config.max_tcp_connections,
         max_udp_sessions=config.max_udp_sessions,
         max_datagram_size=config.max_datagram_size,
+        gt06_tcp_port=config.gt06_tcp_port,
+        gt06_on_data=on_gt06_data,
     )
 
     try:
@@ -63,9 +81,12 @@ async def run(
         print("Host:", config.host)
         print("TCP port:", config.tcp_port)
         print("UDP port:", config.udp_port)
+        print("GT06 TCP port:", config.gt06_tcp_port)
         print("Log level:", config.log_level)
         if capture is not None:
             print("Raw capture:", capture.path)
+        if gt06_capture is not None:
+            print("GT06 raw capture:", gt06_capture.path)
         print("SANA GPS ready")
 
         if shutdown_event is None:
