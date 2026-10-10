@@ -9,11 +9,12 @@ from app.database.pool import DatabaseConnectionPool
 from app.diagnostics.capture import RawCapture
 from app.protocols.teltonika.handler import TeltonikaHandler
 from app.protocols.gt06_handler import GT06Handler
-from app.protocols.types import ProtocolResponse
+from app.protocols.dispatcher import ProtocolDispatcher
+from app.protocols.types import ProtocolId, ProtocolResponse
 from app.repositories.device import DeviceRepository
 from app.repositories.gt06_position import GT06PositionRepository
 from app.transport.server import TransportServer
-from app.transport.session import SessionManager
+from app.transport.session import SessionManager, TransportType
 
 
 async def run(
@@ -37,6 +38,22 @@ async def run(
     capture = RawCapture(config.capture_file) if config.capture_file else None
     gt06_capture = RawCapture(config.gt06_capture_file) if config.gt06_capture_file else None
 
+    async def on_gt06_data(session, data: bytes) -> ProtocolResponse | None:
+        if gt06_capture is not None:
+            gt06_capture.write(
+                transport="tcp",
+                remote=session.remote_address,
+                data=data,
+            )
+        return await gt06_handler.handle(session, data)
+
+    dispatcher = ProtocolDispatcher(
+        {
+            ProtocolId.TELTONIKA: teltonika_handler.handle,
+            ProtocolId.GT06: on_gt06_data,
+        }
+    )
+
     async def on_data(session, data: bytes) -> ProtocolResponse | None:
         if capture is not None:
             capture.write(
@@ -45,16 +62,11 @@ async def run(
                 data=data,
             )
 
-        return await teltonika_handler.handle(session, data)
-
-    async def on_gt06_data(session, data: bytes) -> ProtocolResponse | None:
-        if gt06_capture is not None:
-            gt06_capture.write(
-                transport="tcp-gt06",
-                remote=session.remote_address,
-                data=data,
-            )
-        return await gt06_handler.handle(session, data)
+        # The legacy UDP listener remains Teltonika-only. TCP uses one
+        # shared port and dispatches each connection by its wire signature.
+        if session.transport is TransportType.UDP:
+            return await teltonika_handler.handle(session, data)
+        return await dispatcher.handle(session, data)
 
     transport_server = TransportServer(
         config.host,
@@ -67,8 +79,6 @@ async def run(
         max_tcp_connections=config.max_tcp_connections,
         max_udp_sessions=config.max_udp_sessions,
         max_datagram_size=config.max_datagram_size,
-        gt06_tcp_port=config.gt06_tcp_port,
-        gt06_on_data=on_gt06_data,
     )
 
     try:
@@ -81,7 +91,7 @@ async def run(
         print("Host:", config.host)
         print("TCP port:", config.tcp_port)
         print("UDP port:", config.udp_port)
-        print("GT06 TCP port:", config.gt06_tcp_port)
+        print("Shared TCP port:", config.tcp_port)
         print("Log level:", config.log_level)
         if capture is not None:
             print("Raw capture:", capture.path)
