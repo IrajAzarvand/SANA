@@ -106,11 +106,21 @@ class Device(models.Model):
     ]
 
     imei = models.CharField(max_length=20, unique=True, verbose_name='IMEI')
+    # مدل دستگاه اختیاری است؛ ثبت اولیه فقط با IMEI انجام می‌شود.
     device_model = models.ForeignKey(
         DeviceModel,
-        on_delete=models.PROTECT,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
         related_name='devices',
         verbose_name='مدل دستگاه'
+    )
+    # پروتکل واقعی از روی ارتباط اولیه دستگاه تشخیص داده و توسط سرویس GPS ثبت می‌شود.
+    protocol = models.CharField(
+        max_length=50,
+        blank=True,
+        default='',
+        verbose_name='پروتکل شناسایی‌شده'
     )
 
     # مالکیت — یکی از این دو

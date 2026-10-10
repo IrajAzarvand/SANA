@@ -15,11 +15,16 @@ IMEI_FRAME = bytes.fromhex("000f333532303934303832313433323533")
 class FakeDeviceRepository:
     def __init__(self, device: DeviceRecord | None) -> None:
         self.device = device
+        self.detected_protocols: list[tuple[int, str]] = []
 
     def find_by_imei(self, imei: str) -> DeviceRecord | None:
         if self.device is not None and self.device.imei == imei:
             return self.device
         return None
+
+    def set_detected_protocol(self, device_id: int, protocol: str) -> bool:
+        self.detected_protocols.append((device_id, protocol))
+        return True
 
 
 def _session() -> Session:
@@ -54,6 +59,20 @@ async def test_registered_teltonika_device_receives_accept_response() -> None:
     assert session.device_id == 7
     assert session.device_imei == IMEI
     assert session.protocol is ProtocolId.TELTONIKA
+
+
+@pytest.mark.asyncio
+async def test_unknown_protocol_is_detected_and_persisted_from_valid_imei_handshake() -> None:
+    repository = FakeDeviceRepository(_device(protocol=""))
+    handler = TeltonikaHandler(repository)
+    session = _session()
+
+    response = await handler.handle(session, IMEI_FRAME)
+
+    assert response is not None
+    assert response.data == b"\x01"
+    assert session.device_id == 7
+    assert repository.detected_protocols == [(7, "teltonika")]
 
 
 @pytest.mark.asyncio

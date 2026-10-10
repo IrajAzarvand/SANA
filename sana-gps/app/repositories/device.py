@@ -22,7 +22,7 @@ class DeviceRepository:
             d.id,
             d.imei,
             d.management_status,
-            dm.protocol,
+            d.protocol,
             EXISTS (
                 SELECT 1
                 FROM organizations_subscriptiondevice sd
@@ -35,8 +35,6 @@ class DeviceRepository:
                   AND s.status = 'active'
             ) AS data_active
         FROM fleet_device d
-        JOIN fleet_devicemodel dm
-          ON dm.id = d.device_model_id
         WHERE d.imei = %s
         LIMIT 1
     """
@@ -55,6 +53,19 @@ class DeviceRepository:
             id=row[0],
             imei=row[1],
             management_status=row[2],
-            protocol=row[3],
+            protocol=row[3] or "",
             data_active=row[4],
         )
+
+    def set_detected_protocol(self, device_id: int, protocol: str) -> bool:
+        """Persist the detected protocol without overwriting an existing value."""
+        with self._pool.connection() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE fleet_device
+                SET protocol = %s
+                WHERE id = %s AND (protocol IS NULL OR protocol = '')
+                """,
+                (protocol, device_id),
+            )
+            return cursor.rowcount == 1

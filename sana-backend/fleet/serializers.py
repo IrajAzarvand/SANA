@@ -83,8 +83,9 @@ class DeviceModelSerializer(serializers.ModelSerializer):
 class DeviceSerializer(serializers.ModelSerializer):
     current_holder_organization_name = serializers.CharField(source='current_holder_organization.name', read_only=True)
     current_holder_user_name = serializers.CharField(source='current_holder_user.full_name', read_only=True)
-    device_model_name = serializers.CharField(source='device_model.name', read_only=True)
-    device_model_manufacturer = serializers.CharField(source='device_model.manufacturer', read_only=True)
+    device_model_name = serializers.CharField(source='device_model.name', read_only=True, allow_null=True)
+    device_model_manufacturer = serializers.CharField(source='device_model.manufacturer', read_only=True, allow_null=True)
+    protocol = serializers.CharField(read_only=True)
     organization_name = serializers.CharField(source='organization.name', read_only=True)
     branch_name = serializers.CharField(source='branch.name', read_only=True)
     owner_name = serializers.CharField(source='owner_user.full_name', read_only=True)
@@ -101,7 +102,7 @@ class DeviceSerializer(serializers.ModelSerializer):
         model = Device
         fields = [
             'id', 'imei',
-            'device_model', 'device_model_name', 'device_model_manufacturer',
+            'device_model', 'device_model_name', 'device_model_manufacturer', 'protocol',
             'organization', 'organization_name',
             'owner_user', 'owner_name',
             'branch', 'branch_name',
@@ -114,7 +115,7 @@ class DeviceSerializer(serializers.ModelSerializer):
             'installed_at',
             'created_at', 'updated_at',
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'device_model', 'protocol']
         extra_kwargs = {
             'organization': {'required': False, 'allow_null': True},
             'owner_user': {'required': False, 'allow_null': True},
@@ -149,8 +150,9 @@ class DeviceListSerializer(serializers.ModelSerializer):
             return 'warehouse'
         return obj.management_status
 
-    device_model_name = serializers.CharField(source='device_model.name', read_only=True)
-    device_model_manufacturer = serializers.CharField(source='device_model.manufacturer', read_only=True)
+    device_model_name = serializers.CharField(source='device_model.name', read_only=True, allow_null=True)
+    device_model_manufacturer = serializers.CharField(source='device_model.manufacturer', read_only=True, allow_null=True)
+    protocol = serializers.CharField(read_only=True)
     organization_name = serializers.CharField(source='organization.name', read_only=True)
     owner_name = serializers.CharField(source='owner_user.full_name', read_only=True)
     vehicle_plate = serializers.CharField(source='vehicle.plate', read_only=True)
@@ -179,7 +181,7 @@ class DeviceListSerializer(serializers.ModelSerializer):
         model = Device
         fields = [
             'id', 'imei',
-            'device_model_name', 'device_model_manufacturer',
+            'device_model_name', 'device_model_manufacturer', 'protocol',
             'sim_number',
             'organization', 'organization_name',
             'owner_user', 'owner_name',
