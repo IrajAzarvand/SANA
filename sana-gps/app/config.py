@@ -8,7 +8,6 @@ from dataclasses import dataclass
 _DEFAULT_HOST = "0.0.0.0"
 _DEFAULT_TCP_PORT = 9000
 _DEFAULT_UDP_PORT = 9001
-_DEFAULT_GT06_TCP_PORT = 19000
 _DEFAULT_GT06_CAPTURE_FILE = "/var/tmp/sana-gps-gt06-capture.log"
 _DEFAULT_LOG_LEVEL = "INFO"
 _DEFAULT_TCP_IDLE_TIMEOUT = 300.0
@@ -105,7 +104,6 @@ class AppConfig:
     max_datagram_size: int = _DEFAULT_MAX_DATAGRAM_SIZE
     capture_file: str | None = None
     database: DatabaseConfig | None = None
-    gt06_tcp_port: int = _DEFAULT_GT06_TCP_PORT
     gt06_capture_file: str | None = _DEFAULT_GT06_CAPTURE_FILE
 
     @classmethod
@@ -120,13 +118,6 @@ class AppConfig:
         udp_port = _parse_int_env(
             "SANA_GPS_UDP_PORT", _DEFAULT_UDP_PORT, minimum=1, maximum=65535
         )
-        gt06_tcp_port = _parse_int_env(
-            "SANA_GPS_GT06_TCP_PORT",
-            _DEFAULT_GT06_TCP_PORT,
-            minimum=1,
-            maximum=65535,
-        )
-
         tcp_idle_timeout = _parse_float_env(
             "SANA_GPS_TCP_IDLE_TIMEOUT", _DEFAULT_TCP_IDLE_TIMEOUT, minimum=0.1
         )
@@ -169,7 +160,6 @@ class AppConfig:
             max_datagram_size=max_datagram_size,
             capture_file=capture_file,
             database=DatabaseConfig.from_env(),
-            gt06_tcp_port=gt06_tcp_port,
             gt06_capture_file=gt06_capture_file,
         )
 
