@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import VehicleType, Vehicle, Device, Driver
+from .models import VehicleType, Vehicle, Device, Driver, GT06Position
 
 
 # ═══════════════════════════════════════════════
@@ -30,3 +30,18 @@ class DeviceAdmin(admin.ModelAdmin):
             return obj.owner_user.full_name or obj.owner_user.username
         return '—'
     get_customer.short_description = 'مشتری'
+
+
+@admin.register(GT06Position)
+class GT06PositionAdmin(admin.ModelAdmin):
+    list_display = [
+        'device', 'gps_time', 'latitude', 'longitude',
+        'speed_kmh', 'course', 'satellites', 'received_at',
+    ]
+    list_filter = ['received_at']
+    search_fields = ['device__imei']
+    ordering = ['-gps_time']
+    readonly_fields = [
+        'device', 'gps_time', 'latitude', 'longitude', 'speed_kmh',
+        'course', 'satellites', 'raw_frame', 'received_at',
+    ]
