@@ -5,7 +5,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("fleet", "0002_initial"),
+        ("fleet", "0004_device_protocol_optional_model"),
     ]
 
     operations = [
