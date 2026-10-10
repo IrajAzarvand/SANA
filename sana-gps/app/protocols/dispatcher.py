@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+import logging
 from dataclasses import dataclass, field
 from uuid import UUID
 
 from app.protocols.types import ProtocolId, ProtocolResponse
 from app.transport.session import Session, SessionState
+
+
+logger = logging.getLogger(__name__)
 
 
 ProtocolHandler = Callable[
@@ -79,12 +83,23 @@ class ProtocolDispatcher:
         if len(state.pending) < 2:
             return None
 
-        protocol = self._detect(bytes(state.pending[:2]))
+        prefix = bytes(state.pending[:2])
+        protocol = self._detect(prefix)
         if protocol is None:
+            logger.warning(
+                "Rejected TCP GPS connection from %s: unknown protocol prefix %s",
+                session.remote_address,
+                prefix.hex(),
+            )
             state.pending.clear()
             state.rejected = True
             return ProtocolResponse(b"\x00")
 
+        logger.info(
+            "Detected GPS protocol %s from %s",
+            protocol.value,
+            session.remote_address,
+        )
         state.protocol = protocol
         handler = self._handlers.get(protocol)
         payload = bytes(state.pending)
