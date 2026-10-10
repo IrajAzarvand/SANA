@@ -658,3 +658,33 @@ class DeviceLifecycleEvent(models.Model):
 
     def __str__(self):
         return f'{self.device.imei} — {self.get_event_type_display()}'
+
+
+class GT06Position(models.Model):
+    """Decoded GPS position received from a GT06-family tracker."""
+
+    device = models.ForeignKey(
+        Device,
+        on_delete=models.CASCADE,
+        related_name='gt06_positions',
+        verbose_name='دستگاه',
+    )
+    gps_time = models.DateTimeField(verbose_name='زمان GPS')
+    latitude = models.FloatField(verbose_name='عرض جغرافیایی')
+    longitude = models.FloatField(verbose_name='طول جغرافیایی')
+    speed_kmh = models.PositiveSmallIntegerField(default=0, verbose_name='سرعت (کیلومتر بر ساعت)')
+    course = models.PositiveSmallIntegerField(default=0, verbose_name='جهت حرکت')
+    satellites = models.PositiveSmallIntegerField(default=0, verbose_name='تعداد ماهواره')
+    raw_frame = models.BinaryField(verbose_name='بسته خام')
+    received_at = models.DateTimeField(auto_now_add=True, verbose_name='زمان دریافت')
+
+    class Meta:
+        verbose_name = 'موقعیت GT06'
+        verbose_name_plural = 'موقعیت‌های GT06'
+        ordering = ['-gps_time', '-id']
+        indexes = [
+            models.Index(fields=['device', 'gps_time'], name='fleet_gt06_device_time_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.device.imei} @ {self.gps_time.isoformat()}'
