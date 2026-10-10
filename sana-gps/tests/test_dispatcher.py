@@ -110,3 +110,23 @@ async def test_dispatcher_rejects_unknown_protocol_once():
     assert later is None
     teltonika.assert_not_awaited()
     gt06.assert_not_awaited()
+
+@pytest.mark.asyncio
+async def test_dispatcher_routes_hq_text_protocol():
+    teltonika = AsyncMock(return_value=None)
+    gt06 = AsyncMock(return_value=None)
+    hq = AsyncMock(return_value=None)
+    dispatcher = ProtocolDispatcher({
+        ProtocolId.TELTONIKA: teltonika,
+        ProtocolId.GT06: gt06,
+        ProtocolId.HQ: hq,
+    })
+    session = make_session()
+    payload = b"*HQ,9176515720,V1,112254,A,3751.2787,N,04555.9264,E,0.00,0,101026#"
+
+    await dispatcher.handle(session, payload)
+
+    hq.assert_awaited_once_with(session, payload)
+    teltonika.assert_not_awaited()
+    gt06.assert_not_awaited()
+
