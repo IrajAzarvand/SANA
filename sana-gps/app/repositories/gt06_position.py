@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import datetime
-
 from app.database.pool import DatabaseConnectionPool
 from app.protocols.gt06 import GT06Position
 
