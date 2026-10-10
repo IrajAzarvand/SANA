@@ -1,39 +1,42 @@
-# GT06 GPS ingestion
+# SANA GPS multi-protocol ingestion
 
-The GPS runtime has a dedicated GT06 TCP listener. It does not share the Teltonika handler.
+All TCP GPS devices connect to one shared listener. The listener identifies the protocol from the opening bytes of each connection and routes the stream to that protocol's handler. Teltonika and GT06-compatible devices therefore share the same internal TCP port without sharing their decoders.
 
-## Defaults
+## Port mapping
 
-- Teltonika TCP: `9000`
-- Teltonika UDP: `9001`
-- GT06 TCP: `19000`
-- GT06 raw packet capture: `/var/tmp/sana-gps-gt06-capture.log`
+- Public TCP port: `19000` (existing ISP/router forwarding)
+- Server TCP port: `9000` (shared Teltonika + GT06-compatible protocol dispatcher)
+- Server UDP port: `9001` (existing Teltonika UDP listener)
 
-Override the GT06 values in the systemd environment file with:
+Keep the current NAT rule **public TCP 19000 → server TCP 9000**. Do not point the NAT rule at server port 19000 and do not change the existing UDP mapping.
 
-```ini
-SANA_GPS_GT06_TCP_PORT=19000
-SANA_GPS_GT06_CAPTURE_FILE=/var/tmp/sana-gps-gt06-capture.log
-```
+## Protocol detection and device registration
 
-The GT06 handler supports the common short-frame `7878` format, login packets (`0x01`), GPS packets (`0x12`), heartbeat packets (`0x13`), and alarm packets (`0x16`). Login identifiers are checked against registered device IMEIs; an empty protocol value is set to `gt06` after successful registration lookup. Decoded classic GPS reports are stored in `fleet_gt06position`, with the raw packet retained for diagnostics.
+- Teltonika TCP identification begins with its two-byte length-prefixed IMEI handshake.
+- GT06-family TCP frames begin with `7878` or `7979`.
+- After detection, the matching handler checks the identifier against a device registered in SANA. Unknown identifiers are not authenticated.
+- The device's protocol is detected and saved when its first valid login/identification is accepted, provided the protocol field was empty.
+- Teltonika UDP on port `9001` continues through the existing Teltonika handler.
 
-## Deploy on the server
+GT06-compatible packets are captured at `/var/tmp/sana-gps-gt06-capture.log` by default and decoded position reports are saved in `fleet_gt06position`.
 
-Run from the repository root after the change is available on `main`:
+## Deploy
+
+Run from the repository root after pulling the changes:
 
 ```bash
-git pull
+git pull --ff-only
 source sana-backend/venv/bin/activate
 cd sana-backend
 python manage.py migrate
 cd ..
+../sana-backend/venv/bin/python -m pytest -q sana-gps/tests
 sudo systemctl restart sana-gps
 sudo systemctl status sana-gps --no-pager
-sudo ss -lntup | grep -E ':(8000|9000|9001|19000)\\b'
+sudo ss -lntup | grep -E ':(8000|9000|9001)\b'
 ```
 
-The router/NAT and any host firewall must allow **TCP** port `19000` to reach this server. Do not change the existing Teltonika port mappings.
+Expected listeners are TCP `9000` and UDP `9001`; there is intentionally no separate internal TCP listener on `19000`.
 
 ## Verify incoming data
 
@@ -47,7 +50,7 @@ In another terminal:
 sudo tail -f /var/tmp/sana-gps-gt06-capture.log
 ```
 
-After the tracker connects, verify persisted positions in PostgreSQL:
+To inspect saved GT06-compatible positions in PostgreSQL:
 
 ```sql
 SELECT d.imei, p.gps_time, p.latitude, p.longitude,
@@ -58,4 +61,6 @@ ORDER BY p.id DESC
 LIMIT 20;
 ```
 
-The exact device identifier representation varies across GT06-family firmware. If the login packet does not match a registered IMEI, the raw capture is the source of truth for adjusting identifier decoding. Likewise, GPS decoding currently targets the common classic `0x12` information layout; use the captured frames to confirm the particular firmware's variant.
+## Adding a future protocol (for example, a Concox model)
+
+The shared port and dispatcher are designed so a new protocol can be added as a separate detector/handler without changing the Teltonika handler, port mapping, or data path for existing devices. Registering an identifier alone cannot decode an entirely new wire protocol: the specific model's protocol must first be identified and implemented, with framing, authentication/identifier extraction, acknowledgements, decoder, persistence mapping, and tests. Many trackers share GT06-compatible framing, but Concox compatibility must be verified for the exact model. Unknown protocols must not be guessed or fed to an unrelated decoder.
