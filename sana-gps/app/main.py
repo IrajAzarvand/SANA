@@ -7,9 +7,9 @@ import sys
 from app.config import AppConfig, ConfigurationError
 from app.database.pool import DatabaseConnectionPool
 from app.diagnostics.capture import RawCapture
-from app.protocols.teltonika.handler import TeltonikaHandler
-from app.protocols.gt06_handler import GT06Handler
 from app.protocols.dispatcher import ProtocolDispatcher
+from app.protocols.gt06_handler import GT06Handler
+from app.protocols.teltonika.handler import TeltonikaHandler
 from app.protocols.types import ProtocolId, ProtocolResponse
 from app.repositories.device import DeviceRepository
 from app.repositories.gt06_position import GT06PositionRepository
@@ -89,9 +89,8 @@ async def run(
         await transport_server.start()
 
         print("Host:", config.host)
-        print("TCP port:", config.tcp_port)
-        print("UDP port:", config.udp_port)
         print("Shared TCP port:", config.tcp_port)
+        print("UDP port:", config.udp_port)
         print("Log level:", config.log_level)
         if capture is not None:
             print("Raw capture:", capture.path)
