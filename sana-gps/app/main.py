@@ -9,10 +9,12 @@ from app.database.pool import DatabaseConnectionPool
 from app.diagnostics.capture import RawCapture
 from app.protocols.dispatcher import ProtocolDispatcher
 from app.protocols.gt06_handler import GT06Handler
+from app.protocols.hq_handler import HQHandler
 from app.protocols.teltonika.handler import TeltonikaHandler
 from app.protocols.types import ProtocolId, ProtocolResponse
 from app.repositories.device import DeviceRepository
 from app.repositories.gt06_position import GT06PositionRepository
+from app.repositories.gps_telemetry import GPSTelemetryRepository
 from app.transport.server import TransportServer
 from app.transport.session import SessionManager, TransportType
 
@@ -35,6 +37,7 @@ async def run(
         device_repository,
         GT06PositionRepository(database_pool),
     )
+    hq_handler = HQHandler(device_repository, GPSTelemetryRepository(database_pool))
     capture = RawCapture(config.capture_file) if config.capture_file else None
     gt06_capture = RawCapture(config.gt06_capture_file) if config.gt06_capture_file else None
 
@@ -51,6 +54,7 @@ async def run(
         {
             ProtocolId.TELTONIKA: teltonika_handler.handle,
             ProtocolId.GT06: on_gt06_data,
+            ProtocolId.HQ: hq_handler.handle,
         }
     )
 

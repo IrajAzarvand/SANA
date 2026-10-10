@@ -10,6 +10,7 @@ class ProtocolId(str, Enum):
     UNKNOWN = "unknown"
     TELTONIKA = "teltonika"
     GT06 = "gt06"
+    HQ = "hq*"
 
 
 @dataclass(frozen=True, slots=True)
