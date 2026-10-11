@@ -9,9 +9,9 @@ from app.protocols.types import ProtocolId, ProtocolResponse
 from app.transport.session import Session, TransportType
 
 
-def make_session() -> Session:
+def make_session(transport: TransportType = TransportType.TCP) -> Session:
     session = Session(
-        transport=TransportType.TCP,
+        transport=transport,
         remote_address=("127.0.0.1", 50000),
     )
     session.connect()
@@ -130,3 +130,29 @@ async def test_dispatcher_routes_hq_text_protocol():
     teltonika.assert_not_awaited()
     gt06.assert_not_awaited()
 
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("payload", "expected_protocol"),
+    [
+        (bytes.fromhex("000f333532303934303832313433323533"), ProtocolId.TELTONIKA),
+        (bytes.fromhex("78780513000100000d0a"), ProtocolId.GT06),
+        (b"*HQ,9176515720,V1,112254,A,3751.2787,N,04555.9264,E,0.00,0,101026#", ProtocolId.HQ),
+    ],
+)
+async def test_dispatcher_routes_udp_by_protocol_signature(payload, expected_protocol):
+    handlers = {
+        protocol: AsyncMock(return_value=ProtocolResponse(b"ack"))
+        for protocol in (ProtocolId.TELTONIKA, ProtocolId.GT06, ProtocolId.HQ)
+    }
+    dispatcher = ProtocolDispatcher(handlers)
+    session = make_session(TransportType.UDP)
+
+    response = await dispatcher.handle(session, payload)
+
+    assert response == ProtocolResponse(b"ack")
+    handlers[expected_protocol].assert_awaited_once_with(session, payload)
+    for protocol, handler in handlers.items():
+        if protocol is not expected_protocol:
+            handler.assert_not_awaited()
