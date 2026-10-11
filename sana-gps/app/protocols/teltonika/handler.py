@@ -11,7 +11,7 @@ from app.protocols.teltonika.normalizer import TeltonikaNormalizer
 from app.protocols.types import ProtocolFrame, ProtocolId, ProtocolResponse
 from app.repositories.device import DeviceRepository
 from app.repositories.gps_telemetry import GPSTelemetryRepository
-from app.transport.session import Session, SessionState
+from app.transport.session import Session, SessionManager, SessionState
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +25,7 @@ class TeltonikaHandler:
         telemetry_repository: GPSTelemetryRepository | None = None,
         *,
         max_buffer_size: int = 4096,
+        session_manager: SessionManager | None = None,
     ) -> None:
         self._device_repository = device_repository
         self._telemetry_repository = telemetry_repository
@@ -32,6 +33,7 @@ class TeltonikaHandler:
         self._decoder = TeltonikaAVLDecoder()
         self._normalizer = TeltonikaNormalizer()
         self._max_buffer_size = max_buffer_size
+        self._session_manager = session_manager
         self._framers: dict[UUID, tuple[Session, TeltonikaFramer]] = {}
 
     async def handle(
@@ -134,11 +136,19 @@ class TeltonikaHandler:
 
         # Device/DeviceModel protocol configuration is business-owned. The GPS
         # runtime must never persist an auto-detected protocol into fleet_device.
-        session.bind_device(
-            device_id=device.id,
-            imei=device.imei,
-            protocol=ProtocolId.TELTONIKA,
-        )
+        if self._session_manager is None:
+            session.bind_device(
+                device_id=device.id,
+                imei=device.imei,
+                protocol=ProtocolId.TELTONIKA,
+            )
+        else:
+            self._session_manager.bind_device(
+                session,
+                device_id=device.id,
+                imei=device.imei,
+                protocol=ProtocolId.TELTONIKA,
+            )
         return ProtocolResponse(b"\x01")
 
     def _forget(self, session: Session) -> None:
