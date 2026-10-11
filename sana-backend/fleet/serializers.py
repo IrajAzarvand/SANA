@@ -173,6 +173,7 @@ class DeviceListSerializer(serializers.ModelSerializer):
 
     # وضعیت دریافت داده از GPS
     data_active = serializers.BooleanField(source='is_data_active', read_only=True)
+    last_data_received_at = serializers.DateTimeField(read_only=True, allow_null=True)
 
     # وضعیت انبار
     is_in_warehouse = serializers.BooleanField(read_only=True)
@@ -194,6 +195,7 @@ class DeviceListSerializer(serializers.ModelSerializer):
             'replacement_device_id', 'replacement_device_imei', 'replacement_relation_direction',
             'management_status',
             'data_active',
+            'last_data_received_at',
             'is_in_warehouse',
             'created_at',
         ]

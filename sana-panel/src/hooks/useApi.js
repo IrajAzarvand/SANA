@@ -9,25 +9,29 @@ import { useState, useEffect, useCallback, useRef } from 'react';
  * @returns {Object} { data, loading, error, refetch }
  */
 export function useApi(apiFunction, deps = [], options = {}) {
-  const { immediate = true, initialData = null } = options;
+  const { immediate = true, initialData = null, keepDataOnRefetch = false } = options;
 
   const [data, setData] = useState(initialData);
   const [loading, setLoading] = useState(immediate);
   const [error, setError] = useState(null);
   const isMountedRef = useRef(true);
+  const hasLoadedRef = useRef(false);
 
   const fetchData = useCallback(async () => {
-    setLoading(true);
+    if (!keepDataOnRefetch || !hasLoadedRef.current) {
+      setLoading(true);
+    }
     setError(null);
 
     try {
       const result = await apiFunction();
       if (isMountedRef.current) {
         setData(result);
+        hasLoadedRef.current = true;
       }
       return result;
     } catch (err) {
-      if (isMountedRef.current) {
+      if (isMountedRef.current && (!keepDataOnRefetch || !hasLoadedRef.current)) {
         setError(err);
       }
       throw err;
@@ -36,7 +40,7 @@ export function useApi(apiFunction, deps = [], options = {}) {
         setLoading(false);
       }
     }
-  }, [apiFunction]);
+  }, [apiFunction, keepDataOnRefetch]);
 
   useEffect(() => {
     isMountedRef.current = true;

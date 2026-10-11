@@ -661,7 +661,7 @@ class DeviceLifecycleEvent(models.Model):
 
 
 class GPSTelemetry(models.Model):
-    """Normalized GPS telemetry for protocol-independent queries."""
+    """Normalized GPS telemetry retained by the current compatibility schema."""
 
     device = models.ForeignKey(
         Device, on_delete=models.CASCADE, related_name='gps_telemetry',
@@ -669,9 +669,24 @@ class GPSTelemetry(models.Model):
     )
     protocol = models.CharField(max_length=50, verbose_name='پروتکل')
     gps_time = models.DateTimeField(verbose_name='زمان GPS')
-    latitude = models.FloatField(verbose_name='عرض جغرافیایی')
-    longitude = models.FloatField(verbose_name='طول جغرافیایی')
-    speed_kmh = models.FloatField(default=0, verbose_name='سرعت (کیلومتر بر ساعت)')
+    latitude = models.DecimalField(
+        max_digits=10, decimal_places=7, null=True, blank=True,
+        verbose_name='عرض جغرافیایی',
+    )
+    longitude = models.DecimalField(
+        max_digits=10, decimal_places=7, null=True, blank=True,
+        verbose_name='طول جغرافیایی',
+    )
+    gps_valid = models.BooleanField(default=True, verbose_name='اعتبار GPS')
+    speed_kmh = models.DecimalField(
+        max_digits=7, decimal_places=2, null=True, blank=True,
+        verbose_name='سرعت (کیلومتر بر ساعت)',
+    )
+    heading_deg = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name='جهت')
+    altitude_m = models.IntegerField(null=True, blank=True, verbose_name='ارتفاع (متر)')
+    satellites = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name='تعداد ماهواره')
+    attributes = models.JSONField(default=dict, blank=True, verbose_name='ویژگی‌های تله‌متری')
+    fingerprint = models.CharField(max_length=64, default='', verbose_name='اثر انگشت بسته')
     raw_payload = models.BinaryField(verbose_name='بسته خام')
     received_at = models.DateTimeField(auto_now_add=True, verbose_name='زمان دریافت')
 
@@ -681,6 +696,13 @@ class GPSTelemetry(models.Model):
         ordering = ['-gps_time', '-id']
         indexes = [
             models.Index(fields=['device', 'gps_time'], name='fleet_gps_device_time_idx'),
+            models.Index(fields=['device', 'received_at'], name='fleet_gps_device_received_idx'),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['device', 'fingerprint'],
+                name='fleet_gps_device_fingerprint_uniq',
+            ),
         ]
 
     def __str__(self):
