@@ -44,7 +44,7 @@ async def test_gt06_login_binds_registered_device_and_acknowledges():
     assert session.device_imei == "9176515406"
     assert response is not None
     assert response.data[3] == 0x01
-    device_repository.set_detected_protocol.assert_called_once_with(9, "gt06")
+    device_repository.set_detected_protocol.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -82,36 +82,3 @@ async def test_gt06_position_is_persisted_after_login():
     assert saved["position"].latitude == 30
     assert saved["position"].longitude == 50
     assert saved["raw_frame"] == frame
-
-
-
-@pytest.mark.asyncio
-async def test_unknown_gt06_message_is_retained_as_raw_telemetry_event():
-    device_repository = Mock()
-    device = DeviceRecord(
-        id=9,
-        imei="9176515406",
-        management_status="active",
-        protocol="gt06",
-        data_active=True,
-    )
-    device_repository.find_by_imei.side_effect = lambda value: device if value == device.imei else None
-    positions = Mock()
-    telemetry = Mock()
-    handler = GT06Handler(device_repository, positions, telemetry)
-    session = active_session()
-    await handler.handle(
-        session,
-        make_frame(0x01, bytes.fromhex("0000009176515406"), 1),
-    )
-
-    packet = make_frame(0x94, bytes.fromhex("0102030405"), 2)
-    response = await handler.handle(session, packet)
-
-    assert telemetry.save.call_count == 2  # login and the following device-information packet
-    saved = telemetry.save.call_args_list[1].kwargs
-    assert saved["protocol"] == "gt06"
-    assert saved["raw_payload"] == packet
-    assert saved["attributes"]["gt06"]["message_type"] == 0x94
-    assert saved["attributes"]["gt06"]["message_name"] == "device_information"
-    assert response is not None

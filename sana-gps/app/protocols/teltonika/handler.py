@@ -73,66 +73,17 @@ class TeltonikaHandler:
                 message = self._decoder.decode(frame.data)
             except TeltonikaDecodeError as exc:
                 logger.warning(
-                    "Could not fully decode Teltonika frame for device %s from %s: %s",
+                    "Rejected Teltonika AVL frame for device %s from %s: %s",
                     session.device_imei,
                     session.remote_address,
                     exc,
                 )
-                # Do not throw away an unsupported/corrupt message: preserve its
-                # bytes and decoder error for future analysis, but do not ACK it.
-                if self._telemetry_repository is not None:
-                    try:
-                        received_at = datetime.now(timezone.utc)
-                        self._telemetry_repository.save(
-                            device_id=session.device_id,
-                            protocol=ProtocolId.TELTONIKA.value,
-                            gps_time=received_at,
-                            latitude=None,
-                            longitude=None,
-                            speed_kmh=None,
-                            raw_payload=frame.data,
-                            attributes={"teltonika": {
-                                "message_type": "unparsed",
-                                "decode_error": str(exc),
-                                "raw_hex": frame.data.hex(),
-                            }},
-                            gps_valid=False,
-                            received_at=received_at,
-                        )
-                    except Exception:
-                        logger.exception("Failed to retain unparsed Teltonika frame")
+                outgoing.extend(b"\x00\x00\x00\x00")
                 continue
 
             if self._telemetry_repository is None:
                 logger.error("Teltonika telemetry repository is not configured")
-                # No success ACK when persistence is unavailable.
-                continue
-
-            if not message.records:
-                # Codec 12 command/response and Codec 13 text envelopes are not
-                # AVL location batches. Persist the whole decoded envelope, and
-                # do not send an AVL record-count ACK for them.
-                received_at = datetime.now(timezone.utc)
-                try:
-                    self._telemetry_repository.save(
-                        device_id=session.device_id,
-                        protocol=ProtocolId.TELTONIKA.value,
-                        gps_time=received_at,
-                        latitude=None,
-                        longitude=None,
-                        speed_kmh=None,
-                        raw_payload=message.raw_frame,
-                        attributes={"teltonika": {
-                            "codec": message.codec_id,
-                            "message_type": message.message_type,
-                            "message_details": message.message_details,
-                            "raw_hex": message.raw_frame.hex(),
-                        }},
-                        gps_valid=False,
-                        received_at=received_at,
-                    )
-                except Exception:
-                    logger.exception("Failed to persist Teltonika non-AVL message")
+                # No AVL success ACK when persistence is unavailable.
                 continue
 
             received_at = datetime.now(timezone.utc)
@@ -181,35 +132,8 @@ class TeltonikaHandler:
         if known_protocol and known_protocol != ProtocolId.TELTONIKA.value:
             return ProtocolResponse(b"\x00")
 
-        if not known_protocol:
-            self._device_repository.set_detected_protocol(
-                device.id,
-                ProtocolId.TELTONIKA.value,
-            )
-
-        if self._telemetry_repository is not None:
-            received_at = datetime.now(timezone.utc)
-            try:
-                self._telemetry_repository.save(
-                    device_id=device.id,
-                    protocol=ProtocolId.TELTONIKA.value,
-                    gps_time=received_at,
-                    latitude=None,
-                    longitude=None,
-                    speed_kmh=None,
-                    raw_payload=frame.data,
-                    attributes={"teltonika": {
-                        "message_type": "identification",
-                        "imei": identification.imei,
-                        "raw_hex": frame.data.hex(),
-                    }},
-                    gps_valid=False,
-                    received_at=received_at,
-                )
-            except Exception:
-                logger.exception("Failed to persist Teltonika identification for %s", device.imei)
-                return ProtocolResponse(b"\x00")
-
+        # Device/DeviceModel protocol configuration is business-owned. The GPS
+        # runtime must never persist an auto-detected protocol into fleet_device.
         session.bind_device(
             device_id=device.id,
             imei=device.imei,

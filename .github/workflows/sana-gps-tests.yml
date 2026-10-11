@@ -1,0 +1,115 @@
+name: SANA GPS tests
+
+on:
+  pull_request:
+    paths:
+      - "sana-gps/**"
+      - ".github/workflows/sana-gps-tests.yml"
+  push:
+    branches:
+      - "fix/gps-stages-1-3-telemetry-compliance"
+    paths:
+      - "sana-gps/**"
+      - ".github/workflows/sana-gps-tests.yml"
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sana_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sana_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: sana-gps
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: sana-gps/requirements.txt
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -r requirements.txt
+      - run: python -m pytest -q
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Create representative SANA business tables
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -c "
+          CREATE TABLE public.fleet_device (
+            id BIGINT PRIMARY KEY,
+            imei VARCHAR(20) UNIQUE,
+            management_status VARCHAR(20),
+            protocol VARCHAR(50),
+            device_model_id BIGINT
+          );
+          CREATE TABLE public.fleet_devicemodel (
+            id BIGINT PRIMARY KEY,
+            manufacturer VARCHAR(100),
+            name VARCHAR(100),
+            code VARCHAR(50),
+            protocol VARCHAR(50)
+          );
+          CREATE TABLE public.fleet_vehicle (id BIGINT PRIMARY KEY);
+          "
+      - name: Provision database roles and PostGIS
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -f sql/0000_roles.sql
+          psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -c "
+          ALTER ROLE sana_migrator PASSWORD 'migrator-test';
+          ALTER ROLE sana_gps PASSWORD 'gps-test';
+          "
+      - name: Apply GPS schema as the dedicated migrator
+        env:
+          PGPASSWORD: migrator-test
+        run: psql -h 127.0.0.1 -U sana_migrator -d sana_test -v ON_ERROR_STOP=1 -f sql/0001_gps_schema.sql
+      - name: Verify least-privilege permissions
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -c "
+          DO \$\$
+          BEGIN
+            IF has_column_privilege('sana_gps', 'public.fleet_device', 'protocol', 'UPDATE') THEN
+              RAISE EXCEPTION 'GPS runtime unexpectedly has UPDATE on fleet_device.protocol';
+            END IF;
+            IF has_table_privilege('sana_gps', 'gps.location_history', 'DELETE') THEN
+              RAISE EXCEPTION 'GPS runtime unexpectedly has DELETE on location_history';
+            END IF;
+            IF has_table_privilege('sana_backend', 'gps.raw_packet', 'SELECT') THEN
+              RAISE EXCEPTION 'Backend unexpectedly has SELECT on raw_packet';
+            END IF;
+            IF NOT has_table_privilege('sana_gps', 'gps.current_state', 'UPDATE') THEN
+              RAISE EXCEPTION 'GPS runtime is missing UPDATE on current_state';
+            END IF;
+          END
+          \$\$;
+          "
+
+      - name: Seed one business-owned device
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -c "
+          INSERT INTO public.fleet_device
+            (id, imei, management_status, protocol, device_model_id)
+          VALUES (1, '352094082143253', 'active', 'teltonika', NULL);
+          "
+      - name: Verify GPS persistence against PostgreSQL and PostGIS
+        env:
+          SANA_GPS_TEST_DSN: postgresql://sana_gps:gps-test@127.0.0.1:5432/sana_test
+        run: python -m pytest -q tests/test_gps_postgres_integration.py

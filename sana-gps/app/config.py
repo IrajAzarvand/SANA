@@ -19,8 +19,8 @@ _ALLOWED_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
 
 _DEFAULT_DB_HOST = "127.0.0.1"
 _DEFAULT_DB_PORT = 5432
-_DEFAULT_DB_POOL_MIN = 1
-_DEFAULT_DB_POOL_MAX = 5
+_DEFAULT_DB_POOL_MIN = 2
+_DEFAULT_DB_POOL_MAX = 10
 
 
 class ConfigurationError(ValueError):
@@ -66,6 +66,10 @@ class DatabaseConfig:
             raise ConfigurationError("SANA_GPS_DB_NAME must not be empty")
         if not user:
             raise ConfigurationError("SANA_GPS_DB_USER must not be empty")
+        if user != "sana_gps":
+            raise ConfigurationError(
+                "SANA_GPS_DB_USER must be the least-privilege runtime role 'sana_gps'"
+            )
         if not password:
             raise ConfigurationError("SANA_GPS_DB_PASSWORD must not be empty")
 

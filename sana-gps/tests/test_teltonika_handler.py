@@ -62,7 +62,7 @@ async def test_registered_teltonika_device_receives_accept_response() -> None:
 
 
 @pytest.mark.asyncio
-async def test_unknown_protocol_is_detected_and_persisted_from_valid_imei_handshake() -> None:
+async def test_unknown_protocol_is_detected_for_session_without_database_write() -> None:
     repository = FakeDeviceRepository(_device(protocol=""))
     handler = TeltonikaHandler(repository)
     session = _session()
@@ -72,7 +72,7 @@ async def test_unknown_protocol_is_detected_and_persisted_from_valid_imei_handsh
     assert response is not None
     assert response.data == b"\x01"
     assert session.device_id == 7
-    assert repository.detected_protocols == [(7, "teltonika")]
+    assert repository.detected_protocols == []
 
 
 @pytest.mark.asyncio

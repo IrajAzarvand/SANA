@@ -8,7 +8,7 @@ from app.protocols.teltonika.decoder import TeltonikaAVLRecord
 
 
 class TeltonikaNormalizer:
-    """Normalize supported Teltonika AVL records without guessing device-specific IO meanings."""
+    """Map decoded Codec 8 records to SANA units without guessing IO meanings."""
 
     def normalize(
         self,
@@ -17,30 +17,38 @@ class TeltonikaNormalizer:
         record: TeltonikaAVLRecord,
         server_received_at: datetime,
     ) -> NormalizedTelemetry:
-        latitude = self._coordinate(record.latitude, -90, 90)
-        longitude = self._coordinate(record.longitude, -180, 180)
+        latitude = self._coordinate(record.latitude, Decimal("-90"), Decimal("90"))
+        longitude = self._coordinate(record.longitude, Decimal("-180"), Decimal("180"))
+        satellites = self._bounded_int(record.satellites, 0, 255)
         gps_valid = (
             latitude is not None
             and longitude is not None
-            and record.satellites > 0
+            and satellites is not None
+            and satellites > 0
             and not (latitude == 0 and longitude == 0)
         )
         if not gps_valid:
             latitude = None
             longitude = None
 
-        heading = record.heading_deg if 0 <= record.heading_deg <= 360 else None
-        speed = self._decimal(record.speed_kmh, minimum=0)
-        altitude = record.altitude_m if -20_000 <= record.altitude_m <= 100_000 else None
-        satellites = record.satellites if 0 <= record.satellites <= 255 else None
+        heading_value = self._decimal(record.heading_deg, minimum=Decimal("0"))
+        heading = (
+            heading_value
+            if heading_value is not None and heading_value < Decimal("360")
+            else None
+        )
+        speed = self._decimal(record.speed_kmh, minimum=Decimal("0"))
+        altitude = self._decimal(record.altitude_m)
+        if altitude is not None and not Decimal("-20000") <= altitude <= Decimal("100000"):
+            altitude = None
 
-        # Preserve all IO IDs and values until a model-specific profile maps them
-        # to standard SANA fields. Never guess ignition/fuel meanings.
+        # IO IDs remain raw until an explicitly configured DeviceModel/profile
+        # defines their meaning. In particular, do not guess ignition, motion,
+        # fuel, voltage, or odometer from vendor-specific IDs.
         attributes = {
             "teltonika": {
-                "codec": record.codec_id,
+                "codec": 8,
                 "priority": record.priority,
-                "generation_type": record.generation_type,
                 "event_io_id": record.event_io_id,
                 "io": {str(io_id): value for io_id, value in record.io_elements.items()},
             }
@@ -53,31 +61,57 @@ class TeltonikaNormalizer:
             latitude=latitude,
             longitude=longitude,
             gps_valid=gps_valid,
-            speed_kmh=speed,
-            heading_deg=heading,
-            altitude_m=altitude,
+            speed=speed,
+            heading=heading,
+            altitude=altitude,
             satellites=satellites,
+            # These remain NULL until a device-model profile maps them.
+            accuracy=None,
+            motion=None,
+            ignition=None,
+            battery_voltage=None,
+            external_voltage=None,
+            gsm_signal=None,
+            odometer=None,
+            engine_hours=None,
+            fuel_level=None,
             attributes=attributes,
         )
 
     @staticmethod
-    def _coordinate(value: float, minimum: int, maximum: int) -> Decimal | None:
-        try:
-            coordinate = Decimal(str(value)).quantize(Decimal("0.0000001"))
-        except (InvalidOperation, ValueError):
-            return None
-        if not coordinate.is_finite() or not Decimal(minimum) <= coordinate <= Decimal(maximum):
-            return None
-        return coordinate
-
-    @staticmethod
-    def _decimal(value: int | float | Decimal | None, *, minimum: int) -> Decimal | None:
+    def _coordinate(
+        value: int | float | Decimal | None,
+        minimum: Decimal,
+        maximum: Decimal,
+    ) -> Decimal | None:
         if value is None:
             return None
         try:
             number = Decimal(str(value))
-        except (InvalidOperation, ValueError):
+        except (InvalidOperation, ValueError, TypeError):
             return None
-        if not number.is_finite() or number < Decimal(minimum):
+        if not number.is_finite() or not minimum <= number <= maximum:
+            return None
+        return number.quantize(Decimal("0.0000001"))
+
+    @staticmethod
+    def _decimal(
+        value: int | float | Decimal | None,
+        *,
+        minimum: Decimal | None = None,
+    ) -> Decimal | None:
+        if value is None:
+            return None
+        try:
+            number = Decimal(str(value))
+        except (InvalidOperation, ValueError, TypeError):
+            return None
+        if not number.is_finite() or (minimum is not None and number < minimum):
             return None
         return number.quantize(Decimal("0.01"))
+
+    @staticmethod
+    def _bounded_int(value: int, minimum: int, maximum: int) -> int | None:
+        if isinstance(value, bool) or not isinstance(value, int):
+            return None
+        return value if minimum <= value <= maximum else None

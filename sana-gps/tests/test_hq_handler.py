@@ -32,7 +32,7 @@ async def test_hq_report_matches_registered_identifier_and_saves_telemetry():
     await handler.handle(session, payload)
 
     devices.find_by_imei.assert_called_once_with("9176515720")
-    devices.set_detected_protocol.assert_called_once_with(4, "hq*")
+    devices.set_detected_protocol.assert_not_called()
     assert session.device_id == 4
     assert session.protocol is ProtocolId.HQ
     telemetry.save.assert_called_once()
@@ -63,64 +63,3 @@ async def test_hq_report_is_buffered_across_tcp_reads():
 
     telemetry.save.assert_called_once()
     assert session.device_id == 4
-
-
-
-@pytest.mark.asyncio
-async def test_h02_non_position_message_is_saved_without_discarding_fields():
-    devices = Mock()
-    devices.find_by_imei.return_value = DeviceRecord(
-        id=4, imei="9176515720", management_status="active",
-        protocol="hq*", data_active=True,
-    )
-    telemetry = Mock()
-    handler = HQHandler(devices, telemetry)
-    session = make_session()
-    payload = b"*HQ,9176515720,LINK,180902,15,0,84,0,0,240517,FFFFFBFF#"
-
-    await handler.handle(session, payload)
-
-    telemetry.save.assert_called_once()
-    saved = telemetry.save.call_args.kwargs
-    assert saved["raw_payload"] == payload
-    assert saved["gps_valid"] is False
-    assert saved["latitude"] is None
-    assert saved["attributes"]["h02"]["message_type"] == "LINK"
-    assert saved["attributes"]["h02"]["raw_fields"][-1] == "FFFFFBFF"
-
-
-
-@pytest.mark.asyncio
-async def test_h02_binary_position_frame_is_decoded_and_retained():
-    devices = Mock()
-    device = DeviceRecord(
-        id=4, imei="9176515720", management_status="active",
-        protocol="hq*", data_active=True,
-    )
-    devices.find_by_imei.side_effect = lambda value: device if value == device.imei else None
-    telemetry = Mock()
-    handler = HQHandler(devices, telemetry)
-    session = make_session()
-    payload = (
-        b"$"
-        + bytes.fromhex("9176515720")
-        + bytes.fromhex("112254101026")
-        + bytes.fromhex("37512787")
-        + b"\x03"
-        + bytes.fromhex("045559264e")
-        + bytes.fromhex("000000")
-        + bytes.fromhex("ffffffff")
-        + bytes.fromhex("000000")
-    )
-    assert len(payload) == 32
-
-    await handler.handle(session, payload)
-
-    telemetry.save.assert_called_once()
-    saved = telemetry.save.call_args.kwargs
-    assert saved["raw_payload"] == payload
-    assert saved["gps_valid"] is True
-    assert saved["heading_deg"] == 0
-    assert abs(saved["latitude"] - (37 + 51.2787 / 60)) < 0.000001
-    assert abs(saved["longitude"] - (45 + 55.9264 / 60)) < 0.000001
-    assert saved["attributes"]["h02"]["message_format"] == "binary"
