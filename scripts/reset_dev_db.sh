@@ -58,6 +58,19 @@ if [[ "$DB_HOST" != "localhost" && "$DB_HOST" != "127.0.0.1" && "$DB_HOST" != ""
   exit 1
 fi
 
+# Fail early if the dedicated Django GPS connection has not been configured.
+GPS_DB_USER="$("$PYTHON" -c "from decouple import config; print(config('GPS_DB_USER', default='sana_backend'))")"
+GPS_DB_PASSWORD="$("$PYTHON" -c "from decouple import config; print(config('GPS_DB_PASSWORD', default=''))")"
+if [[ "$GPS_DB_USER" != "sana_backend" ]]; then
+  echo "ERROR: GPS_DB_USER must be sana_backend for the dedicated GPS connection." >&2
+  exit 1
+fi
+if [[ -z "$GPS_DB_PASSWORD" ]]; then
+  echo "ERROR: Set GPS_DB_PASSWORD in sana-backend/.env before completing this reset." >&2
+  echo "Use the existing password for the PostgreSQL role sana_backend; do not print it." >&2
+  exit 1
+fi
+
 # Avoid dropping the DB under an actively running GPS service.
 if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet sana-gps.service; then
   echo "ERROR: sana-gps.service is active. Stop it manually before resetting the development database:" >&2
@@ -110,19 +123,6 @@ GRANT CONNECT ON DATABASE sana_db TO sana_backend;
 GRANT USAGE ON SCHEMA gps TO sana_backend;
 GRANT SELECT ON gps.current_state, gps.location_history, gps.event, gps.trip TO sana_backend;
 SQL
-
-# Fail early if the dedicated Django GPS connection has not been configured.
-GPS_DB_USER="$("$PYTHON" -c "from decouple import config; print(config('GPS_DB_USER', default='sana_backend'))")"
-GPS_DB_PASSWORD="$("$PYTHON" -c "from decouple import config; print(config('GPS_DB_PASSWORD', default=''))")"
-if [[ "$GPS_DB_USER" != "sana_backend" ]]; then
-  echo "ERROR: GPS_DB_USER must be sana_backend for the dedicated GPS connection." >&2
-  exit 1
-fi
-if [[ -z "$GPS_DB_PASSWORD" ]]; then
-  echo "ERROR: Set GPS_DB_PASSWORD in sana-backend/.env before completing this reset." >&2
-  echo "Use the existing password for the PostgreSQL role sana_backend; do not print it." >&2
-  exit 1
-fi
 
 echo "[7/7] Validate Django configuration and optionally create a superuser..."
 "$PYTHON" manage.py check
