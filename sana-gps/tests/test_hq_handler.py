@@ -107,11 +107,10 @@ async def test_h02_binary_position_frame_is_decoded_and_retained():
         + bytes.fromhex("112254101026")
         + bytes.fromhex("37512787")
         + b"\x03"
-        + bytes.fromhex("0455592640")
-        + b"\x0e"
-        + bytes.fromhex("0000")
+        + bytes.fromhex("045559264e")
         + bytes.fromhex("000000")
         + bytes.fromhex("ffffffff")
+        + bytes.fromhex("000000")
     )
     assert len(payload) == 32
 
@@ -121,6 +120,7 @@ async def test_h02_binary_position_frame_is_decoded_and_retained():
     saved = telemetry.save.call_args.kwargs
     assert saved["raw_payload"] == payload
     assert saved["gps_valid"] is True
+    assert saved["heading_deg"] == 0
     assert abs(saved["latitude"] - (37 + 51.2787 / 60)) < 0.000001
     assert abs(saved["longitude"] - (45 + 55.9264 / 60)) < 0.000001
     assert saved["attributes"]["h02"]["message_format"] == "binary"
