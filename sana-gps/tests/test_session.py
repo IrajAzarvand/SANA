@@ -4,7 +4,9 @@ from uuid import UUID
 
 import pytest
 
-from app.protocols.types import ProtocolId\n\nfrom app.transport.session import (
+from app.protocols.types import ProtocolId
+
+from app.transport.session import (
     SessionManager,
     SessionState,
     SessionStateError,
