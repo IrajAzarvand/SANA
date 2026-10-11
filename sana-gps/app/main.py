@@ -37,6 +37,7 @@ async def run(
     gt06_handler = GT06Handler(
         device_repository,
         GT06PositionRepository(database_pool),
+        telemetry_repository,
     )
     hq_handler = HQHandler(device_repository, telemetry_repository)
     capture = RawCapture(config.capture_file) if config.capture_file else None

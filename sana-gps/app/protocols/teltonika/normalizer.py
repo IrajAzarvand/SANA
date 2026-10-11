@@ -8,7 +8,7 @@ from app.protocols.teltonika.decoder import TeltonikaAVLRecord
 
 
 class TeltonikaNormalizer:
-    """Normalize Codec 8 fields without guessing device-specific IO meanings."""
+    """Normalize supported Teltonika AVL records without guessing device-specific IO meanings."""
 
     def normalize(
         self,
@@ -34,12 +34,13 @@ class TeltonikaNormalizer:
         altitude = record.altitude_m if -20_000 <= record.altitude_m <= 100_000 else None
         satellites = record.satellites if 0 <= record.satellites <= 255 else None
 
-        # IO IDs are preserved verbatim until a configured profile maps them to
-        # standard SANA fields. We deliberately do not infer ignition/fuel IDs.
+        # Preserve all IO IDs and values until a model-specific profile maps them
+        # to standard SANA fields. Never guess ignition/fuel meanings.
         attributes = {
             "teltonika": {
-                "codec": 8,
+                "codec": record.codec_id,
                 "priority": record.priority,
+                "generation_type": record.generation_type,
                 "event_io_id": record.event_io_id,
                 "io": {str(io_id): value for io_id, value in record.io_elements.items()},
             }
