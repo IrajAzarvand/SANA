@@ -12,7 +12,7 @@ from app.protocols.gt06 import (
 from app.protocols.types import ProtocolId, ProtocolResponse
 from app.repositories.device import DeviceRepository
 from app.repositories.gt06_position import GT06PositionRepository
-from app.transport.session import Session, SessionState
+from app.transport.session import Session, SessionManager, SessionState
 
 
 class GT06Handler:
@@ -29,10 +29,12 @@ class GT06Handler:
         position_repository: GT06PositionRepository,
         *,
         max_buffer_size: int = 8192,
+        session_manager: SessionManager | None = None,
     ) -> None:
         self._device_repository = device_repository
         self._position_repository = position_repository
         self._max_buffer_size = max_buffer_size
+        self._session_manager = session_manager
         self._framers: dict[UUID, tuple[Session, GT06Framer]] = {}
 
     async def handle(self, session: Session, data: bytes) -> ProtocolResponse | None:
@@ -68,11 +70,19 @@ class GT06Handler:
                     continue
                 # Protocol configuration is business-owned. Never write the
                 # auto-detected protocol back to the canonical Device row.
-                session.bind_device(
-                    device_id=device.id,
-                    imei=device.imei,
-                    protocol=ProtocolId.GT06,
-                )
+                if self._session_manager is None:
+                    session.bind_device(
+                        device_id=device.id,
+                        imei=device.imei,
+                        protocol=ProtocolId.GT06,
+                    )
+                else:
+                    self._session_manager.bind_device(
+                        session,
+                        device_id=device.id,
+                        imei=device.imei,
+                        protocol=ProtocolId.GT06,
+                    )
                 outgoing.extend(build_ack(frame.protocol, frame.serial))
                 continue
 
