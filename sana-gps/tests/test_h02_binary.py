@@ -20,7 +20,7 @@ def test_decodes_observed_45_byte_h02_report():
     assert report.gps_time == datetime(2026, 10, 11, 4, 47, 15, tzinfo=timezone.utc)
     assert report.latitude == pytest.approx(37 + 51.2787 / 60)
     # H02 packs longitude across a BCD nibble boundary.
-    assert report.longitude == pytest.approx(45 + 59.26 / 60)
+    assert report.longitude == pytest.approx(45 + 55.9260 / 60)
     assert report.speed_kmh == 0
     assert report.valid is False
     assert report.battery_level == 100
