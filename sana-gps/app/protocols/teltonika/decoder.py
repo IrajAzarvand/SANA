@@ -117,10 +117,13 @@ class TeltonikaAVLDecoder:
         speed_kmh = int.from_bytes(data[cursor + 13:cursor + 15], "big")
         cursor += 15
 
+        generation_type = None
         if codec_id == self.CODEC_8:
             event_io_id, io_elements, cursor = self._decode_codec8_io(data, cursor)
-        else:
+        elif codec_id == self.CODEC_8_EXTENDED:
             event_io_id, io_elements, cursor = self._decode_codec8e_io(data, cursor)
+        else:
+            event_io_id, io_elements, generation_type, cursor = self._decode_codec16_io(data, cursor)
 
         try:
             device_time = datetime.fromtimestamp(timestamp_ms / 1000, tz=timezone.utc)
