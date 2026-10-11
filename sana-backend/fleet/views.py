@@ -1,7 +1,8 @@
 from django.utils import timezone
-from django.db.models import Exists, OuterRef, Prefetch, Q, DateTimeField
-from django.db.models.expressions import RawSQL
+from django.db import connections
+from django.db.models import Exists, OuterRef, Prefetch, Q
 from rest_framework import viewsets, filters
+from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
 from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation, DeviceCustomerAccessPeriod, DriverVehicleAssignment
@@ -78,6 +79,39 @@ class VehicleViewSet(viewsets.ModelViewSet):
 
         return qs
 
+    def list(self, request, *args, **kwargs):
+        """List devices from the business DB and enrich the page using the GPS read-only DB role."""
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        devices = list(page if page is not None else queryset)
+
+        # Default to null for devices that have not sent GPS data yet.
+        for device in devices:
+            device.last_data_received_at = None
+
+        device_ids = [device.pk for device in devices]
+        if device_ids:
+            # This query runs only through the dedicated sana_backend connection,
+            # never through the primary Django business-data connection.
+            with connections['gps_read'].cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT device_id, last_seen
+                    FROM gps.current_state
+                    WHERE device_id = ANY(%s)
+                    """,
+                    [device_ids],
+                )
+                timestamps = dict(cursor.fetchall())
+
+            for device in devices:
+                device.last_data_received_at = timestamps.get(device.pk)
+
+        serializer = self.get_serializer(devices, many=True)
+        if page is not None:
+            return self.get_paginated_response(serializer.data)
+        return Response(serializer.data)
+
     def get_permissions(self):
         if self.action in ['create', 'destroy']:
             return [IsSiteAdmin()]
@@ -123,23 +157,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 to_attr='_replacement_relations_as_replacement',
             ),
         )
-
-        # The GPS service updates current_state.last_seen for every received packet.
-        # Read that canonical timestamp instead of the legacy Django telemetry tables.
-        if self.action == 'list':
-            qs = qs.annotate(
-                last_data_received_at=RawSQL(
-                    """
-                    (
-                        SELECT state.last_seen
-                        FROM gps.current_state AS state
-                        WHERE state.device_id = fleet_device.id
-                    )
-                    """,
-                    (),
-                    output_field=DateTimeField(),
-                )
-            )
 
         if user.is_site_admin:
             pass
