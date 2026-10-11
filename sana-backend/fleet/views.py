@@ -1,10 +1,10 @@
 from django.utils import timezone
-from django.db.models import Exists, OuterRef, Prefetch, Q, Subquery, DateTimeField
-from django.db.models.functions import Greatest
+from django.db.models import Exists, OuterRef, Prefetch, Q, DateTimeField
+from django.db.models.expressions import RawSQL
 from rest_framework import viewsets, filters
 from rest_framework.permissions import IsAuthenticated
 
-from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation, DeviceCustomerAccessPeriod, DriverVehicleAssignment, GPSTelemetry, GT06Position
+from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation, DeviceCustomerAccessPeriod, DriverVehicleAssignment
 from .serializers import (
     VehicleTypeSerializer,
     VehicleSerializer,
@@ -124,28 +124,19 @@ class DeviceViewSet(viewsets.ModelViewSet):
             ),
         )
 
-        # One lightweight latest-received timestamp per telemetry source lets the
-        # device list reflect GPS traffic without exposing GPS runtime to clients.
+        # The GPS service updates current_state.last_seen for every received packet.
+        # Read that canonical timestamp instead of the legacy Django telemetry tables.
         if self.action == 'list':
-            latest_telemetry = GPSTelemetry.objects.filter(
-                device_id=OuterRef('pk')
-            ).order_by('-received_at', '-id')
-            latest_gt06 = GT06Position.objects.filter(
-                device_id=OuterRef('pk')
-            ).order_by('-received_at', '-id')
             qs = qs.annotate(
-                _latest_telemetry_received_at=Subquery(
-                    latest_telemetry.values('received_at')[:1],
-                    output_field=DateTimeField(),
-                ),
-                _latest_gt06_received_at=Subquery(
-                    latest_gt06.values('received_at')[:1],
-                    output_field=DateTimeField(),
-                ),
-            ).annotate(
-                last_data_received_at=Greatest(
-                    '_latest_telemetry_received_at',
-                    '_latest_gt06_received_at',
+                last_data_received_at=RawSQL(
+                    """
+                    (
+                        SELECT state.last_seen
+                        FROM gps.current_state AS state
+                        WHERE state.device_id = fleet_device.id
+                    )
+                    """,
+                    (),
                     output_field=DateTimeField(),
                 )
             )
