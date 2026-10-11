@@ -156,5 +156,5 @@ def test_teltonika_non_avl_messages_are_interpreted_and_preserved(
 ) -> None:
     message = TeltonikaAVLDecoder().decode(_teltonika_serial_frame(codec, record_payload))
     assert message.records == ()
-    assert message.message_type == "command_or_text"
+    assert message.message_type == ("codec12_command" if codec == 0x0C else "codec13_text")
     assert message.message_details["records"][0]["payload_text"] == expected_text
