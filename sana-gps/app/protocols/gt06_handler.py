@@ -194,6 +194,32 @@ class GT06Handler:
             }
         }
         position = None
+        information = frame.information
+
+        if frame.protocol == self.HEARTBEAT and information:
+            status = information[0]
+            attributes["gt06"]["status_byte"] = status
+            attributes["gt06"]["status_bits"] = {
+                "armed": bool(status & 0x01),
+                "ignition": bool(status & 0x02),
+                "charging": bool(status & 0x04),
+                "alarm_or_blocked": bool(status & 0x80),
+            }
+            if len(information) >= 3:
+                attributes["gt06"]["battery_raw"] = int.from_bytes(information[1:3], "big")
+                attributes["gt06"]["battery_voltage_v"] = int.from_bytes(information[1:3], "big") / 100.0
+            if len(information) >= 4:
+                attributes["gt06"]["gsm_signal_raw"] = information[3]
+            if len(information) > 4:
+                attributes["gt06"]["status_extension_hex"] = information[4:].hex()
+
+        if frame.protocol in {0x15, 0x21, 0x80, 0x81, 0x82, 0x9B}:
+            try:
+                text = information.decode("ascii").strip("\x00\r\n ")
+                if text and all(character.isprintable() for character in text):
+                    attributes["gt06"]["text_payload"] = text
+            except UnicodeDecodeError:
+                attributes["gt06"]["text_payload_decode_error"] = True
 
         # The classic GT06 GPS element starts with YY MM DD hh mm ss, then
         # satellite/coordinate/speed/course fields. Other variants are retained
