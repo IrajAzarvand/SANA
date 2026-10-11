@@ -220,3 +220,49 @@ async def test_udp_listener_rejects_new_sessions_over_limit():
             client_b.close()
     finally:
         await listener.stop()
+
+
+@pytest.mark.asyncio
+async def test_udp_listener_processes_datagrams_in_order_per_endpoint():
+    manager = SessionManager()
+    entered: list[bytes] = []
+    first_started = asyncio.Event()
+    release_first = asyncio.Event()
+    second_finished = asyncio.Event()
+
+    async def on_datagram(session, data: bytes) -> None:
+        entered.append(data)
+        if data == b"first":
+            first_started.set()
+            await release_first.wait()
+        elif data == b"second":
+            second_finished.set()
+
+    listener = UDPListener("127.0.0.1", 0, manager, on_datagram)
+    await listener.start()
+
+    try:
+        assert listener._transport is not None
+        address = listener._transport.get_extra_info("sockname")
+        client, _ = await asyncio.get_running_loop().create_datagram_endpoint(
+            asyncio.DatagramProtocol,
+            remote_addr=address,
+        )
+        try:
+            client.sendto(b"first")
+            client.sendto(b"second")
+            await asyncio.wait_for(first_started.wait(), timeout=1.0)
+            await asyncio.sleep(0.02)
+
+            # The second handler must wait for the first datagram from the
+            # same endpoint, but other endpoints use independent locks.
+            assert entered == [b"first"]
+
+            release_first.set()
+            await asyncio.wait_for(second_finished.wait(), timeout=1.0)
+            assert entered == [b"first", b"second"]
+        finally:
+            release_first.set()
+            client.close()
+    finally:
+        await listener.stop()

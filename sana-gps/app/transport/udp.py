@@ -37,6 +37,7 @@ class UDPListener:
         self._protocol: _UDPProtocol | None = None
         self._handler_tasks: set[asyncio.Task[None]] = set()
         self._sessions_by_endpoint: dict[Address, Session] = {}
+        self._endpoint_locks: dict[Address, asyncio.Lock] = {}
         self._cleanup_task: asyncio.Task[None] | None = None
 
     async def start(self) -> None:
@@ -80,6 +81,7 @@ class UDPListener:
             session.close()
 
         self._sessions_by_endpoint.clear()
+        self._endpoint_locks.clear()
         self._session_manager.clear_closed()
 
     async def _cleanup_loop(self) -> None:
@@ -104,6 +106,9 @@ class UDPListener:
             session = self._sessions_by_endpoint.pop(endpoint)
             session.close()
             self._session_manager.remove(session.id)
+            lock = self._endpoint_locks.get(endpoint)
+            if lock is not None and not lock.locked():
+                self._endpoint_locks.pop(endpoint, None)
 
     async def _handle_datagram(
         self,
@@ -116,6 +121,19 @@ class UDPListener:
         if len(data) > self._max_datagram_size:
             return
 
+        # Datagram callbacks create tasks independently. A per-endpoint lock
+        # preserves arrival order for one sender while unrelated senders can
+        # continue processing concurrently.
+        lock = self._endpoint_locks.setdefault(address, asyncio.Lock())
+        async with lock:
+            await self._process_datagram(data, address)
+
+        if address not in self._sessions_by_endpoint:
+            current_lock = self._endpoint_locks.get(address)
+            if current_lock is lock and not lock.locked():
+                self._endpoint_locks.pop(address, None)
+
+    async def _process_datagram(self, data: bytes, address: Address) -> None:
         session = self._sessions_by_endpoint.get(address)
         if session is None or session.state is SessionState.CLOSED:
             if len(self._sessions_by_endpoint) >= self._max_sessions:
@@ -131,6 +149,15 @@ class UDPListener:
 
         session.activity()
         response = await self._on_datagram(session, data)
+
+        # A different endpoint may have established a newer session for the
+        # same registered device while an async handler was in progress.
+        if (
+            session.device_id is not None
+            and not self._session_manager.is_current(session)
+        ):
+            return
+
         if response is not None and self._transport is not None:
             self._transport.sendto(response.data, address)
 

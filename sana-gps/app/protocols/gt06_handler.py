@@ -39,6 +39,8 @@ class GT06Handler:
 
     async def handle(self, session: Session, data: bytes) -> ProtocolResponse | None:
         self._cleanup_closed_sessions()
+        if not self._is_current_session(session):
+            return None
         entry = self._framers.get(session.id)
         if entry is None:
             framer = GT06Framer(self._max_buffer_size)
@@ -54,6 +56,9 @@ class GT06Handler:
 
         outgoing = bytearray()
         for frame in frames:
+            if not self._is_current_session(session):
+                break
+
             if frame.protocol == self.LOGIN:
                 if session.device_id is not None:
                     continue
@@ -94,6 +99,8 @@ class GT06Handler:
                     position = decode_position(frame.information)
                 except GT06FrameError:
                     continue
+                if not self._is_current_session(session):
+                    continue
                 self._position_repository.save(
                     device_id=session.device_id,
                     position=position,
@@ -101,9 +108,15 @@ class GT06Handler:
                 )
                 outgoing.extend(build_ack(frame.protocol, frame.serial))
             elif frame.protocol in (self.HEARTBEAT, self.ALARM):
-                outgoing.extend(build_ack(frame.protocol, frame.serial))
+                if self._is_current_session(session):
+                    outgoing.extend(build_ack(frame.protocol, frame.serial))
 
         return ProtocolResponse(bytes(outgoing)) if outgoing else None
+
+    def _is_current_session(self, session: Session) -> bool:
+        if self._session_manager is None or session.device_id is None:
+            return True
+        return self._session_manager.is_current(session)
 
     def _cleanup_closed_sessions(self) -> None:
         closed_ids = [

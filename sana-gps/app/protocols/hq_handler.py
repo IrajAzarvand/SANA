@@ -35,6 +35,8 @@ class HQHandler:
 
     async def handle(self, session: Session, data: bytes) -> ProtocolResponse | None:
         self._cleanup_closed_sessions()
+        if not self._is_current_session(session):
+            return None
         entry = self._buffers.get(session.id)
         if entry is None:
             buffer = bytearray()
@@ -121,6 +123,8 @@ class HQHandler:
             logger.info("H02 binary report has no valid GPS fix: imei=%s", report.imei)
             return
 
+        if not self._is_current_session(session):
+            return
         self._telemetry.save(
             device_id=device.id,
             protocol=ProtocolId.HQ.value,
@@ -158,6 +162,8 @@ class HQHandler:
             return
         if not (-90 <= latitude <= 90 and -180 <= longitude <= 180 and speed >= 0):
             return
+        if not self._is_current_session(session):
+            return
         self._telemetry.save(
             device_id=device.id,
             protocol=ProtocolId.HQ.value,
@@ -183,6 +189,11 @@ class HQHandler:
         if hemisphere in {"S", "W"}:
             result = -result
         return result
+
+    def _is_current_session(self, session: Session) -> bool:
+        if self._session_manager is None or session.device_id is None:
+            return True
+        return self._session_manager.is_current(session)
 
     def _cleanup_closed_sessions(self) -> None:
         for session_id, (session, _) in tuple(self._buffers.items()):
