@@ -232,7 +232,7 @@ class HQHandler:
             "raw_hex": raw.hex(),
         }
         gps_time = received_at
-        latitude = longitude = speed = None
+        latitude = longitude = speed = course = None
         gps_valid = False
 
         try:
