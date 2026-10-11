@@ -203,7 +203,6 @@ class GT06Handler:
                 "armed": bool(status & 0x01),
                 "ignition": bool(status & 0x02),
                 "charging": bool(status & 0x04),
-                "alarm_or_blocked": bool(status & 0x80),
             }
             if len(information) >= 3:
                 attributes["gt06"]["battery_raw"] = int.from_bytes(information[1:3], "big")
