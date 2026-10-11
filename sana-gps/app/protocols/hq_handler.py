@@ -136,7 +136,11 @@ class HQHandler:
 
         # Common position layout:
         # *HQ,id,version,HHMMSS,A/V,lat,N/S,lon,E/W,speed,course,DDMMYY,status,...
-        if len(fields) > 11:
+        if (
+            len(fields) > 11
+            and fields[6].strip().upper() in {"N", "S"}
+            and fields[8].strip().upper() in {"E", "W"}
+        ):
             parsed.update({
                 "version": fields[2],
                 "device_time_text": fields[3],
