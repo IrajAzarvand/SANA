@@ -79,39 +79,6 @@ class VehicleViewSet(viewsets.ModelViewSet):
 
         return qs
 
-    def list(self, request, *args, **kwargs):
-        """List devices from the business DB and enrich the page using the GPS read-only DB role."""
-        queryset = self.filter_queryset(self.get_queryset())
-        page = self.paginate_queryset(queryset)
-        devices = list(page if page is not None else queryset)
-
-        # Default to null for devices that have not sent GPS data yet.
-        for device in devices:
-            device.last_data_received_at = None
-
-        device_ids = [device.pk for device in devices]
-        if device_ids:
-            # This query runs only through the dedicated sana_backend connection,
-            # never through the primary Django business-data connection.
-            with connections['gps_read'].cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT device_id, last_seen
-                    FROM gps.current_state
-                    WHERE device_id = ANY(%s)
-                    """,
-                    [device_ids],
-                )
-                timestamps = dict(cursor.fetchall())
-
-            for device in devices:
-                device.last_data_received_at = timestamps.get(device.pk)
-
-        serializer = self.get_serializer(devices, many=True)
-        if page is not None:
-            return self.get_paginated_response(serializer.data)
-        return Response(serializer.data)
-
     def get_permissions(self):
         if self.action in ['create', 'destroy']:
             return [IsSiteAdmin()]
@@ -213,6 +180,39 @@ class DeviceViewSet(viewsets.ModelViewSet):
             ).distinct()
 
         return qs
+
+    def list(self, request, *args, **kwargs):
+        """List devices from the business DB and enrich the page using the GPS read-only DB role."""
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        devices = list(page if page is not None else queryset)
+
+        # Default to null for devices that have not sent GPS data yet.
+        for device in devices:
+            device.last_data_received_at = None
+
+        device_ids = [device.pk for device in devices]
+        if device_ids:
+            # This query runs only through the dedicated sana_backend connection,
+            # never through the primary Django business-data connection.
+            with connections['gps_read'].cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT device_id, last_seen
+                    FROM gps.current_state
+                    WHERE device_id = ANY(%s)
+                    """,
+                    [device_ids],
+                )
+                timestamps = dict(cursor.fetchall())
+
+            for device in devices:
+                device.last_data_received_at = timestamps.get(device.pk)
+
+        serializer = self.get_serializer(devices, many=True)
+        if page is not None:
+            return self.get_paginated_response(serializer.data)
+        return Response(serializer.data)
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
