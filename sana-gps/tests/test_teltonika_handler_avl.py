@@ -32,11 +32,6 @@ class FakeTelemetryRepository:
         self.fail = fail
         self.saved = []
 
-    def save(self, **kwargs) -> None:
-        # Identification persistence is outside the scope of these AVL tests.
-        # The failure flag specifically simulates a failed AVL batch write.
-        return None
-
     def save_batch(self, records, *, protocol: str, raw_payload: bytes) -> int:
         if self.fail:
             raise RuntimeError("database unavailable")
