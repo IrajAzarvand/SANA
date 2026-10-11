@@ -4,7 +4,7 @@ from uuid import UUID
 
 import pytest
 
-from app.transport.session import (
+from app.protocols.types import ProtocolId\n\nfrom app.transport.session import (
     SessionManager,
     SessionState,
     SessionStateError,
@@ -181,3 +181,87 @@ def test_tcp_and_udp_sessions_have_unique_ids():
     )
 
     assert tcp_session.id != udp_session.id
+
+
+
+def test_device_binding_assigns_connection_and_generation():
+    manager = SessionManager()
+    session = manager.create(
+        transport=TransportType.TCP,
+        remote_address=("127.0.0.1", 5000),
+    )
+    session.connect()
+    session.activate()
+
+    manager.bind_device(
+        session,
+        device_id=42,
+        imei="352094082143253",
+        protocol=ProtocolId.TELTONIKA,
+    )
+
+    assert session.connection_id is not None
+    assert session.generation == 1
+    assert manager.get_active_for_device(42) is session
+    assert manager.is_current(session)
+
+
+def test_new_device_session_fences_previous_session_and_increments_generation():
+    from app.protocols.types import ProtocolId
+
+    manager = SessionManager()
+    old = manager.create(
+        transport=TransportType.TCP,
+        remote_address=("127.0.0.1", 5000),
+    )
+    old.connect()
+    old.activate()
+    manager.bind_device(
+        old,
+        device_id=42,
+        imei="352094082143253",
+        protocol=ProtocolId.TELTONIKA,
+    )
+
+    new = manager.create(
+        transport=TransportType.TCP,
+        remote_address=("127.0.0.1", 5001),
+    )
+    new.connect()
+    new.activate()
+    manager.bind_device(
+        new,
+        device_id=42,
+        imei="352094082143253",
+        protocol=ProtocolId.TELTONIKA,
+    )
+
+    assert old.state == SessionState.CLOSED
+    assert new.state == SessionState.ACTIVE
+    assert new.generation == 2
+    assert manager.get_active_for_device(42) is new
+    assert not manager.is_current(old)
+    assert manager.is_current(new)
+
+
+def test_different_devices_have_independent_session_generations():
+    from app.protocols.types import ProtocolId
+
+    manager = SessionManager()
+    sessions = []
+    for port, device_id in ((5000, 42), (5001, 43)):
+        session = manager.create(
+            transport=TransportType.TCP,
+            remote_address=("127.0.0.1", port),
+        )
+        session.connect()
+        session.activate()
+        manager.bind_device(
+            session,
+            device_id=device_id,
+            imei=f"{device_id:015d}",
+            protocol=ProtocolId.TELTONIKA,
+        )
+        sessions.append(session)
+
+    assert [session.generation for session in sessions] == [1, 1]
