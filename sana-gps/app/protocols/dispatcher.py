@@ -22,7 +22,7 @@ class _DispatchState:
 
 
 class ProtocolDispatcher:
-    """Detect a protocol from buffered bytes, then pin it for the TCP session."""
+    """Detect a protocol from incoming bytes, then pin it for the runtime session."""
 
     _SIGNATURES = {
         b"\x78\x78": ProtocolId.GT06,
