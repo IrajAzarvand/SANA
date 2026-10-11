@@ -174,3 +174,63 @@ async def test_tcp_listener_rejects_connections_over_limit():
         await writer_a.wait_closed()
         await writer_b.wait_closed()
         await listener.stop()
+
+
+@pytest.mark.asyncio
+async def test_tcp_listener_does_not_dispatch_data_from_fenced_session():
+    from app.protocols.types import ProtocolId
+
+    manager = SessionManager()
+    received: list[tuple[object, bytes]] = []
+    identified: asyncio.Queue[object] = asyncio.Queue()
+
+    async def on_data(session, data):
+        received.append((session, data))
+        if data == b"identify":
+            manager.bind_device(
+                session,
+                device_id=77,
+                imei="352094082143253",
+                protocol=ProtocolId.TELTONIKA,
+            )
+            await identified.put(session)
+        return None
+
+    listener = TCPListener("127.0.0.1", 0, manager, on_data)
+    await listener.start()
+    assert listener._server is not None
+    port = listener._server.sockets[0].getsockname()[1]
+
+    old_writer = None
+    new_writer = None
+    try:
+        _, old_writer = await asyncio.open_connection("127.0.0.1", port)
+        old_writer.write(b"identify")
+        await old_writer.drain()
+        old_session = await asyncio.wait_for(identified.get(), timeout=1.0)
+
+        _, new_writer = await asyncio.open_connection("127.0.0.1", port)
+        new_writer.write(b"identify")
+        await new_writer.drain()
+        new_session = await asyncio.wait_for(identified.get(), timeout=1.0)
+
+        assert old_session.state == SessionState.CLOSED
+        assert manager.get_active_for_device(77) is new_session
+
+        old_writer.write(b"must-not-be-dispatched")
+        await old_writer.drain()
+        await asyncio.sleep(0.05)
+
+        assert not any(
+            payload == b"must-not-be-dispatched"
+            for _, payload in received
+        )
+        assert manager.get_active_for_device(77) is new_session
+    finally:
+        if old_writer is not None:
+            old_writer.close()
+            await old_writer.wait_closed()
+        if new_writer is not None:
+            new_writer.close()
+            await new_writer.wait_closed()
+        await listener.stop()
