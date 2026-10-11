@@ -240,7 +240,11 @@ class HQHandler:
             day, month, year = int(time_digits[6:8]), int(time_digits[8:10]), int(time_digits[10:12])
             gps_time = datetime(2000 + year, month, day, hour, minute, second, tzinfo=timezone.utc)
             latitude_digits = self._bcd_digits(raw[base + 6:base + 10])
-            longitude_digits = self._bcd_digits(raw[base + 11:base + 16])
+            longitude_prefix = self._bcd_digits(raw[base + 11:base + 15])
+            final_longitude_digit = raw[base + 15] >> 4
+            if final_longitude_digit > 9:
+                raise ValueError("Invalid BCD longitude digit")
+            longitude_digits = longitude_prefix + str(final_longitude_digit)
             latitude = self._degrees_minutes(latitude_digits[:2], latitude_digits[2:8])
             longitude = self._degrees_minutes(longitude_digits[:3], longitude_digits[3:9])
             # The final longitude BCD nibble shares a byte with the H02 status flags.
