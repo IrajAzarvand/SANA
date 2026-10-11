@@ -42,6 +42,8 @@ class TeltonikaHandler:
         data: bytes,
     ) -> ProtocolResponse | None:
         self._cleanup_closed_sessions()
+        if not self._is_current_session(session):
+            return None
 
         entry = self._framers.get(session.id)
         if entry is None:
@@ -81,6 +83,9 @@ class TeltonikaHandler:
                     exc,
                 )
                 outgoing.extend(b"\x00\x00\x00\x00")
+                continue
+
+            if not self._is_current_session(session):
                 continue
 
             if self._telemetry_repository is None:
@@ -150,6 +155,11 @@ class TeltonikaHandler:
                 protocol=ProtocolId.TELTONIKA,
             )
         return ProtocolResponse(b"\x01")
+
+    def _is_current_session(self, session: Session) -> bool:
+        if self._session_manager is None or session.device_id is None:
+            return True
+        return self._session_manager.is_current(session)
 
     def _forget(self, session: Session) -> None:
         self._framers.pop(session.id, None)
