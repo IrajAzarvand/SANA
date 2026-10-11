@@ -38,10 +38,10 @@ class TeltonikaProtocolMessage:
 
 
 class TeltonikaAVLDecoder:
-    """Decode Teltonika AVL Codec 8 and Codec 8 Extended frames.
+    """Decode Teltonika Codec 8, Codec 8 Extended, Codec 16, Codec 12 and Codec 13.
 
     Fixed-width IO values are integers. Codec 8 Extended variable-length IO
-    values are preserved as hex-prefixed strings, without numeric assumptions.
+    values and non-AVL payloads are preserved without numeric assumptions.
     """
 
     CODEC_8 = 0x08
