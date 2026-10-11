@@ -67,8 +67,7 @@ class HQHandler:
         known_protocol = (device.protocol or "").strip().lower()
         if known_protocol and known_protocol != ProtocolId.HQ.value:
             return
-        if not known_protocol:
-            self._devices.set_detected_protocol(device.id, ProtocolId.HQ.value)
+        # Protocol configuration is business-owned; this runtime is read-only.
 
         if session.device_id is None:
             session.bind_device(device_id=device.id, imei=device.imei, protocol=ProtocolId.HQ)

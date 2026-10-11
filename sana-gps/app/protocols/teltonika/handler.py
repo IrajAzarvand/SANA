@@ -132,12 +132,8 @@ class TeltonikaHandler:
         if known_protocol and known_protocol != ProtocolId.TELTONIKA.value:
             return ProtocolResponse(b"\x00")
 
-        if not known_protocol:
-            self._device_repository.set_detected_protocol(
-                device.id,
-                ProtocolId.TELTONIKA.value,
-            )
-
+        # Device/DeviceModel protocol configuration is business-owned. The GPS
+        # runtime must never persist an auto-detected protocol into fleet_device.
         session.bind_device(
             device_id=device.id,
             imei=device.imei,

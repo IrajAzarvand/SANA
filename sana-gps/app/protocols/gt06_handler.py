@@ -66,10 +66,8 @@ class GT06Handler:
                 known_protocol = (device.protocol or "").strip().lower()
                 if known_protocol and known_protocol != ProtocolId.GT06.value:
                     continue
-                if not known_protocol:
-                    self._device_repository.set_detected_protocol(
-                        device.id, ProtocolId.GT06.value
-                    )
+                # Protocol configuration is business-owned. Never write the
+                # auto-detected protocol back to the canonical Device row.
                 session.bind_device(
                     device_id=device.id,
                     imei=device.imei,
