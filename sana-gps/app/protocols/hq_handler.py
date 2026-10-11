@@ -243,14 +243,20 @@ class HQHandler:
             longitude_digits = self._bcd_digits(raw[base + 11:base + 16])
             latitude = self._degrees_minutes(latitude_digits[:2], latitude_digits[2:8])
             longitude = self._degrees_minutes(longitude_digits[:3], longitude_digits[3:9])
-            flags = raw[base + 16]
+            # The final longitude BCD nibble shares a byte with the H02 status flags.
+            flags = raw[base + 15] & 0x0F
             if not flags & 0x04:
                 latitude = -latitude
             if not flags & 0x08:
                 longitude = -longitude
             gps_valid = bool(flags & 0x02)
-            speed_digits = self._bcd_digits(raw[base + 17:base + 19])
-            speed = float(int(speed_digits[:3]))
+            speed_first = raw[base + 16]
+            speed_course_shared = raw[base + 17]
+            if (speed_first >> 4) > 9 or (speed_first & 0x0F) > 9 or (speed_course_shared >> 4) > 9:
+                raise ValueError("Invalid BCD speed")
+            speed_digits = f"{speed_first >> 4}{speed_first & 0x0F}{speed_course_shared >> 4}"
+            speed = float(int(speed_digits))
+            course = (speed_course_shared & 0x0F) * 100 + int(self._bcd_digits(raw[base + 18:base + 19]))
             parsed.update({
                 "device_time": gps_time.isoformat(),
                 "latitude_bcd": latitude_digits,
@@ -258,12 +264,13 @@ class HQHandler:
                 "gps_flags": flags,
                 "battery_raw": raw[base + 10],
                 "speed_bcd": speed_digits,
-                "course_raw_hex": raw[base + 19:base + 22].hex(),
-                "status_raw_hex": raw[base + 22:base + 26].hex(),
+                "course": course,
+                "course_raw_hex": raw[base + 17:base + 19].hex(),
+                "status_raw_hex": raw[base + 19:base + 23].hex(),
                 "gps_valid": gps_valid,
             })
-            if len(raw) > base + 26:
-                parsed["extension_hex"] = raw[base + 26:].hex()
+            if len(raw) > base + 23:
+                parsed["extension_hex"] = raw[base + 23:].hex()
         except (IndexError, ValueError):
             parsed["decode_error"] = "invalid_or_truncated_bcd_fields"
 
@@ -274,6 +281,7 @@ class HQHandler:
             latitude=latitude,
             longitude=longitude,
             speed_kmh=speed,
+            heading_deg=int(course) if course is not None and 0 <= course <= 360 else None,
             raw_payload=raw,
             attributes={"h02": parsed},
             gps_valid=gps_valid,
