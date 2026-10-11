@@ -187,6 +187,29 @@ class TeltonikaHandler:
                 ProtocolId.TELTONIKA.value,
             )
 
+        if self._telemetry_repository is not None:
+            received_at = datetime.now(timezone.utc)
+            try:
+                self._telemetry_repository.save(
+                    device_id=device.id,
+                    protocol=ProtocolId.TELTONIKA.value,
+                    gps_time=received_at,
+                    latitude=None,
+                    longitude=None,
+                    speed_kmh=None,
+                    raw_payload=frame.data,
+                    attributes={"teltonika": {
+                        "message_type": "identification",
+                        "imei": identification.imei,
+                        "raw_hex": frame.data.hex(),
+                    }},
+                    gps_valid=False,
+                    received_at=received_at,
+                )
+            except Exception:
+                logger.exception("Failed to persist Teltonika identification for %s", device.imei)
+                return ProtocolResponse(b"\x00")
+
         session.bind_device(
             device_id=device.id,
             imei=device.imei,
