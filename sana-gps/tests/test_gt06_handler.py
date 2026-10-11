@@ -108,8 +108,8 @@ async def test_unknown_gt06_message_is_retained_as_raw_telemetry_event():
     packet = make_frame(0x94, bytes.fromhex("0102030405"), 2)
     response = await handler.handle(session, packet)
 
-    telemetry.save.assert_called_once()
-    saved = telemetry.save.call_args.kwargs
+    assert telemetry.save.call_count == 2  # login and the following device-information packet
+    saved = telemetry.save.call_args_list[1].kwargs
     assert saved["protocol"] == "gt06"
     assert saved["raw_payload"] == packet
     assert saved["attributes"]["gt06"]["message_type"] == 0x94
