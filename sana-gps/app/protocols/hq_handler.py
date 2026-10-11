@@ -8,7 +8,7 @@ from app.protocols.h02_binary import H02BinaryError, decode_h02_binary
 from app.protocols.types import ProtocolId, ProtocolResponse
 from app.repositories.device import DeviceRepository
 from app.repositories.gps_telemetry import GPSTelemetryRepository
-from app.transport.session import Session, SessionState
+from app.transport.session import Session, SessionManager, SessionState
 
 
 logger = logging.getLogger(__name__)
@@ -25,10 +25,12 @@ class HQHandler:
         telemetry: GPSTelemetryRepository,
         *,
         max_buffer_size: int = 8192,
+        session_manager: SessionManager | None = None,
     ) -> None:
         self._devices = devices
         self._telemetry = telemetry
         self._max_buffer_size = max_buffer_size
+        self._session_manager = session_manager
         self._buffers: dict[UUID, tuple[Session, bytearray]] = {}
 
     async def handle(self, session: Session, data: bytes) -> ProtocolResponse | None:
@@ -78,7 +80,12 @@ class HQHandler:
         if known_protocol and known_protocol != ProtocolId.HQ.value:
             return False
         if session.device_id is None:
-            session.bind_device(device_id=device.id, imei=device.imei, protocol=ProtocolId.HQ)
+            if self._session_manager is None:
+                session.bind_device(device_id=device.id, imei=device.imei, protocol=ProtocolId.HQ)
+            else:
+                self._session_manager.bind_device(
+                    session, device_id=device.id, imei=device.imei, protocol=ProtocolId.HQ
+                )
             return True
         return session.device_id == device.id and session.protocol is ProtocolId.HQ
 
