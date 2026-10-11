@@ -16,7 +16,7 @@ from app.repositories.device import DeviceRepository
 from app.repositories.gt06_position import GT06PositionRepository
 from app.repositories.gps_telemetry import GPSTelemetryRepository
 from app.transport.server import TransportServer
-from app.transport.session import SessionManager, TransportType
+from app.transport.session import SessionManager
 
 
 async def run(
@@ -46,7 +46,7 @@ async def run(
     async def on_gt06_data(session, data: bytes) -> ProtocolResponse | None:
         if gt06_capture is not None:
             gt06_capture.write(
-                transport="tcp",
+                transport=session.transport.value,
                 remote=session.remote_address,
                 data=data,
             )
@@ -68,10 +68,8 @@ async def run(
                 data=data,
             )
 
-        # The legacy UDP listener remains Teltonika-only. TCP uses one
-        # shared port and dispatches each connection by its wire signature.
-        if session.transport is TransportType.UDP:
-            return await teltonika_handler.handle(session, data)
+        # Both transports identify the protocol from the incoming payload
+        # before routing it to the corresponding protocol handler.
         return await dispatcher.handle(session, data)
 
     transport_server = TransportServer(
