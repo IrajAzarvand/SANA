@@ -225,6 +225,7 @@ class HQHandler:
         base = 1 + id_bytes
         parsed: dict[str, object] = {
             "message_format": "binary",
+            "message_type": "binary_position_report" if marker == b"$" else "binary_extension_report",
             "message_marker": marker.decode("ascii", errors="replace"),
             "device_identifier": identifier,
             "frame_length": len(raw),
