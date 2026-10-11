@@ -258,7 +258,8 @@ class HQHandler:
                 "gps_flags": flags,
                 "battery_raw": raw[base + 10],
                 "speed_bcd": speed_digits,
-                "course_status_hex": raw[base + 19:base + 26].hex(),
+                "course_raw_hex": raw[base + 19:base + 22].hex(),
+                "status_raw_hex": raw[base + 22:base + 26].hex(),
                 "gps_valid": gps_valid,
             })
             if len(raw) > base + 26:
