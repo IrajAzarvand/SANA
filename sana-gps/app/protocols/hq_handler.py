@@ -235,6 +235,21 @@ class HQHandler:
         latitude = longitude = speed = course = None
         gps_valid = False
 
+        if marker != b"$":
+            self._telemetry.save(
+                device_id=device.id,
+                protocol=ProtocolId.HQ.value,
+                gps_time=received_at,
+                latitude=None,
+                longitude=None,
+                speed_kmh=None,
+                raw_payload=raw,
+                attributes={"h02": parsed},
+                gps_valid=False,
+                received_at=received_at,
+            )
+            return
+
         try:
             time_digits = self._bcd_digits(raw[base:base + 6])
             hour, minute, second = int(time_digits[0:2]), int(time_digits[2:4]), int(time_digits[4:6])
