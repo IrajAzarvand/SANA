@@ -40,6 +40,7 @@ class TeltonikaNormalizer:
             "teltonika": {
                 "codec": record.codec_id,
                 "priority": record.priority,
+                "generation_type": record.generation_type,
                 "event_io_id": record.event_io_id,
                 "io": {str(io_id): value for io_id, value in record.io_elements.items()},
             }
