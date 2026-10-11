@@ -102,16 +102,27 @@ sudo -u postgres psql -d sana_db -v ON_ERROR_STOP=1 -f /dev/stdin < "$GPS_SQL_DI
 echo "The next command will securely prompt for the existing sana_migrator password."
 psql -h 127.0.0.1 -U sana_migrator -d sana_db -W -v ON_ERROR_STOP=1 -f /dev/stdin < "$GPS_SQL_DIR/0001_gps_schema.sql"
 
-echo "[6/7] Grant Django public-schema data access to sana_backend..."
+echo "[6/7] Enforce the dedicated GPS runtime role's schema access..."
+# sana_backend is used only by Django's separate gps_read connection. Do not
+# grant it broad access to SANA business tables in the public schema.
 sudo -u postgres psql -d sana_db -v ON_ERROR_STOP=1 <<'SQL'
-GRANT USAGE ON SCHEMA public TO sana_backend;
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO sana_backend;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO sana_backend;
-ALTER DEFAULT PRIVILEGES FOR ROLE sana_user IN SCHEMA public
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO sana_backend;
-ALTER DEFAULT PRIVILEGES FOR ROLE sana_user IN SCHEMA public
-  GRANT USAGE, SELECT ON SEQUENCES TO sana_backend;
+GRANT CONNECT ON DATABASE sana_db TO sana_backend;
+GRANT USAGE ON SCHEMA gps TO sana_backend;
+GRANT SELECT ON gps.current_state, gps.location_history, gps.event, gps.trip TO sana_backend;
 SQL
+
+# Fail early if the dedicated Django GPS connection has not been configured.
+GPS_DB_USER="$("$PYTHON" -c "from decouple import config; print(config('GPS_DB_USER', default='sana_backend'))")"
+GPS_DB_PASSWORD="$("$PYTHON" -c "from decouple import config; print(config('GPS_DB_PASSWORD', default=''))")"
+if [[ "$GPS_DB_USER" != "sana_backend" ]]; then
+  echo "ERROR: GPS_DB_USER must be sana_backend for the dedicated GPS connection." >&2
+  exit 1
+fi
+if [[ -z "$GPS_DB_PASSWORD" ]]; then
+  echo "ERROR: Set GPS_DB_PASSWORD in sana-backend/.env before completing this reset." >&2
+  echo "Use the existing password for the PostgreSQL role sana_backend; do not print it." >&2
+  exit 1
+fi
 
 echo "[7/7] Validate Django configuration and optionally create a superuser..."
 "$PYTHON" manage.py check
