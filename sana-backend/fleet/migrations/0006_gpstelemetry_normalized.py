@@ -65,15 +65,4 @@ class Migration(migrations.Migration):
             sql="UPDATE fleet_gpstelemetry SET fingerprint = 'legacy-' || id::text WHERE fingerprint = '';",
             reverse_sql=migrations.RunSQL.noop,
         ),
-        migrations.AddIndex(
-            model_name="gpstelemetry",
-            index=models.Index(fields=["device", "received_at"], name="fleet_gps_device_received_idx"),
-        ),
-        migrations.AddConstraint(
-            model_name="gpstelemetry",
-            constraint=models.UniqueConstraint(
-                fields=("device", "fingerprint"),
-                name="fleet_gps_device_fingerprint_uniq",
-            ),
-        ),
     ]
