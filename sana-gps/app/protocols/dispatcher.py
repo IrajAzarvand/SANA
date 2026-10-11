@@ -29,6 +29,8 @@ class ProtocolDispatcher:
         b"\x79\x79": ProtocolId.GT06,
         b"\x00\x0f": ProtocolId.TELTONIKA,
         b"*H": ProtocolId.HQ,
+        b"$": ProtocolId.HQ,
+        b"X": ProtocolId.HQ,
     }
 
     def __init__(
