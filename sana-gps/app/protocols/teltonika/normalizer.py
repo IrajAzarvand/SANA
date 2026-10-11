@@ -8,7 +8,7 @@ from app.protocols.teltonika.decoder import TeltonikaAVLRecord
 
 
 class TeltonikaNormalizer:
-    """Normalize Codec 8 fields without guessing device-specific IO meanings."""
+    """Normalize supported Teltonika AVL records without guessing device-specific IO meanings."""
 
     def normalize(
         self,
