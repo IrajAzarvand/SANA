@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 
 from app.protocols.types import ProtocolResponse
-from app.transport.session import Session, SessionManager, TransportType
+from app.transport.session import Session, SessionManager, SessionStateError, TransportType
 
 
 ConnectionHandler = Callable[[Session, bytes], Awaitable[ProtocolResponse | None]]
@@ -18,12 +18,14 @@ class TCPConnection:
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
         session: Session,
+        session_manager: SessionManager,
         on_data: ConnectionHandler,
         idle_timeout: float,
     ) -> None:
         self._reader = reader
         self._writer = writer
         self._session = session
+        self._session_manager = session_manager
         self._on_data = on_data
         self._idle_timeout = idle_timeout
         self._closed = False
@@ -49,13 +51,35 @@ class TCPConnection:
                 if not data:
                     break
 
-                self._session.activity()
+                # A replacement connection closes the previous bound session.
+                # Check before dispatch so the old socket cannot process more
+                # frames after its device binding has been fenced.
+                if self._is_fenced():
+                    break
+
+                try:
+                    self._session.activity()
+                except SessionStateError:
+                    break
+
                 response = await self._on_data(self._session, data)
+
+                # A handler may have yielded while a newer connection became
+                # active. Never send a success response from the stale session.
+                if self._is_fenced():
+                    break
+
                 if response is not None:
                     self._writer.write(response.data)
                     await self._writer.drain()
         finally:
             await self.close()
+
+    def _is_fenced(self) -> bool:
+        return (
+            self._session.device_id is not None
+            and not self._session_manager.is_current(self._session)
+        )
 
     async def close(self) -> None:
         if self._closed:
@@ -151,6 +175,7 @@ class TCPListener:
             reader,
             writer,
             session,
+            self._session_manager,
             self._on_data,
             self._idle_timeout,
         )
@@ -160,7 +185,6 @@ class TCPListener:
 
     def _connection_task_done(self, task: asyncio.Task[None]) -> None:
         self._connections.pop(task, None)
-
 
     async def _run_connection(self, connection: TCPConnection) -> None:
         try:
