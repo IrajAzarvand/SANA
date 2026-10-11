@@ -63,3 +63,27 @@ async def test_hq_report_is_buffered_across_tcp_reads():
 
     telemetry.save.assert_called_once()
     assert session.device_id == 4
+
+
+
+@pytest.mark.asyncio
+async def test_h02_non_position_message_is_saved_without_discarding_fields():
+    devices = Mock()
+    devices.find_by_imei.return_value = DeviceRecord(
+        id=4, imei="9176515720", management_status="active",
+        protocol="hq*", data_active=True,
+    )
+    telemetry = Mock()
+    handler = HQHandler(devices, telemetry)
+    session = make_session()
+    payload = b"*HQ,9176515720,LINK,180902,15,0,84,0,0,240517,FFFFFBFF#"
+
+    await handler.handle(session, payload)
+
+    telemetry.save.assert_called_once()
+    saved = telemetry.save.call_args.kwargs
+    assert saved["raw_payload"] == payload
+    assert saved["gps_valid"] is False
+    assert saved["latitude"] is None
+    assert saved["attributes"]["h02"]["message_type"] == "LINK"
+    assert saved["attributes"]["h02"]["raw_fields"][-1] == "FFFFFBFF"
