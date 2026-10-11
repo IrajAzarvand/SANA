@@ -50,7 +50,7 @@ def test_codec8_decoder_rejects_bad_crc() -> None:
 
 def test_codec8_decoder_rejects_unsupported_codec() -> None:
     with pytest.raises(TeltonikaDecodeError, match="Unsupported"):
-        TeltonikaAVLDecoder().decode(_codec8_frame(codec=0x8E))
+        TeltonikaAVLDecoder().decode(_codec8_frame(codec=0x10))
 
 
 def test_normalizer_uses_nullable_position_for_no_fix() -> None:
@@ -65,3 +65,40 @@ def test_normalizer_uses_nullable_position_for_no_fix() -> None:
     assert normalized.longitude is None
     assert normalized.speed_kmh is not None
     assert normalized.attributes["teltonika"]["io"] == {"239": 1}
+
+
+
+def _codec8e_frame() -> bytes:
+    timestamp = int(datetime(2026, 10, 10, 12, 4, 57, tzinfo=timezone.utc).timestamp() * 1000)
+    record = (
+        timestamp.to_bytes(8, "big")
+        + b"\x00"
+        + int(459321070).to_bytes(4, "big", signed=True)
+        + int(378546450).to_bytes(4, "big", signed=True)
+        + int(123).to_bytes(2, "big", signed=True)
+        + int(180).to_bytes(2, "big")
+        + bytes((8,))
+        + int(50).to_bytes(2, "big")
+        + int(0x0102).to_bytes(2, "big")  # event IO id
+        + int(2).to_bytes(2, "big")  # total IO count
+        + int(1).to_bytes(2, "big") + int(256).to_bytes(2, "big") + b"\x01"
+        + b"\x00\x00"  # 2-byte values
+        + b"\x00\x00"  # 4-byte values
+        + b"\x00\x00"  # 8-byte values
+        + int(1).to_bytes(2, "big")
+        + int(512).to_bytes(2, "big")
+        + int(3).to_bytes(2, "big")
+        + bytes.fromhex("616263")
+    )
+    data = bytes((0x8E, 1)) + record + b"\x01"
+    crc = TeltonikaAVLDecoder._crc16_ibm(data)
+    return b"\x00\x00\x00\x00" + len(data).to_bytes(4, "big") + data + crc.to_bytes(4, "big")
+
+
+def test_codec8_extended_decodes_wide_ids_and_variable_length_io() -> None:
+    message = TeltonikaAVLDecoder().decode(_codec8e_frame())
+    assert message.codec_id == 0x8E
+    record = message.records[0]
+    assert record.codec_id == 0x8E
+    assert record.event_io_id == 0x0102
+    assert record.io_elements == {256: 1, 512: "hex:616263"}
