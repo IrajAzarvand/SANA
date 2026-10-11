@@ -284,7 +284,7 @@ class TeltonikaAVLDecoder:
             codec_id=codec_id,
             records=(),
             raw_frame=frame,
-            message_type="command_or_text",
+            message_type="codec12_command" if codec_id == self.CODEC_12 else "codec13_text",
             message_details={"records": entries},
         )
 
