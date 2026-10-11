@@ -16,7 +16,7 @@ from app.repositories.device import DeviceRepository
 from app.repositories.gt06_position import GT06PositionRepository
 from app.repositories.gps_telemetry import GPSTelemetryRepository
 from app.transport.server import TransportServer
-from app.transport.session import SessionManager, TransportType
+from app.transport.session import SessionManager
 
 
 async def run(
