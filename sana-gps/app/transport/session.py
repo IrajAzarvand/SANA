@@ -31,6 +31,8 @@ class Session:
     remote_address: tuple[str, int]
     local_address: tuple[str, int] | None = None
     id: UUID = field(default_factory=uuid4)
+    connection_id: UUID = field(default_factory=uuid4)
+    generation: int | None = None
     created_at: datetime = field(
         default_factory=lambda: datetime.now(timezone.utc)
     )
@@ -117,6 +119,8 @@ class SessionManager:
 
     def __init__(self) -> None:
         self._sessions: dict[UUID, Session] = {}
+        self._active_by_device: dict[int, Session] = {}
+        self._generation_by_device: dict[int, int] = {}
 
     def create(
         self,
@@ -137,11 +141,54 @@ class SessionManager:
         self._sessions[session.id] = session
         return session
 
+    def bind_device(
+        self,
+        session: Session,
+        *,
+        device_id: int,
+        imei: str,
+        protocol: ProtocolId,
+    ) -> None:
+        """Bind a registered device and fence any older active session."""
+        if self._sessions.get(session.id) is not session:
+            raise SessionStateError("Session is not registered with this manager")
+
+        # Validate the new binding before changing the current device session.
+        session.bind_device(device_id=device_id, imei=imei, protocol=protocol)
+
+        generation = self._generation_by_device.get(device_id, 0) + 1
+        previous = self._active_by_device.get(device_id)
+        if previous is not None and previous is not session:
+            previous.close()
+
+        session.generation = generation
+        self._generation_by_device[device_id] = generation
+        self._active_by_device[device_id] = session
+
     def get(self, session_id: UUID) -> Session | None:
         return self._sessions.get(session_id)
 
+    def get_active_for_device(self, device_id: int) -> Session | None:
+        session = self._active_by_device.get(device_id)
+        if session is None or session.state is not SessionState.ACTIVE:
+            return None
+        return session
+
+    def is_current(self, session: Session) -> bool:
+        if session.device_id is None or session.generation is None:
+            return False
+        return (
+            self._active_by_device.get(session.device_id) is session
+            and self._generation_by_device.get(session.device_id) == session.generation
+            and session.state is SessionState.ACTIVE
+        )
+
     def remove(self, session_id: UUID) -> Session | None:
-        return self._sessions.pop(session_id, None)
+        session = self._sessions.pop(session_id, None)
+        if session is not None and session.device_id is not None:
+            if self._active_by_device.get(session.device_id) is session:
+                self._active_by_device.pop(session.device_id, None)
+        return session
 
     def active_count(self) -> int:
         return sum(
