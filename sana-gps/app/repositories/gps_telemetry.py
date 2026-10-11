@@ -44,6 +44,7 @@ class GPSTelemetryRepository:
         satellites: int | None = None,
         gps_valid: bool | None = None,
         received_at: datetime | None = None,
+        deduplicate: bool = False,
     ) -> None:
         """Save one position or non-position protocol message.
 
@@ -51,11 +52,17 @@ class GPSTelemetryRepository:
         and not-yet-understood messages. The original bytes and parsed attributes
         are retained so a later decoder improvement can reinterpret them.
         """
-        fingerprint = sha256(protocol.encode("utf-8") + b"\x00" + raw_payload).hexdigest()
+        received_at = received_at or datetime.now(timezone.utc)
+        fingerprint_input = protocol.encode("utf-8") + b"\x00" + raw_payload
+        if not deduplicate:
+            # Status/heartbeat packets can legitimately repeat byte-for-byte.
+            # Include receive time so every observed message remains auditable.
+            fingerprint_input += b"\x00" + received_at.isoformat().encode("ascii")
+        fingerprint = sha256(fingerprint_input).hexdigest()
         if gps_valid is None:
             gps_valid = latitude is not None and longitude is not None
         if gps_time is None:
-            gps_time = received_at or datetime.now(timezone.utc)
+            gps_time = received_at
 
         with self._pool.connection() as connection:
             connection.execute(
