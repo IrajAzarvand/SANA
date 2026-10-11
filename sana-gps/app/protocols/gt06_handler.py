@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import logging
 from uuid import UUID
 
 from app.protocols.gt06 import (
@@ -15,6 +16,8 @@ from app.repositories.device import DeviceRepository
 from app.repositories.gt06_position import GT06PositionRepository
 from app.repositories.gps_telemetry import GPSTelemetryRepository
 from app.transport.session import Session, SessionState
+
+logger = logging.getLogger(__name__)
 
 
 class GT06Handler:
@@ -134,6 +137,31 @@ class GT06Handler:
                     self._device_repository.set_detected_protocol(
                         device.id, ProtocolId.GT06.value
                     )
+                if self._telemetry_repository is not None:
+                    received_at = datetime.now(timezone.utc)
+                    try:
+                        self._telemetry_repository.save(
+                            device_id=device.id,
+                            protocol=ProtocolId.GT06.value,
+                            gps_time=received_at,
+                            latitude=None,
+                            longitude=None,
+                            speed_kmh=None,
+                            raw_payload=frame.raw,
+                            attributes={"gt06": {
+                                "message_type": self.LOGIN,
+                                "message_name": "login",
+                                "serial": frame.serial,
+                                "identifier_candidates": list(identifier_candidates(frame.information)),
+                                "information_hex": frame.information.hex(),
+                                "raw_frame_hex": frame.raw.hex(),
+                            }},
+                            gps_valid=False,
+                            received_at=received_at,
+                        )
+                    except Exception:
+                        logger.exception("Failed to persist GT06 login packet for %s", device.imei)
+                        continue
                 session.bind_device(
                     device_id=device.id,
                     imei=device.imei,
