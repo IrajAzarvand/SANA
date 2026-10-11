@@ -63,3 +63,30 @@ async def test_hq_report_is_buffered_across_tcp_reads():
 
     telemetry.save.assert_called_once()
     assert session.device_id == 4
+
+
+@pytest.mark.asyncio
+async def test_h02_binary_report_extracts_registered_short_identifier_and_logs_no_fix():
+    devices = Mock()
+    devices.find_by_imei.return_value = DeviceRecord(
+        id=4, imei="9176515720", management_status="warehouse",
+        protocol="hq*", data_active=False,
+    )
+    telemetry = Mock()
+    handler = HQHandler(devices, telemetry)
+    session = make_session()
+    payload = bytes.fromhex(
+        "2491765157200447151110263751278764045559260c000000fffffbff"
+        "000000000000000001b00b0d544ff408"
+    )
+
+    await handler.handle(session, payload[:17])
+    telemetry.save.assert_not_called()
+    await handler.handle(session, payload[17:])
+
+    devices.find_by_imei.assert_called_once_with("9176515720")
+    assert session.device_id == 4
+    assert session.protocol is ProtocolId.HQ
+    # The packet's H02 status flags indicate an invalid GPS fix, so it is
+    # decoded and logged but intentionally not written to telemetry.
+    telemetry.save.assert_not_called()
