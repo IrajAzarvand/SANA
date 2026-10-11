@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TypeAlias
 
@@ -25,6 +25,7 @@ class TeltonikaAVLRecord:
     event_io_id: int
     io_elements: dict[int, IOValue]
     codec_id: int = 0x08
+    generation_type: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +33,8 @@ class TeltonikaProtocolMessage:
     codec_id: int
     records: tuple[TeltonikaAVLRecord, ...]
     raw_frame: bytes
+    message_type: str = "avl"
+    message_details: dict[str, object] = field(default_factory=dict)
 
 
 class TeltonikaAVLDecoder:
@@ -43,6 +46,9 @@ class TeltonikaAVLDecoder:
 
     CODEC_8 = 0x08
     CODEC_8_EXTENDED = 0x8E
+    CODEC_12 = 0x0C
+    CODEC_13 = 0x0D
+    CODEC_16 = 0x10
     PREAMBLE = b"\x00\x00\x00\x00"
     MAX_RECORDS = 255
     MAX_DATA_LENGTH = 1280
@@ -64,10 +70,12 @@ class TeltonikaAVLDecoder:
             raise TeltonikaDecodeError("Invalid Teltonika AVL CRC")
 
         codec_id = data[0]
-        if codec_id not in (self.CODEC_8, self.CODEC_8_EXTENDED):
+        if codec_id in (self.CODEC_12, self.CODEC_13):
+            return self._decode_serial_message(frame, data, codec_id)
+        if codec_id not in (self.CODEC_8, self.CODEC_8_EXTENDED, self.CODEC_16):
             raise TeltonikaDecodeError(
                 f"Unsupported Teltonika codec 0x{codec_id:02x}; "
-                "supported codecs are Codec 8 and Codec 8 Extended"
+                "supported AVL codecs are Codec 8, Codec 8 Extended and Codec 16"
             )
 
         declared_count = data[1]
@@ -132,6 +140,7 @@ class TeltonikaAVLDecoder:
                 event_io_id=event_io_id,
                 io_elements=io_elements,
                 codec_id=codec_id,
+                generation_type=generation_type,
             ),
             cursor,
         )
@@ -191,6 +200,90 @@ class TeltonikaAVLDecoder:
         if len(io_elements) != total_io:
             raise TeltonikaDecodeError("Codec 8 Extended IO element count does not match")
         return event_io_id, io_elements, cursor
+
+    def _decode_codec16_io(
+        self, data: bytes, cursor: int
+    ) -> tuple[int, dict[int, IOValue], int, int]:
+        # Codec 16 adds a generation-type byte and uses 16-bit event/IO IDs.
+        self._require(data, cursor, 4)
+        event_io_id = int.from_bytes(data[cursor:cursor + 2], "big")
+        generation_type = data[cursor + 2]
+        total_io = data[cursor + 3]
+        cursor += 4
+        io_elements: dict[int, IOValue] = {}
+        for value_size in (1, 2, 4, 8):
+            self._require(data, cursor, 1)
+            count = data[cursor]
+            cursor += 1
+            self._require(data, cursor, count * (2 + value_size))
+            for _ in range(count):
+                io_id = int.from_bytes(data[cursor:cursor + 2], "big")
+                value = int.from_bytes(data[cursor + 2:cursor + 2 + value_size], "big")
+                cursor += 2 + value_size
+                self._add_io(io_elements, io_id, value)
+        if len(io_elements) != total_io:
+            raise TeltonikaDecodeError("Codec 16 IO element count does not match")
+        return event_io_id, io_elements, generation_type, cursor
+
+    def _decode_serial_message(
+        self, frame: bytes, data: bytes, codec_id: int
+    ) -> TeltonikaProtocolMessage:
+        """Decode Codec 12 command/response and Codec 13 text data envelopes."""
+        if len(data) < 3:
+            raise TeltonikaDecodeError("Teltonika serial message is too short")
+        declared_count = data[1]
+        cursor = 2
+        entries: list[dict[str, object]] = []
+        for _ in range(declared_count):
+            self._require(data, cursor, 5)
+            record_type = data[cursor]
+            length = int.from_bytes(data[cursor + 1:cursor + 5], "big")
+            cursor += 5
+            if codec_id == self.CODEC_13:
+                if length < 4:
+                    raise TeltonikaDecodeError("Codec 13 record length is invalid")
+                self._require(data, cursor, length)
+                timestamp = int.from_bytes(data[cursor:cursor + 4], "big")
+                payload = data[cursor + 4:cursor + length]
+                cursor += length
+                entry: dict[str, object] = {
+                    "record_type": record_type,
+                    "length": length,
+                    "timestamp_unix_seconds": timestamp,
+                    "payload_hex": payload.hex(),
+                }
+            else:
+                self._require(data, cursor, length)
+                payload = data[cursor:cursor + length]
+                cursor += length
+                entry = {
+                    "record_type": record_type,
+                    "length": length,
+                    "payload_hex": payload.hex(),
+                }
+            try:
+                text = payload.decode("ascii")
+                if text.isprintable() or not text:
+                    entry["payload_text"] = text
+            except UnicodeDecodeError:
+                pass
+            entries.append(entry)
+
+        if cursor >= len(data):
+            raise TeltonikaDecodeError("Missing trailing Teltonika record count")
+        trailing_count = data[cursor]
+        cursor += 1
+        if trailing_count != declared_count:
+            raise TeltonikaDecodeError("Teltonika record counts do not match")
+        if cursor != len(data):
+            raise TeltonikaDecodeError("Unexpected bytes after Teltonika serial records")
+        return TeltonikaProtocolMessage(
+            codec_id=codec_id,
+            records=(),
+            raw_frame=frame,
+            message_type="command_or_text",
+            message_details={"records": entries},
+        )
 
     @staticmethod
     def _add_io(elements: dict[int, IOValue], io_id: int, value: IOValue) -> None:
