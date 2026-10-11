@@ -50,7 +50,7 @@ def test_codec8_decoder_rejects_bad_crc() -> None:
 
 def test_codec8_decoder_rejects_unsupported_codec() -> None:
     with pytest.raises(TeltonikaDecodeError, match="Unsupported"):
-        TeltonikaAVLDecoder().decode(_codec8_frame(codec=0x10))
+        TeltonikaAVLDecoder().decode(_codec8_frame(codec=0x07))
 
 
 def test_normalizer_uses_nullable_position_for_no_fix() -> None:
@@ -102,3 +102,59 @@ def test_codec8_extended_decodes_wide_ids_and_variable_length_io() -> None:
     assert record.codec_id == 0x8E
     assert record.event_io_id == 0x0102
     assert record.io_elements == {256: 1, 512: "hex:616263"}
+
+
+
+def _codec16_frame() -> bytes:
+    timestamp = int(datetime(2026, 10, 10, 12, 4, 57, tzinfo=timezone.utc).timestamp() * 1000)
+    record = (
+        timestamp.to_bytes(8, "big")
+        + b"\x00"
+        + int(459321070).to_bytes(4, "big", signed=True)
+        + int(378546450).to_bytes(4, "big", signed=True)
+        + int(123).to_bytes(2, "big", signed=True)
+        + int(180).to_bytes(2, "big")
+        + bytes((8,))
+        + int(50).to_bytes(2, "big")
+        + int(0x0102).to_bytes(2, "big")
+        + b"\x01"  # generation type
+        + b"\x01"  # total IO count
+        + b"\x01" + int(239).to_bytes(2, "big") + b"\x01"
+        + b"\x00"
+        + b"\x00"
+        + b"\x00"
+    )
+    data = bytes((0x10, 1)) + record + b"\x01"
+    crc = TeltonikaAVLDecoder._crc16_ibm(data)
+    return b"\x00\x00\x00\x00" + len(data).to_bytes(4, "big") + data + crc.to_bytes(4, "big")
+
+
+def _teltonika_serial_frame(codec: int, payload: bytes) -> bytes:
+    data = bytes((codec, 1)) + payload + b"\x01"
+    crc = TeltonikaAVLDecoder._crc16_ibm(data)
+    return b"\x00\x00\x00\x00" + len(data).to_bytes(4, "big") + data + crc.to_bytes(4, "big")
+
+
+def test_codec16_decodes_generation_type_and_wide_io_ids() -> None:
+    message = TeltonikaAVLDecoder().decode(_codec16_frame())
+    record = message.records[0]
+    assert message.codec_id == 0x10
+    assert record.generation_type == 1
+    assert record.event_io_id == 0x0102
+    assert record.io_elements == {239: 1}
+
+
+@pytest.mark.parametrize(
+    ("codec", "record_payload", "expected_text"),
+    [
+        (0x0C, b"\x05" + (3).to_bytes(4, "big") + b"abc", "abc"),
+        (0x0D, b"\x01" + (7).to_bytes(4, "big") + (1_791_635_697).to_bytes(4, "big") + b"abc", "abc"),
+    ],
+)
+def test_teltonika_non_avl_messages_are_interpreted_and_preserved(
+    codec: int, record_payload: bytes, expected_text: str
+) -> None:
+    message = TeltonikaAVLDecoder().decode(_teltonika_serial_frame(codec, record_payload))
+    assert message.records == ()
+    assert message.message_type == "command_or_text"
+    assert message.message_details["records"][0]["payload_text"] == expected_text
