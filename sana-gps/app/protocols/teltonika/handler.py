@@ -116,6 +116,13 @@ class TeltonikaHandler:
                 # A DB failure must not be acknowledged as successfully stored.
                 continue
 
+            logger.info(
+                "Teltonika AVL batch handled: imei=%s records=%d ack_count=%d remote=%s",
+                session.device_imei,
+                len(message.records),
+                accepted_count,
+                session.remote_address,
+            )
             # Teltonika's AVL ACK is the number of records accepted, big-endian.
             outgoing.extend(accepted_count.to_bytes(4, "big"))
 
@@ -133,10 +140,20 @@ class TeltonikaHandler:
 
         device = self._device_repository.find_by_imei(identification.imei)
         if device is None:
+            logger.warning(
+                "Rejected unregistered Teltonika device %s from %s",
+                identification.imei,
+                session.remote_address,
+            )
             return ProtocolResponse(b"\x00")
 
         known_protocol = (device.protocol or "").strip().lower()
         if known_protocol and known_protocol != ProtocolId.TELTONIKA.value:
+            logger.warning(
+                "Rejected Teltonika protocol mismatch: imei=%s configured_protocol=%s",
+                identification.imei,
+                known_protocol,
+            )
             return ProtocolResponse(b"\x00")
 
         # Device/DeviceModel protocol configuration is business-owned. The GPS
@@ -154,6 +171,12 @@ class TeltonikaHandler:
                 imei=device.imei,
                 protocol=ProtocolId.TELTONIKA,
             )
+        logger.info(
+            "Registered Teltonika session: imei=%s device_id=%s remote=%s",
+            device.imei,
+            device.id,
+            session.remote_address,
+        )
         return ProtocolResponse(b"\x01")
 
     def _is_current_session(self, session: Session) -> bool:
