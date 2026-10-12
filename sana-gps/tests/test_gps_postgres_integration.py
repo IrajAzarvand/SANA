@@ -135,9 +135,9 @@ def _create_test_device(admin_dsn: str) -> tuple[int, str]:
         row = connection.execute(
             """
             INSERT INTO public.fleet_device (
-                imei, sim_number, management_status, created_at, updated_at
+                imei, protocol, sim_number, management_status, created_at, updated_at
             )
-            VALUES (%s, '', 'warehouse', %s, %s)
+            VALUES (%s, '', '', 'warehouse', %s, %s)
             RETURNING id
             """,
             (imei, datetime.now(timezone.utc), datetime.now(timezone.utc)),
