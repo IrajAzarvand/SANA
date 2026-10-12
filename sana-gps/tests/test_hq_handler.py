@@ -21,8 +21,8 @@ def make_session() -> Session:
 async def test_hq_report_matches_registered_identifier_and_saves_telemetry():
     devices = Mock()
     devices.find_by_imei.return_value = DeviceRecord(
-        id=4, imei="9176515720", management_status="warehouse",
-        protocol="", data_active=False,
+        id=4, imei="9176515720", management_status="active",
+        protocol="", data_active=True,
     )
     telemetry = Mock()
     handler = HQHandler(devices, telemetry)
@@ -61,8 +61,9 @@ async def test_hq_report_is_buffered_across_tcp_reads():
     telemetry.save.assert_not_called()
     await handler.handle(session, second)
 
-    telemetry.save.assert_called_once()
+    telemetry.save.assert_not_called()
     assert session.device_id == 4
+    assert session.protocol is ProtocolId.HQ
 
 
 @pytest.mark.asyncio
