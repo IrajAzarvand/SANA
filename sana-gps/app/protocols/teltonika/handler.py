@@ -151,7 +151,7 @@ class TeltonikaHandler:
         denial_reason = device_access_denial_reason(device)
         if denial_reason is not None:
             logger.warning("Rejected ineligible Teltonika device %s: %s", device.imei, denial_reason)
-            return ProtocolResponse(b"\\x00")
+            return ProtocolResponse(b"\x00")
 
         known_protocol = (device.protocol or "").strip().lower()
         if known_protocol and known_protocol != ProtocolId.TELTONIKA.value:
