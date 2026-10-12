@@ -23,8 +23,14 @@ class DatabaseConnectionPool:
 
     @staticmethod
     def _configure_connection(connection: Connection) -> None:
-        """Use Iran local time for date-based subscription eligibility checks."""
+        """Use Iran local time for date-based subscription eligibility checks.
+
+        Psycopg's pool configure callback must return an idle connection. Execute
+        the session setting, then commit it so the connection is not discarded
+        for being left inside an implicit transaction.
+        """
         connection.execute("SET TIME ZONE 'Asia/Tehran'")
+        connection.commit()
 
     def open(self) -> None:
         self._pool.open(wait=True)
