@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import signal
 import sys
 
@@ -17,6 +18,19 @@ from app.repositories.gt06_position import GT06PositionRepository
 from app.repositories.gps_telemetry import GPSTelemetryRepository
 from app.transport.server import TransportServer
 from app.transport.session import SessionManager, TransportType
+
+
+_LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+
+
+def configure_logging(level: str) -> None:
+    """Configure root logging so application events reach systemd journal."""
+    logging.basicConfig(
+        level=getattr(logging, level.upper()),
+        format=_LOG_FORMAT,
+        stream=sys.stdout,
+        force=True,
+    )
 
 
 async def run(
@@ -162,7 +176,8 @@ def main() -> int:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 2
 
-    print("Configuration loaded")
+    configure_logging(config.log_level)
+    logging.getLogger(__name__).info("Configuration loaded; log level=%s", config.log_level)
 
     async def runner() -> int:
         shutdown_event = asyncio.Event()
