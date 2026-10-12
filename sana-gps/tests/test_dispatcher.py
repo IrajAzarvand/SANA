@@ -156,3 +156,26 @@ async def test_dispatcher_routes_udp_by_protocol_signature(payload, expected_pro
     for protocol, handler in handlers.items():
         if protocol is not expected_protocol:
             handler.assert_not_awaited()
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("close_state", ["closing", "closed"])
+async def test_dispatcher_ignores_data_after_session_starts_closing(close_state):
+    teltonika = AsyncMock(return_value=ProtocolResponse(b"\\x01"))
+    dispatcher = ProtocolDispatcher({ProtocolId.TELTONIKA: teltonika})
+    session = make_session()
+    if close_state == "closed":
+        session.close()
+    else:
+        session.close()
+        # Recreate the intermediate state to model a callback racing shutdown.
+        session.state = session.state.CLOSING
+
+    response = await dispatcher.handle(
+        session,
+        bytes.fromhex("000f333532303934303832313433323533"),
+    )
+
+    assert response is None
+    teltonika.assert_not_awaited()
+    assert session.id not in dispatcher._states
+
