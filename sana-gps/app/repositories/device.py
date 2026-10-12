@@ -16,17 +16,32 @@ class DeviceRecord:
 
 
 class DeviceRepository:
-    """Read-only, narrowly scoped access to the canonical SANA device registry.
+    """Read-only access to the canonical SANA device registry and eligibility.
 
-    Subscription and business eligibility are intentionally not queried here.
-    The GPS runtime may read device identity/model/protocol configuration, but
-    never writes the business-owned Device row.
+    The GPS runtime never writes business-owned Device or subscription records.
+    Eligibility mirrors Device.is_data_active and SubscriptionDevice.is_active
+    in the backend: the device must not be in a blocked management state and
+    must have a currently assigned, in-date subscription-device link.
     """
 
     _SQL = """
         SELECT d.id, d.imei, d.management_status,
                COALESCE(NULLIF(dm.protocol, ''), NULLIF(d.protocol, ''), '') AS protocol,
-               d.device_model_id
+               d.device_model_id,
+               (
+                   d.management_status NOT IN (
+                       'faulty', 'ready', 'lost', 'stolen',
+                       'disconnected', 'retired', 'disposed'
+                   )
+                   AND EXISTS (
+                       SELECT 1
+                       FROM public.organizations_subscriptiondevice AS sd
+                       WHERE sd.device_id = d.id
+                         AND sd.unassigned_at IS NULL
+                         AND sd.start_date <= CURRENT_DATE
+                         AND sd.end_date >= CURRENT_DATE
+                   )
+               ) AS data_active
         FROM public.fleet_device AS d
         LEFT JOIN public.fleet_devicemodel AS dm ON dm.id = d.device_model_id
         WHERE d.imei = %s
@@ -49,10 +64,8 @@ class DeviceRepository:
             imei=row[1],
             management_status=row[2],
             protocol=row[3] or "",
-            # Subscription activity is business data and is intentionally not
-            # queried here. This legacy compatibility field is not authoritative.
-            data_active=False,
             device_model_id=row[4],
+            data_active=bool(row[5]),
         )
 
     def find_all_identifiers(self) -> tuple[str, ...]:
