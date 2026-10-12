@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from uuid import UUID
 
 from app.protocols.gt06 import (
@@ -13,6 +14,9 @@ from app.protocols.types import ProtocolId, ProtocolResponse
 from app.repositories.device import DeviceRepository
 from app.repositories.gt06_position import GT06PositionRepository
 from app.transport.session import Session, SessionManager, SessionState
+
+
+logger = logging.getLogger(__name__)
 
 
 class GT06Handler:
@@ -50,7 +54,8 @@ class GT06Handler:
 
         try:
             frames = framer.feed(data)
-        except GT06FrameError:
+        except GT06FrameError as exc:
+            logger.warning("Invalid GT06 frame from %s: %s", session.remote_address, exc)
             self._framers.pop(session.id, None)
             return None
 
@@ -68,10 +73,15 @@ class GT06Handler:
                     if device is not None:
                         break
                 if device is None:
+                    logger.warning("Unregistered GT06 login from %s", session.remote_address)
                     continue
 
                 known_protocol = (device.protocol or "").strip().lower()
                 if known_protocol and known_protocol != ProtocolId.GT06.value:
+                    logger.warning(
+                        "GT06 protocol/device mismatch: imei=%s configured_protocol=%s",
+                        device.imei, known_protocol,
+                    )
                     continue
                 # Protocol configuration is business-owned. Never write the
                 # auto-detected protocol back to the canonical Device row.
@@ -88,6 +98,10 @@ class GT06Handler:
                         imei=device.imei,
                         protocol=ProtocolId.GT06,
                     )
+                logger.info(
+                    "Registered GT06 session: imei=%s device_id=%s remote=%s",
+                    device.imei, device.id, session.remote_address,
+                )
                 outgoing.extend(build_ack(frame.protocol, frame.serial))
                 continue
 
@@ -105,6 +119,11 @@ class GT06Handler:
                     device_id=session.device_id,
                     position=position,
                     raw_frame=frame.raw,
+                )
+                logger.info(
+                    "Saved GT06 position: imei=%s device_id=%s time=%s lat=%.6f lon=%.6f",
+                    session.device_imei, session.device_id, position.gps_time.isoformat(),
+                    position.latitude, position.longitude,
                 )
                 outgoing.extend(build_ack(frame.protocol, frame.serial))
             elif frame.protocol in (self.HEARTBEAT, self.ALARM):
