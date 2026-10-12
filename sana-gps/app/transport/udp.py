@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 
@@ -9,6 +10,8 @@ from app.transport.session import Session, SessionManager, SessionState, Transpo
 
 
 DatagramHandler = Callable[[Session, bytes], Awaitable[ProtocolResponse | None]]
+logger = logging.getLogger(__name__)
+
 Address = tuple[str, int]
 
 
@@ -173,9 +176,7 @@ class UDPListener:
         except asyncio.CancelledError:
             pass
         except Exception:
-            # Structured transport logging will be added with observability.
-            # The callback prevents unhandled-task warnings at this stage.
-            pass
+            logger.exception("Unhandled error in UDP datagram handler task")
 
     @staticmethod
     def _is_address(value: object) -> bool:
@@ -206,8 +207,7 @@ class _UDPProtocol(asyncio.DatagramProtocol):
         self._listener._track_handler_task(task)
 
     def error_received(self, exc: Exception) -> None:
-        # Protocol-specific error handling does not belong in transport.
-        return
+        logger.warning("UDP transport reported a socket error: %s", exc)
 
     def connection_lost(self, exc: Exception | None) -> None:
         return

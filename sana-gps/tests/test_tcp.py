@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 import pytest
 
@@ -233,4 +234,47 @@ async def test_tcp_listener_does_not_dispatch_data_from_fenced_session():
         if new_writer is not None:
             new_writer.close()
             await new_writer.wait_closed()
+        await listener.stop()
+
+
+@pytest.mark.asyncio
+async def test_tcp_connection_reset_is_logged_and_listener_keeps_running(caplog):
+    manager = SessionManager()
+    calls = 0
+    first_failed = asyncio.Event()
+    received = asyncio.Event()
+
+    async def on_data(session, data):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            first_failed.set()
+            raise ConnectionResetError("simulated peer reset")
+        received.set()
+        return None
+
+    listener = TCPListener("127.0.0.1", 0, manager, on_data)
+    await listener.start()
+    assert listener._server is not None
+    port = listener._server.sockets[0].getsockname()[1]
+
+    try:
+        caplog.set_level(logging.DEBUG, logger="app.transport.tcp")
+        _, first_writer = await asyncio.open_connection("127.0.0.1", port)
+        first_writer.write(b"reset")
+        await first_writer.drain()
+        await asyncio.wait_for(first_failed.wait(), timeout=1.0)
+        first_writer.close()
+        await first_writer.wait_closed()
+
+        _, second_writer = await asyncio.open_connection("127.0.0.1", port)
+        second_writer.write(b"still-alive")
+        await second_writer.drain()
+        await asyncio.wait_for(received.wait(), timeout=1.0)
+        second_writer.close()
+        await second_writer.wait_closed()
+
+        assert any("TCP peer" in record.message for record in caplog.records)
+        assert listener._server is not None
+    finally:
         await listener.stop()
