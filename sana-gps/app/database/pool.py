@@ -17,8 +17,14 @@ class DatabaseConnectionPool:
             conninfo=config.conninfo,
             min_size=config.pool_min_size,
             max_size=config.pool_max_size,
+            configure=self._configure_connection,
             open=False,
         )
+
+    @staticmethod
+    def _configure_connection(connection: Connection) -> None:
+        """Use Iran local time for date-based subscription eligibility checks."""
+        connection.execute("SET TIME ZONE 'Asia/Tehran'")
 
     def open(self) -> None:
         self._pool.open(wait=True)
