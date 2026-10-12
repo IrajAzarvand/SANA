@@ -82,3 +82,30 @@ async def test_gt06_position_is_persisted_after_login():
     assert saved["position"].latitude == 30
     assert saved["position"].longitude == 50
     assert saved["raw_frame"] == frame
+
+
+@pytest.mark.asyncio
+async def test_gt06_ineligible_device_is_not_persisted_or_position_acknowledged():
+    device_repository = Mock()
+    device = DeviceRecord(
+        id=9,
+        imei="9176515406",
+        management_status="lost",
+        protocol="gt06",
+        data_active=False,
+    )
+    device_repository.find_by_imei.side_effect = lambda value: device if value == device.imei else None
+    positions = Mock()
+    handler = GT06Handler(device_repository, positions)
+    session = active_session()
+
+    await handler.handle(session, make_frame(0x01, bytes.fromhex("0000009176515406"), 1))
+    info = bytes([26, 10, 10, 12, 30, 45, 8])
+    info += int(30 * 1_800_000).to_bytes(4, "big")
+    info += int(50 * 1_800_000).to_bytes(4, "big")
+    info += bytes([60]) + (0x0C00 | 87).to_bytes(2, "big")
+
+    response = await handler.handle(session, make_frame(0x12, info, 2))
+
+    assert response is None
+    positions.save.assert_not_called()
