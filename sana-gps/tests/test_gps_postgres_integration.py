@@ -84,10 +84,16 @@ DSN = os.getenv("SANA_GPS_TEST_DSN") or _make_dsn(
 )
 
 # Creating the fixture and deleting its dependent rows require a separate,
-# explicitly configured test-administration connection. Never silently fall
-# back to Django's DB_USER: it may lack gps-schema privileges and cleanup would
-# fail after creating test data. Keep this DSN out of tracked files.
-ADMIN_DSN = os.getenv("SANA_GPS_TEST_ADMIN_DSN")
+# explicitly configured test-administration connection. Prefer an explicit DSN;
+# otherwise construct it from test-only variables in the ignored backend .env.
+# Never silently fall back to Django's DB_USER.
+ADMIN_DSN = os.getenv("SANA_GPS_TEST_ADMIN_DSN") or _make_dsn(
+    host=_env_value("SANA_GPS_TEST_ADMIN_HOST", BACKEND_ENV, "127.0.0.1"),
+    port=_env_value("SANA_GPS_TEST_ADMIN_PORT", BACKEND_ENV, "5432"),
+    database=_env_value("SANA_GPS_TEST_ADMIN_DB", BACKEND_ENV, _env_value("DB_NAME", BACKEND_ENV, "sana_db")),
+    user=_env_value("SANA_GPS_TEST_ADMIN_USER", BACKEND_ENV),
+    password=_env_value("SANA_GPS_TEST_ADMIN_PASSWORD", BACKEND_ENV),
+)
 
 pytestmark = pytest.mark.skipif(
     not DSN or not ADMIN_DSN,
