@@ -158,7 +158,7 @@ class Subscription(models.Model):
         - اگه هنوز شروع نشده، pending
         - در غیر این صورت، active
         """
-        today = timezone.now().date()
+        today = timezone.localdate()
         
         # وضعیت‌های دستی که تاریخ مهم نیست
         if self.status in ['cancelled', 'suspended']:
@@ -183,7 +183,7 @@ class Subscription(models.Model):
     @property
     def days_until_expiry(self):
         """چند روز تا پایان قرارداد مونده؟"""
-        today = timezone.now().date()
+        today = timezone.localdate()
         return (self.end_date - today).days
 
     @property
@@ -342,7 +342,7 @@ class SubscriptionDevice(models.Model):
     @property
     def is_active(self):
         """آیا این دستگاه در حال حاضر فعاله؟"""
-        today = timezone.now().date()
+        today = timezone.localdate()
         return (
             self.unassigned_at is None and
             self.start_date <= today <= self.end_date
@@ -351,12 +351,12 @@ class SubscriptionDevice(models.Model):
     @property
     def is_expired(self):
         """آیا منقضی شده؟"""
-        return self.end_date < timezone.now().date()
+        return self.end_date < timezone.localdate()
 
     @property
     def days_until_expiry(self):
         """چند روز تا پایان این دستگاه مونده؟"""
-        today = timezone.now().date()
+        today = timezone.localdate()
         return (self.end_date - today).days
 
     def save(self, *args, **kwargs):
