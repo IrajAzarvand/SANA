@@ -4,6 +4,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
+from pathlib import Path
 
 import psycopg
 import pytest
@@ -15,13 +16,89 @@ from app.processing.telemetry import NormalizedTelemetry
 from app.repositories.gps_telemetry import GPSTelemetryRepository
 
 
-# The runtime DSN is used by the repository under test. The admin DSN is used
-# only to provision and remove the isolated test device and its dependent rows.
-DSN = os.getenv("SANA_GPS_TEST_DSN")
-ADMIN_DSN = os.getenv("SANA_GPS_TEST_ADMIN_DSN")
+# Load local, gitignored configuration files without requiring python-dotenv.
+# Explicit process environment variables take precedence over values in files.
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _read_env_file(path: Path) -> dict[str, str]:
+    """Read simple KEY=VALUE dotenv entries without logging their values."""
+    values: dict[str, str] = {}
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return values
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+        key, separator, value = line.partition("=")
+        key = key.strip()
+        if not separator or not key:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+            value = value[1:-1]
+        else:
+            # Support common inline comments while preserving # inside values.
+            value = value.split(" #", 1)[0].rstrip()
+        values[key] = value
+    return values
+
+
+GPS_ENV = _read_env_file(PROJECT_ROOT / "sana-gps" / ".env")
+BACKEND_ENV = _read_env_file(PROJECT_ROOT / "sana-backend" / ".env")
+
+
+def _env_value(name: str, file_values: dict[str, str], default: str = "") -> str:
+    return os.getenv(name) or file_values.get(name, "") or default
+
+
+def _make_dsn(
+    *, host: str, port: str, database: str, user: str, password: str
+) -> str | None:
+    if not all((database, user, password)):
+        return None
+    from psycopg.conninfo import make_conninfo
+
+    return make_conninfo(
+        host=host or "127.0.0.1",
+        port=port or "5432",
+        dbname=database,
+        user=user,
+        password=password,
+    )
+
+
+# The runtime connection uses the dedicated least-privilege GPS role.
+# Local test DSNs can override these derived values, but are not required.
+DSN = os.getenv("SANA_GPS_TEST_DSN") or _make_dsn(
+    host=_env_value("SANA_GPS_DB_HOST", GPS_ENV, "127.0.0.1"),
+    port=_env_value("SANA_GPS_DB_PORT", GPS_ENV, "5432"),
+    database=_env_value("SANA_GPS_DB_NAME", GPS_ENV),
+    user=_env_value("SANA_GPS_DB_USER", GPS_ENV),
+    password=_env_value("SANA_GPS_DB_PASSWORD", GPS_ENV),
+)
+
+# The backend's existing DB connection is used for creating/deleting the
+# isolated test device and dependent rows; no additional credentials are stored.
+ADMIN_DSN = os.getenv("SANA_GPS_TEST_ADMIN_DSN") or _make_dsn(
+    host=_env_value("DB_HOST", BACKEND_ENV, "127.0.0.1"),
+    port=_env_value("DB_PORT", BACKEND_ENV, "5432"),
+    database=_env_value("DB_NAME", BACKEND_ENV, "sana_db"),
+    user=_env_value("DB_USER", BACKEND_ENV),
+    password=_env_value("DB_PASSWORD", BACKEND_ENV),
+)
+
 pytestmark = pytest.mark.skipif(
     not DSN or not ADMIN_DSN,
-    reason="requires SANA_GPS_TEST_DSN and SANA_GPS_TEST_ADMIN_DSN for isolated PostGIS integration testing",
+    reason=(
+        "integration test needs GPS DB settings in sana-gps/.env and backend "
+        "DB credentials in sana-backend/.env, or explicit test DSNs"
+    ),
 )
 
 
