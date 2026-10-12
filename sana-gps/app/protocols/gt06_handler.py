@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
+from app.policies.device_access import device_access_denial_reason
 from app.protocols.gt06 import (
     GT06FrameError,
     GT06Framer,
@@ -74,6 +75,11 @@ class GT06Handler:
                         break
                 if device is None:
                     logger.warning("Unregistered GT06 login from %s", session.remote_address)
+                    continue
+
+                denial_reason = device_access_denial_reason(device)
+                if denial_reason is not None:
+                    logger.warning("Rejected ineligible GT06 device %s: %s", device.imei, denial_reason)
                     continue
 
                 known_protocol = (device.protocol or "").strip().lower()
