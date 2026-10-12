@@ -134,8 +134,8 @@ def _create_test_device(admin_dsn: str) -> tuple[int, str]:
     with psycopg.connect(admin_dsn) as connection:
         row = connection.execute(
             """
-            INSERT INTO public.fleet_device (imei, sim_number)
-            VALUES (%s, '')
+            INSERT INTO public.fleet_device (imei, sim_number, management_status)
+            VALUES (%s, '', 'warehouse')
             RETURNING id
             """,
             (imei,),
