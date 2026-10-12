@@ -47,6 +47,11 @@ class ProtocolDispatcher:
 
     async def handle(self, session: Session, data: bytes) -> ProtocolResponse | None:
         self._cleanup_closed_sessions()
+        # A delayed read/callback must not create dispatcher state or invoke a
+        # protocol handler after its transport session has begun closing.
+        if session.state in {SessionState.CLOSING, SessionState.CLOSED}:
+            return None
+
         state = self._states.get(session.id)
         if state is None:
             state = _DispatchState(session=session)
