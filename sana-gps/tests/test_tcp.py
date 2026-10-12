@@ -241,12 +241,14 @@ async def test_tcp_listener_does_not_dispatch_data_from_fenced_session():
 async def test_tcp_connection_reset_is_logged_and_listener_keeps_running(caplog):
     manager = SessionManager()
     calls = 0
+    first_failed = asyncio.Event()
     received = asyncio.Event()
 
     async def on_data(session, data):
         nonlocal calls
         calls += 1
         if calls == 1:
+            first_failed.set()
             raise ConnectionResetError("simulated peer reset")
         received.set()
         return None
@@ -261,6 +263,7 @@ async def test_tcp_connection_reset_is_logged_and_listener_keeps_running(caplog)
         _, first_writer = await asyncio.open_connection("127.0.0.1", port)
         first_writer.write(b"reset")
         await first_writer.drain()
+        await asyncio.wait_for(first_failed.wait(), timeout=1.0)
         first_writer.close()
         await first_writer.wait_closed()
 
