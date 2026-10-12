@@ -134,11 +134,13 @@ def _create_test_device(admin_dsn: str) -> tuple[int, str]:
     with psycopg.connect(admin_dsn) as connection:
         row = connection.execute(
             """
-            INSERT INTO public.fleet_device (imei, sim_number, management_status)
-            VALUES (%s, '', 'warehouse')
+            INSERT INTO public.fleet_device (
+                imei, sim_number, management_status, created_at, updated_at
+            )
+            VALUES (%s, '', 'warehouse', %s, %s)
             RETURNING id
             """,
-            (imei,),
+            (imei, datetime.now(timezone.utc), datetime.now(timezone.utc)),
         ).fetchone()
         if row is None:
             raise RuntimeError("PostgreSQL did not return the test device ID")
