@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 
 from app.protocols.types import ProtocolResponse
 from app.transport.session import Session, SessionManager, SessionStateError, TransportType
 
+
+logger = logging.getLogger(__name__)
 
 ConnectionHandler = Callable[[Session, bytes], Awaitable[ProtocolResponse | None]]
 
@@ -92,6 +95,13 @@ class TCPConnection:
             await asyncio.wait_for(self._writer.wait_closed(), timeout=1.0)
         except asyncio.TimeoutError:
             pass
+        except ConnectionError as exc:
+            # Peers may reset a TCP socket while it is being closed.
+            logger.debug(
+                "TCP peer %s disconnected during close: %s",
+                self._session.remote_address,
+                exc,
+            )
 
 
 class TCPListener:
@@ -185,10 +195,29 @@ class TCPListener:
 
     def _connection_task_done(self, task: asyncio.Task[None]) -> None:
         self._connections.pop(task, None)
+        # _run_connection handles ordinary exceptions; this is a final guard
+        # against an unexpected exception escaping a connection task.
+        if task.cancelled():
+            return
+        try:
+            task.result()
+        except Exception:
+            logger.exception("Unexpected exception escaped a TCP connection task")
 
     async def _run_connection(self, connection: TCPConnection) -> None:
         try:
             await connection.run()
+        except (ConnectionResetError, BrokenPipeError) as exc:
+            logger.debug(
+                "TCP peer %s closed the connection: %s",
+                connection.session.remote_address,
+                exc,
+            )
+        except Exception:
+            logger.exception(
+                "Unhandled error processing TCP connection from %s",
+                connection.session.remote_address,
+            )
         finally:
             self._session_manager.remove(connection.session.id)
 
