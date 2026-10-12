@@ -226,7 +226,7 @@ class Subscription(models.Model):
         prefix = 'ORG' if customer_type == 'organization' else 'PRS'
         
         # سال شمسی
-        today = jdatetime.date.today()
+        today = jdatetime.date.fromgregorian(date=timezone.localdate())
         jalali_year = today.year
         
         # پیدا کردن بیشترین شماره موجود برای این پیشوند و سال
