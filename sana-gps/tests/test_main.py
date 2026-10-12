@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from app.config import AppConfig, DatabaseConfig
-from app.main import run
+from app.main import configure_logging, run
 
 
 @pytest.mark.asyncio
@@ -54,3 +54,15 @@ async def test_run_rejects_missing_database_configuration():
     result = await run(config, asyncio.Event())
 
     assert result == 2
+
+
+
+def test_configure_logging_uses_requested_level_and_stdout():
+    with patch("app.main.logging.basicConfig") as basic_config:
+        configure_logging("DEBUG")
+
+    kwargs = basic_config.call_args.kwargs
+    assert kwargs["level"] == 10
+    assert kwargs["stream"] is not None
+    assert kwargs["force"] is True
+    assert "%(levelname)s" in kwargs["format"]
