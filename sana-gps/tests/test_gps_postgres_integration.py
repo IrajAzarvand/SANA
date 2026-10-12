@@ -222,11 +222,16 @@ def test_postgres_persistence_dedup_ordering_and_last_valid_position() -> None:
         pool_max_size=2,
     )
 
-    # Setup uses an admin connection; runtime persistence uses the configured
-    # service connection, exercising the same SQL permissions as the GPS service.
-    device_id, test_imei = _create_test_device(ADMIN_DSN)
-    pool = DatabaseConnectionPool(config)
+    # Keep fixture creation and pool initialization inside the guarded block:
+    # if either step fails after the fixture is committed, finally still removes it.
+    device_id: int | None = None
+    test_imei: str | None = None
+    pool: DatabaseConnectionPool | None = None
     try:
+        # Setup uses an admin connection; runtime persistence uses the configured
+        # service connection, exercising the same SQL permissions as the GPS service.
+        device_id, test_imei = _create_test_device(ADMIN_DSN)
+        pool = DatabaseConnectionPool(config)
         pool.open()
         repository = GPSTelemetryRepository(pool)
         t1 = datetime(2026, 10, 10, 12, 0, tzinfo=timezone.utc)
@@ -312,7 +317,10 @@ def test_postgres_persistence_dedup_ordering_and_last_valid_position() -> None:
         assert raw_count == 3
     finally:
         try:
-            pool.close()
+            if pool is not None:
+                pool.close()
         finally:
-            # Cleanup is attempted even when an assertion or repository call fails.
-            _cleanup_test_device(ADMIN_DSN, device_id, test_imei)
+            # Clean up only if fixture creation returned its exact ID and IMEI.
+            # This also covers failures while constructing/opening the connection pool.
+            if device_id is not None and test_imei is not None:
+                _cleanup_test_device(ADMIN_DSN, device_id, test_imei)
