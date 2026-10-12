@@ -73,14 +73,14 @@ def _make_dsn(
     )
 
 
-# The runtime connection uses the dedicated least-privilege GPS role.
-# Local test DSNs can override these derived values, but are not required.
+# The backend .env contains the configured GPS database connection (GPS_DB_*).
+# Explicit test DSNs can override these values for isolated test environments.
 DSN = os.getenv("SANA_GPS_TEST_DSN") or _make_dsn(
-    host=_env_value("SANA_GPS_DB_HOST", GPS_ENV, "127.0.0.1"),
-    port=_env_value("SANA_GPS_DB_PORT", GPS_ENV, "5432"),
-    database=_env_value("SANA_GPS_DB_NAME", GPS_ENV),
-    user=_env_value("SANA_GPS_DB_USER", GPS_ENV),
-    password=_env_value("SANA_GPS_DB_PASSWORD", GPS_ENV),
+    host=_env_value("GPS_DB_HOST", BACKEND_ENV, _env_value("DB_HOST", BACKEND_ENV, "127.0.0.1")),
+    port=_env_value("GPS_DB_PORT", BACKEND_ENV, _env_value("DB_PORT", BACKEND_ENV, "5432")),
+    database=_env_value("GPS_DB_NAME", BACKEND_ENV, _env_value("DB_NAME", BACKEND_ENV)),
+    user=_env_value("GPS_DB_USER", BACKEND_ENV),
+    password=_env_value("GPS_DB_PASSWORD", BACKEND_ENV),
 )
 
 # The backend's existing DB connection is used for creating/deleting the
@@ -96,8 +96,8 @@ ADMIN_DSN = os.getenv("SANA_GPS_TEST_ADMIN_DSN") or _make_dsn(
 pytestmark = pytest.mark.skipif(
     not DSN or not ADMIN_DSN,
     reason=(
-        "integration test needs GPS DB settings in sana-gps/.env and backend "
-        "DB credentials in sana-backend/.env, or explicit test DSNs"
+        "integration test needs GPS_DB_* and DB_* credentials in "
+        "sana-backend/.env, or explicit test DSNs"
     ),
 )
 
