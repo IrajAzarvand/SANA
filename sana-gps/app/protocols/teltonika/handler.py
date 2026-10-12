@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
+from app.policies.device_access import device_access_denial_reason
 from app.protocols.teltonika.decoder import TeltonikaAVLDecoder, TeltonikaDecodeError
 from app.protocols.teltonika.framer import TeltonikaFrameError, TeltonikaFramer
 from app.protocols.teltonika.identifier import TeltonikaIdentifier
@@ -146,6 +147,11 @@ class TeltonikaHandler:
                 session.remote_address,
             )
             return ProtocolResponse(b"\x00")
+
+        denial_reason = device_access_denial_reason(device)
+        if denial_reason is not None:
+            logger.warning("Rejected ineligible Teltonika device %s: %s", device.imei, denial_reason)
+            return ProtocolResponse(b"\\x00")
 
         known_protocol = (device.protocol or "").strip().lower()
         if known_protocol and known_protocol != ProtocolId.TELTONIKA.value:
