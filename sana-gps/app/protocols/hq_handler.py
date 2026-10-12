@@ -134,6 +134,10 @@ class HQHandler:
             speed_kmh=report.speed_kmh,
             raw_payload=raw,
         )
+        logger.info(
+            "Saved H02 binary telemetry: imei=%s device_id=%s time=%s lat=%.6f lon=%.6f",
+            report.imei, device.id, report.gps_time.isoformat(), report.latitude, report.longitude,
+        )
 
     def _process_report(self, session: Session, raw: bytes) -> None:
         try:
@@ -172,6 +176,10 @@ class HQHandler:
             longitude=longitude,
             speed_kmh=speed,
             raw_payload=raw,
+        )
+        logger.info(
+            "Saved HQ telemetry: imei=%s device_id=%s time=%s lat=%.6f lon=%.6f speed_kmh=%.2f",
+            identifier, device.id, gps_time.isoformat(), latitude, longitude, speed,
         )
 
     @staticmethod
