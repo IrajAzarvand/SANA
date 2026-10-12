@@ -6,7 +6,7 @@ import pytest
 
 from app.protocols.dispatcher import ProtocolDispatcher
 from app.protocols.types import ProtocolId, ProtocolResponse
-from app.transport.session import Session, TransportType
+from app.transport.session import Session, SessionState, TransportType
 
 
 def make_session(transport: TransportType = TransportType.TCP) -> Session:
@@ -166,9 +166,8 @@ async def test_dispatcher_ignores_data_after_session_starts_closing(close_state)
     if close_state == "closed":
         session.close()
     else:
-        session.close()
-        # Recreate the intermediate state to model a callback racing shutdown.
-        session.state = session.state.CLOSING
+        # Model a callback racing the transport shutdown transition.
+        session.state = SessionState.CLOSING
 
     response = await dispatcher.handle(
         session,
