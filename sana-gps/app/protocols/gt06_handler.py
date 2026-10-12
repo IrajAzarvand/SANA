@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from app.policies.device_access import device_access_denial_reason
 from app.protocols.gt06 import (
     GT06FrameError,
     GT06Framer,
@@ -77,11 +76,6 @@ class GT06Handler:
                     logger.warning("Unregistered GT06 login from %s", session.remote_address)
                     continue
 
-                denial_reason = device_access_denial_reason(device)
-                if denial_reason is not None:
-                    logger.warning("Rejected ineligible GT06 device %s: %s", device.imei, denial_reason)
-                    continue
-
                 known_protocol = (device.protocol or "").strip().lower()
                 if known_protocol and known_protocol != ProtocolId.GT06.value:
                     logger.warning(
@@ -120,6 +114,15 @@ class GT06Handler:
                 except GT06FrameError:
                     continue
                 if not self._is_current_session(session):
+                    continue
+                from app.policies.device_access import device_access_denial_reason
+                device = self._device_repository.find_by_imei(session.device_imei or "")
+                if device is None:
+                    logger.warning("GT06 device disappeared before persistence: %s", session.device_imei)
+                    continue
+                denial_reason = device_access_denial_reason(device)
+                if denial_reason is not None:
+                    logger.warning("Rejected ineligible GT06 telemetry %s: %s", device.imei, denial_reason)
                     continue
                 self._position_repository.save(
                     device_id=session.device_id,
