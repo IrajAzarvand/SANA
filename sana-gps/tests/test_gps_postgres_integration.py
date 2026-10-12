@@ -73,31 +73,28 @@ def _make_dsn(
     )
 
 
-# The backend .env contains the configured GPS database connection (GPS_DB_*).
-# Explicit test DSNs can override these values for isolated test environments.
+# Runtime persistence must use the GPS service role, not Django's DB_USER.
+# SANA_GPS_TEST_DSN is the safest override for dedicated test environments.
 DSN = os.getenv("SANA_GPS_TEST_DSN") or _make_dsn(
     host=_env_value("GPS_DB_HOST", BACKEND_ENV, _env_value("DB_HOST", BACKEND_ENV, "127.0.0.1")),
     port=_env_value("GPS_DB_PORT", BACKEND_ENV, _env_value("DB_PORT", BACKEND_ENV, "5432")),
     database=_env_value("GPS_DB_NAME", BACKEND_ENV, _env_value("DB_NAME", BACKEND_ENV)),
-    user=_env_value("GPS_DB_USER", BACKEND_ENV),
-    password=_env_value("GPS_DB_PASSWORD", BACKEND_ENV),
+    user=_env_value("SANA_GPS_TEST_USER", BACKEND_ENV, _env_value("GPS_DB_USER", BACKEND_ENV)),
+    password=_env_value("SANA_GPS_TEST_PASSWORD", BACKEND_ENV, _env_value("GPS_DB_PASSWORD", BACKEND_ENV)),
 )
 
-# The backend's existing DB connection is used for creating/deleting the
-# isolated test device and dependent rows; no additional credentials are stored.
-ADMIN_DSN = os.getenv("SANA_GPS_TEST_ADMIN_DSN") or _make_dsn(
-    host=_env_value("DB_HOST", BACKEND_ENV, "127.0.0.1"),
-    port=_env_value("DB_PORT", BACKEND_ENV, "5432"),
-    database=_env_value("DB_NAME", BACKEND_ENV, "sana_db"),
-    user=_env_value("DB_USER", BACKEND_ENV),
-    password=_env_value("DB_PASSWORD", BACKEND_ENV),
-)
+# Creating the fixture and deleting its dependent rows require a separate,
+# explicitly configured test-administration connection. Never silently fall
+# back to Django's DB_USER: it may lack gps-schema privileges and cleanup would
+# fail after creating test data. Keep this DSN out of tracked files.
+ADMIN_DSN = os.getenv("SANA_GPS_TEST_ADMIN_DSN")
 
 pytestmark = pytest.mark.skipif(
     not DSN or not ADMIN_DSN,
     reason=(
-        "integration test needs GPS_DB_* and DB_* credentials in "
-        "sana-backend/.env, or explicit test DSNs"
+        "integration test requires a GPS runtime DSN (GPS_DB_* or "
+        "SANA_GPS_TEST_DSN) and an explicitly configured "
+        "SANA_GPS_TEST_ADMIN_DSN with test-fixture cleanup privileges"
     ),
 )
 
