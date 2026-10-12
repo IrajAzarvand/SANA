@@ -173,6 +173,11 @@ class HQHandler:
             return
         if not self._is_current_session(session):
             return
+        from app.policies.device_access import device_access_denial_reason
+        denial_reason = device_access_denial_reason(device)
+        if denial_reason is not None:
+            logger.warning("Rejected ineligible HQ telemetry %s: %s", device.imei, denial_reason)
+            return
         self._telemetry.save(
             device_id=device.id,
             protocol=ProtocolId.HQ.value,
