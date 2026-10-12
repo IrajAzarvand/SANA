@@ -11,3 +11,4 @@ def test_connection_configuration_sets_tehran_timezone() -> None:
     DatabaseConnectionPool._configure_connection(connection)
 
     connection.execute.assert_called_once_with("SET TIME ZONE 'Asia/Tehran'")
+    connection.commit.assert_called_once_with()
