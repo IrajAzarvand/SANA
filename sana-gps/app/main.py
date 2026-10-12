@@ -17,7 +17,7 @@ from app.repositories.device import DeviceRepository
 from app.repositories.gt06_position import GT06PositionRepository
 from app.repositories.gps_telemetry import GPSTelemetryRepository
 from app.transport.server import TransportServer
-from app.transport.session import SessionManager
+from app.transport.session import SessionManager, TransportType
 
 
 _LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -85,8 +85,10 @@ async def run(
                 remote=session.remote_address,
                 data=data,
             )
-        # TCP connections and UDP datagrams use the same protocol detection
-        # and dispatch rules; each transport still owns its ACK delivery.
+        # The shared signature-based dispatcher is for TCP streams. Teltonika's
+        # UDP framing is different, so preserve its dedicated legacy UDP path.
+        if session.transport is TransportType.UDP:
+            return await teltonika_handler.handle(session, data)
         return await dispatcher.handle(session, data)
 
     transport_server = TransportServer(
