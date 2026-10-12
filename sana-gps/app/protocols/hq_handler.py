@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
+from app.policies.device_access import device_access_denial_reason
 from app.protocols.h02_binary import H02BinaryError, decode_h02_binary
 from app.protocols.types import ProtocolId, ProtocolResponse
 from app.repositories.device import DeviceRepository
@@ -78,6 +79,10 @@ class HQHandler:
         return None
 
     def _bind_device(self, session: Session, device) -> bool:
+        denial_reason = device_access_denial_reason(device)
+        if denial_reason is not None:
+            logger.warning("Rejected ineligible HQ device %s: %s", device.imei, denial_reason)
+            return False
         known_protocol = (device.protocol or "").strip().lower()
         if known_protocol and known_protocol != ProtocolId.HQ.value:
             return False
