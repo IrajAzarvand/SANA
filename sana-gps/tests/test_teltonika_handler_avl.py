@@ -96,7 +96,7 @@ async def test_database_failure_does_not_return_successful_avl_ack() -> None:
 
 
 @pytest.mark.asyncio
-async def test_ineligible_device_is_not_persisted_or_acknowledged() -> None:
+async def test_warehouse_device_with_inactive_business_flag_is_persisted() -> None:
     repository = FakeTelemetryRepository()
     handler = TeltonikaHandler(FakeDeviceRepository(data_active=False), repository)
     session = _session()
@@ -105,5 +105,5 @@ async def test_ineligible_device_is_not_persisted_or_acknowledged() -> None:
     assert login_response is not None and login_response.data == b"\x01"
 
     response = await handler.handle(session, _codec8_frame())
-    assert response is None
-    assert repository.saved == []
+    assert response is not None and response.data == b"\x00\x00\x00\x01"
+    assert len(repository.saved) == 1
