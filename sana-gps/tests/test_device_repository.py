@@ -59,10 +59,9 @@ def test_find_all_identifiers_reads_only_imei() -> None:
     assert sql.strip().startswith("select imei from public.fleet_device")
 
 
-
 def test_set_detected_protocol_calls_the_restricted_generic_registration_function() -> None:
     connection = Mock()
-    connection.execute.return_value.fetchone.return_value = (42,)
+    connection.execute.return_value.fetchone.return_value = (True,)
     pool = MagicMock()
     pool.connection.return_value.__enter__.return_value = connection
 
