@@ -91,6 +91,7 @@ jobs:
         run: |
           psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -f sql/0003_purge_device_telemetry.sql
           psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -f sql/0004_remove_legacy_roles.sql
+          psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -f sql/0006_drop_legacy_cluster_roles.sql
       - name: Verify single-role permissions
         env:
           PGPASSWORD: postgres
