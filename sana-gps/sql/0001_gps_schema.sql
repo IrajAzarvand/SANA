@@ -216,6 +216,7 @@ DROP TRIGGER IF EXISTS trg_trip_number_immutable ON gps.trip;
 CREATE TRIGGER trg_trip_number_immutable
 BEFORE UPDATE OF number ON gps.trip
 FOR EACH ROW EXECUTE FUNCTION gps.prevent_trip_number_change();
+ALTER FUNCTION gps.prevent_trip_number_change() OWNER TO sana_user;
 
 -- The application role owns these objects and has full control. Keep anonymous
 -- access disabled on current and future GPS tables and sequences.
