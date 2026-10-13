@@ -129,6 +129,7 @@ jobs:
           INSERT INTO public.fleet_device
             (id, imei, management_status, protocol, device_model_id)
           VALUES (1, '352094082143253', 'active', 'teltonika', NULL);
+          SELECT setval(pg_get_serial_sequence('public.fleet_device', 'id'), (SELECT max(id) FROM public.fleet_device));
           "
       - name: Verify restricted protocol auto-registration
         env:
