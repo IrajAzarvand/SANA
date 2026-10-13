@@ -1,5 +1,5 @@
 from django.utils import timezone
-from django.db import connections
+from django.db import connections, transaction
 from django.db.models import Exists, OuterRef, Prefetch, Q
 from rest_framework import viewsets, filters
 from rest_framework.response import Response
@@ -218,6 +218,29 @@ class DeviceViewSet(viewsets.ModelViewSet):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
             return [IsSiteAdmin()]
         return super().get_permissions()
+
+    def destroy(self, request, *args, **kwargs):
+        """Permanently delete a device and its related records only after explicit IMEI confirmation."""
+        instance = self.get_object()
+        confirmed_imei = request.data.get('confirm_imei')
+        if confirmed_imei != instance.imei:
+            return Response(
+                {'detail': 'برای حذف دائمی، IMEI دستگاه باید دقیقاً تأیید شود.'},
+                status=400,
+            )
+
+        with transaction.atomic():
+            # SECURITY DEFINER function removes GPS-schema rows that reference this device.
+            with connections['default'].cursor() as cursor:
+                cursor.execute('SELECT gps.purge_device_data(%s)', [instance.pk])
+            # DeviceOperation protects its referenced devices from accidental deletion.
+            # Explicitly remove operations where this device is either the subject or replacement.
+            DeviceOperation.objects.filter(
+                Q(device=instance) | Q(replacement_device=instance)
+            ).delete()
+            instance.delete()
+
+        return Response(status=204)
 
 
 class DriverViewSet(viewsets.ModelViewSet):

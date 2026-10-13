@@ -152,14 +152,26 @@ function DevicesTab() {
     setEditModalOpen(true);
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm('آیا از حذف این دستگاه اطمینان دارید؟')) return;
+  const handleDelete = async (device) => {
+    if (!window.confirm(
+      `هشدار: حذف دائمی دستگاه با IMEI ${device.imei} تمام سوابق و رویدادهای مرتبط را از دیتابیس حذف می‌کند. این کار قابل بازگشت نیست. ادامه می‌دهید؟`
+    )) return;
+
+    const confirmedImei = window.prompt(
+      `برای تأیید نهایی، IMEI دستگاه را دقیقاً وارد کنید:\n${device.imei}`
+    );
+    if (confirmedImei === null || confirmedImei.trim() !== device.imei) {
+      alert('IMEI واردشده مطابقت ندارد؛ حذف انجام نشد.');
+      return;
+    }
+
     try {
-      await devicesAPI.delete(id);
-      refetch();
+      await devicesAPI.delete(device.id, confirmedImei.trim());
+      await refetch();
     } catch (err) {
       console.error('Error deleting device:', err);
-      alert('خطا در حذف دستگاه');
+      const detail = err.response?.data?.detail;
+      alert(detail || 'خطا در حذف دستگاه؛ برای تشخیص، پاسخ درخواست DELETE را در Network بررسی کنید.');
     }
   };
 
@@ -189,7 +201,7 @@ function DevicesTab() {
         label: 'حذف',
         icon: Trash2,
         variant: 'danger',
-        onClick: () => handleDelete(device.id),
+        onClick: () => handleDelete(device),
       });
     } else if (!isPersonal) {
       items.push({

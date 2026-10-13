@@ -50,8 +50,10 @@ export const devicesAPI = {
     const response = await apiClient.put(`/devices/${id}/`, data);
     return response.data;
   },
-  delete: async (id) => {
-    await apiClient.delete(`/devices/${id}/`);
+  delete: async (id, confirmImei) => {
+    await apiClient.delete(`/devices/${id}/`, {
+      data: { confirm_imei: confirmImei },
+    });
   },
 };
 
