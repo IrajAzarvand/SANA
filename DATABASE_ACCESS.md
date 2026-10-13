@@ -72,7 +72,13 @@ Run commands from the repository root, adjusting paths if needed.
    sudo -u postgres psql -d sana_db -v ON_ERROR_STOP=1 -f sana-gps/sql/0003_purge_device_telemetry.sql
    ```
 
-6. Configure the GPS service to use the same role:
+6. After confirming the new schema works and taking a backup, remove the legacy database roles. This script transfers any remaining owned objects to `sana_user`, removes old grants, and drops only the legacy `sana_*` roles:
+
+   ```bash
+   sudo -u postgres psql -d sana_db -v ON_ERROR_STOP=1 -f sana-gps/sql/0004_remove_legacy_roles.sql
+   ```
+
+7. Configure the GPS service to use the same role:
 
    ```dotenv
    SANA_GPS_DB_NAME=sana_db
