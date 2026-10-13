@@ -8,6 +8,7 @@ from app.protocols.h02_binary import H02BinaryError, decode_h02_binary
 from app.protocols.types import ProtocolId, ProtocolResponse
 from app.repositories.device import DeviceRepository
 from app.repositories.gps_telemetry import GPSTelemetryRepository
+from app.protocols.registration import confirm_detected_protocol
 from app.transport.session import Session, SessionManager, SessionState
 
 
@@ -82,6 +83,10 @@ class HQHandler:
         if known_protocol and known_protocol != ProtocolId.HQ.value:
             return False
         if session.device_id is None:
+            if not confirm_detected_protocol(
+                self._devices, device, ProtocolId.HQ.value
+            ):
+                return False
             if self._session_manager is None:
                 session.bind_device(device_id=device.id, imei=device.imei, protocol=ProtocolId.HQ)
             else:
