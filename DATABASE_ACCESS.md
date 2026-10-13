@@ -93,6 +93,6 @@ Run commands from the repository root, adjusting paths if needed.
 ## Important
 
 - Do not create PostgreSQL roles named `sana_gps`, `sana_backend`, `sana_migrator`, or `sana_owner` for a fresh installation. The SQL setup no longer requires them.
-- Existing obsolete roles are not automatically dropped by these scripts. Verify that no running service or old deployment depends on them before removing them from an existing database.
+- The legacy-role cleanup script is explicit and destructive with respect to those PostgreSQL roles: run it only after backing up the database, confirming the new schema works, and checking that no old service or deployment still uses those logins.
 - Do not grant PostgreSQL superuser status to `sana_user`.
 - Database access is not the customer authorization model. Django must limit each company manager, branch manager, and personal user to their own devices and permitted read-only actions; only the SANA site administrator may perform global device-management operations.
