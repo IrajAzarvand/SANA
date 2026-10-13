@@ -233,6 +233,11 @@ class DeviceViewSet(viewsets.ModelViewSet):
             # SECURITY DEFINER function removes GPS-schema rows that reference this device.
             with connections['default'].cursor() as cursor:
                 cursor.execute('SELECT gps.purge_device_data(%s)', [instance.pk])
+            # DeviceOperation protects its referenced devices from accidental deletion.
+            # Explicitly remove operations where this device is either the subject or replacement.
+            DeviceOperation.objects.filter(
+                Q(device=instance) | Q(replacement_device=instance)
+            ).delete()
             instance.delete()
 
         return Response(status=204)
