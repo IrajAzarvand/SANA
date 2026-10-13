@@ -2,7 +2,7 @@
 
 > این سند شامل تصمیماتی است که تا این مرحله درباره معماری GPS، دریافت داده و ساختار `Normalized Telemetry` در پروژه SANA قطعی شده‌اند.
 >
-> **وضعیت:** سند تجمیعی تصمیمات معماری قطعی GPS/Telemetry تا مرحله Protocol Decoder و Normalization؛ Implementation هنوز شروع نشده است.
+> **وضعیت به‌روزرسانی ۲۰۲۶-۱۰-۱۳:** معماری مرجع حفظ شده، اما Implementation در `sana-gps` آغاز شده است. در نسخه فعلی، دریافت/Decode و ذخیره‌سازی چند مسیر پروتکلی، سیاست دریافت مستقل از Lifecycle/Contract و ثبت خودکار Protocol پیاده‌سازی شده‌اند. تست‌های فعلی روی محیط توسعه: `175 passed`. این سند باید وضعیت واقعی کد را از تصمیمات طراحیِ هنوز پیاده‌سازی‌نشده جدا کند.
 
 ---
 
@@ -16483,11 +16483,11 @@ last_seen
 
 ---
 
-### 8.2 Device مجاز باشد
+### 8.2 Device ثبت‌شده باشد
 
-Device باید در وضعیت Lifecycleای باشد که دریافت Telemetry از آن مجاز است.
+برای دریافت Telemetry، شرط پایه ثبت بودن IMEI در SANA است. وضعیت Lifecycle/management یا داشتن قرارداد، به‌تنهایی مانع دریافت داده نیست.
 
-Deviceای که طبق سیاست سیستم دیگر نباید Telemetry آن پذیرفته شود، نباید Packet معتبر برای CurrentState تولید کند.
+Device ناشناخته نباید Packet معتبر برای CurrentState تولید کند. برای Device ثبت‌شده، پذیرش Telemetry به اعتبار Protocol/Packet و قواعد فنی پردازش وابسته است.
 
 ---
 
@@ -26582,12 +26582,12 @@ ACTIVE
 REPAIR
 ```
 
-در این وضعیت:
+در این وضعیت، Device از نظر عملیات تجاری/نصب عملیاتی نیست؛ اما این موضوع به‌تنهایی دریافت Telemetry را متوقف نمی‌کند.
 
-* Device Operational نیست.
-* Session فعال نباید باقی بماند.
-* Assignment فعال باید بسته شود.
-* History حفظ می‌شود.
+* اتصال GPS می‌تواند برای دریافت و ثبت Telemetry ادامه پیدا کند.
+* Assignment فعال، در صورت لزوم، طبق قواعد Lifecycle بسته می‌شود.
+* ارسال Command و عملیات تجاری می‌توانند محدود شوند.
+* داده‌های تاریخی موجود حفظ می‌شوند.
 
 بعد از تعمیر:
 
@@ -27055,59 +27055,40 @@ RETIRED → REPAIR
 
 ---
 
-# 30. Session Fence
+# 30. اتصال GPS و Lifecycle
 
-ورود Device به وضعیت غیرعملیاتی:
+تغییر وضعیت تجاری Device به `SUSPENDED`، `REPAIR` یا `RETIRED` به‌خودی‌خود مجوز حذف یا بستن مسیر دریافت Telemetry نیست.
 
-```text
-SUSPENDED
-REPAIR
-RETIRED
-```
-
-باید Session فعلی را:
+قاعده فعلی پیاده‌سازی:
 
 ```text
-FENCE
-↓
-CLOSE
+Registered IMEI
+→ GPS telemetry intake remains allowed
 ```
 
-کند.
+و به‌صورت مستقل:
 
-این باعث می‌شود Connection قدیمی نتواند Runtime را ادامه دهد.
+```text
+Non-operational business status
+→ New Commands / business operations may be blocked
+```
+
+Session فقط به‌دلیل وضعیت انبار، خرابی، تعمیر، تعلیق یا خروج دائمی نباید برای قطع دریافت Telemetry بسته شود. حفاظت از Session قدیمی و جایگزینی Session هم‌زمان همچنان برقرار است.
 
 ---
 
-# 31. Telemetry Device غیرعملیاتی
+# 31. Telemetry برای Device با وضعیت غیرعملیاتی
 
-اگر Device در:
-
-```text
-REPAIR
-SUSPENDED
-RETIRED
-```
-
-Packet ارسال کند:
+برای هر Device که IMEI آن در SANA ثبت شده است، وضعیت‌هایی مانند `WAREHOUSE`، `FAULTY`، `LOST`، `STOLEN`، `SUSPENDED`، `REPAIR` و `RETIRED` مانع دریافت Telemetry نیستند.
 
 ```text
-Known Device
-but Not Allowed
+Known / Registered Device
+→ Protocol validation
+→ Decode / Validate
+→ Persist valid telemetry
 ```
 
-نباید Telemetry عملیاتی ایجاد شود.
-
-یعنی:
-
-```text
-CurrentState       ❌
-LocationHistory    ❌
-Event              ❌
-Trip               ❌
-```
-
-Packet در صورت نیاز می‌تواند صرفاً برای Security/Debug با Retention مناسب ثبت شود.
+نیازی به قرارداد فعال، Subscription فعال یا Vehicle Assignment برای دریافت Telemetry نیست. این قاعده به معنی مجاز بودن Command یا تغییر وضعیت تجاری نیست؛ آن‌ها Policy جداگانه دارند.
 
 ---
 
@@ -27516,12 +27497,12 @@ ACTIVE
 REPAIR
 ```
 
-در این وضعیت:
+در این وضعیت، Device از نظر عملیات تجاری/نصب عملیاتی نیست؛ اما این موضوع به‌تنهایی دریافت Telemetry را متوقف نمی‌کند.
 
-* Device Operational نیست.
-* Session فعال نباید باقی بماند.
-* Assignment فعال باید بسته شود.
-* History حفظ می‌شود.
+* اتصال GPS می‌تواند برای دریافت و ثبت Telemetry ادامه پیدا کند.
+* Assignment فعال، در صورت لزوم، طبق قواعد Lifecycle بسته می‌شود.
+* ارسال Command و عملیات تجاری می‌توانند محدود شوند.
+* داده‌های تاریخی موجود حفظ می‌شوند.
 
 بعد از تعمیر:
 
@@ -27989,59 +27970,40 @@ RETIRED → REPAIR
 
 ---
 
-# 30. Session Fence
+# 30. اتصال GPS و Lifecycle
 
-ورود Device به وضعیت غیرعملیاتی:
+تغییر وضعیت تجاری Device به `SUSPENDED`، `REPAIR` یا `RETIRED` به‌خودی‌خود مجوز حذف یا بستن مسیر دریافت Telemetry نیست.
 
-```text
-SUSPENDED
-REPAIR
-RETIRED
-```
-
-باید Session فعلی را:
+قاعده فعلی پیاده‌سازی:
 
 ```text
-FENCE
-↓
-CLOSE
+Registered IMEI
+→ GPS telemetry intake remains allowed
 ```
 
-کند.
+و به‌صورت مستقل:
 
-این باعث می‌شود Connection قدیمی نتواند Runtime را ادامه دهد.
+```text
+Non-operational business status
+→ New Commands / business operations may be blocked
+```
+
+Session فقط به‌دلیل وضعیت انبار، خرابی، تعمیر، تعلیق یا خروج دائمی نباید برای قطع دریافت Telemetry بسته شود. حفاظت از Session قدیمی و جایگزینی Session هم‌زمان همچنان برقرار است.
 
 ---
 
-# 31. Telemetry Device غیرعملیاتی
+# 31. Telemetry برای Device با وضعیت غیرعملیاتی
 
-اگر Device در:
-
-```text
-REPAIR
-SUSPENDED
-RETIRED
-```
-
-Packet ارسال کند:
+برای هر Device که IMEI آن در SANA ثبت شده است، وضعیت‌هایی مانند `WAREHOUSE`، `FAULTY`، `LOST`، `STOLEN`، `SUSPENDED`، `REPAIR` و `RETIRED` مانع دریافت Telemetry نیستند.
 
 ```text
-Known Device
-but Not Allowed
+Known / Registered Device
+→ Protocol validation
+→ Decode / Validate
+→ Persist valid telemetry
 ```
 
-نباید Telemetry عملیاتی ایجاد شود.
-
-یعنی:
-
-```text
-CurrentState       ❌
-LocationHistory    ❌
-Event              ❌
-Trip               ❌
-```
-
-Packet در صورت نیاز می‌تواند صرفاً برای Security/Debug با Retention مناسب ثبت شود.
+نیازی به قرارداد فعال، Subscription فعال یا Vehicle Assignment برای دریافت Telemetry نیست. این قاعده به معنی مجاز بودن Command یا تغییر وضعیت تجاری نیست؛ آن‌ها Policy جداگانه دارند.
 
 ---
 
@@ -28418,8 +28380,8 @@ DeviceVehicleAssignment
 20. LocationHistory همیشه متعلق به Device باقی می‌ماند.
 21. Lifecycle History در `DeviceLifecycleEvent` نگهداری می‌شود.
 22. Lifecycle Event با GPS Event یکی نیست.
-23. ورود به SUSPENDED/REPAIR/RETIRED باعث Fence/Close Session می‌شود.
-24. Device غیرعملیاتی نباید Telemetry عملیاتی تولید کند.
+23. Lifecycle و وضعیت تجاری Device از سیاست دریافت Telemetry جدا هستند؛ تغییر آن‌ها به‌تنهایی نباید مسیر Telemetry را مسدود کند.
+24. هر Device ثبت‌شده، مستقل از وضعیت انبار/خرابی/تعمیر/سرقت/تعلیق/خروج، می‌تواند Telemetry معتبر بفرستد؛ مجوز Command و عملیات تجاری جداگانه کنترل می‌شود.
 25. DeviceModel Change باید کنترل‌شده و Audit‌شده باشد.
 26. Profile Change باید Versioned و قابل Trace باشد.
 27. Device تعمیرشده همان Device قبلی است.
@@ -30522,203 +30484,77 @@ sana-gps
 
 ---
 
-# 5. WAREHOUSE
+# 5. سیاست دریافت Telemetry مستقل از Lifecycle و قرارداد
 
-Device در Warehouse هنوز در اختیار سیستم است ولی برای Runtime عملیاتی نیست.
-
-قاعده:
+برای هر Device که IMEI آن در جدول Device ثبت شده باشد، دریافت Telemetry مجاز است؛ وضعیت‌های `WAREHOUSE`، `FAULTY`، `LOST`، `STOLEN`، `SUSPENDED`، `REPAIR`، `RETURNED` و `RETIRED` به‌تنهایی باعث Reject نمی‌شوند.
 
 ```text
-Device Status = WAREHOUSE
+TCP / UDP packet
+    ↓
+IMEI / identifier lookup
+    ↓
+Registered device?
+    ├─ No  → reject; no successful identification/telemetry ACK
+    └─ Yes → protocol validation and decoding
+                 ↓
+              validate payload
+                 ↓
+              persist valid telemetry
 ```
 
-نتیجه:
+برای دریافت داده، Device لازم نیست به قرارداد نسبت داده شده باشد، Subscription فعال داشته باشد یا به Vehicle تخصیص داده شده باشد. شناسه ثبت‌نشده همچنان رد می‌شود؛ سازگاری Protocol و اعتبار فنی Packet نیز همچنان بررسی می‌شوند.
 
-```text
-GPS Connection
-→ Reject
-```
-
-اگر Device به Port وصل شود:
-
-```text
-IMEI
-   ↓
-Device Lookup
-   ↓
-WAREHOUSE
-   ↓
-Reject
-```
-
-نباید Session فعال ایجاد شود.
+این سیاست فقط درباره **دریافت و ذخیره Telemetry** است. مجوز Command، نصب روی Vehicle، فروش، Lifecycle transition و سایر عملیات تجاری مستقل‌اند و می‌توانند برای Deviceهای غیرعملیاتی محدود باشند.
 
 ---
 
-# 6. WAREHOUSE و ACK
+# 6. ACK برای Device ثبت‌شده
 
-برای Device موجود در Warehouse:
-
-```text
-Valid Device
-≠
-Allowed Runtime Device
-```
-
-بنابراین:
-
-```text
-Login ACK
-→ موفق ارسال نمی‌شود
-```
-
-و:
-
-```text
-AVL ACK
-→ موفق ارسال نمی‌شود
-```
-
-زیرا Device مجاز به Runtime نیست.
+ACK موفق مربوط به Login/Telemetry طبق قواعد همان Protocol و فقط در نقطه‌ای ارسال می‌شود که آن Protocol معتبر شناخته شده و شرط ذخیره‌سازی/Commit مربوطه برقرار شده باشد. وضعیت قرارداد یا انبار به‌تنهایی دلیل رد ACK نیست؛ شناسه ناشناخته، Protocol نامعتبر و خطای ذخیره‌سازی همچنان می‌توانند مانع ACK موفق شوند.
 
 ---
 
 # 7. ACTIVE
 
-وضعیت اصلی عملیاتی:
-
-```text
-ACTIVE
-```
-
-است.
-
-در این وضعیت Device اجازه دارد:
-
-```text
-Connect
-Authenticate
-Create Session
-Send Telemetry
-Receive Command
-Update CurrentState
-Write LocationHistory
-Create Event
-```
-
-را انجام دهد.
+`ACTIVE` وضعیت تجاری/عملیاتی Device است، نه شرط دریافت Telemetry. Device فعال می‌تواند Telemetry بفرستد و بر اساس Policy مستقل، Command هم دریافت کند.
 
 ---
 
 # 8. SUSPENDED
 
-Suspended به معنی غیرفعال شدن موقت عملیاتی Device است.
-
-قاعده:
-
-```text
-SUSPENDED
-→ No new active GPS Session
-```
-
-اگر Session فعال وجود داشته باشد:
-
-```text
-Lifecycle Change
-      ↓
-SUSPENDED
-      ↓
-Fence Current Session
-      ↓
-Close Connection
-```
+`SUSPENDED` می‌تواند دسترسی‌های تجاری یا Command را محدود کند، اما مسیر دریافت Telemetry از Device ثبت‌شده را به‌تنهایی مسدود نمی‌کند.
 
 ---
 
 # 9. REPAIR
 
-Device در Repair نباید Telemetry عملیاتی تولید کند.
-
-قاعده:
-
-```text
-REPAIR
-→ No Runtime Session
-```
-
-اگر Device قبل از Repair متصل بوده:
-
-```text
-ACTIVE Session
-      ↓
-REPAIR
-      ↓
-Fence
-      ↓
-Close
-```
+`REPAIR` وضعیت تعمیر Device است. Telemetry معتبر همچنان دریافت و ذخیره می‌شود تا وضعیت/موقعیت دستگاه قابل مشاهده باشد؛ این موضوع به معنی اجازه نصب عملیاتی یا ارسال Command نیست.
 
 ---
 
 # 10. RETURNED
 
-Returned یعنی Device دیگر در چرخه عملیاتی فعلی SANA قرار ندارد.
-
-مثلاً:
-
-```text
-Customer
-   ↓
-Device
-   ↓
-Returned
-```
-
-در این وضعیت:
-
-```text
-New Session
-→ Reject
-```
-
-و Session قبلی:
-
-```text
-Fence + Close
-```
-
-می‌شود.
+`RETURNED` به‌تنهایی دریافت Telemetry را مسدود نمی‌کند. هرگونه محدودیت تجاری یا فرمانی طبق Policy جداگانه اعمال می‌شود.
 
 ---
 
 # 11. RETIRED
 
-Retired یک وضعیت دائمی/نهایی برای Device است.
-
-قاعده:
-
-```text
-RETIRED
-→ No Runtime
-→ No New Session
-→ No Telemetry Processing
-→ No Command
-```
-
-تاریخچه قبلی باقی می‌ماند.
+`RETIRED` وضعیت Lifecycle نهایی است، اما ثبت بودن IMEI همچنان برای دریافت Telemetry کافی است. تصمیم درباره نگهداری/نمایش داده‌های تاریخی یا عملیات تجاری از پذیرش Packet جداست.
 
 ---
 
 # 12. Lifecycle Matrix
 
-| Device Lifecycle | New Connection | Existing Session | Telemetry | Command |
-| ---------------- | -------------- | ---------------- | --------- | ------- |
-| `WAREHOUSE`      | Reject         | None             | Reject    | No      |
-| `ACTIVE`         | Allow          | Allow            | Allow     | Allow   |
-| `SUSPENDED`      | Reject         | Fence/Close      | Reject    | No      |
-| `REPAIR`         | Reject         | Fence/Close      | Reject    | No      |
-| `RETURNED`       | Reject         | Fence/Close      | Reject    | No      |
-| `RETIRED`        | Reject         | Fence/Close      | Reject    | No      |
+| وضعیت Device | دریافت/ذخیره Telemetry | نیاز به قرارداد | Command جدید |
+| --- | --- | --- | --- |
+| `WAREHOUSE` | مجاز برای IMEI ثبت‌شده | خیر | طبق Policy تجاری؛ معمولاً خیر |
+| `ACTIVE` | مجاز برای IMEI ثبت‌شده | خیر | طبق Policy تجاری |
+| `SUSPENDED` | مجاز برای IMEI ثبت‌شده | خیر | محدود/غیرمجاز طبق Policy |
+| `REPAIR` | مجاز برای IMEI ثبت‌شده | خیر | محدود/غیرمجاز طبق Policy |
+| `RETURNED` | مجاز برای IMEI ثبت‌شده | خیر | محدود/غیرمجاز طبق Policy |
+| `RETIRED` | مجاز برای IMEI ثبت‌شده | خیر | محدود/غیرمجاز طبق Policy |
+| `FAULTY` / `LOST` / `STOLEN` | مجاز برای IMEI ثبت‌شده | خیر | طبق Policy تجاری و امنیتی |
 
 ---
 
@@ -30768,59 +30604,13 @@ IMEI
 
 # 14. SUSPENDED شدن Device
 
-اگر Device در حالت:
-
-```text
-ACTIVE
-```
-
-باشد و Suspend شود:
-
-```text
-ACTIVE
-   ↓
-SUSPENDED
-```
-
-باید Session فعال آن Device Fence شود.
-
-جریان:
-
-```text
-Lifecycle Change
-       ↓
-SUSPENDED
-       ↓
-Session Fence
-       ↓
-Connection Close
-```
+تغییر Lifecycle مانند Suspend نباید اتصال دریافت Telemetry را صرفاً برای اعمال وضعیت تجاری قطع کند. Runtime می‌تواند همان Session را برای دریافت داده نگه دارد، درحالی‌که مسیر Command یا سایر عملیات مجزا طبق وضعیت تجاری محدود می‌شود.
 
 ---
 
-# 15. چرا فقط Reject Packet کافی نیست؟
+# 15. بررسی مجوزها هنگام عملیات
 
-اگر فقط Packetهای بعدی را Reject کنیم ولی Connection باز بماند:
-
-```text
-TCP Connection
-   ↓
-Device suspended
-   ↓
-Connection remains open
-```
-
-این باعث مصرف منابع و Sessionهای بی‌مصرف می‌شود.
-
-بنابراین برای Lifecycleهای غیرعملیاتی:
-
-```text
-Fence
-+
-Close
-```
-
-ترجیح داده می‌شود.
+برای جلوگیری از Race Condition، وضعیت Device باید هنگام عملیات تجاری حساس مثل Claim/Send یک Command بررسی شود. این بررسی نباید به یک شرط رد Telemetry بر اساس قرارداد یا Lifecycle تبدیل شود.
 
 ---
 
@@ -30872,63 +30662,28 @@ Session Generation
 Generation 15
 ```
 
-اگر Device Suspend شود:
+اگر Session جدید معتبر جایگزین شود، generation قبلی Fence می‌شود. تغییر Lifecycle به‌تنهایی generation دریافت Telemetry را باطل نمی‌کند.
 
-```text
-Generation 15
-→ Fenced
-```
-
-هر Work Item قدیمی که:
-
-```text
-generation = 15
-```
-
-داشته باشد، دیگر اجازه Side Effect ندارد.
+هر Work Item متعلق به Session واقعاً جایگزین‌شده/بسته‌شده که generation قدیمی دارد، نباید Side Effect ایجاد کند.
 
 ---
 
-# 18. Lifecycle Fence
+# 18. Lifecycle و Side Effectهای Runtime
 
-Fence باید جلوی این موارد را بگیرد:
-
-```text
-CurrentState Update
-LocationHistory Insert
-Event Creation
-Trip Update
-Command Send
-last_seen Update
-```
-
-یعنی:
+تغییر Lifecycle تجاری به‌تنهایی نباید Side Effectهای مربوط به دریافت Telemetry را مسدود کند. برای Device ثبت‌شده، Telemetry معتبر همچنان طبق Pipeline پردازش می‌شود.
 
 ```text
-Old Session
-   ↓
-Lifecycle no longer valid
-   ↓
-NO SIDE EFFECT
+Registered IMEI + valid Protocol/Packet
+→ Telemetry pipeline may persist data
 ```
+
+در مقابل، Command و سایر عملیات تجاری حساس باید در نقطه اجرا، مجوزهای تجاری را جداگانه بررسی کنند.
 
 ---
 
 # 19. Packet در حال Processing
 
-ممکن است Packet قبل از Suspend دریافت شده باشد ولی Worker هنوز آن را پردازش نکرده باشد.
-
-مثلاً:
-
-```text
-10:00:00 Packet received
-10:00:01 Device suspended
-10:00:02 Worker starts
-```
-
-Worker نباید صرفاً چون Packet قبل از Suspend دریافت شده، بدون بررسی آن را پردازش کند.
-
-Session/Runtime validity باید دوباره بررسی شود.
+اگر Packet هم‌زمان با تغییر Lifecycle پردازش شود، باید Session identity/generation و صحت Packet بررسی شوند تا Packet متعلق به Session قدیمی یا غیرمعتبر Side Effect نادرست نسازد. تغییر Lifecycle به‌تنهایی دلیل رد Telemetry نیست؛ وضعیت تجاری باید برای Command و عملیات تجاری حساس بررسی شود.
 
 ---
 
@@ -31331,28 +31086,17 @@ Connection Identity
 
 ---
 
-# 34. Lifecycle Change باید Session را کنترل کند
+# 34. Lifecycle Change، Telemetry و Command
 
-ولی تغییر Lifecycleهای غیرعملیاتی:
-
-```text
-SUSPENDED
-REPAIR
-RETURNED
-RETIRED
-```
-
-باید Runtime را Fence کند.
-
-پس:
+تغییر Lifecycle نباید به‌تنهایی Session دریافت Telemetry را Fence/Close کند. دریافت داده از Device ثبت‌شده مستقل از وضعیت تجاری است.
 
 ```text
-Assignment Change
-→ معمولاً Session را قطع نمی‌کند
-
-Lifecycle Operationality Change
-→ می‌تواند Session را Fence کند
+Lifecycle / Contract / Assignment
+→ ممکن است Command و عملیات تجاری را محدود کند
+→ به‌تنهایی مانع Telemetry intake نیست
 ```
+
+جایگزینی Session قدیمی با Session معتبر جدید همچنان از طریق Session Manager انجام می‌شود.
 
 ---
 
@@ -31458,55 +31202,15 @@ Command definitely not sent
 
 ---
 
-# 38. Telemetry بعد از Suspend
+# 38. Telemetry بعد از تغییر وضعیت تجاری
 
-اگر Device پس از Suspend هنوز Packet بفرستد:
-
-```text
-Device
-→ SUSPENDED
-```
-
-Packet:
-
-```text
-Reject / Ignore Runtime Side Effects
-```
-
-می‌شود.
-
-اما Raw Packet در صورت Policy نگهداری می‌تواند ثبت شود، چون Raw Packet برای Debug و Audit است.
-
-نکته:
-
-```text
-Raw Packet
-≠
-Telemetry Accepted
-```
+اگر Device بعد از Suspend، ورود به تعمیر، قرارگرفتن در انبار یا ثبت وضعیت گم‌شده/سرقت‌شده همچنان Packet بفرستد، این وضعیت به‌تنهایی دلیل Reject نیست. تا وقتی IMEI ثبت شده و Protocol/Packet معتبر است، Telemetry طبق مسیر عادی همان Protocol پردازش و ذخیره می‌شود.
 
 ---
 
-# 39. Raw Packet برای Device غیرعملیاتی
+# 39. Raw Packet و Telemetry معتبر
 
-اگر Device شناخته‌شده ولی:
-
-```text
-SUSPENDED
-```
-
-باشد، می‌توان Raw Packet را برای Debug/Audit ذخیره کرد، ولی:
-
-```text
-LocationHistory
-CurrentState
-Event
-Trip
-```
-
-نباید از آن ساخته شود.
-
-در صورت نیاز به کاهش Storage، این رفتار می‌تواند Configuration شود.
+Raw Packet برای Debug/تشخیص Protocol می‌تواند Policy نگهداری جداگانه داشته باشد؛ اما سیاست Raw Capture جایگزین سیاست پذیرش Telemetry نیست. Device ثبت‌شده می‌تواند Telemetry معتبر تولید کند حتی اگر وضعیت تجاری آن غیرعملیاتی باشد. Device ناشناخته همچنان به‌صورت پیش‌فرض Raw persistence ندارد.
 
 ---
 
@@ -31532,49 +31236,26 @@ No ACK
 
 ---
 
-# 41. DeviceModel / Protocol هنگام Lifecycle
+# 41. Device Identity و Protocol Resolution
 
-Lifecycle روی Protocol Resolution نیز اثر دارد.
-
-اما ترتیب همچنان:
+ترتیب دریافت:
 
 ```text
-Identity
+Identity / IMEI
 → Device Lookup
-→ Lifecycle Check
-→ Protocol Resolution
+→ Protocol Detection / Compatibility Check
 → Decode
+→ Validate
+→ Persist
 ```
 
-است.
-
-اگر Device:
-
-```text
-SUSPENDED
-```
-
-باشد، نباید برای آن Decode کامل و پرهزینه انجام شود.
+Lifecycle، Contract و Vehicle Assignment شرط ورود به مسیر Telemetry نیستند. شناسه ناشناخته یا Protocol ناسازگار/نامعتبر همچنان Reject می‌شود.
 
 ---
 
 # 42. Fast Reject
 
-برای Deviceهای غیرمجاز/غیرعملیاتی:
-
-```text
-IMEI
- ↓
-Device Lookup
- ↓
-Lifecycle Check
- ↓
-Reject
-```
-
-باید تا حد امکان سریع انجام شود.
-
-این برای جلوگیری از مصرف CPU و Memory روی Traffic غیرمجاز مهم است.
+Reject سریع برای IMEI ثبت‌نشده، handshake نامعتبر، Protocol ناسازگار، Frame خراب یا ورودی بیش‌ازحد بزرگ به کار می‌رود. وضعیت‌های تجاری مثل `WAREHOUSE`، `FAULTY`، `LOST`، `STOLEN`، `SUSPENDED` و `REPAIR` به‌تنهایی دلیل Reject دریافت Telemetry نیستند.
 
 ---
 
@@ -31666,38 +31347,7 @@ Authenticate
 
 # 46. Restart و Lifecycle
 
-بعد از Restart:
-
-```text
-Device Lifecycle
-→ Database
-```
-
-دوباره خوانده می‌شود.
-
-اگر:
-
-```text
-ACTIVE
-```
-
-باشد:
-
-```text
-Allow new connection
-```
-
-اگر:
-
-```text
-SUSPENDED
-```
-
-باشد:
-
-```text
-Reject
-```
+بعد از Restart، Sessionهای قبلی Restore نمی‌شوند و Device باید دوباره وصل شود. برای هر IMEI ثبت‌شده، اتصال و Telemetry پس از اعتبارسنجی شناسه و Protocol می‌تواند پذیرفته شود؛ وضعیت `ACTIVE` یا داشتن قرارداد شرط دریافت داده نیست. سیاست Command پس از Restart همچنان باید وضعیت تجاری را جداگانه بررسی کند.
 
 ---
 
@@ -31883,53 +31533,53 @@ NO_SESSION
     ▼
 CONNECTED
     │
-    │ authenticated
+    │ registered identifier + valid protocol
     ▼
-ACTIVE_SESSION
+TELEMETRY_SESSION
     │
     ├── disconnect ───────► DISCONNECTED
     │
-    ├── lifecycle change ─► FENCED
-    │
-    └── new session ──────► FENCED
+    └── newer session ────► old session FENCED
 ```
 
 و:
 
 ```text
-FENCED
-→ Connection Closed
-→ No Side Effects
+FENCED old session
+→ no further side effects from that old session
 ```
+
+تغییر Lifecycle تجاری به‌تنهایی Session دریافت Telemetry را Fence نمی‌کند.
 
 ---
 
 # 54. Business و Runtime Matrix
 
-| Lifecycle | Session | Telemetry | CurrentState | History  | Command |
-| --------- | ------- | --------- | ------------ | -------- | ------- |
-| WAREHOUSE | Reject  | Reject    | Preserve     | Preserve | No      |
-| ACTIVE    | Allow   | Allow     | Update       | Write    | Allow   |
-| SUSPENDED | Fence   | Reject    | Preserve     | No new   | No      |
-| REPAIR    | Fence   | Reject    | Preserve     | No new   | No      |
-| RETURNED  | Fence   | Reject    | Preserve     | No new   | No      |
-| RETIRED   | Fence   | Reject    | Preserve     | Preserve | No      |
+| وضعیت تجاری | GPS connection / intake | Telemetry معتبر | قرارداد لازم است؟ | Command جدید |
+| --- | --- | --- | --- | --- |
+| WAREHOUSE | مجاز برای IMEI ثبت‌شده | پردازش/ذخیره طبق Protocol | خیر | طبق Policy تجاری؛ معمولاً خیر |
+| ACTIVE | مجاز برای IMEI ثبت‌شده | پردازش/ذخیره طبق Protocol | خیر | طبق Policy تجاری |
+| FAULTY | مجاز برای IMEI ثبت‌شده | پردازش/ذخیره طبق Protocol | خیر | طبق Policy تجاری |
+| LOST / STOLEN | مجاز برای IMEI ثبت‌شده | پردازش/ذخیره طبق Protocol | خیر | طبق Policy امنیتی |
+| SUSPENDED / REPAIR | مجاز برای IMEI ثبت‌شده | پردازش/ذخیره طبق Protocol | خیر | محدود طبق Policy |
+| RETURNED / RETIRED | مجاز برای IMEI ثبت‌شده | پردازش/ذخیره طبق Protocol | خیر | محدود طبق Policy |
+| Unknown IMEI | Reject | Reject | — | خیر |
+
+تغییر Lifecycle نباید Session دریافت Telemetry را صرفاً برای مسدودکردن داده Fence/Close کند. Preserve همچنان به معنی حذف‌نکردن داده‌های قبلی است؛ داده جدید برای Device ثبت‌شده نیز طبق مسیر Telemetry معتبر پذیرفته می‌شود.
 
 ---
 
 # 55. نکته مهم درباره Preserve
 
-`Preserve` به این معنی نیست که Snapshot یا History دوباره نوشته شود.
-
-یعنی:
+`Preserve` یعنی تغییر وضعیت تجاری نباید داده‌های قبلی را حذف یا بازنویسی کند:
 
 ```text
 Lifecycle Change
-→ CurrentState Delete ❌
-→ History Delete ❌
+→ Existing CurrentState preserved
+→ Existing History preserved
 ```
 
-فقط Runtime Processing متوقف می‌شود.
+Telemetry جدید از Device ثبت‌شده همچنان طبق Pipeline فنی پردازش می‌شود. محدودیت‌های Command/Business Runtime جداگانه اعمال می‌شوند.
 
 ---
 
@@ -32034,7 +31684,7 @@ Commands
 
 # 60. اصل نهایی مرحله ۱۹
 
-> **Business Lifecycle تعیین می‌کند Device از نظر SANA مجاز به فعالیت GPS هست یا نه؛ Runtime Session تعیین می‌کند Device در حال حاضر چگونه به sana-gps متصل است. تغییر Lifecycleهای غیرعملیاتی باید Session را Fence و Connection را Close کند، اما نباید تاریخچه یا CurrentState را حذف کند. Assignment با Lifecycle مستقل است و تعویض Device باعث انتقال Session، CurrentState یا History بین Deviceها نمی‌شود.**
+> **ثبت بودن IMEI و اعتبار Protocol/Packet مبنای پذیرش Telemetry است؛ قرارداد، Assignment و Lifecycle تجاری به‌تنهایی مانع دریافت داده نیستند. Lifecycle می‌تواند Command و عملیات تجاری را محدود کند، اما نباید مسیر Telemetry را صرفاً به‌دلیل انبار، خرابی، تعمیر، سرقت، تعلیق یا خروج مسدود کند. Fence فقط برای Session واقعاً قدیمی/جایگزین‌شده یا بسته‌شده اعمال می‌شود؛ Assignment با Lifecycle مستقل است و تعویض Device باعث انتقال Session، CurrentState یا History بین Deviceها نمی‌شود.**
 
 ---
 
@@ -32048,9 +31698,9 @@ Commands
 [✓] REPAIR
 [✓] RETURNED
 [✓] RETIRED
-[✓] Session Fencing
-[✓] Session Generation
-[✓] Telemetry Rejection
+[✓] Session Fencing برای Session قدیمی/جایگزین‌شده
+[✓] Session Generation مستقل از Lifecycle intake
+[✓] Telemetry Intake مستقل از Lifecycle/Contract
 [✓] CurrentState Preservation
 [✓] Historical Preservation
 [✓] Device Replacement
@@ -32058,7 +31708,7 @@ Commands
 [✓] Command Interaction
 [✓] Unknown Device
 [✓] Restart Behavior
-[✓] Lifecycle/Session Race Protection
+[✓] بررسی Race بین Session/Packet و عملیات تجاری
 [✓] Physical Delete Policy
 [✓] IMEI Identity Preservation
 
@@ -37901,25 +37551,9 @@ No Raw persistence by default
 
 # 45. Lifecycle Security
 
-برای Runtime:
+برای دریافت Telemetry، شرط اصلی وجود Device ثبت‌شده و معتبر بودن شناسه/Protocol/Packet است؛ `ACTIVE` یا قرارداد فعال شرط نیست. وضعیت‌های `WAREHOUSE`، `FAULTY`، `LOST`، `STOLEN`، `SUSPENDED`، `REPAIR`، `RETURNED` و `RETIRED` به‌تنهایی دریافت داده را Block نمی‌کنند.
 
-```text
-ACTIVE
-```
-
-شرط اصلی پذیرش Telemetry/Command است.
-
-این وضعیت‌ها Block هستند:
-
-```text
-WAREHOUSE
-SUSPENDED
-REPAIR
-RETURNED
-RETIRED
-```
-
-Session قبلی نیز باید Fence شود.
+Command و عملیات تجاری حساس باید Policy مستقل داشته باشند و در صورت نیاز برای وضعیت‌های غیرعملیاتی مسدود شوند. این محدودیت نباید به مسیر ingest تله‌متری تعمیم داده شود.
 
 ---
 
@@ -38759,6 +38393,7 @@ ACK
 5. **Motion:** `motion` از نوع Boolean Nullable است؛ `true` یعنی حرکت تشخیص داده شده، `false` یعنی عدم حرکت تشخیص داده شده و `NULL` یعنی قابل تعیین نیست.
 6. **Location Ownership:** Location متعلق به Device است و ارتباط آن با Vehicle از طریق Assignment History تفسیر می‌شود.
 7. **Odometer/Distance:** Device-reported Odometer و SANA-calculated Distance دو مفهوم مستقل هستند و نباید با هم ادغام شوند.
+8. **Telemetry Intake:** هر IMEI ثبت‌شده می‌تواند مستقل از Contract/Subscription، Vehicle Assignment و وضعیت‌های `WAREHOUSE`، `FAULTY`، `LOST`، `STOLEN`، `SUSPENDED`، `REPAIR`، `RETURNED` یا `RETIRED` تله‌متری معتبر بفرستد؛ IMEI ناشناخته و Protocol/Packet نامعتبر همچنان رد می‌شوند. این قاعده به مجوز Command تعمیم داده نمی‌شود.
 
 `telemetry.md` از این قواعد به‌عنوان مرجع نهایی در زمان Implementation استفاده می‌کند.
 
@@ -38786,10 +38421,24 @@ ACK
 
 
 
-### طراحی شده، Implementation باقی مانده
+### وضعیت واقعی Implementation — ۲۰۲۶-۱۰-۱۳
 
-* Protocol Decoder implementation
-* Protocol Normalizer implementation
-* Processing Pipeline implementation
-* PostgreSQL Repository implementation
-* Integration Tests با Packetهای واقعی
+- [x] GPS service bootstrap/configuration و PostgreSQL pool در Runtime موجود است.
+- [x] TCP/UDP transport و Session management پیاده‌سازی شده‌اند.
+- [x] مسیرهای Protocol برای Teltonika، GT06 و HQ در کد وجود دارند.
+- [x] Teltonika Codec 8 decode، normalization، batch persistence و ACK بعد از ذخیره‌سازی در کد وجود دارند.
+- [x] GT06 position و HQ telemetry در repositoryهای مربوطه ذخیره می‌شوند.
+- [x] دریافت Telemetry از IMEI ثبت‌شده مستقل از وضعیت Lifecycle/Contract است.
+- [x] ثبت خودکار Protocol شناسایی‌شده با تابع محدود PostgreSQL پیاده‌سازی شده است.
+- [x] تست‌های فعلی روی محیط توسعه: `175 passed`.
+
+### موارد باقی‌مانده برای تکمیل و تأیید مراحل ۱ تا ۳
+
+- [ ] مرور یکپارچه مسیر هر Protocol از framing/identification تا decode, validation, persistence و ACK؛ رفع اختلاف‌های بین handlerها.
+- [ ] تأیید قرارداد Normalized Telemetry با مدل‌ها و ستون‌های واقعی PostgreSQL؛ مشخص‌کردن فیلدهای ذخیره‌شده، قابل‌دسترس‌نبودن و مقدار NULL.
+- [ ] تست‌های Integration با Packet واقعی/ثبت‌شده برای هر Protocol و حالت‌های fragmented/coalesced frame.
+- [ ] تست خطای DB و تضمین ACK فقط پس از Commit موفق در هر Protocolی که ACK دارد.
+- [ ] تست Unknown IMEI، Protocol mismatch، داده GPS نامعتبر، duplicate و out-of-order برای همه مسیرهای مرتبط.
+- [ ] تأیید behavior عملی روی دستگاه واقعی و تطبیق لاگ‌ها با رکوردهای دیتابیس.
+
+**توضیح وضعیت:** `Stage 1–3 CLOSED` در جدول بالا به بسته‌شدن تصمیمات معماری اشاره دارد، نه کامل‌بودن Implementation. Implementation باید با همین چک‌لیست مرحله‌به‌مرحله بررسی و تکمیل شود.
