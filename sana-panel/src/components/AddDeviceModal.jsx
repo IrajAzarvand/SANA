@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Package, Hash } from 'lucide-react';
+import { Package, Hash, Phone } from 'lucide-react';
 import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
@@ -15,7 +15,7 @@ import { devicesAPI } from '../api/services/fleet';
  * @param {Function} onSuccess - callback با device جدید
  */
 export default function AddDeviceModal({ open, onClose, onSuccess }) {
-  const [form, setForm] = useState({ imei: '' });
+  const [form, setForm] = useState({ imei: '', sim_number: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -27,13 +27,14 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
     try {
       const payload = {
         imei: form.imei.trim(),
+        sim_number: form.sim_number.trim(),
         management_status: 'warehouse',
       };
 
       const created = await devicesAPI.create(payload);
 
       // پاک کردن فرم
-      setForm({ imei: '' });
+      setForm({ imei: '', sim_number: '' });
 
       // کال بک موفقیت
       if (onSuccess) onSuccess(created);
@@ -86,6 +87,15 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
           placeholder="۱۵ رقم"
           icon={Hash}
           required
+        />
+
+        <Input
+          label="شماره سیم‌کارت (اختیاری)"
+          value={form.sim_number}
+          onChange={(e) => setForm({ ...form, sim_number: e.target.value })}
+          placeholder="شماره سیم‌کارت را وارد کنید"
+          icon={Phone}
+          inputMode="tel"
         />
 
         <div className="bg-info/10 border border-info/30 rounded-field p-3 flex items-start gap-2">
