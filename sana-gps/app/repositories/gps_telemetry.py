@@ -40,6 +40,37 @@ class GPSTelemetryRepository:
         )
     """
 
+    # Match a telemetry sample independently of packet bytes and server receive
+    # time. Devices may resend the same fix in a different packet or wrap it in
+    # a packet whose non-GPS fields changed. Sensor values and attributes remain
+    # part of identity so meaningful telemetry changes are not discarded.
+    _EXISTS_HISTORY = """
+        SELECT 1
+        FROM gps.location_history
+        WHERE device_id = %s
+          AND device_time = %s
+          AND latitude IS NOT DISTINCT FROM %s
+          AND longitude IS NOT DISTINCT FROM %s
+          AND gps_valid = %s
+          AND accuracy IS NOT DISTINCT FROM %s
+          AND speed IS NOT DISTINCT FROM %s
+          AND heading IS NOT DISTINCT FROM %s
+          AND altitude IS NOT DISTINCT FROM %s
+          AND motion IS NOT DISTINCT FROM %s
+          AND ignition IS NOT DISTINCT FROM %s
+          AND satellites IS NOT DISTINCT FROM %s
+          AND battery_voltage IS NOT DISTINCT FROM %s
+          AND external_voltage IS NOT DISTINCT FROM %s
+          AND gsm_signal IS NOT DISTINCT FROM %s
+          AND odometer IS NOT DISTINCT FROM %s
+          AND engine_hours IS NOT DISTINCT FROM %s
+          AND fuel_level IS NOT DISTINCT FROM %s
+          AND attributes = %s
+        LIMIT 1
+    """
+
+    _LOCK_DEVICE_TELEMETRY = "SELECT pg_advisory_xact_lock(%s, %s)"
+
     _UPSERT_CURRENT_STATE = """
         INSERT INTO gps.current_state (
             device_id, device_time, server_received_at, last_seen, updated_at,
@@ -184,6 +215,14 @@ class GPSTelemetryRepository:
                     )
                     return len(records)
 
+                # Serialize telemetry writes per device. Without this lock,
+                # two different packets carrying the same normalized sample
+                # could both pass the history existence check concurrently.
+                connection.execute(
+                    self._LOCK_DEVICE_TELEMETRY,
+                    (731042, device_id),
+                )
+
                 for record in records:
                     self._insert_history(connection, record)
                     self._upsert_current_state(connection, record)
@@ -201,9 +240,38 @@ class GPSTelemetryRepository:
 
         return len(records)
 
-    def _insert_history(self, connection, record: NormalizedTelemetry) -> None:
-        values = self._values(record)
-        connection.execute(self._INSERT_HISTORY, values)
+    def _insert_history(self, connection, record: NormalizedTelemetry) -> bool:
+        # server_received_at is intentionally excluded: a retransmission is
+        # expected to arrive later, but that must not create another history
+        # point when the normalized telemetry itself is unchanged.
+        r = record
+        identity = (
+            r.device_id,
+            r.device_time,
+            r.latitude,
+            r.longitude,
+            r.gps_valid,
+            r.accuracy,
+            r.speed,
+            r.heading,
+            r.altitude,
+            r.motion,
+            r.ignition,
+            r.satellites,
+            r.battery_voltage,
+            r.external_voltage,
+            r.gsm_signal,
+            r.odometer,
+            r.engine_hours,
+            r.fuel_level,
+            Jsonb(r.attributes),
+        )
+        existing = connection.execute(self._EXISTS_HISTORY, identity).fetchone()
+        if existing is not None:
+            return False
+
+        connection.execute(self._INSERT_HISTORY, self._values(record))
+        return True
 
     def _upsert_current_state(self, connection, record: NormalizedTelemetry) -> None:
         r = record
