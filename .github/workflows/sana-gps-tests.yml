@@ -81,7 +81,7 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -f sql/0001_gps_schema.sql
-      - name: Install restricted protocol registration function
+      - name: Install protocol registration function
         env:
           PGPASSWORD: postgres
         run: psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -f sql/0002_detected_protocol_registration.sql
