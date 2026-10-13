@@ -77,6 +77,10 @@ jobs:
         env:
           PGPASSWORD: migrator-test
         run: psql -h 127.0.0.1 -U sana_migrator -d sana_test -v ON_ERROR_STOP=1 -f sql/0001_gps_schema.sql
+      - name: Install restricted protocol registration function
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -f sql/0002_detected_protocol_registration.sql
       - name: Verify least-privilege permissions
         env:
           PGPASSWORD: postgres
@@ -86,6 +90,9 @@ jobs:
           BEGIN
             IF has_column_privilege('sana_gps', 'public.fleet_device', 'protocol', 'UPDATE') THEN
               RAISE EXCEPTION 'GPS runtime unexpectedly has UPDATE on fleet_device.protocol';
+            END IF;
+            IF NOT has_function_privilege('sana_gps', 'gps.register_detected_device_protocol(bigint,text)', 'EXECUTE') THEN
+              RAISE EXCEPTION 'GPS runtime is missing EXECUTE on the restricted protocol registration function';
             END IF;
             IF has_table_privilege('sana_gps', 'gps.location_history', 'DELETE') THEN
               RAISE EXCEPTION 'GPS runtime unexpectedly has DELETE on location_history';
@@ -108,6 +115,38 @@ jobs:
           INSERT INTO public.fleet_device
             (id, imei, management_status, protocol, device_model_id)
           VALUES (1, '352094082143253', 'active', 'teltonika', NULL);
+          "
+      - name: Verify restricted protocol auto-registration
+        env:
+          PGPASSWORD: gps-test
+        run: |
+          psql -h 127.0.0.1 -U sana_gps -d sana_test -v ON_ERROR_STOP=1 -c "
+          INSERT INTO public.fleet_devicemodel (id, manufacturer, name, code, protocol)
+          VALUES (1, 'Test', 'Future model', 'future-model', 'future-protocol');
+          INSERT INTO public.fleet_device (id, imei, management_status, protocol, device_model_id)
+          VALUES
+            (2, '352094082143254', 'warehouse', '', 1),
+            (3, '352094082143255', 'warehouse', '', NULL);
+          SELECT gps.register_detected_device_protocol(1, 'teltonika');
+          SELECT gps.register_detected_device_protocol(1, 'gt06');
+          SELECT gps.register_detected_device_protocol(2, 'future-protocol');
+          SELECT gps.register_detected_device_protocol(2, 'teltonika');
+          SELECT gps.register_detected_device_protocol(3, 'new-protocol');
+          "
+          PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -c "
+          DO \$\$
+          BEGIN
+            IF (SELECT protocol FROM public.fleet_device WHERE id = 2) <> 'future-protocol' THEN
+              RAISE EXCEPTION 'Detected protocol was not persisted for the model-compatible device';
+            END IF;
+            IF (SELECT protocol FROM public.fleet_device WHERE id = 3) <> 'new-protocol' THEN
+              RAISE EXCEPTION 'Generic future protocol was not persisted';
+            END IF;
+            IF (SELECT protocol FROM public.fleet_device WHERE id = 1) <> 'teltonika' THEN
+              RAISE EXCEPTION 'Existing device protocol was overwritten';
+            END IF;
+          END
+          \$\$;
           "
       - name: Verify GPS persistence against PostgreSQL and PostGIS
         env:
