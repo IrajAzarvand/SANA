@@ -1,5 +1,5 @@
 -- Run once as a PostgreSQL administrator after the GPS schema is installed.
--- Keep this function owned by sana_owner; do not grant runtime roles direct DELETE.
+-- Keep this function owned by sana_user; do not grant separate database roles direct DELETE.
 BEGIN;
 
 -- The SECURITY DEFINER owner needs narrowly scoped DELETE permission on legacy
@@ -7,13 +7,13 @@ BEGIN;
 DO $$
 BEGIN
     IF to_regclass('public.location_history') IS NOT NULL THEN
-        EXECUTE 'GRANT DELETE ON TABLE public.location_history TO sana_owner';
+        EXECUTE 'GRANT DELETE ON TABLE public.location_history TO sana_user';
     END IF;
     IF to_regclass('public.fleet_gpstelemetry') IS NOT NULL THEN
-        EXECUTE 'GRANT DELETE ON TABLE public.fleet_gpstelemetry TO sana_owner';
+        EXECUTE 'GRANT DELETE ON TABLE public.fleet_gpstelemetry TO sana_user';
     END IF;
     IF to_regclass('public.fleet_gt06position') IS NOT NULL THEN
-        EXECUTE 'GRANT DELETE ON TABLE public.fleet_gt06position TO sana_owner';
+        EXECUTE 'GRANT DELETE ON TABLE public.fleet_gt06position TO sana_user';
     END IF;
 END $$;
 
@@ -48,8 +48,8 @@ BEGIN
 END;
 $$;
 
-ALTER FUNCTION gps.purge_device_data(BIGINT) OWNER TO sana_owner;
+ALTER FUNCTION gps.purge_device_data(BIGINT) OWNER TO sana_user;
 REVOKE ALL ON FUNCTION gps.purge_device_data(BIGINT) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION gps.purge_device_data(BIGINT) TO sana_backend;
+GRANT EXECUTE ON FUNCTION gps.purge_device_data(BIGINT) TO sana_user;
 
 COMMIT;
