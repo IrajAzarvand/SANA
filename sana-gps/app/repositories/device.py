@@ -16,32 +16,19 @@ class DeviceRecord:
 
 
 class DeviceRepository:
-    """Read-only access to the canonical SANA device registry and eligibility.
+    """Read-only lookup of registered devices for the GPS runtime.
 
-    The GPS runtime never writes business-owned Device or subscription records.
-    Eligibility mirrors Device.is_data_active and SubscriptionDevice.is_active
-    in the backend: the device must not be in a blocked management state and
-    must have a currently assigned, in-date subscription-device link.
+    Registration by IMEI is the sole business eligibility gate for receiving
+    telemetry. Management status and subscription assignment are intentionally
+    not consulted here: warehouse, lost, faulty, disconnected, and other
+    registered devices may still need to report their locations.
     """
 
     _SQL = """
         SELECT d.id, d.imei, d.management_status,
                COALESCE(NULLIF(dm.protocol, ''), NULLIF(d.protocol, ''), '') AS protocol,
                d.device_model_id,
-               (
-                   d.management_status NOT IN (
-                       'faulty', 'ready', 'lost', 'stolen',
-                       'disconnected', 'retired', 'disposed'
-                   )
-                   AND EXISTS (
-                       SELECT 1
-                       FROM public.organizations_subscriptiondevice AS sd
-                       WHERE sd.device_id = d.id
-                         AND sd.unassigned_at IS NULL
-                         AND sd.start_date <= CURRENT_DATE
-                         AND sd.end_date >= CURRENT_DATE
-                   )
-               ) AS data_active
+               TRUE AS data_active
         FROM public.fleet_device AS d
         LEFT JOIN public.fleet_devicemodel AS dm ON dm.id = d.device_model_id
         WHERE d.imei = %s
@@ -65,6 +52,8 @@ class DeviceRepository:
             management_status=row[2],
             protocol=row[3] or "",
             device_model_id=row[4],
+            # Kept for compatibility with existing handlers and callers.
+            # A registered device is always eligible for telemetry intake.
             data_active=bool(row[5]),
         )
 
