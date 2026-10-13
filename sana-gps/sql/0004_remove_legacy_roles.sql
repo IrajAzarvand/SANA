@@ -1,4 +1,4 @@
--- Run as a PostgreSQL administrator while connected to sana_db,
+-- Run as a PostgreSQL administrator while connected to the target SANA database,
 -- after the GPS schema scripts have completed and the database is backed up.
 -- This migrates any remaining objects owned by legacy SANA roles to sana_user,
 -- removes their database grants, and then drops the obsolete login/owner roles.
