@@ -14,7 +14,9 @@ $$;
 -- provisioning, not embedded in version-controlled SQL.
 ALTER ROLE sana_user LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT;
 
-GRANT ALL PRIVILEGES ON DATABASE sana_db TO sana_user;
+DO $ BEGIN
+    EXECUTE format('GRANT ALL PRIVILEGES ON DATABASE %I TO sana_user', current_database());
+END $;
 
 -- PostGIS must be installed by a PostgreSQL administrator.
 CREATE EXTENSION IF NOT EXISTS postgis;
@@ -23,3 +25,21 @@ CREATE SCHEMA IF NOT EXISTS gps AUTHORIZATION sana_user;
 ALTER SCHEMA gps OWNER TO sana_user;
 GRANT USAGE, CREATE ON SCHEMA gps TO sana_user;
 GRANT USAGE, CREATE ON SCHEMA public TO sana_user;
+
+-- In a fresh SANA install, Django-created business tables are owned by sana_user.
+-- These conditional grants also let the GPS schema setup run in isolated tests or
+-- upgrades where representative public tables were created by the administrator.
+DO $
+BEGIN
+    IF to_regclass('public.fleet_device') IS NOT NULL THEN
+        EXECUTE 'GRANT REFERENCES (id) ON public.fleet_device TO sana_user';
+        EXECUTE 'GRANT SELECT (id, protocol, device_model_id) ON public.fleet_device TO sana_user';
+        EXECUTE 'GRANT UPDATE (protocol) ON public.fleet_device TO sana_user';
+    END IF;
+    IF to_regclass('public.fleet_devicemodel') IS NOT NULL THEN
+        EXECUTE 'GRANT SELECT (id, protocol) ON public.fleet_devicemodel TO sana_user';
+    END IF;
+    IF to_regclass('public.fleet_vehicle') IS NOT NULL THEN
+        EXECUTE 'GRANT REFERENCES (id) ON public.fleet_vehicle TO sana_user';
+    END IF;
+END $;
