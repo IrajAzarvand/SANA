@@ -7,13 +7,13 @@ BEGIN;
 DO $$
 BEGIN
     IF to_regclass('public.location_history') IS NOT NULL THEN
-        EXECUTE 'GRANT DELETE ON TABLE public.location_history TO sana_user';
+        EXECUTE 'GRANT SELECT, DELETE ON TABLE public.location_history TO sana_user';
     END IF;
     IF to_regclass('public.fleet_gpstelemetry') IS NOT NULL THEN
-        EXECUTE 'GRANT DELETE ON TABLE public.fleet_gpstelemetry TO sana_user';
+        EXECUTE 'GRANT SELECT, DELETE ON TABLE public.fleet_gpstelemetry TO sana_user';
     END IF;
     IF to_regclass('public.fleet_gt06position') IS NOT NULL THEN
-        EXECUTE 'GRANT DELETE ON TABLE public.fleet_gt06position TO sana_user';
+        EXECUTE 'GRANT SELECT, DELETE ON TABLE public.fleet_gt06position TO sana_user';
     END IF;
 END $$;
 
