@@ -73,20 +73,20 @@ def _make_dsn(
     )
 
 
-# Runtime persistence must use the GPS service role, not Django's DB_USER.
-# SANA_GPS_TEST_DSN is the safest override for dedicated test environments.
+# Runtime persistence uses the single sana_user role. SANA_GPS_TEST_DSN is the
+# safest override for dedicated test environments.
 DSN = os.getenv("SANA_GPS_TEST_DSN") or _make_dsn(
-    host=_env_value("GPS_DB_HOST", BACKEND_ENV, _env_value("DB_HOST", BACKEND_ENV, "127.0.0.1")),
-    port=_env_value("GPS_DB_PORT", BACKEND_ENV, _env_value("DB_PORT", BACKEND_ENV, "5432")),
-    database=_env_value("GPS_DB_NAME", BACKEND_ENV, _env_value("DB_NAME", BACKEND_ENV)),
-    user=_env_value("SANA_GPS_TEST_USER", BACKEND_ENV, _env_value("GPS_DB_USER", BACKEND_ENV)),
-    password=_env_value("SANA_GPS_TEST_PASSWORD", BACKEND_ENV, _env_value("GPS_DB_PASSWORD", BACKEND_ENV)),
+    host=_env_value("SANA_GPS_DB_HOST", GPS_ENV, _env_value("DB_HOST", BACKEND_ENV, "127.0.0.1")),
+    port=_env_value("SANA_GPS_DB_PORT", GPS_ENV, _env_value("DB_PORT", BACKEND_ENV, "5432")),
+    database=_env_value("SANA_GPS_DB_NAME", GPS_ENV, _env_value("DB_NAME", BACKEND_ENV)),
+    user=_env_value("SANA_GPS_TEST_USER", GPS_ENV, _env_value("SANA_GPS_DB_USER", GPS_ENV, _env_value("DB_USER", BACKEND_ENV, "sana_user"))),
+    password=_env_value("SANA_GPS_TEST_PASSWORD", GPS_ENV, _env_value("SANA_GPS_DB_PASSWORD", GPS_ENV, _env_value("DB_PASSWORD", BACKEND_ENV, "sana_password_123"))),
 )
 
 # Creating the fixture and deleting its dependent rows require a separate,
 # explicitly configured test-administration connection. Prefer an explicit DSN;
 # otherwise construct it from test-only variables in the ignored backend .env.
-# Never silently fall back to Django's DB_USER.
+# The admin connection is only for creating/cleaning test fixtures; it is not a runtime role.
 ADMIN_DSN = os.getenv("SANA_GPS_TEST_ADMIN_DSN") or _make_dsn(
     host=_env_value("SANA_GPS_TEST_ADMIN_HOST", BACKEND_ENV, "127.0.0.1"),
     port=_env_value("SANA_GPS_TEST_ADMIN_PORT", BACKEND_ENV, "5432"),
@@ -98,8 +98,8 @@ ADMIN_DSN = os.getenv("SANA_GPS_TEST_ADMIN_DSN") or _make_dsn(
 pytestmark = pytest.mark.skipif(
     not DSN or not ADMIN_DSN,
     reason=(
-        "integration test requires a GPS runtime DSN (GPS_DB_* or "
-        "SANA_GPS_TEST_DSN) and an explicitly configured "
+        "integration test requires a sana_user runtime DSN (SANA_GPS_TEST_DSN "
+        "or the SANA_GPS_DB_*/DB_* settings) and an explicitly configured "
         "SANA_GPS_TEST_ADMIN_DSN with test-fixture cleanup privileges"
     ),
 )

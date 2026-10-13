@@ -1,5 +1,5 @@
 from django.utils import timezone
-from django.db import connections, transaction
+from django.db import connection, transaction
 from django.db.models import Exists, OuterRef, Prefetch, Q
 from rest_framework import viewsets, filters
 from rest_framework.response import Response
@@ -27,6 +27,11 @@ class VehicleTypeViewSet(viewsets.ModelViewSet):
     queryset = VehicleType.objects.all()
     serializer_class = VehicleTypeSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsSiteAdmin()]
+        return super().get_permissions()
 
     def get_queryset(self):
         user = self.request.user
@@ -80,7 +85,7 @@ class VehicleViewSet(viewsets.ModelViewSet):
         return qs
 
     def get_permissions(self):
-        if self.action in ['create', 'destroy']:
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
             return [IsSiteAdmin()]
         return super().get_permissions()
 
@@ -182,7 +187,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
         return qs
 
     def list(self, request, *args, **kwargs):
-        """List devices from the business DB and enrich the page using the GPS read-only DB role."""
+        """List devices and enrich the page with GPS state using the same DB login."""
         queryset = self.filter_queryset(self.get_queryset())
         page = self.paginate_queryset(queryset)
         devices = list(page if page is not None else queryset)
@@ -193,9 +198,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
 
         device_ids = [device.pk for device in devices]
         if device_ids:
-            # This query runs only through the dedicated sana_backend connection,
-            # never through the primary Django business-data connection.
-            with connections['gps_read'].cursor() as cursor:
+            # GPS reads use the same sana_user database login as all other queries.
+            with connection.cursor() as cursor:
                 cursor.execute(
                     """
                     SELECT device_id, last_seen
@@ -231,7 +235,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
 
         with transaction.atomic():
             # SECURITY DEFINER function removes GPS-schema rows that reference this device.
-            with connections['default'].cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute('SELECT gps.purge_device_data(%s)', [instance.pk])
             # DeviceOperation protects its referenced devices from accidental deletion.
             # Explicitly remove operations where this device is either the subject or replacement.

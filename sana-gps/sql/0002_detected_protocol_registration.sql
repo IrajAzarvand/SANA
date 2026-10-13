@@ -1,18 +1,17 @@
 -- SANA GPS migration 0002: narrowly-scoped automatic device protocol registration.
 -- Run as a PostgreSQL administrator after sql/0001_gps_schema.sql.
 --
--- The runtime role must never receive UPDATE privilege on public.fleet_device.
--- A SECURITY DEFINER function owned by the non-login sana_owner role exposes
--- only the conditional protocol-registration operation needed by GPS handlers.
+-- The GPS receiver and Django use the same sana_user database login. The function
+-- keeps protocol-registration logic in one place; application authorization remains in Django.
 
 BEGIN;
 
 GRANT SELECT (id, protocol, device_model_id)
-    ON public.fleet_device TO sana_owner;
+    ON public.fleet_device TO sana_user;
 GRANT SELECT (id, protocol)
-    ON public.fleet_devicemodel TO sana_owner;
+    ON public.fleet_devicemodel TO sana_user;
 GRANT UPDATE (protocol)
-    ON public.fleet_device TO sana_owner;
+    ON public.fleet_device TO sana_user;
 
 CREATE OR REPLACE FUNCTION gps.register_detected_device_protocol(
     p_device_id BIGINT,
@@ -62,15 +61,11 @@ END;
 $function$;
 
 ALTER FUNCTION gps.register_detected_device_protocol(BIGINT, TEXT)
-    OWNER TO sana_owner;
+    OWNER TO sana_user;
 
 REVOKE ALL ON FUNCTION gps.register_detected_device_protocol(BIGINT, TEXT)
     FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION gps.register_detected_device_protocol(BIGINT, TEXT)
-    TO sana_gps;
-
--- Keep the GPS runtime unable to update business rows directly, even if an
--- earlier manual experiment granted the column privilege.
-REVOKE UPDATE (protocol) ON TABLE public.fleet_device FROM sana_gps;
+    TO sana_user;
 
 COMMIT;

@@ -59,17 +59,15 @@ class DatabaseConfig:
             "SANA_GPS_DB_PORT", _DEFAULT_DB_PORT, minimum=1, maximum=65535
         )
         name = os.getenv("SANA_GPS_DB_NAME", "").strip()
-        user = os.getenv("SANA_GPS_DB_USER", "").strip()
-        password = os.getenv("SANA_GPS_DB_PASSWORD", "")
+        user = os.getenv("SANA_GPS_DB_USER", "sana_user").strip()
+        password = os.getenv("SANA_GPS_DB_PASSWORD", os.getenv("DB_PASSWORD", "sana_password_123"))
 
         if not name:
             raise ConfigurationError("SANA_GPS_DB_NAME must not be empty")
         if not user:
             raise ConfigurationError("SANA_GPS_DB_USER must not be empty")
-        if user != "sana_gps":
-            raise ConfigurationError(
-                "SANA_GPS_DB_USER must be the least-privilege runtime role 'sana_gps'"
-            )
+        if user != "sana_user":
+            raise ConfigurationError("SANA_GPS_DB_USER must be 'sana_user'")
         if not password:
             raise ConfigurationError("SANA_GPS_DB_PASSWORD must not be empty")
 
