@@ -64,44 +64,50 @@ jobs:
           );
           CREATE TABLE public.fleet_vehicle (id BIGINT PRIMARY KEY);
           "
-      - name: Provision database roles and PostGIS
+      - name: Provision the single application role and PostGIS
         env:
           PGPASSWORD: postgres
         run: |
           psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -f sql/0000_roles.sql
-          psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -c "
-          ALTER ROLE sana_migrator PASSWORD 'migrator-test';
-          ALTER ROLE sana_gps PASSWORD 'gps-test';
-          "
-      - name: Apply GPS schema as the dedicated migrator
+          psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -c "ALTER ROLE sana_user PASSWORD 'sana-test';"
+      - name: Apply GPS schema as sana_user owner
         env:
-          PGPASSWORD: migrator-test
-        run: psql -h 127.0.0.1 -U sana_migrator -d sana_test -v ON_ERROR_STOP=1 -f sql/0001_gps_schema.sql
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -f sql/0001_gps_schema.sql
       - name: Install restricted protocol registration function
         env:
           PGPASSWORD: postgres
         run: psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -f sql/0002_detected_protocol_registration.sql
-      - name: Verify least-privilege permissions
+      - name: Install purge function and remove legacy roles
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -f sql/0003_purge_device_telemetry.sql
+          psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -f sql/0004_remove_legacy_roles.sql
+      - name: Verify single-role permissions
         env:
           PGPASSWORD: postgres
         run: |
           psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -c "
           DO \$\$
           BEGIN
-            IF has_column_privilege('sana_gps', 'public.fleet_device', 'protocol', 'UPDATE') THEN
-              RAISE EXCEPTION 'GPS runtime unexpectedly has UPDATE on fleet_device.protocol';
+            IF NOT has_column_privilege('sana_user', 'public.fleet_device', 'protocol', 'UPDATE') THEN
+              RAISE EXCEPTION 'sana_user is missing UPDATE on fleet_device.protocol';
             END IF;
-            IF NOT has_function_privilege('sana_gps', 'gps.register_detected_device_protocol(bigint,text)', 'EXECUTE') THEN
-              RAISE EXCEPTION 'GPS runtime is missing EXECUTE on the restricted protocol registration function';
+            IF NOT has_function_privilege('sana_user', 'gps.register_detected_device_protocol(bigint,text)', 'EXECUTE') THEN
+              RAISE EXCEPTION 'sana_user is missing EXECUTE on the protocol registration function';
             END IF;
-            IF has_table_privilege('sana_gps', 'gps.location_history', 'DELETE') THEN
-              RAISE EXCEPTION 'GPS runtime unexpectedly has DELETE on location_history';
+            IF NOT has_table_privilege('sana_user', 'gps.location_history', 'DELETE') THEN
+              RAISE EXCEPTION 'sana_user is missing DELETE on location_history';
             END IF;
-            IF has_table_privilege('sana_backend', 'gps.raw_packet', 'SELECT') THEN
-              RAISE EXCEPTION 'Backend unexpectedly has SELECT on raw_packet';
+            IF NOT has_table_privilege('sana_user', 'gps.raw_packet', 'SELECT') THEN
+              RAISE EXCEPTION 'sana_user is missing SELECT on raw_packet';
             END IF;
-            IF NOT has_table_privilege('sana_gps', 'gps.current_state', 'UPDATE') THEN
-              RAISE EXCEPTION 'GPS runtime is missing UPDATE on current_state';
+            IF NOT has_table_privilege('sana_user', 'gps.current_state', 'UPDATE') THEN
+              RAISE EXCEPTION 'sana_user is missing UPDATE on current_state';
+            END IF;
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname IN ('sana_owner', 'sana_migrator', 'sana_backend', 'sana_gps', 'sana_gps_test')) THEN
+              RAISE EXCEPTION 'Legacy SANA PostgreSQL roles still exist';
             END IF;
           END
           \$\$;
@@ -128,7 +134,7 @@ jobs:
             (2, '352094082143254', 'warehouse', '', 1),
             (3, '352094082143255', 'warehouse', '', NULL);
           "
-          PGPASSWORD=gps-test psql -h 127.0.0.1 -U sana_gps -d sana_test -v ON_ERROR_STOP=1 -c "
+          PGPASSWORD=sana-test psql -h 127.0.0.1 -U sana_user -d sana_test -v ON_ERROR_STOP=1 -c "
           SELECT gps.register_detected_device_protocol(1, 'teltonika');
           SELECT gps.register_detected_device_protocol(1, 'gt06');
           SELECT gps.register_detected_device_protocol(2, 'future-protocol');
@@ -152,5 +158,6 @@ jobs:
           "
       - name: Verify GPS persistence against PostgreSQL and PostGIS
         env:
-          SANA_GPS_TEST_DSN: postgresql://sana_gps:gps-test@127.0.0.1:5432/sana_test
+          SANA_GPS_TEST_DSN: postgresql://sana_user:sana-test@127.0.0.1:5432/sana_test
+          SANA_GPS_TEST_ADMIN_DSN: postgresql://postgres:postgres@127.0.0.1:5432/sana_test
         run: python -m pytest -q tests/test_gps_postgres_integration.py
