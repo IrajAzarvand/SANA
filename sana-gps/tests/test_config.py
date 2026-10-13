@@ -13,7 +13,7 @@ class AppConfigTests(unittest.TestCase):
             "SANA_GPS_CAPTURE_FILE": "/tmp/sana-gps-capture.log",
             "SANA_GPS_GT06_CAPTURE_FILE": "/tmp/gt06-capture.log",
             "SANA_GPS_DB_NAME": "sana_db",
-            "SANA_GPS_DB_USER": "sana_gps",
+            "SANA_GPS_DB_USER": "sana_user",
             "SANA_GPS_DB_PASSWORD": "secret",
         }
 
@@ -33,7 +33,7 @@ class AppConfigTests(unittest.TestCase):
             "SANA_GPS_MAX_UDP_SESSIONS": "50",
             "SANA_GPS_MAX_DATAGRAM_SIZE": "4096",
             "SANA_GPS_DB_NAME": "sana_db",
-            "SANA_GPS_DB_USER": "sana_gps",
+            "SANA_GPS_DB_USER": "sana_user",
             "SANA_GPS_DB_PASSWORD": "secret",
         }
         with patch.dict(os.environ, env, clear=False):
@@ -47,7 +47,7 @@ class AppConfigTests(unittest.TestCase):
     def test_loads_database_configuration_from_environment(self):
         env = {
             "SANA_GPS_DB_NAME": "sana_db",
-            "SANA_GPS_DB_USER": "sana_gps",
+            "SANA_GPS_DB_USER": "sana_user",
             "SANA_GPS_DB_PASSWORD": "secret",
             "SANA_GPS_DB_POOL_MIN": "2",
             "SANA_GPS_DB_POOL_MAX": "7",
@@ -57,14 +57,14 @@ class AppConfigTests(unittest.TestCase):
             config = AppConfig.from_env()
 
         self.assertEqual(config.database.name, "sana_db")
-        self.assertEqual(config.database.user, "sana_gps")
+        self.assertEqual(config.database.user, "sana_user")
         self.assertEqual(config.database.pool_min_size, 2)
         self.assertEqual(config.database.pool_max_size, 7)
 
     def test_rejects_non_integer_database_port(self):
         env = {
             "SANA_GPS_DB_NAME": "sana_db",
-            "SANA_GPS_DB_USER": "sana_gps",
+            "SANA_GPS_DB_USER": "sana_user",
             "SANA_GPS_DB_PASSWORD": "secret",
             "SANA_GPS_DB_PORT": "abc",
         }
@@ -78,7 +78,7 @@ class AppConfigTests(unittest.TestCase):
     def test_rejects_non_finite_timeout(self):
         env = {
             "SANA_GPS_DB_NAME": "sana_db",
-            "SANA_GPS_DB_USER": "sana_gps",
+            "SANA_GPS_DB_USER": "sana_user",
             "SANA_GPS_DB_PASSWORD": "secret",
             "SANA_GPS_TCP_IDLE_TIMEOUT": "nan",
         }
@@ -92,7 +92,7 @@ class AppConfigTests(unittest.TestCase):
     def test_rejects_invalid_pool_range(self):
         env = {
             "SANA_GPS_DB_NAME": "sana_db",
-            "SANA_GPS_DB_USER": "sana_gps",
+            "SANA_GPS_DB_USER": "sana_user",
             "SANA_GPS_DB_PASSWORD": "secret",
             "SANA_GPS_DB_POOL_MIN": "8",
             "SANA_GPS_DB_POOL_MAX": "5",
@@ -111,7 +111,7 @@ class AppConfigTests(unittest.TestCase):
             "SANA_GPS_DB_PASSWORD": "secret",
         }
         with patch.dict(os.environ, env, clear=False):
-            with self.assertRaisesRegex(ConfigurationError, "least-privilege runtime role"):
+            with self.assertRaisesRegex(ConfigurationError, "SANA_GPS_DB_USER must be 'sana_user'"):
                 AppConfig.from_env()
 
 
