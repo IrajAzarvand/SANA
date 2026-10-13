@@ -9,6 +9,20 @@ SECURITY DEFINER
 SET search_path = pg_catalog, gps
 AS $$
 BEGIN
+    -- Compatibility/legacy telemetry table lives in public, not in the gps schema.
+    -- The reported FK constraint location_history_device_id_fkey is on this table.
+    IF to_regclass('public.location_history') IS NOT NULL THEN
+        EXECUTE 'DELETE FROM public.location_history WHERE device_id = $1' USING p_device_id;
+    END IF;
+
+    -- Django compatibility telemetry tables, when present, must also be purged.
+    IF to_regclass('public.fleet_gps_telemetry') IS NOT NULL THEN
+        EXECUTE 'DELETE FROM public.fleet_gps_telemetry WHERE device_id = $1' USING p_device_id;
+    END IF;
+    IF to_regclass('public.fleet_gt06position') IS NOT NULL THEN
+        EXECUTE 'DELETE FROM public.fleet_gt06position WHERE device_id = $1' USING p_device_id;
+    END IF;
+
     -- Delete dependents first because several GPS tables intentionally use ON DELETE RESTRICT.
     DELETE FROM gps.trip WHERE device_id = p_device_id;
     DELETE FROM gps.event WHERE device_id = p_device_id;
