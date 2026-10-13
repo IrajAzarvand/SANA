@@ -16483,11 +16483,11 @@ last_seen
 
 ---
 
-### 8.2 Device مجاز باشد
+### 8.2 Device ثبت‌شده باشد
 
-Device باید در وضعیت Lifecycleای باشد که دریافت Telemetry از آن مجاز است.
+برای دریافت Telemetry، شرط پایه ثبت بودن IMEI در SANA است. وضعیت Lifecycle/management یا داشتن قرارداد، به‌تنهایی مانع دریافت داده نیست.
 
-Deviceای که طبق سیاست سیستم دیگر نباید Telemetry آن پذیرفته شود، نباید Packet معتبر برای CurrentState تولید کند.
+Device ناشناخته نباید Packet معتبر برای CurrentState تولید کند. برای Device ثبت‌شده، پذیرش Telemetry به اعتبار Protocol/Packet و قواعد فنی پردازش وابسته است.
 
 ---
 
@@ -30662,63 +30662,28 @@ Session Generation
 Generation 15
 ```
 
-اگر Device Suspend شود:
+اگر Session جدید معتبر جایگزین شود، generation قبلی Fence می‌شود. تغییر Lifecycle به‌تنهایی generation دریافت Telemetry را باطل نمی‌کند.
 
-```text
-Generation 15
-→ Fenced
-```
-
-هر Work Item قدیمی که:
-
-```text
-generation = 15
-```
-
-داشته باشد، دیگر اجازه Side Effect ندارد.
+هر Work Item متعلق به Session واقعاً جایگزین‌شده/بسته‌شده که generation قدیمی دارد، نباید Side Effect ایجاد کند.
 
 ---
 
-# 18. Lifecycle Fence
+# 18. Lifecycle و Side Effectهای Runtime
 
-Fence باید جلوی این موارد را بگیرد:
-
-```text
-CurrentState Update
-LocationHistory Insert
-Event Creation
-Trip Update
-Command Send
-last_seen Update
-```
-
-یعنی:
+تغییر Lifecycle تجاری به‌تنهایی نباید Side Effectهای مربوط به دریافت Telemetry را مسدود کند. برای Device ثبت‌شده، Telemetry معتبر همچنان طبق Pipeline پردازش می‌شود.
 
 ```text
-Old Session
-   ↓
-Lifecycle no longer valid
-   ↓
-NO SIDE EFFECT
+Registered IMEI + valid Protocol/Packet
+→ Telemetry pipeline may persist data
 ```
+
+در مقابل، Command و سایر عملیات تجاری حساس باید در نقطه اجرا، مجوزهای تجاری را جداگانه بررسی کنند.
 
 ---
 
 # 19. Packet در حال Processing
 
-ممکن است Packet قبل از Suspend دریافت شده باشد ولی Worker هنوز آن را پردازش نکرده باشد.
-
-مثلاً:
-
-```text
-10:00:00 Packet received
-10:00:01 Device suspended
-10:00:02 Worker starts
-```
-
-Worker نباید صرفاً چون Packet قبل از Suspend دریافت شده، بدون بررسی آن را پردازش کند.
-
-Session/Runtime validity باید دوباره بررسی شود.
+اگر Packet هم‌زمان با تغییر Lifecycle پردازش شود، باید Session identity/generation و صحت Packet بررسی شوند تا Packet متعلق به Session قدیمی یا غیرمعتبر Side Effect نادرست نسازد. تغییر Lifecycle به‌تنهایی دلیل رد Telemetry نیست؛ وضعیت تجاری باید برای Command و عملیات تجاری حساس بررسی شود.
 
 ---
 
@@ -31568,24 +31533,23 @@ NO_SESSION
     ▼
 CONNECTED
     │
-    │ authenticated
+    │ registered identifier + valid protocol
     ▼
-ACTIVE_SESSION
+TELEMETRY_SESSION
     │
     ├── disconnect ───────► DISCONNECTED
     │
-    ├── lifecycle change ─► FENCED
-    │
-    └── new session ──────► FENCED
+    └── newer session ────► old session FENCED
 ```
 
 و:
 
 ```text
-FENCED
-→ Connection Closed
-→ No Side Effects
+FENCED old session
+→ no further side effects from that old session
 ```
+
+تغییر Lifecycle تجاری به‌تنهایی Session دریافت Telemetry را Fence نمی‌کند.
 
 ---
 
@@ -31607,17 +31571,15 @@ FENCED
 
 # 55. نکته مهم درباره Preserve
 
-`Preserve` به این معنی نیست که Snapshot یا History دوباره نوشته شود.
-
-یعنی:
+`Preserve` یعنی تغییر وضعیت تجاری نباید داده‌های قبلی را حذف یا بازنویسی کند:
 
 ```text
 Lifecycle Change
-→ CurrentState Delete ❌
-→ History Delete ❌
+→ Existing CurrentState preserved
+→ Existing History preserved
 ```
 
-فقط Runtime Processing متوقف می‌شود.
+Telemetry جدید از Device ثبت‌شده همچنان طبق Pipeline فنی پردازش می‌شود. محدودیت‌های Command/Business Runtime جداگانه اعمال می‌شوند.
 
 ---
 
@@ -31722,7 +31684,7 @@ Commands
 
 # 60. اصل نهایی مرحله ۱۹
 
-> **ثبت بودن IMEI و اعتبار Protocol/Packet مبنای پذیرش Telemetry است؛ قرارداد، Assignment و Lifecycle تجاری به‌تنهایی مانع دریافت داده نیستند. Lifecycle می‌تواند Command و عملیات تجاری را محدود کند، اما نباید مسیر Telemetry را صرفاً به‌دلیل انبار، خرابی، تعمیر، سرقت، تعلیق یا خروج مسدود کند. Assignment با Lifecycle مستقل است و تعویض Device باعث انتقال Session، CurrentState یا History بین Deviceها نمی‌شود.**
+> **ثبت بودن IMEI و اعتبار Protocol/Packet مبنای پذیرش Telemetry است؛ قرارداد، Assignment و Lifecycle تجاری به‌تنهایی مانع دریافت داده نیستند. Lifecycle می‌تواند Command و عملیات تجاری را محدود کند، اما نباید مسیر Telemetry را صرفاً به‌دلیل انبار، خرابی، تعمیر، سرقت، تعلیق یا خروج مسدود کند. Fence فقط برای Session واقعاً قدیمی/جایگزین‌شده یا بسته‌شده اعمال می‌شود؛ Assignment با Lifecycle مستقل است و تعویض Device باعث انتقال Session، CurrentState یا History بین Deviceها نمی‌شود.**
 
 ---
 
@@ -31736,8 +31698,8 @@ Commands
 [✓] REPAIR
 [✓] RETURNED
 [✓] RETIRED
-[✓] Session Fencing
-[✓] Session Generation
+[✓] Session Fencing برای Session قدیمی/جایگزین‌شده
+[✓] Session Generation مستقل از Lifecycle intake
 [✓] Telemetry Intake مستقل از Lifecycle/Contract
 [✓] CurrentState Preservation
 [✓] Historical Preservation
@@ -31746,7 +31708,7 @@ Commands
 [✓] Command Interaction
 [✓] Unknown Device
 [✓] Restart Behavior
-[✓] Lifecycle/Session Race Protection
+[✓] بررسی Race بین Session/Packet و عملیات تجاری
 [✓] Physical Delete Policy
 [✓] IMEI Identity Preservation
 
