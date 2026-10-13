@@ -60,7 +60,7 @@ def test_find_all_identifiers_reads_only_imei() -> None:
 
 
 
-def test_set_detected_protocol_updates_using_a_conditional_generic_protocol_write() -> None:
+def test_set_detected_protocol_calls_the_restricted_generic_registration_function() -> None:
     connection = Mock()
     connection.execute.return_value.fetchone.return_value = (42,)
     pool = MagicMock()
@@ -69,10 +69,8 @@ def test_set_detected_protocol_updates_using_a_conditional_generic_protocol_writ
     assert DeviceRepository(pool).set_detected_protocol(42, "  future-protocol  ") is True
 
     sql, params = connection.execute.call_args.args
-    assert sql.strip().startswith("UPDATE public.fleet_device")
-    assert "returning d.id" in sql.lower()
-    assert "lower(btrim(dm.protocol))" in sql.lower()
-    assert params == ("future-protocol", 42, "future-protocol", "future-protocol")
+    assert "select gps.register_detected_device_protocol(%s, %s)" in sql.lower()
+    assert params == (42, "future-protocol")
 
 
 def test_set_detected_protocol_returns_false_when_protocol_is_not_compatible() -> None:
