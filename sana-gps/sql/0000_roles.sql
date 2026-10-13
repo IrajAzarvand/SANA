@@ -1,4 +1,4 @@
--- Run as a PostgreSQL administrator while connected to sana_db.
+-- Run as a PostgreSQL administrator while connected to the target SANA database.
 -- SANA uses one database login (sana_user) for Django and the GPS receiver.
 -- Keep postgres for database provisioning/administration only; it is not an
 -- application login. The Django site-admin account is separate from PostgreSQL.
