@@ -44,29 +44,7 @@ class DeviceRepository:
     """
 
     _SET_DETECTED_PROTOCOL_SQL = """
-        UPDATE public.fleet_device AS d
-        SET protocol = CASE
-            WHEN COALESCE(NULLIF(BTRIM(d.protocol), ''), '') = '' THEN %s
-            ELSE d.protocol
-        END
-        WHERE d.id = %s
-          AND (
-              COALESCE(NULLIF(BTRIM(d.protocol), ''), '') = ''
-              OR LOWER(BTRIM(d.protocol)) = %s
-          )
-          AND (
-              d.device_model_id IS NULL
-              OR EXISTS (
-                  SELECT 1
-                  FROM public.fleet_devicemodel AS dm
-                  WHERE dm.id = d.device_model_id
-                    AND (
-                        COALESCE(NULLIF(BTRIM(dm.protocol), ''), '') = ''
-                        OR LOWER(BTRIM(dm.protocol)) = %s
-                    )
-              )
-          )
-        RETURNING d.id
+        SELECT gps.register_detected_device_protocol(%s, %s)
     """
 
     def __init__(self, pool: DatabaseConnectionPool) -> None:
@@ -103,14 +81,9 @@ class DeviceRepository:
         with self._pool.connection() as connection:
             row = connection.execute(
                 self._SET_DETECTED_PROTOCOL_SQL,
-                (
-                    normalized_protocol,
-                    device_id,
-                    normalized_protocol,
-                    normalized_protocol,
-                ),
+                (device_id, normalized_protocol),
             ).fetchone()
-        return row is not None
+        return bool(row and row[0])
 
     def find_all_identifiers(self) -> tuple[str, ...]:
         """Return registered IMEIs for diagnostics without reading business data."""
