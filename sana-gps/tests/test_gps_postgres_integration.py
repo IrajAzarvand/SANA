@@ -76,9 +76,9 @@ def _make_dsn(
 # Runtime persistence uses the single sana_user role. SANA_GPS_TEST_DSN is the
 # safest override for dedicated test environments.
 DSN = os.getenv("SANA_GPS_TEST_DSN") or _make_dsn(
-    host=_env_value("GPS_DB_HOST", BACKEND_ENV, _env_value("DB_HOST", BACKEND_ENV, "127.0.0.1")),
-    port=_env_value("GPS_DB_PORT", BACKEND_ENV, _env_value("DB_PORT", BACKEND_ENV, "5432")),
-    database=_env_value("GPS_DB_NAME", BACKEND_ENV, _env_value("DB_NAME", BACKEND_ENV)),
+    host=_env_value("SANA_GPS_DB_HOST", GPS_ENV, _env_value("DB_HOST", BACKEND_ENV, "127.0.0.1")),
+    port=_env_value("SANA_GPS_DB_PORT", GPS_ENV, _env_value("DB_PORT", BACKEND_ENV, "5432")),
+    database=_env_value("SANA_GPS_DB_NAME", GPS_ENV, _env_value("DB_NAME", BACKEND_ENV)),
     user=_env_value("SANA_GPS_TEST_USER", GPS_ENV, _env_value("SANA_GPS_DB_USER", GPS_ENV, _env_value("DB_USER", BACKEND_ENV, "sana_user"))),
     password=_env_value("SANA_GPS_TEST_PASSWORD", GPS_ENV, _env_value("SANA_GPS_DB_PASSWORD", GPS_ENV, _env_value("DB_PASSWORD", BACKEND_ENV, "sana_password_123"))),
 )
