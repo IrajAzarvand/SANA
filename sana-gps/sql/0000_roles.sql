@@ -2,21 +2,23 @@
 -- SANA uses one database login (sana_user) for Django and the GPS receiver.
 -- Keep postgres for database provisioning/administration only; it is not an
 -- application login. The Django site-admin account is separate from PostgreSQL.
-DO $$
+DO $roles$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sana_user') THEN
         CREATE ROLE sana_user LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT;
     END IF;
 END
-$$;
+$roles$;
 
 -- Normalize the single application role. Its password is set during local/server
 -- provisioning, not embedded in version-controlled SQL.
 ALTER ROLE sana_user LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT;
 
-DO $ BEGIN
+DO $dbgrant$
+BEGIN
     EXECUTE format('GRANT ALL PRIVILEGES ON DATABASE %I TO sana_user', current_database());
-END $;
+END
+$dbgrant$;
 
 -- PostGIS must be installed by a PostgreSQL administrator.
 CREATE EXTENSION IF NOT EXISTS postgis;
@@ -29,7 +31,7 @@ GRANT USAGE, CREATE ON SCHEMA public TO sana_user;
 -- In a fresh SANA install, Django-created business tables are owned by sana_user.
 -- These conditional grants also let the GPS schema setup run in isolated tests or
 -- upgrades where representative public tables were created by the administrator.
-DO $
+DO $grants$
 BEGIN
     IF to_regclass('public.fleet_device') IS NOT NULL THEN
         EXECUTE 'GRANT REFERENCES (id) ON public.fleet_device TO sana_user';
@@ -42,4 +44,5 @@ BEGIN
     IF to_regclass('public.fleet_vehicle') IS NOT NULL THEN
         EXECUTE 'GRANT REFERENCES (id) ON public.fleet_vehicle TO sana_user';
     END IF;
-END $;
+END
+$grants$;
