@@ -2,6 +2,21 @@
 -- Keep this function owned by sana_owner; do not grant runtime roles direct DELETE.
 BEGIN;
 
+-- The SECURITY DEFINER owner needs narrowly scoped DELETE permission on legacy
+-- compatibility tables; the application runtime role receives no direct DELETE.
+DO $
+BEGIN
+    IF to_regclass('public.location_history') IS NOT NULL THEN
+        EXECUTE 'GRANT DELETE ON TABLE public.location_history TO sana_owner';
+    END IF;
+    IF to_regclass('public.fleet_gpstelemetry') IS NOT NULL THEN
+        EXECUTE 'GRANT DELETE ON TABLE public.fleet_gpstelemetry TO sana_owner';
+    END IF;
+    IF to_regclass('public.fleet_gt06position') IS NOT NULL THEN
+        EXECUTE 'GRANT DELETE ON TABLE public.fleet_gt06position TO sana_owner';
+    END IF;
+END $;
+
 CREATE OR REPLACE FUNCTION gps.purge_device_data(p_device_id BIGINT)
 RETURNS VOID
 LANGUAGE plpgsql
@@ -16,8 +31,8 @@ BEGIN
     END IF;
 
     -- Django compatibility telemetry tables, when present, must also be purged.
-    IF to_regclass('public.fleet_gps_telemetry') IS NOT NULL THEN
-        EXECUTE 'DELETE FROM public.fleet_gps_telemetry WHERE device_id = $1' USING p_device_id;
+    IF to_regclass('public.fleet_gpstelemetry') IS NOT NULL THEN
+        EXECUTE 'DELETE FROM public.fleet_gpstelemetry WHERE device_id = $1' USING p_device_id;
     END IF;
     IF to_regclass('public.fleet_gt06position') IS NOT NULL THEN
         EXECUTE 'DELETE FROM public.fleet_gt06position WHERE device_id = $1' USING p_device_id;
