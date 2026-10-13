@@ -45,23 +45,20 @@ async def test_hq_report_matches_registered_identifier_and_saves_telemetry():
 
 
 @pytest.mark.asyncio
-async def test_hq_report_is_buffered_across_tcp_reads():
+async def test_hq_report_from_lost_or_warehouse_device_is_still_saved():
     devices = Mock()
     devices.find_by_imei.return_value = DeviceRecord(
-        id=4, imei="9176515720", management_status="lost",
+        id=4, imei="9176515720", management_status="warehouse",
         protocol="", data_active=False,
     )
     telemetry = Mock()
     handler = HQHandler(devices, telemetry)
     session = make_session()
-    first = b"*HQ,9176515720,V1,112254,A,3751.2787,N,04555.9264,E,0.00,0,101026,"
-    second = b"ffffffbff,432,11,3412,10349#"
+    payload = b"*HQ,9176515720,V1,112254,A,3751.2787,N,04555.9264,E,0.00,0,101026,ffffffbff,432,11,3412,10349#"
 
-    await handler.handle(session, first)
-    telemetry.save.assert_not_called()
-    await handler.handle(session, second)
+    await handler.handle(session, payload)
 
-    telemetry.save.assert_not_called()
+    telemetry.save.assert_called_once()
     assert session.device_id == 4
     assert session.protocol is ProtocolId.HQ
 
@@ -88,6 +85,5 @@ async def test_h02_binary_report_extracts_registered_short_identifier_and_logs_n
     devices.find_by_imei.assert_called_once_with("9176515720")
     assert session.device_id == 4
     assert session.protocol is ProtocolId.HQ
-    # The packet's H02 status flags indicate an invalid GPS fix, so it is
-    # decoded and logged but intentionally not written to telemetry.
+    # Invalid GPS-fix flags are still rejected regardless of device status.
     telemetry.save.assert_not_called()

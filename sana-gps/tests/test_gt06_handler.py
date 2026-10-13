@@ -85,7 +85,7 @@ async def test_gt06_position_is_persisted_after_login():
 
 
 @pytest.mark.asyncio
-async def test_gt06_ineligible_device_is_not_persisted_or_position_acknowledged():
+async def test_gt06_position_from_lost_device_is_persisted_and_acknowledged():
     device_repository = Mock()
     device = DeviceRecord(
         id=9,
@@ -107,5 +107,5 @@ async def test_gt06_ineligible_device_is_not_persisted_or_position_acknowledged(
 
     response = await handler.handle(session, make_frame(0x12, info, 2))
 
-    assert response is None
-    positions.save.assert_not_called()
+    assert response is not None
+    positions.save.assert_called_once()
