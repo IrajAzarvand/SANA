@@ -5,10 +5,10 @@ from unittest.mock import MagicMock, Mock
 from app.repositories.device import DeviceRecord, DeviceRepository
 
 
-def test_find_by_imei_returns_registered_device_without_business_queries() -> None:
+def test_find_by_imei_returns_registered_device_and_eligibility() -> None:
     connection = Mock()
     connection.execute.return_value.fetchone.return_value = (
-        42, "352094082143253", "warehouse", "teltonika", 3
+        42, "352094082143253", "active", "teltonika", 3, True
     )
     pool = MagicMock()
     pool.connection.return_value.__enter__.return_value = connection
@@ -18,14 +18,17 @@ def test_find_by_imei_returns_registered_device_without_business_queries() -> No
     assert device == DeviceRecord(
         id=42,
         imei="352094082143253",
-        management_status="warehouse",
+        management_status="active",
         protocol="teltonika",
-        data_active=False,
+        data_active=True,
         device_model_id=3,
     )
     connection.execute.assert_called_once()
     sql = connection.execute.call_args.args[0].lower()
-    assert "organizations_subscription" not in sql
+    assert "public.organizations_subscriptiondevice" in sql
+    assert "unassigned_at is null" in sql
+    assert "start_date <= current_date" in sql
+    assert "end_date >= current_date" in sql
     assert "update " not in sql
     assert "public.fleet_device" in sql
 

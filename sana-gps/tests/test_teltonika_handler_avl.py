@@ -15,12 +15,15 @@ IMEI_FRAME = bytes.fromhex("000f333532303934303832313433323533")
 
 
 class FakeDeviceRepository:
+    def __init__(self, *, data_active: bool = True) -> None:
+        self.data_active = data_active
+
     def find_by_imei(self, imei: str) -> DeviceRecord | None:
         if imei != IMEI:
             return None
         return DeviceRecord(
             id=7, imei=IMEI, management_status="warehouse",
-            protocol="teltonika", data_active=False,
+            protocol="teltonika", data_active=self.data_active,
         )
 
     def set_detected_protocol(self, device_id: int, protocol: str) -> bool:
@@ -90,3 +93,17 @@ async def test_database_failure_does_not_return_successful_avl_ack() -> None:
 
     response = await handler.handle(session, _codec8_frame())
     assert response is None
+
+
+@pytest.mark.asyncio
+async def test_ineligible_device_is_not_persisted_or_acknowledged() -> None:
+    repository = FakeTelemetryRepository()
+    handler = TeltonikaHandler(FakeDeviceRepository(data_active=False), repository)
+    session = _session()
+
+    login_response = await handler.handle(session, IMEI_FRAME)
+    assert login_response is not None and login_response.data == b"\x01"
+
+    response = await handler.handle(session, _codec8_frame())
+    assert response is None
+    assert repository.saved == []

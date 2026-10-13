@@ -88,6 +88,16 @@ class TeltonikaHandler:
             if not self._is_current_session(session):
                 continue
 
+            from app.policies.device_access import device_access_denial_reason
+            device = self._device_repository.find_by_imei(session.device_imei or "")
+            if device is None:
+                logger.warning("Device disappeared before Teltonika persistence: %s", session.device_imei)
+                continue
+            denial_reason = device_access_denial_reason(device)
+            if denial_reason is not None:
+                logger.warning("Rejected ineligible Teltonika telemetry %s: %s", device.imei, denial_reason)
+                continue
+
             if self._telemetry_repository is None:
                 logger.error("Teltonika telemetry repository is not configured")
                 # No AVL success ACK when persistence is unavailable.
