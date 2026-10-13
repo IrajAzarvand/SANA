@@ -91,6 +91,7 @@ jobs:
         run: |
           psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -f sql/0003_purge_device_telemetry.sql
           psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -f sql/0004_remove_legacy_roles.sql
+          psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -f sql/0006_drop_legacy_cluster_roles.sql
       - name: Verify single-role permissions
         env:
           PGPASSWORD: postgres
@@ -128,6 +129,7 @@ jobs:
           INSERT INTO public.fleet_device
             (id, imei, management_status, protocol, device_model_id)
           VALUES (1, '352094082143253', 'active', 'teltonika', NULL);
+          SELECT setval(pg_get_serial_sequence('public.fleet_device', 'id'), (SELECT max(id) FROM public.fleet_device));
           "
       - name: Verify restricted protocol auto-registration
         env:
@@ -140,6 +142,7 @@ jobs:
           VALUES
             (2, '352094082143254', 'warehouse', '', 1),
             (3, '352094082143255', 'warehouse', '', NULL);
+          SELECT setval(pg_get_serial_sequence('public.fleet_device', 'id'), (SELECT max(id) FROM public.fleet_device));
           "
           PGPASSWORD=sana-test psql -h 127.0.0.1 -U sana_user -d sana_test -v ON_ERROR_STOP=1 -c "
           SELECT gps.register_detected_device_protocol(1, 'teltonika');
