@@ -1,9 +1,9 @@
 -- Run once as a PostgreSQL administrator after the GPS schema is installed.
--- Keep this function owned by sana_user; do not grant separate database roles direct DELETE.
+-- Keep this function owned by the single application login sana_user.
 BEGIN;
 
--- The SECURITY DEFINER owner needs narrowly scoped DELETE permission on legacy
--- compatibility tables; the application runtime role receives no direct DELETE.
+-- The function and the legacy telemetry tables are owned by sana_user on a fresh install.
+-- Keep conditional grants for upgrades where a legacy table has a different owner.
 DO $$
 BEGIN
     IF to_regclass('public.location_history') IS NOT NULL THEN
