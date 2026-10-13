@@ -80,7 +80,8 @@ WSGI_APPLICATION = 'sana_core.wsgi.application'
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 
 DATABASES = {
-    # Main SANA business data. Keep this connection on the existing application role.
+    # One PostgreSQL login is used by the SANA backend and GPS data queries.
+    # Application-level tenant/role permissions are enforced in Django, not here.
     'default': {
         'ENGINE': 'django.contrib.gis.db.backends.postgis',
         'NAME': config('DB_NAME', default='sana_db'),
@@ -88,17 +89,6 @@ DATABASES = {
         'PASSWORD': config('DB_PASSWORD', default='sana_password_123'),
         'HOST': config('DB_HOST', default='localhost'),
         'PORT': config('DB_PORT', default='5432'),
-    },
-    # Read-only runtime connection for GPS telemetry. Configure GPS_DB_PASSWORD
-    # separately for the dedicated sana_backend role in the server's .env.
-    'gps_read': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': config('GPS_DB_NAME', default=config('DB_NAME', default='sana_db')),
-        'USER': config('GPS_DB_USER', default='sana_backend'),
-        'PASSWORD': config('GPS_DB_PASSWORD', default=''),
-        'HOST': config('GPS_DB_HOST', default=config('DB_HOST', default='localhost')),
-        'PORT': config('GPS_DB_PORT', default=config('DB_PORT', default='5432')),
-        'CONN_MAX_AGE': 60,
     },
 }
 
