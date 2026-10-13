@@ -32,7 +32,7 @@ async def test_hq_report_matches_registered_identifier_and_saves_telemetry():
     await handler.handle(session, payload)
 
     devices.find_by_imei.assert_called_once_with("9176515720")
-    devices.set_detected_protocol.assert_not_called()
+    devices.set_detected_protocol.assert_called_once_with(4, "hq*")
     assert session.device_id == 4
     assert session.protocol is ProtocolId.HQ
     telemetry.save.assert_called_once()
