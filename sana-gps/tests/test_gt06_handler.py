@@ -44,7 +44,7 @@ async def test_gt06_login_binds_registered_device_and_acknowledges():
     assert session.device_imei == "9176515406"
     assert response is not None
     assert response.data[3] == 0x01
-    device_repository.set_detected_protocol.assert_not_called()
+    device_repository.set_detected_protocol.assert_called_once_with(9, "gt06")
 
 
 @pytest.mark.asyncio

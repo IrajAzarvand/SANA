@@ -13,6 +13,7 @@ from app.protocols.gt06 import (
 from app.protocols.types import ProtocolId, ProtocolResponse
 from app.repositories.device import DeviceRepository
 from app.repositories.gt06_position import GT06PositionRepository
+from app.protocols.registration import confirm_detected_protocol
 from app.transport.session import Session, SessionManager, SessionState
 
 
@@ -76,15 +77,14 @@ class GT06Handler:
                     logger.warning("Unregistered GT06 login from %s", session.remote_address)
                     continue
 
-                known_protocol = (device.protocol or "").strip().lower()
-                if known_protocol and known_protocol != ProtocolId.GT06.value:
+                if not confirm_detected_protocol(
+                    self._device_repository, device, ProtocolId.GT06.value
+                ):
                     logger.warning(
                         "GT06 protocol/device mismatch: imei=%s configured_protocol=%s",
-                        device.imei, known_protocol,
+                        device.imei, device.protocol,
                     )
                     continue
-                # Protocol configuration is business-owned. Never write the
-                # auto-detected protocol back to the canonical Device row.
                 if self._session_manager is None:
                     session.bind_device(
                         device_id=device.id,

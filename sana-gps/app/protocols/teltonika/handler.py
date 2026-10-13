@@ -11,6 +11,7 @@ from app.protocols.teltonika.normalizer import TeltonikaNormalizer
 from app.protocols.types import ProtocolFrame, ProtocolId, ProtocolResponse
 from app.repositories.device import DeviceRepository
 from app.repositories.gps_telemetry import GPSTelemetryRepository
+from app.protocols.registration import confirm_detected_protocol
 from app.transport.session import Session, SessionManager, SessionState
 
 logger = logging.getLogger(__name__)
@@ -157,17 +158,16 @@ class TeltonikaHandler:
             )
             return ProtocolResponse(b"\x00")
 
-        known_protocol = (device.protocol or "").strip().lower()
-        if known_protocol and known_protocol != ProtocolId.TELTONIKA.value:
+        if not confirm_detected_protocol(
+            self._device_repository, device, ProtocolId.TELTONIKA.value
+        ):
             logger.warning(
                 "Rejected Teltonika protocol mismatch: imei=%s configured_protocol=%s",
                 identification.imei,
-                known_protocol,
+                device.protocol,
             )
             return ProtocolResponse(b"\x00")
 
-        # Device/DeviceModel protocol configuration is business-owned. The GPS
-        # runtime must never persist an auto-detected protocol into fleet_device.
         if self._session_manager is None:
             session.bind_device(
                 device_id=device.id,

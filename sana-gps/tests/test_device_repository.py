@@ -8,7 +8,7 @@ from app.repositories.device import DeviceRecord, DeviceRepository
 def test_find_by_imei_returns_registered_device_without_business_eligibility_gate() -> None:
     connection = Mock()
     connection.execute.return_value.fetchone.return_value = (
-        42, "352094082143253", "warehouse", "teltonika", 3, True
+        42, "352094082143253", "warehouse", "teltonika", 3, True, ""
     )
     pool = MagicMock()
     pool.connection.return_value.__enter__.return_value = connection
@@ -22,6 +22,7 @@ def test_find_by_imei_returns_registered_device_without_business_eligibility_gat
         protocol="teltonika",
         data_active=True,
         device_model_id=3,
+        device_protocol="",
     )
     connection.execute.assert_called_once()
     sql = connection.execute.call_args.args[0].lower()
@@ -56,3 +57,32 @@ def test_find_all_identifiers_reads_only_imei() -> None:
     assert DeviceRepository(pool).find_all_identifiers() == ("123", "456")
     sql = connection.execute.call_args.args[0].lower()
     assert sql.strip().startswith("select imei from public.fleet_device")
+
+
+def test_set_detected_protocol_calls_the_restricted_generic_registration_function() -> None:
+    connection = Mock()
+    connection.execute.return_value.fetchone.return_value = (True,)
+    pool = MagicMock()
+    pool.connection.return_value.__enter__.return_value = connection
+
+    assert DeviceRepository(pool).set_detected_protocol(42, "  future-protocol  ") is True
+
+    sql, params = connection.execute.call_args.args
+    assert "select gps.register_detected_device_protocol(%s, %s)" in sql.lower()
+    assert params == (42, "future-protocol")
+
+
+def test_set_detected_protocol_returns_false_when_protocol_is_not_compatible() -> None:
+    connection = Mock()
+    connection.execute.return_value.fetchone.return_value = None
+    pool = MagicMock()
+    pool.connection.return_value.__enter__.return_value = connection
+
+    assert DeviceRepository(pool).set_detected_protocol(42, "teltonika") is False
+
+
+def test_set_detected_protocol_rejects_empty_value_without_query() -> None:
+    pool = MagicMock()
+
+    assert DeviceRepository(pool).set_detected_protocol(42, "  ") is False
+    pool.connection.assert_not_called()

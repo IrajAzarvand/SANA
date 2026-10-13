@@ -13,26 +13,38 @@ class DeviceRecord:
     protocol: str
     data_active: bool
     device_model_id: int | None = None
+    # Canonical fleet_device.protocol, distinct from the model-preferred
+    # effective protocol exposed through the protocol field.
+    device_protocol: str = ""
 
 
 class DeviceRepository:
-    """Read-only lookup of registered devices for the GPS runtime.
+    """Registered-device lookup plus a narrowly-scoped protocol auto-detection write.
 
     Registration by IMEI is the sole business eligibility gate for receiving
     telemetry. Management status and subscription assignment are intentionally
     not consulted here: warehouse, lost, faulty, disconnected, and other
     registered devices may still need to report their locations.
+
+    The only business-field write allowed to the GPS runtime is the conditional
+    protocol registration below. It never overwrites a non-empty device/model
+    protocol and is safe against concurrent first connections.
     """
 
     _SQL = """
         SELECT d.id, d.imei, d.management_status,
-               COALESCE(NULLIF(dm.protocol, ''), NULLIF(d.protocol, ''), '') AS protocol,
+               COALESCE(NULLIF(BTRIM(dm.protocol), ''), NULLIF(BTRIM(d.protocol), ''), '') AS protocol,
                d.device_model_id,
-               TRUE AS data_active
+               TRUE AS data_active,
+               COALESCE(d.protocol, '') AS device_protocol
         FROM public.fleet_device AS d
         LEFT JOIN public.fleet_devicemodel AS dm ON dm.id = d.device_model_id
         WHERE d.imei = %s
         LIMIT 1
+    """
+
+    _SET_DETECTED_PROTOCOL_SQL = """
+        SELECT gps.register_detected_device_protocol(%s, %s)
     """
 
     def __init__(self, pool: DatabaseConnectionPool) -> None:
@@ -52,10 +64,26 @@ class DeviceRepository:
             management_status=row[2],
             protocol=row[3] or "",
             device_model_id=row[4],
-            # Kept for compatibility with existing handlers and callers.
-            # A registered device is always eligible for telemetry intake.
             data_active=bool(row[5]),
+            device_protocol=row[6] or "",
         )
+
+    def set_detected_protocol(self, device_id: int, protocol: str) -> bool:
+        """Set a blank device protocol, or confirm an existing compatible value.
+
+        The conditional UPDATE is the concurrency boundary: if a different
+        protocol was configured or registered by another session first, no row
+        is returned and the handshake must not be accepted.
+        """
+        normalized_protocol = protocol.strip().lower()
+        if not normalized_protocol:
+            return False
+        with self._pool.connection() as connection:
+            row = connection.execute(
+                self._SET_DETECTED_PROTOCOL_SQL,
+                (device_id, normalized_protocol),
+            ).fetchone()
+        return bool(row and row[0])
 
     def find_all_identifiers(self) -> tuple[str, ...]:
         """Return registered IMEIs for diagnostics without reading business data."""
