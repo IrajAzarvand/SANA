@@ -61,6 +61,13 @@ class AppConfigTests(unittest.TestCase):
         self.assertEqual(config.database.pool_min_size, 2)
         self.assertEqual(config.database.pool_max_size, 7)
 
+    def test_defaults_to_the_single_sana_user_database_login(self):
+        with patch.dict(os.environ, {"SANA_GPS_DB_NAME": "sana_db"}, clear=True):
+            config = AppConfig.from_env()
+
+        self.assertEqual(config.database.user, "sana_user")
+        self.assertEqual(config.database.password, "sana_password_123")
+
     def test_rejects_non_integer_database_port(self):
         env = {
             "SANA_GPS_DB_NAME": "sana_db",
