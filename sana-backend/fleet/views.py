@@ -28,6 +28,11 @@ class VehicleTypeViewSet(viewsets.ModelViewSet):
     serializer_class = VehicleTypeSerializer
     permission_classes = [IsAuthenticated]
 
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsSiteAdmin()]
+        return super().get_permissions()
+
     def get_queryset(self):
         user = self.request.user
         if user.is_site_admin:
@@ -80,7 +85,7 @@ class VehicleViewSet(viewsets.ModelViewSet):
         return qs
 
     def get_permissions(self):
-        if self.action in ['create', 'destroy']:
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
             return [IsSiteAdmin()]
         return super().get_permissions()
 
@@ -230,7 +235,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
 
         with transaction.atomic():
             # SECURITY DEFINER function removes GPS-schema rows that reference this device.
-            with connections['default'].cursor() as cursor:
+            with connection.cursor() as cursor:
                 cursor.execute('SELECT gps.purge_device_data(%s)', [instance.pk])
             # DeviceOperation protects its referenced devices from accidental deletion.
             # Explicitly remove operations where this device is either the subject or replacement.
