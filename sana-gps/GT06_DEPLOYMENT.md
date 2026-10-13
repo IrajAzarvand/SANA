@@ -15,7 +15,9 @@ Keep the current NAT rule **public TCP 19000 → server TCP 9000**. Do not point
 - Teltonika TCP identification begins with its two-byte length-prefixed IMEI handshake.
 - GT06-family TCP frames begin with `7878` or `7979`.
 - After detection, the matching handler checks the identifier against a device registered in SANA. Unknown identifiers are not authenticated.
-- The device's protocol is detected and saved when its first valid login/identification is accepted, provided the protocol field was empty.
+- A shared registration policy records the detected protocol when a device's canonical protocol field is empty. It preserves existing values and rejects conflicts with either the device or its DeviceModel.
+- Every protocol handler, including future handlers, must call `app.protocols.registration.confirm_detected_protocol` after identifying a registered device and before binding/accepting the session. The policy and repository accept protocol identifiers generically; they do not special-case Teltonika, GT06, or HQ.
+- The GPS database role receives column-level UPDATE permission for `fleet_device.protocol` only; it must not receive broad UPDATE permission on the device table.
 - Teltonika UDP on port `9001` continues through the existing Teltonika handler.
 
 GT06-compatible packets are captured at `/var/tmp/sana-gps-gt06-capture.log` by default and decoded position reports are saved in `fleet_gt06position`.
@@ -30,6 +32,7 @@ source sana-backend/venv/bin/activate
 cd sana-backend
 python manage.py migrate
 cd ..
+sudo -u postgres psql -d sana_db -f sana-gps/sql/grant_detected_protocol_permission.sql
 sana-backend/venv/bin/python -m pytest -q sana-gps/tests
 sudo systemctl restart sana-gps
 sudo systemctl status sana-gps --no-pager
