@@ -11,7 +11,7 @@ END $$;
 -- Create all GPS objects as the one application role.
 SET ROLE sana_user;
 REVOKE ALL ON SCHEMA gps FROM PUBLIC;
-GRANT USAGE ON SCHEMA gps TO sana_user, sana_user;
+GRANT USAGE ON SCHEMA gps TO sana_user;
 GRANT USAGE, CREATE ON SCHEMA gps TO sana_user;
 
 CREATE TABLE IF NOT EXISTS gps.raw_packet (
@@ -217,23 +217,10 @@ CREATE TRIGGER trg_trip_number_immutable
 BEFORE UPDATE OF number ON gps.trip
 FOR EACH ROW EXECUTE FUNCTION gps.prevent_trip_number_change();
 
--- Public access is revoked; the application role owns these objects and therefore
--- has the full access required by the SANA application and GPS ingestion service.
+-- The application role owns these objects and has full control. Keep anonymous
+-- access disabled on current and future GPS tables and sequences.
 REVOKE ALL ON ALL TABLES IN SCHEMA gps FROM PUBLIC;
 REVOKE ALL ON ALL SEQUENCES IN SCHEMA gps FROM PUBLIC;
-GRANT SELECT, INSERT, UPDATE ON gps.current_state TO sana_user;
-GRANT SELECT, INSERT ON gps.location_history TO sana_user;
-GRANT SELECT, INSERT, UPDATE ON gps.event TO sana_user;
-GRANT SELECT, INSERT, UPDATE ON gps.trip TO sana_user;
-GRANT SELECT, INSERT ON gps.raw_packet TO sana_user;
-GRANT SELECT ON gps.geofence, gps.geofence_version, gps.geofence_assignment TO sana_user;
-GRANT SELECT, INSERT, UPDATE ON gps.vehicle_geofence_state TO sana_user;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA gps TO sana_user;
-
-GRANT SELECT ON gps.current_state, gps.location_history, gps.event, gps.trip TO sana_user;
-GRANT SELECT, INSERT, UPDATE, DELETE ON gps.geofence, gps.geofence_version, gps.geofence_assignment TO sana_user;
-GRANT SELECT ON gps.vehicle_geofence_state TO sana_user;
-GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA gps TO sana_user;
 
 -- Keep public access disabled for objects created in the GPS schema in the future.
 ALTER DEFAULT PRIVILEGES FOR ROLE sana_user IN SCHEMA gps REVOKE ALL ON TABLES FROM PUBLIC;
