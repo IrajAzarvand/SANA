@@ -69,6 +69,7 @@ Run commands from the repository root, adjusting paths if needed.
    ```bash
    cd ..
    sudo -u postgres psql -d sana_db -v ON_ERROR_STOP=1 -f sana-gps/sql/0001_gps_schema.sql
+   sudo -u postgres psql -d sana_db -v ON_ERROR_STOP=1 -f sana-gps/sql/0002_detected_protocol_registration.sql
    sudo -u postgres psql -d sana_db -v ON_ERROR_STOP=1 -f sana-gps/sql/0003_purge_device_telemetry.sql
    ```
 
