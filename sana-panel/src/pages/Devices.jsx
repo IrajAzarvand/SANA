@@ -420,12 +420,7 @@ function DevicesTab() {
               onChange={(e) => setEditForm({ ...editForm, sim_number: e.target.value })}
               placeholder="۰۹xxxxxxxxx"
             />
-            <Input
-              label="شماره SIM"
-              value={editForm.sim_number}
-              onChange={(e) => setEditForm({ ...editForm, sim_number: e.target.value })}
-              placeholder="۰۹xxxxxxxxx"
-            />
+
           </form>
         </Modal>
       )}
