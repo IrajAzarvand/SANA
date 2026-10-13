@@ -4,7 +4,7 @@ BEGIN;
 
 -- The SECURITY DEFINER owner needs narrowly scoped DELETE permission on legacy
 -- compatibility tables; the application runtime role receives no direct DELETE.
-DO $
+DO $$
 BEGIN
     IF to_regclass('public.location_history') IS NOT NULL THEN
         EXECUTE 'GRANT DELETE ON TABLE public.location_history TO sana_owner';
@@ -15,7 +15,7 @@ BEGIN
     IF to_regclass('public.fleet_gt06position') IS NOT NULL THEN
         EXECUTE 'GRANT DELETE ON TABLE public.fleet_gt06position TO sana_owner';
     END IF;
-END $;
+END $$;
 
 CREATE OR REPLACE FUNCTION gps.purge_device_data(p_device_id BIGINT)
 RETURNS VOID
