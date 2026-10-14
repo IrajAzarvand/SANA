@@ -38,6 +38,13 @@ class UnknownProtocolQueueRepository:
     def __init__(self, pool: DatabaseConnectionPool) -> None:
         self._pool = pool
 
+    def check_schema(self) -> None:
+        """Fail fast if the Django migration has not created the queue table."""
+        with self._pool.connection() as connection:
+            connection.execute(
+                "SELECT id FROM public.fleet_unknowngpsdata LIMIT 0"
+            )
+
     def record_chunk(
         self,
         *,
