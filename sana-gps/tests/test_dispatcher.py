@@ -196,3 +196,49 @@ async def test_dispatcher_captures_unknown_chunks_without_rejecting_connection()
     assert later_response is None
     assert captured == [(session.id, b"\xaa\xbbfirst"), (session.id, b"later-packet")]
     teltonika.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b"GET / HTTP/1.1\r\nHost: example.invalid\r\n\r\n",
+        b"POST /login HTTP/1.1\r\nHost: example.invalid\r\n\r\n",
+        b"HTTP/1.1 400 Bad Request\r\n\r\n",
+        b"\x16\x03\x01\x00\x2e",  # TLS handshake record
+        b"SSH-2.0-OpenSSH_9.6\r\n",
+    ],
+)
+async def test_dispatcher_does_not_capture_obvious_non_gps_traffic(payload: bytes):
+    captured = []
+    dispatcher = ProtocolDispatcher(
+        {},
+        unknown_data_handler=lambda session, chunk: captured.append(chunk),
+    )
+    session = make_session()
+
+    assert await dispatcher.handle(session, payload) is None
+
+    assert captured == []
+    assert dispatcher._states[session.id].rejected
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_filters_http_method_split_across_tcp_reads():
+    captured = []
+    dispatcher = ProtocolDispatcher(
+        {},
+        unknown_data_handler=lambda session, chunk: captured.append(chunk),
+    )
+    session = make_session()
+
+    # A TCP read may end in the middle of the HTTP method.
+    assert await dispatcher.handle(session, b"GE") is None
+    assert captured == []
+
+    assert await dispatcher.handle(
+        session, b"T / HTTP/1.1\r\nHost: example.invalid\r\n\r\n"
+    ) is None
+
+    assert captured == []
+    assert dispatcher._states[session.id].rejected
