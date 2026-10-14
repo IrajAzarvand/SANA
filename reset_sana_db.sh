@@ -25,24 +25,26 @@ LOG_FILE="$LOG_DIR/reset-sana-$(date +%Y%m%d-%H%M%S).log"
 STEP="آماده‌سازی"
 SERVICE_STOPPED=0
 START_TIME="$(date +%s)"
+RUN_SUCCEEDED=0
 
 exec > >(tee -a "$LOG_FILE") 2>&1
 
-on_error() {
+on_exit() {
     rc=$?
-    echo
-    echo "❌ خطا در مرحله: $STEP"
-    echo "کد خروج: $rc"
-    echo "گزارش کامل: $LOG_FILE"
+    if [[ "$rc" -ne 0 && "$RUN_SUCCEEDED" -ne 1 ]]; then
+        echo
+        echo "❌ اجرای اسکریپت ناموفق بود."
+        echo "آخرین مرحله: $STEP"
+        echo "کد خروج: $rc"
+        echo "گزارش کامل: $LOG_FILE"
 
-    if [[ "$SERVICE_STOPPED" == "1" ]]; then
-        sudo systemctl stop sana-gps >/dev/null 2>&1 || true
-        echo "سرویس GPS متوقف نگه داشته شد."
+        if [[ "$SERVICE_STOPPED" == "1" ]]; then
+            sudo systemctl stop sana-gps >/dev/null 2>&1 || true
+            echo "سرویس GPS متوقف نگه داشته شد."
+        fi
     fi
-
-    exit "$rc"
 }
-trap on_error ERR
+trap on_exit EXIT
 
 step() {
     STEP="$1"
@@ -65,6 +67,11 @@ echo "مالک دیتابیس: $DB_OWNER"
 echo "گزارش اجرا: $LOG_FILE"
 
 # بررسی اولیه مسیرها و فایل‌های لازم
+[[ "$DB_NAME" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] ||
+    die "نام دیتابیس نامعتبر است؛ فقط حروف انگلیسی، عدد و زیرخط مجاز است."
+[[ "$DB_OWNER" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] ||
+    die "نام نقش PostgreSQL نامعتبر است."
+
 [[ -d "$BACKEND" ]] || die "پوشه sana-backend پیدا نشد."
 [[ -d "$GPS" ]] || die "پوشه sana-gps پیدا نشد."
 [[ -f "$MANAGE" ]] || die "فایل manage.py پیدا نشد."
@@ -93,12 +100,16 @@ echo
 echo "⚠️ هشدار: این عملیات دیتابیس '$DB_NAME' را کامل حذف می‌کند."
 echo "تمام کاربران، داده‌های GPS و اطلاعات داخل آن پاک خواهند شد."
 echo "جدول fleet_gpstelemetry نیز همراه دیتابیس حذف و با migrationها بازسازی می‌شود."
-echo "این اسکریپت به‌صورت مستقل دستور حذف جدول fleet_gpstelemetry اجرا نمی‌کند."
+echo "جدول fleet_gpstelemetry همراه کل دیتابیس حذف می‌شود و migrationهای Django باید آن را از نو بسازند."
 echo
 
 read -r -p "برای تأیید، نام دیتابیس را دقیقاً وارد کن [$DB_NAME]: " CONFIRM
 [[ "$CONFIRM" == "$DB_NAME" ]] ||
     die "تأیید صحیح نبود؛ دیتابیس حذف نشد."
+
+# بررسی اعتبار sudo پیش از توقف سرویس یا هر عملیات مخرب
+step "آماده‌سازی دسترسی مدیریتی"
+sudo -v
 
 # ۱. توقف سرویس GPS
 step "۱/۱۰ - توقف سرویس GPS"
@@ -117,9 +128,10 @@ step "۲/۱۰ - بررسی نقش PostgreSQL"
 
 ROLE_EXISTS="$(
     sudo -u postgres psql -X -d postgres -At \
-        -v role_name="$DB_OWNER" \
-        -c "SELECT count(*) FROM pg_roles WHERE rolname = :'role_name'"
-)"
+        -v role_name="$DB_OWNER" <<'SQL'
+SELECT count(*) FROM pg_roles WHERE rolname = :'role_name';
+SQL
+)" 
 
 [[ "$ROLE_EXISTS" == "1" ]] ||
     die "نقش PostgreSQL '$DB_OWNER' وجود ندارد."
@@ -291,10 +303,14 @@ sudo journalctl -u sana-gps -n 30 --no-pager
 
 echo
 echo "پورت‌های GPS:"
-sudo ss -lntup | grep -E ':9000|:9001' ||
-    die "پورت 9000 یا 9001 در وضعیت انتظار نیست."
+LISTENERS="$(sudo ss -lntup)"
+printf '%s\n' "$LISTENERS" | grep -E 'LISTEN .*:9000([[:space:]]|$)' ||
+    die "TCP port 9000 در وضعیت LISTEN نیست."
+printf '%s\n' "$LISTENERS" | grep -E 'UNCONN .*:9001([[:space:]]|$)' ||
+    die "UDP port 9001 در وضعیت فعال نیست."
 
 SERVICE_STOPPED=0
+RUN_SUCCEEDED=1
 
 echo
 echo "============================================================"
