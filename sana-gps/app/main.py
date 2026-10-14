@@ -13,7 +13,6 @@ from app.protocols.gt06_handler import GT06Handler
 from app.protocols.hq_handler import HQHandler
 from app.protocols.teltonika.handler import TeltonikaHandler
 from app.protocols.types import ProtocolId, ProtocolResponse
-from app.protocols.unknown_matching import match_registered_identifiers
 from app.repositories.device import DeviceRepository
 from app.repositories.unknown_protocol_queue import UnknownProtocolQueueRepository
 from app.repositories.gt06_position import GT06PositionRepository
