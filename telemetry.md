@@ -38659,9 +38659,9 @@ SANA/
 
 ### کنترل دسترسی مسیر
 
-- تعریف مسیر `/panel/ai` در `sana-panel/src/App.jsx` باید با `ProtectedRoute allowRoles={['site_admin']}` محافظت شود.
+- مسیر `/panel/ai` در `sana-panel/src/App.jsx` با `ProtectedRoute allowRoles={['site_admin']}` محافظت شده است.
 - `ProtectedRoute` ابتدا وضعیت بارگذاری و احراز هویت را بررسی می‌کند؛ کاربر واردنشده به `/login` هدایت می‌شود.
-- کاربر واردشده‌ای که نقش او `site_admin` نیست، حتی با واردکردن مستقیم آدرس `/panel/ai` در نوار مرورگر، باید با `Navigate` و گزینه `replace` به `/panel/dashboard` هدایت شود.
+- کاربر واردشده‌ای که نقش او `site_admin` نیست، حتی با واردکردن مستقیم آدرس `/panel/ai` در نوار مرورگر، با `Navigate` و گزینه `replace` به `/panel/dashboard` هدایت می‌شود.
 - پنهان‌کردن لینک در Sidebar به‌تنهایی کنترل دسترسی نیست. هنگام پیاده‌سازی APIها، هر endpoint باید مجوز `site_admin` را مستقلاً در Backend بررسی کند؛ حفاظت Frontend جایگزین مجوز سمت سرور نیست.
 
 ### قرارداد API پیشنهادی
