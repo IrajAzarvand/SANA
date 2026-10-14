@@ -2,8 +2,7 @@
 -- Keep this function owned by the single application login sana_user.
 BEGIN;
 
--- The function and the legacy telemetry tables are owned by sana_user on a fresh install.
--- Keep conditional grants for upgrades where a legacy table has a different owner.
+-- Keep compatibility grants only for the still-supported legacy telemetry tables.
 DO $$
 BEGIN
     IF to_regclass('public.location_history') IS NOT NULL THEN
@@ -11,9 +10,6 @@ BEGIN
     END IF;
     IF to_regclass('public.fleet_gpstelemetry') IS NOT NULL THEN
         EXECUTE 'GRANT SELECT, DELETE ON TABLE public.fleet_gpstelemetry TO sana_user';
-    END IF;
-    IF to_regclass('public.fleet_gt06position') IS NOT NULL THEN
-        EXECUTE 'GRANT SELECT, DELETE ON TABLE public.fleet_gt06position TO sana_user';
     END IF;
 END $$;
 
@@ -30,12 +26,9 @@ BEGIN
         EXECUTE 'DELETE FROM public.location_history WHERE device_id = $1' USING p_device_id;
     END IF;
 
-    -- Django compatibility telemetry tables, when present, must also be purged.
+    -- Keep cleanup support for fleet_gpstelemetry; GT06 uses the shared gps.* tables.
     IF to_regclass('public.fleet_gpstelemetry') IS NOT NULL THEN
         EXECUTE 'DELETE FROM public.fleet_gpstelemetry WHERE device_id = $1' USING p_device_id;
-    END IF;
-    IF to_regclass('public.fleet_gt06position') IS NOT NULL THEN
-        EXECUTE 'DELETE FROM public.fleet_gt06position WHERE device_id = $1' USING p_device_id;
     END IF;
 
     -- Delete dependents first because several GPS tables intentionally use ON DELETE RESTRICT.

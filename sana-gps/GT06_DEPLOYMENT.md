@@ -20,7 +20,7 @@ Keep the current NAT rule **public TCP 19000 → server TCP 9000**. Do not point
 - Django and the GPS receiver use the same PostgreSQL login, `sana_user`. PostgreSQL administrator access is reserved for provisioning and maintenance.
 - Teltonika UDP on port `9001` continues through the existing Teltonika handler.
 
-GT06-compatible packets are captured at `/var/tmp/sana-gps-gt06-capture.log` by default and decoded position reports are saved in `fleet_gt06position`.
+GT06-compatible packets are captured at `/var/tmp/sana-gps-gt06-capture.log` by default. Decoded reports use the same shared telemetry tables as other protocols: `gps.raw_packet`, `gps.location_history`, and `gps.current_state`; there is no GT06-specific position table.
 
 ## Deploy
 
@@ -53,16 +53,19 @@ In another terminal:
 sudo tail -f /var/tmp/sana-gps-gt06-capture.log
 ```
 
-To inspect saved GT06-compatible positions in PostgreSQL:
+To inspect the latest saved GT06-compatible positions in PostgreSQL:
 
 ```sql
-SELECT d.imei, p.gps_time, p.latitude, p.longitude,
-       p.speed_kmh, p.course, p.satellites, p.received_at
-FROM fleet_gt06position p
-JOIN fleet_device d ON d.id = p.device_id
-ORDER BY p.id DESC
+SELECT d.imei, p.device_time, p.latitude, p.longitude,
+       p.speed, p.heading, p.satellites, p.server_received_at
+FROM gps.location_history p
+JOIN public.fleet_device d ON d.id = p.device_id
+WHERE p.attributes -> 'gt06' IS NOT NULL
+ORDER BY p.device_time DESC, p.id DESC
 LIMIT 20;
 ```
+
+The current location snapshot for all protocols is in `gps.current_state`; packet-level deduplication and raw payloads are in `gps.raw_packet`.
 
 ## Adding a future protocol (for example, a Concox model)
 
