@@ -13,6 +13,7 @@ from app.protocols.gt06_handler import GT06Handler
 from app.protocols.hq_handler import HQHandler
 from app.protocols.teltonika.handler import TeltonikaHandler
 from app.protocols.types import ProtocolId, ProtocolResponse
+from app.protocols.unknown_capture import UnknownProtocolCapture
 from app.repositories.device import DeviceRepository
 from app.repositories.gt06_position import GT06PositionRepository
 from app.repositories.gps_telemetry import GPSTelemetryRepository
@@ -60,6 +61,7 @@ async def run(
     )
     capture = RawCapture(config.capture_file) if config.capture_file else None
     gt06_capture = RawCapture(config.gt06_capture_file) if config.gt06_capture_file else None
+    unknown_capture = UnknownProtocolCapture(max_samples=256, max_sample_bytes=8192)
 
     async def on_gt06_data(session, data: bytes) -> ProtocolResponse | None:
         if gt06_capture is not None:
@@ -70,12 +72,21 @@ async def run(
             )
         return await gt06_handler.handle(session, data)
 
+    def on_unknown_data(session, data: bytes) -> None:
+        unknown_capture.record(
+            session_id=session.id,
+            remote_address=session.remote_address,
+            transport=session.transport.value,
+            payload=data,
+        )
+
     dispatcher = ProtocolDispatcher(
         {
             ProtocolId.TELTONIKA: teltonika_handler.handle,
             ProtocolId.GT06: on_gt06_data,
             ProtocolId.HQ: hq_handler.handle,
-        }
+        },
+        unknown_data_handler=on_unknown_data,
     )
 
     async def on_data(session, data: bytes) -> ProtocolResponse | None:
@@ -119,6 +130,7 @@ async def run(
             print("Raw capture:", capture.path)
         if gt06_capture is not None:
             print("GT06 raw capture:", gt06_capture.path)
+        print("Unknown protocol capture: in-memory, max 256 samples x 8192 bytes")
         print("SANA GPS ready")
 
         if shutdown_event is None:
