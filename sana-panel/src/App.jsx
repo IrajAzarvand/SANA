@@ -17,6 +17,7 @@ import Branches from './pages/Branches';
 import Subscriptions from './pages/Subscriptions';
 import SubscriptionWizard from './pages/SubscriptionWizard';
 import SubscriptionDetail from './pages/SubscriptionDetail';
+import AIManagement from './pages/AIManagement';
 
 export default function App() {
   return (
@@ -38,6 +39,13 @@ export default function App() {
             <Route path="reports"   element={<Reports />} />
             <Route path="alerts"    element={<Alerts />} />
             <Route path="settings"  element={<Settings />} />
+
+            {/* مدیریت هوش مصنوعی — فقط ادمین سایت */}
+            <Route path="ai" element={
+              <ProtectedRoute allowRoles={['site_admin']}>
+                <AIManagement />
+              </ProtectedRoute>
+            } />
 
             {/* خودروها */}
             <Route path="vehicles" element={

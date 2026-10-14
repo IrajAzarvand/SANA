@@ -2,7 +2,7 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Map as MapIcon, Truck, Users, Cpu, BarChart3,
   AlertTriangle, Settings, ChevronDown, Building2, Car, Shield, Globe,
-  FileText,
+  FileText, BrainCircuit,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -15,6 +15,7 @@ export default function Sidebar({ isOpen, onClose }) {
     { path: '/panel/map',            icon: MapIcon,          label: 'نقشه زنده' },
     { path: '/panel/subscriptions',  icon: FileText,         label: 'قراردادها' },
     { path: '/panel/devices',        icon: Cpu,              label: 'همه دستگاه‌ها' },
+    { path: '/panel/ai',             icon: BrainCircuit,     label: 'هوش مصنوعی' },
     { path: '/panel/reports',        icon: BarChart3,        label: 'گزارش‌ها' },
     { path: '/panel/alerts',         icon: AlertTriangle,    label: 'هشدارها', badge: 8 },
     { path: '/panel/settings',       icon: Settings,         label: 'تنظیمات سایت' },
@@ -24,8 +25,8 @@ export default function Sidebar({ isOpen, onClose }) {
     { path: '/panel/dashboard',  icon: LayoutDashboard, label: 'داشبورد' },
     { path: '/panel/map',        icon: MapIcon,          label: 'نقشه زنده' },
     { path: '/panel/vehicles',   icon: Truck,            label: 'خودروها' },
-    { path: '/panel/drivers',    icon: Users,            label: 'رانندگان' },
-    { path: '/panel/devices',    icon: Cpu,              label: 'دستگاه‌ها' },
+    { path: '/panel/drivers',    icon: Users,             label: 'رانندگان' },
+    { path: '/panel/devices',    icon: Cpu,               label: 'دستگاه‌ها' },
     ...(isMainUser ? [{ path: '/panel/branches', icon: Building2, label: 'شعبه‌ها' }] : []),
     ...(isMainUser ? [{ path: '/panel/users', icon: Shield, label: 'کاربران' }] : []),
     { path: '/panel/reports',    icon: BarChart3,        label: 'گزارش‌ها' },
@@ -118,7 +119,7 @@ export default function Sidebar({ isOpen, onClose }) {
 
         {isOrganization && (
           <div className="p-3 border-t border-border-base">
-            <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-field bg-bg-base border border-border-base hover:border-border-strong transition-colors text-right">
+            <div className="flex items-center gap-3 px-3 py-2.5 rounded-field bg-bg-base border border-border-base hover:border-border-strong transition-colors text-right">
               <div className="w-8 h-8 rounded-field bg-brand-900 flex items-center justify-center">
                 <Building2 size={16} className="text-brand-400" />
               </div>
@@ -131,7 +132,7 @@ export default function Sidebar({ isOpen, onClose }) {
                 </div>
               </div>
               {isMainUser && <ChevronDown size={16} className="text-text-muted" />}
-            </button>
+            </div>
           </div>
         )}
 
