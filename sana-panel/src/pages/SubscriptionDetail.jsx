@@ -951,13 +951,15 @@ export default function SubscriptionDetail() {
                               variant: 'danger',
                               onClick: () => openEditModal(d.id),
                             },
+                          ] : []),
+                          ...(isSiteAdmin ? [
                             {
                               label: 'ویرایش',
                               icon: Pencil,
                               onClick: () => openDeviceEdit(d.device),
                             },
                             {
-                              label: 'حذف',
+                              label: 'حذف کامل دستگاه',
                               icon: Trash2,
                               variant: 'danger',
                               onClick: () => handleDeleteDevice(d.device),
