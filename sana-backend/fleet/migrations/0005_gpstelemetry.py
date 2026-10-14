@@ -5,7 +5,6 @@ import django.db.models.deletion
 class Migration(migrations.Migration):
     dependencies = [
         ("fleet", "0004_device_protocol_optional_model"),
-        ("fleet", "0003_gt06position"),
     ]
 
     operations = [
