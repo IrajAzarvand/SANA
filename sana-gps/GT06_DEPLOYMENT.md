@@ -67,3 +67,7 @@ LIMIT 20;
 ## Adding a future protocol (for example, a Concox model)
 
 The shared port and dispatcher are designed so a new protocol can be added as a separate detector/handler without changing the Teltonika handler, port mapping, or data path for existing devices. Registering an identifier alone cannot decode an entirely new wire protocol: the specific model's protocol must first be identified and implemented, with framing, authentication/identifier extraction, acknowledgements, decoder, persistence mapping, and tests. Many trackers share GT06-compatible framing, but Concox compatibility must be verified for the exact model. Unknown protocols must not be guessed or fed to an unrelated decoder.
+
+## Recent registry work
+
+See [PROTOCOL_REGISTRY.md](PROTOCOL_REGISTRY.md) for the rationale and file-by-file map of the centralized decoders, Registry/Dispatcher integration, current operational evidence, known limitations, and next work on AI in the panel.
