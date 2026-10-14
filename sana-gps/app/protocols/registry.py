@@ -79,7 +79,7 @@ def default_protocol_registry() -> ProtocolRegistry:
     return ProtocolRegistry(
         (
             SignatureDetector(ProtocolId.GT06, (b"\x78\x78", b"\x79\x79")),
-            SignatureDetector(ProtocolId.TELTONIKA, (b"\x00\\x0f",)),
+            SignatureDetector(ProtocolId.TELTONIKA, (b"\x00\x0f",)),
             SignatureDetector(ProtocolId.HQ, (b"*H", b"$", b"X")),
         )
     )
