@@ -72,7 +72,6 @@ export default function LeafletMap({
   zoom = 11,
   fitAll = false,
   showPath = null,
-  onPathClose,
 }) {
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
@@ -128,6 +127,8 @@ export default function LeafletMap({
       markersRef.current = {};
       pathLayerRef.current = null;
     };
+  // The map is intentionally initialized once; later prop updates are handled by dedicated effects.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
