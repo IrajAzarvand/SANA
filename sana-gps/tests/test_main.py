@@ -31,6 +31,10 @@ async def test_run_starts_runtime_and_shuts_down_cleanly():
     with (
         patch("app.main.DatabaseConnectionPool", return_value=database_pool),
         patch("app.main.TransportServer", return_value=transport_server),
+        patch(
+            "app.main.DeviceRepository.find_unknown_protocol_identifiers",
+            return_value=(),
+        ),
     ):
         result = await run(config, shutdown_event)
 
