@@ -65,12 +65,16 @@ export default function JalaliDatePicker({
   const popupRef = useRef(null);
 
   useEffect(() => {
+    // Keep the editable draft synchronized when the parent value changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (value) setDisplayValue(toJalali(value));
     else setDisplayValue('');
   }, [value]);
 
   useEffect(() => {
     if (open && selected) {
+      // Initialize the visible calendar month when opening on an existing value.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setViewYear(selected.jy);
       setViewMonth(selected.jm);
     }
