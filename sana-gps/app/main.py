@@ -14,6 +14,7 @@ from app.protocols.hq_handler import HQHandler
 from app.protocols.teltonika.handler import TeltonikaHandler
 from app.protocols.types import ProtocolId, ProtocolResponse
 from app.protocols.unknown_capture import UnknownProtocolCapture
+from app.protocols.unknown_matching import match_registered_identifiers
 from app.repositories.device import DeviceRepository
 from app.repositories.gt06_position import GT06PositionRepository
 from app.repositories.gps_telemetry import GPSTelemetryRepository
@@ -62,6 +63,8 @@ async def run(
     capture = RawCapture(config.capture_file) if config.capture_file else None
     gt06_capture = RawCapture(config.gt06_capture_file) if config.gt06_capture_file else None
     unknown_capture = UnknownProtocolCapture(max_samples=256, max_sample_bytes=8192)
+    unknown_identifiers: tuple[str, ...] = ()
+    matched_unknown_sessions: set = set()
 
     async def on_gt06_data(session, data: bytes) -> ProtocolResponse | None:
         if gt06_capture is not None:
@@ -79,6 +82,22 @@ async def run(
             transport=session.transport.value,
             payload=data,
         )
+        if session.id in matched_unknown_sessions or not unknown_identifiers:
+            return
+        for stream in unknown_capture.stream_snapshot():
+            if stream.session_id != session.id:
+                continue
+            if stream.truncated:
+                return
+            matches = match_registered_identifiers(stream.payload, unknown_identifiers)
+            if matches:
+                matched_unknown_sessions.add(session.id)
+                logger.info(
+                    "Unknown GPS stream from %s contains registered unknown-protocol identifier(s): %s",
+                    session.remote_address,
+                    ", ".join(matches),
+                )
+            return
 
     dispatcher = ProtocolDispatcher(
         {
@@ -117,8 +136,10 @@ async def run(
 
     try:
         database_pool.open()
+        unknown_identifiers = device_repository.find_unknown_protocol_identifiers()
         print("PostgreSQL pool initialized")
         print("Database connection OK")
+        print("Registered devices with unknown protocol:", len(unknown_identifiers))
 
         await transport_server.start()
 
