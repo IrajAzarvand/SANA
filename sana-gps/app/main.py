@@ -150,6 +150,7 @@ async def run(
 
     try:
         database_pool.open()
+        unknown_queue_repository.check_schema()
         print("PostgreSQL pool initialized")
         print("Database connection OK")
 
