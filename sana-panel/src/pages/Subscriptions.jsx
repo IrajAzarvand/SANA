@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
-import { Search, Plus, FileText, Pencil, Trash2, Eye, RotateCw } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Search, Plus, FileText, Trash2, Eye, RotateCw } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
 import Badge from '../components/Badge';
