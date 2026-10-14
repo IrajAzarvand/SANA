@@ -78,8 +78,8 @@ def default_protocol_registry() -> ProtocolRegistry:
     """Build the registry for the protocols currently supported on the shared TCP port."""
     return ProtocolRegistry(
         (
-            SignatureDetector(ProtocolId.GT06, (b"\\x78\\x78", b"\\x79\\x79")),
-            SignatureDetector(ProtocolId.TELTONIKA, (b"\\x00\\x0f",)),
+            SignatureDetector(ProtocolId.GT06, (b"\x78\x78", b"\x79\x79")),
+            SignatureDetector(ProtocolId.TELTONIKA, (b"\x00\\x0f",)),
             SignatureDetector(ProtocolId.HQ, (b"*H", b"$", b"X")),
         )
     )
