@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  Plus, MoreVertical, Pencil, Trash2, Camera, Mail, Phone,
+  Plus, Pencil, Trash2, Camera, Mail, Phone,
   Shield, Smartphone, Building2, MapPin, Globe,
   UserX, Globe as GlobeIcon, Database, Server,
 } from 'lucide-react';
@@ -127,8 +127,6 @@ function ProfileSection() {
 /* ============ امنیت ============ */
 
 function SecuritySection() {
-  const [pwForm, setPwForm] = useState({ current: '', new: '', confirm: '' });
-
   return (
     <div className="space-y-6">
 
