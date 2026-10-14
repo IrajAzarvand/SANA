@@ -1,6 +1,6 @@
 import {
   BrainCircuit, ShieldCheck, FlaskConical, GitBranch,
-  FileSearch, LockKeyhole, CircleCheck, Clock3, AlertTriangle,
+  FileSearch, Clock3, AlertTriangle,
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 
