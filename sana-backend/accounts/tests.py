@@ -6,7 +6,7 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from accounts.models import User
-from organizations.models import Organization, Subscription
+from organizations.models import Branch, Organization, Subscription
 
 
 class ContractExpirationAccessTests(TestCase):
@@ -74,6 +74,31 @@ class ContractExpirationAccessTests(TestCase):
         self.authenticate_as(personal_user)
         response = self.client.get('/api/users/me/')
         self.assertEqual(response.status_code, 401)
+
+    def test_branch_user_uses_parent_organization_contract(self):
+        branch = Branch.objects.create(
+            organization=self.organization,
+            name='Test Branch',
+            code='TEST-BRANCH-001',
+        )
+        branch_user = User.objects.create_user(
+            username='branch-manager',
+            password='test-password-123',
+            account_type='organization',
+            role='branch_manager',
+            branch=branch,
+            # Intentionally omit organization to verify fallback through branch.
+        )
+        self.subscription.end_date = self.today
+        self.subscription.save(update_fields=['end_date'])
+        self.authenticate_as(branch_user)
+        allowed_response = self.client.get('/api/users/me/')
+        self.assertEqual(allowed_response.status_code, 200)
+
+        self.subscription.end_date = self.today - timedelta(days=1)
+        self.subscription.save(update_fields=['end_date'])
+        denied_response = self.client.get('/api/users/me/')
+        self.assertEqual(denied_response.status_code, 401)
 
     def test_site_admin_is_not_blocked_by_customer_contracts(self):
         admin = User.objects.create_user(
