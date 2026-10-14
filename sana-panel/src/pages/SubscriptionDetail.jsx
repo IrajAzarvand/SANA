@@ -130,7 +130,7 @@ export default function SubscriptionDetail() {
     payment_date: todayGregorian(),
     device_count: 0,
     description: '',
-  })
+  });
 
   // Open the renewal modal when the URL requests it.
   useEffect(() => {
@@ -147,7 +147,7 @@ export default function SubscriptionDetail() {
       setRenewModalOpen(true);
       setSearchParams({}, { replace: true });
     }
-  }, [subscription, searchParams, setSearchParams]);;
+  }, [subscription, searchParams, setSearchParams]);
 
   const [deviceModalOpen, setDeviceModalOpen] = useState(false);
   const [deviceForm, setDeviceForm] = useState({
