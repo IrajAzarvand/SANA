@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import {
-  Truck, Navigation, WifiOff, AlertTriangle, Building2, Cpu, Car, Route, Bell, Users,
+  Truck, Navigation, WifiOff, AlertTriangle, Building2, Cpu, Car, Bell, Users,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
