@@ -190,7 +190,7 @@ export default function SubscriptionDetail() {
   }, [warehouseDevices]);
 
   // ═══ تمدید ═══
-  const openEditModal = async () => {
+  const openEditModal = async (deviceIdToRemove = null) => {
     const customerDefaults = isOrg
       ? { name: '', code: '', registration_number: '', economy_code: '', phone: '', email: '', address: '', website: '' }
       : { first_name: '', last_name: '', mobile: '', national_id: '', address: '' };
@@ -199,7 +199,8 @@ export default function SubscriptionDetail() {
       start_date: subscription.start_date,
       end_date: subscription.end_date,
       notes: subscription.notes || '',
-      remove_device_ids: [],
+      // When launched from a device row, preselect that contract assignment for removal.
+      remove_device_ids: deviceIdToRemove == null ? [] : [deviceIdToRemove],
       add_devices: [],
       remove_added_device_indices: [],
       payment_changes: Object.fromEntries((subscription.payments || []).map((p) => [p.id, {
@@ -943,6 +944,14 @@ export default function SubscriptionDetail() {
                             icon: History,
                             onClick: () => openDeviceHistory(d.device),
                           },
+                          ...(isSiteAdmin && !isCancelled ? [
+                            {
+                              label: 'حذف از قرارداد',
+                              icon: Trash2,
+                              variant: 'danger',
+                              onClick: () => openEditModal(d.id),
+                            },
+                          ] : []),
                           ...(isSiteAdmin ? [
                             {
                               label: 'ویرایش',
@@ -950,7 +959,7 @@ export default function SubscriptionDetail() {
                               onClick: () => openDeviceEdit(d.device),
                             },
                             {
-                              label: 'حذف',
+                              label: 'حذف کامل دستگاه',
                               icon: Trash2,
                               variant: 'danger',
                               onClick: () => handleDeleteDevice(d.device),
