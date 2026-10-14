@@ -72,18 +72,21 @@ async def run(
             )
         return await gt06_handler.handle(session, data)
 
+    def on_unknown_data(session, data: bytes) -> None:
+        unknown_capture.record(
+            session_id=session.id,
+            remote_address=session.remote_address,
+            transport=session.transport.value,
+            payload=data,
+        )
+
     dispatcher = ProtocolDispatcher(
         {
             ProtocolId.TELTONIKA: teltonika_handler.handle,
             ProtocolId.GT06: on_gt06_data,
             ProtocolId.HQ: hq_handler.handle,
         },
-        unknown_data_handler=lambda session, data: unknown_capture.record(
-            session_id=session.id,
-            remote_address=session.remote_address,
-            transport=session.transport.value,
-            payload=data,
-        ),
+        unknown_data_handler=on_unknown_data,
     )
 
     async def on_data(session, data: bytes) -> ProtocolResponse | None:
