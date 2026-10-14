@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { FileBarChart, Calendar, X } from 'lucide-react';
+import { FileBarChart, Calendar } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
 import Button from '../components/Button';
