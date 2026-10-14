@@ -120,13 +120,18 @@ class User(AbstractBaseUser, PermissionsMixin):
         if self.is_site_admin:
             return None
 
-        # فیلتر بر اساس computed_status
-        # چون computed_status توی دیتابیس نیست، از تاریخ استفاده می‌کنیم
-        if self.organization_id:
-            return self.organization.subscriptions.filter(
+        # کاربران شعبه نیز باید قرارداد سازمان مادر را دنبال کنند،
+        # حتی اگر فیلد organization روی حسابشان خالی باشد.
+        organization = self.organization if self.organization_id else (
+            self.branch.organization if self.branch_id else None
+        )
+
+        # فیلتر بر اساس وضعیت ذخیره‌شده و تاریخ‌های قرارداد
+        if organization:
+            return organization.subscriptions.filter(
                 status='active',  # نه suspended/cancelled
                 start_date__lte=today,  # شروع شده
-                end_date__gte=today,  # منقضی نشده
+                end_date__gte=today,  # تاریخ پایان امروز هم معتبر است
             ).order_by('-end_date').first()
 
         if self.account_type == 'personal':
@@ -147,10 +152,13 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     @property
     def is_organization_active(self):
-        """آیا سازمان کاربر فعاله؟"""
-        if not self.organization_id:
+        """آیا سازمان مرتبط با حساب کاربر فعاله؟"""
+        organization = self.organization if self.organization_id else (
+            self.branch.organization if self.branch_id else None
+        )
+        if not organization:
             return True
-        return self.organization.status == 'active'
+        return organization.status == 'active'
 
     @property
     def can_login(self):

@@ -1,5 +1,9 @@
 from rest_framework import serializers
-from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from django.contrib.auth import get_user_model
+from rest_framework.exceptions import ValidationError
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
+from rest_framework_simplejwt.settings import api_settings
+from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User
 
 
@@ -86,6 +90,24 @@ class ChangePasswordSerializer(serializers.Serializer):
         user.set_password(self.validated_data['new_password'])
         user.save()
         return user
+
+
+class ContractAwareTokenRefreshSerializer(TokenRefreshSerializer):
+    """Do not issue fresh access tokens to users whose account access has expired."""
+
+    def validate(self, attrs):
+        refresh = RefreshToken(attrs['refresh'])
+        user_id = refresh.payload.get(api_settings.USER_ID_CLAIM)
+        user = get_user_model().objects.filter(
+            **{api_settings.USER_ID_FIELD: user_id}
+        ).first()
+
+        if user is None or not user.can_login:
+            raise ValidationError({
+                'detail': 'قرارداد یا دسترسی حساب شما فعال نیست. لطفاً با پشتیبانی سانا تماس بگیرید.'
+            })
+
+        return super().validate(attrs)
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
