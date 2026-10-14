@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from uuid import UUID
 
-from app.protocols.gt06 import (
+from app.protocols.decoders.gt06 import (
     GT06FrameError,
     GT06Framer,
     build_ack,
