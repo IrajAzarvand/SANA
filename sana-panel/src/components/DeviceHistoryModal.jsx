@@ -115,6 +115,8 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
     let cancelled = false;
 
     if (!open || !deviceId) {
+      // This effect intentionally resets modal-local state when the modal closes.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setHistoryDevice(null);
       setHistoryEvents([]);
       setReplacementRelations([]);

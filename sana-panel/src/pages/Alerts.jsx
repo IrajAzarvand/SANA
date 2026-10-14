@@ -3,7 +3,6 @@ import { Search, AlertTriangle, Check, CheckCheck, Eye, Bell, Trash2 } from 'luc
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
 import Badge from '../components/Badge';
-import Button from '../components/Button';
 import Input from '../components/Input';
 import Select from '../components/Select';
 import Tabs from '../components/Tabs';
@@ -24,7 +23,7 @@ export default function Alerts() {
   const [filterSeverity, setFilterSeverity] = useState('');
   const [activeTab, setActiveTab] = useState('all');
 
-  const { can, isPersonal, isBranchManager, isSiteAdmin, user } = useAuth();
+  const { can, isPersonal, isBranchManager, user } = useAuth();
 
   // فیلتر بر اساس دامنه دید کاربر
   const visibleAlerts = useMemo(() => {

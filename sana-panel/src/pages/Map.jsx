@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import {
-  Search, Navigation, MapPin, Gauge, Fuel,
+  Search, MapPin, Gauge, Fuel,
   Route, Clock, Cpu, ChevronLeft, X,
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -107,6 +107,8 @@ export default function Map() {
 
   useEffect(() => {
     if (selectedId && !filtered.find((v) => v.id === selectedId)) {
+      // Clear selection when filters remove the selected vehicle.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedId(null);
       setShowPath(null);
     }
@@ -141,9 +143,6 @@ export default function Map() {
       window.removeEventListener('sana:view-detail', handleViewDetail);
     };
   }, []);
-
-  // تعداد فیلترها
-  const filterCount = (isSiteAdmin ? 1 : 0) + (isMainUser ? 1 : 0) + 1;
 
   return (
     <div className="space-y-6">

@@ -33,7 +33,6 @@ export default function SubscriptionWizard() {
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [loadingNumber, setLoadingNumber] = useState(false);
 
   const [form, setForm] = useState({
     customer_type: 'organization',
@@ -63,7 +62,6 @@ export default function SubscriptionWizard() {
   // تولید شماره قرارداد خودکار از Backend
   useEffect(() => {
     const fetchNextNumber = async () => {
-      setLoadingNumber(true);
       try {
         const data = await subscriptionsAPI.getNextNumber(form.customer_type);
         setForm((f) => ({ ...f, contract_number: data.contract_number }));
@@ -71,13 +69,11 @@ export default function SubscriptionWizard() {
         console.error('Error fetching contract number:', err);
         const prefix = form.customer_type === 'organization' ? 'ORG' : 'PRS';
         setForm((f) => ({ ...f, contract_number: `${prefix}-TEMP-0001` }));
-      } finally {
-        setLoadingNumber(false);
       }
     };
 
     fetchNextNumber();
-  }, [form.customer_type]); // eslint-disable-line
+  }, [form.customer_type]);
   const updateForm = (key, value) => {
     setForm((f) => {
       if (key === 'start_date' && f.end_date && value && value > f.end_date) {

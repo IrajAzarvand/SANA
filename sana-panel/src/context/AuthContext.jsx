@@ -21,7 +21,7 @@ export function AuthProvider({ children }) {
           const freshUser = await authAPI.me();
           setUser(freshUser);
           localStorage.setItem('sana_user', JSON.stringify(freshUser));
-        } catch (e) {
+        } catch {
           // توکن منقضی یا خطا
           localStorage.removeItem('sana_access_token');
           localStorage.removeItem('sana_refresh_token');
@@ -91,6 +91,8 @@ export function AuthProvider({ children }) {
   );
 }
 
+// The context hook is exported alongside its provider by design.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used within AuthProvider');

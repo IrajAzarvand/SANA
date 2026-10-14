@@ -39,7 +39,7 @@ export default function Vehicles() {
     plate: '', vehicle_type: '', branch: '',
   });
 
-  const { isPersonal, isSiteAdmin, isMainUser, isBranchManager } = useAuth();
+  const { isPersonal, isMainUser, isBranchManager } = useAuth();
 
   // Fetch
   const fetchVehicles = useCallback(async () => {
@@ -92,6 +92,8 @@ export default function Vehicles() {
   // اگه Branch Manager بود، شعبه‌اش رو پیش‌فرض کن
   useEffect(() => {
     if (isBranchManager && branches?.length === 1 && !form.branch) {
+      // Apply the branch default after the branch list has loaded.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setForm((f) => ({ ...f, branch: branches[0].id }));
     }
   }, [isBranchManager, branches]); // eslint-disable-line react-hooks/exhaustive-deps
