@@ -737,3 +737,34 @@ class GT06Position(models.Model):
 
     def __str__(self):
         return f'{self.device.imei} @ {self.gps_time.isoformat()}'
+
+
+
+class UnknownGPSData(models.Model):
+    """Raw GPS chunks awaiting device/protocol identification and verification."""
+
+    STATUS_CHOICES = [
+        ('pending', 'در انتظار شناسایی'),
+        ('matched', 'شناسه شناسایی شد'),
+        ('failed', 'نیازمند بررسی بیشتر'),
+    ]
+
+    session_id = models.UUIDField(verbose_name='شناسه نشست دریافت')
+    transport = models.CharField(max_length=8, verbose_name='نوع ارتباط')
+    remote_address = models.CharField(max_length=255, verbose_name='آدرس فرستنده')
+    raw_payload = models.BinaryField(verbose_name='داده خام')
+    identifier_candidate = models.CharField(max_length=20, blank=True, default='', verbose_name='شناسه احتمالی دستگاه')
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default='pending', verbose_name='وضعیت بررسی')
+    received_at = models.DateTimeField(auto_now_add=True, db_index=True, verbose_name='زمان دریافت')
+
+    class Meta:
+        verbose_name = 'داده GPS ناشناخته'
+        verbose_name_plural = 'داده‌های GPS ناشناخته'
+        ordering = ['id']
+        indexes = [
+            models.Index(fields=['session_id', 'id'], name='fleet_unknown_session_idx'),
+            models.Index(fields=['status', 'id'], name='fleet_unknown_status_id_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.transport} {self.identifier_candidate or "unknown"} [{self.status}]'

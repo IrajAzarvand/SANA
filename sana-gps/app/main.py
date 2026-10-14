@@ -13,9 +13,8 @@ from app.protocols.gt06_handler import GT06Handler
 from app.protocols.hq_handler import HQHandler
 from app.protocols.teltonika.handler import TeltonikaHandler
 from app.protocols.types import ProtocolId, ProtocolResponse
-from app.protocols.unknown_capture import UnknownProtocolCapture
-from app.protocols.unknown_matching import match_registered_identifiers
 from app.repositories.device import DeviceRepository
+from app.repositories.unknown_protocol_queue import UnknownProtocolQueueRepository
 from app.repositories.gt06_position import GT06PositionRepository
 from app.repositories.gps_telemetry import GPSTelemetryRepository
 from app.transport.server import TransportServer
@@ -23,6 +22,36 @@ from app.transport.session import SessionManager, TransportType
 
 
 _LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+_UNKNOWN_QUEUE_POLL_SECONDS = 5.0
+logger = logging.getLogger(__name__)
+
+
+async def _monitor_unknown_protocol_queue(
+    shutdown_event: asyncio.Event,
+    device_repository: DeviceRepository,
+    queue_repository: UnknownProtocolQueueRepository,
+) -> None:
+    """Re-check the durable queue periodically, including after new device registration.
+
+    Polling avoids requiring a GPS-service restart or database trigger permissions.
+    New registrations and new unknown packets are picked up within the poll interval.
+    """
+    while not shutdown_event.is_set():
+        try:
+            identifiers = await asyncio.to_thread(device_repository.find_all_identifiers)
+            matched = await asyncio.to_thread(
+                queue_repository.match_pending_sessions, identifiers
+            )
+            if matched:
+                logger.info("Matched %d unknown GPS session(s) to registered device(s)", matched)
+        except Exception:
+            logger.exception("Unknown GPS queue scan failed; it will retry")
+        try:
+            await asyncio.wait_for(
+                shutdown_event.wait(), timeout=_UNKNOWN_QUEUE_POLL_SECONDS
+            )
+        except asyncio.TimeoutError:
+            pass
 
 
 def configure_logging(level: str) -> None:
@@ -62,9 +91,8 @@ async def run(
     )
     capture = RawCapture(config.capture_file) if config.capture_file else None
     gt06_capture = RawCapture(config.gt06_capture_file) if config.gt06_capture_file else None
-    unknown_capture = UnknownProtocolCapture(max_samples=256, max_sample_bytes=8192)
-    unknown_identifiers: tuple[str, ...] = ()
-    matched_unknown_sessions: set = set()
+    unknown_queue_repository = UnknownProtocolQueueRepository(database_pool)
+    queue_task: asyncio.Task[None] | None = None
 
     async def on_gt06_data(session, data: bytes) -> ProtocolResponse | None:
         if gt06_capture is not None:
@@ -76,28 +104,14 @@ async def run(
         return await gt06_handler.handle(session, data)
 
     def on_unknown_data(session, data: bytes) -> None:
-        unknown_capture.record(
+        # Persist before returning from the transport callback so a process restart
+        # cannot erase an already received unknown-protocol chunk.
+        unknown_queue_repository.record_chunk(
             session_id=session.id,
             remote_address=session.remote_address,
             transport=session.transport.value,
             payload=data,
         )
-        if session.id in matched_unknown_sessions or not unknown_identifiers:
-            return
-        for stream in unknown_capture.stream_snapshot():
-            if stream.session_id != session.id:
-                continue
-            if stream.truncated:
-                return
-            matches = match_registered_identifiers(stream.payload, unknown_identifiers)
-            if matches:
-                matched_unknown_sessions.add(session.id)
-                logger.info(
-                    "Unknown GPS stream from %s contains registered unknown-protocol identifier(s): %s",
-                    session.remote_address,
-                    ", ".join(matches),
-                )
-            return
 
     dispatcher = ProtocolDispatcher(
         {
@@ -136,10 +150,9 @@ async def run(
 
     try:
         database_pool.open()
-        unknown_identifiers = device_repository.find_unknown_protocol_identifiers()
+        unknown_queue_repository.check_schema()
         print("PostgreSQL pool initialized")
         print("Database connection OK")
-        print("Registered devices with unknown protocol:", len(unknown_identifiers))
 
         await transport_server.start()
 
@@ -151,18 +164,27 @@ async def run(
             print("Raw capture:", capture.path)
         if gt06_capture is not None:
             print("GT06 raw capture:", gt06_capture.path)
-        print("Unknown protocol capture: in-memory, max 256 samples x 8192 bytes")
+        print("Unknown protocol queue: PostgreSQL durable storage; device scan every 5 seconds")
         print("SANA GPS ready")
 
         if shutdown_event is None:
             shutdown_event = asyncio.Event()
 
+        queue_task = asyncio.create_task(
+            _monitor_unknown_protocol_queue(
+                shutdown_event, device_repository, unknown_queue_repository
+            ),
+            name="sana-unknown-gps-queue-monitor",
+        )
         await shutdown_event.wait()
         return 0
     except Exception as exc:
         print(f"SANA GPS runtime error: {exc}", file=sys.stderr)
         return 3
     finally:
+        if queue_task is not None:
+            queue_task.cancel()
+            await asyncio.gather(queue_task, return_exceptions=True)
         try:
             await transport_server.stop()
         finally:
