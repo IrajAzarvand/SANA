@@ -178,3 +178,21 @@ async def test_dispatcher_ignores_data_after_session_starts_closing(close_state)
     teltonika.assert_not_awaited()
     assert session.id not in dispatcher._states
 
+
+@pytest.mark.asyncio
+async def test_dispatcher_captures_unknown_chunks_without_rejecting_connection():
+    teltonika = AsyncMock(return_value=None)
+    captured = []
+    dispatcher = ProtocolDispatcher(
+        {ProtocolId.TELTONIKA: teltonika},
+        unknown_data_handler=lambda session, payload: captured.append((session.id, payload)),
+    )
+    session = make_session()
+
+    first_response = await dispatcher.handle(session, b"\xaa\xbbfirst")
+    later_response = await dispatcher.handle(session, b"later-packet")
+
+    assert first_response is None
+    assert later_response is None
+    assert captured == [(session.id, b"\xaa\xbbfirst"), (session.id, b"later-packet")]
+    teltonika.assert_not_awaited()
