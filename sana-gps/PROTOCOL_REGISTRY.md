@@ -1,0 +1,82 @@
+# SANA GPS Protocol Registry — وضعیت و تصمیمات
+
+آخرین بازبینی: ۱۴ اکتبر ۲۰۲۶
+
+این سند مکمل `telemetry.md` و `GT06_DEPLOYMENT.md` است و تغییرات اخیر را به مسیر فایل‌ها، علت تصمیم‌ها و وضعیت واقعی تست وصل می‌کند.
+
+## چه چیزی تغییر کرد و چرا؟
+
+در PR #30 با عنوان **Centralize GPS decoders and wire protocol registry into dispatcher**، ساختار تشخیص و Decode پروتکل‌ها منظم شد تا اضافه‌کردن پروتکل‌های بعدی (مثلاً یک مدل Concox که پروتکلش تأیید شده باشد) نیازمند دست‌کاری پراکنده در handlerهای موجود نباشد.
+
+- Decoderهای Teltonika، GT06 و H02 در مسیر مشترک `sana-gps/app/protocols/decoders/` قرار گرفتند.
+- `ProtocolRegistry` به مسیر واقعی Dispatcher وصل شد؛ تشخیص پروتکل فقط یک کلاس/طرح جداافتاده نیست.
+- مسیر دریافت TCP باید prefix ناقص یا فریم تکه‌تکه‌شده را تحمل کند؛ دریافت یک بخش ابتدایی ناقص نباید باعث انتخاب اشتباه Decoder شود.
+- تغییرات باید رفتار پروتکل‌های موجود، ACK و ثبت نشست دستگاه را حفظ کنند.
+- در CI، تست‌های GPS پس از اصلاح تنظیمات تست PostgreSQL موفق شدند. در اجرای روی سرور شرکت در ۱۴ اکتبر، فرمان `python -m pytest -q` از پوشه `sana-gps` نتیجه **180 passed** داد.
+
+## فایل‌های اصلی
+
+| مسیر | مسئولیت |
+|---|---|
+| `sana-gps/app/protocols/dispatcher.py` | نقطه ورود TCP برای تشخیص و هدایت اتصال به handler مناسب |
+| `sana-gps/app/protocols/registry.py` | ثبت detectorها و انتخاب پروتکل پشتیبانی‌شده |
+| `sana-gps/app/protocols/framing.py` | کمک به مدیریت framing/داده ناقص در مسیر TCP |
+| `sana-gps/app/protocols/types.py` | قراردادهای داده و نوع‌های مشترک پروتکل |
+| `sana-gps/app/protocols/decoders/` | محل مشترک Decoderهای پروتکل‌های پشتیبانی‌شده |
+| `sana-gps/app/protocols/teltonika/` | handler و مسیرهای خاص Teltonika |
+| `sana-gps/app/protocols/gt06_handler.py` | نشست و دریافت GT06 |
+| `sana-gps/app/protocols/hq_handler.py` | مسیر H02/HQ |
+| `sana-gps/app/protocols/registration.py` | سیاست ثبت پروتکل تشخیص‌داده‌شده برای دستگاه شناخته‌شده |
+| `sana-gps/app/processing/telemetry.py` | پردازش و ذخیره Telemetry |
+| `sana-gps/app/main.py` | راه‌اندازی سرویس و listenerها |
+| `sana-gps/tests/` | تست‌های framing، تشخیص، decoder، handler و persistence |
+| `sana-gps/GT06_DEPLOYMENT.md` | پورت‌ها، NAT و راهنمای عملیاتی GT06 |
+
+## معماری فعلی و مرز آن
+
+مسیر مورد انتظار:
+
+```text
+GPS device
+  -> TCP 9000 / UDP 9001
+  -> framing + protocol detection
+  -> ProtocolRegistry / Dispatcher
+  -> handler + decoder مناسب
+  -> تشخیص شناسه و تطبیق دستگاه ثبت‌شده
+  -> parse و اعتبارسنجی GPS
+  -> persistence در PostgreSQL
+  -> API پنل و نمایش وضعیت/موقعیت
+```
+
+تنظیم شبکه فعلی این است: **پورت عمومی TCP 19000 به پورت داخلی TCP 9000 فوروارد می‌شود**؛ سرویس عمداً listener مجزایی روی 19000 ندارد. UDP Teltonika روی 9001 باقی می‌ماند.
+
+Registry به معنی «پشتیبانی خودکار از هر پروتکل ناشناخته» نیست. برای هر پروتکل جدید باید framing، استخراج شناسه، ACK، Decoder، نگاشت ذخیره‌سازی و تست‌ها پیاده‌سازی و تأیید شوند. نام پروتکل یا IMEI به‌تنهایی برای Decode کردن بایت‌های ناشناخته کافی نیست.
+
+## شواهد عملیاتی دیده‌شده در سرور شرکت در ۱۴ اکتبر
+
+- سرویس `sana-gps.service` فعال بود و PID سرویس listenerهای TCP 9000 و UDP 9001 را داشت.
+- لاگ‌ها تشخیص Teltonika، ثبت نشست دستگاه و پیام‌هایی مانند `Teltonika AVL batch handled` همراه با `records` و `ack_count` را نشان دادند.
+- برای H02 با شناسه `9176515720`، یک گزارش صریحاً `no valid GPS fix` داشت؛ ارتباط/Decode گزارش لزوماً به معنی وجود مختصات معتبر نیست.
+- در پنل، زمان آخرین دریافت دستگاه‌ها به‌روز می‌شد. این به‌تنهایی اثبات نمی‌کند که هر موقعیت GPS معتبر در جدول تاریخچه ذخیره شده است یا نقطه نقشه قابل نمایش است.
+
+برای تکمیل راستی‌آزمایی persistence، جدول‌های فعلی عبارت‌اند از:
+- `fleet_gpstelemetry`: دارای `protocol`, `gps_time`, `received_at`, `gps_valid`, `latitude`, `longitude` و `device_id`.
+- `fleet_gt06position`: تاریخچه موقعیت GT06.
+
+کوئری‌های خواندنی باید آخرین رکوردها، `gps_valid` و مختصات را بررسی کنند؛ زمان آخرین ارتباط به‌تنهایی کافی نیست.
+
+## وضعیت هوش مصنوعی
+
+`AI/auto_decoder_generator/` فعلاً اسکلت/نقطه شروع برای قابلیت تولید Decoder است؛ این مسیر هنوز یک سامانه کامل تولید کد با LLM، اجرای sandbox، اعتبارسنجی، تأیید انسانی، نسخه‌بندی، انتشار و rollback نیست. نباید آن را به‌عنوان AI فعال در مسیر پردازش GPS معرفی کنیم.
+
+## گام بعدی: هوش مصنوعی پنل
+
+برای شروع کار روی هوش مصنوعی پنل، محل‌های فعلی Frontend عبارت‌اند از:
+
+- `sana-panel/src/App.jsx`: اتصال صفحه‌ها و ساختار اصلی برنامه
+- `sana-panel/src/pages/`: صفحه‌های پنل
+- `sana-panel/src/components/`: اجزای رابط کاربری
+- `sana-panel/src/api/`: لایه درخواست‌های API
+- `sana-backend/`: محل پیاده‌سازی API، احراز هویت، مجوزها و منطق سروری
+
+هنوز نباید فرض کنیم قابلیت AI پنل از قبل وجود دارد. مرحله بعد این است که خواسته دقیق AI پنل را مشخص کنیم، ساختار موجود و endpointهای backend را بررسی کنیم و سپس رابط، API و سیاست دسترسی را طراحی کنیم. کلیدهای مدل یا secrets فقط در محیط سرور نگهداری شوند و نباید داخل کد React یا فایل‌های عمومی `.env` قرار بگیرند.
