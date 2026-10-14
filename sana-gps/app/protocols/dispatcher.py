@@ -14,6 +14,37 @@ logger = logging.getLogger(__name__)
 ProtocolHandler = Callable[[Session, bytes], Awaitable[ProtocolResponse | None]]
 UnknownDataHandler = Callable[[Session, bytes], None]
 
+# These signatures identify common non-GPS traffic on an exposed TCP port.
+# Keep this list conservative: arbitrary binary/ASCII payloads must still be
+# eligible for the durable unknown-GPS queue so future tracker protocols survive.
+_NON_GPS_PREFIXES = (
+    b"GET ",
+    b"POST ",
+    b"HEAD ",
+    b"PUT ",
+    b"DELETE ",
+    b"OPTIONS ",
+    b"PATCH ",
+    b"CONNECT ",
+    b"TRACE ",
+    b"PRI * HTTP/2.0",
+    b"HTTP/1.",
+    b"HTTP/2",
+    b"\x16\x03",  # TLS handshake record
+    b"\x17\x03",  # TLS application-data record
+    b"SSH-",
+)
+
+
+def _is_obvious_non_gps_traffic(data: bytes) -> bool:
+    """Return true only for recognizable HTTP/TLS/SSH protocol signatures."""
+    return any(data.startswith(prefix) for prefix in _NON_GPS_PREFIXES)
+
+
+def _may_be_non_gps_prefix(data: bytes) -> bool:
+    """Buffer partial signatures (e.g. 'G', then 'ET ') across TCP reads."""
+    return any(prefix.startswith(data) for prefix in _NON_GPS_PREFIXES)
+
 
 @dataclass(slots=True)
 class _DispatchState:
@@ -79,10 +110,29 @@ class ProtocolDispatcher:
         pending = bytes(state.pending)
         detection = self._registry.detect(pending)
         if not detection.matched:
-            if self._registry.may_match_prefix(pending) or len(pending) < 2:
+            # Discard clearly identifiable internet scan traffic before it can
+            # reach durable storage. Do not reply with a GPS-specific ACK.
+            if _is_obvious_non_gps_traffic(pending):
+                logger.info(
+                    "Ignoring non-GPS TCP traffic from %s (signature=%s)",
+                    session.remote_address,
+                    pending[:16].hex(),
+                )
+                state.pending.clear()
+                state.rejected = True
                 return None
+
+            # A method/signature may be split across multiple TCP reads. Keep
+            # short possible prefixes in memory until they can be classified.
+            if (
+                self._registry.may_match_prefix(pending)
+                or _may_be_non_gps_prefix(pending)
+                or len(pending) < 2
+            ):
+                return None
+
             if self._unknown_data_handler is not None:
-                # Preserve the raw bytes for investigation and keep accepting
+                # Preserve raw bytes for investigation and keep accepting
                 # bounded chunks; do not send a protocol-specific rejection ACK.
                 state.unknown = True
                 state.pending.clear()
