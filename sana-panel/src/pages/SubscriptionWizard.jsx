@@ -69,7 +69,6 @@ export default function SubscriptionWizard() {
         console.error('Error fetching contract number:', err);
         const prefix = form.customer_type === 'organization' ? 'ORG' : 'PRS';
         setForm((f) => ({ ...f, contract_number: `${prefix}-TEMP-0001` }));
-      } finally {
       }
     };
 
