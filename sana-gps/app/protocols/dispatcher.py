@@ -57,7 +57,7 @@ class ProtocolDispatcher:
             handler = self._handlers.get(state.protocol)
             if handler is None:
                 state.rejected = True
-                return ProtocolResponse(b"\\x00")
+                return ProtocolResponse(b"\x00")
             return await handler(session, data)
 
         state.pending.extend(data)
@@ -65,7 +65,7 @@ class ProtocolDispatcher:
             logger.warning("Rejecting GPS session from %s: detection buffer limit exceeded", session.remote_address)
             state.pending.clear()
             state.rejected = True
-            return ProtocolResponse(b"\\x00")
+            return ProtocolResponse(b"\x00")
 
         # Detection is delegated to the registry. Incomplete signatures remain
         # buffered instead of being rejected before the next TCP read arrives.
@@ -78,7 +78,7 @@ class ProtocolDispatcher:
                            session.remote_address, pending[:8].hex())
             state.pending.clear()
             state.rejected = True
-            return ProtocolResponse(b"\\x00")
+            return ProtocolResponse(b"\x00")
 
         protocol = detection.protocol
         logger.info("Detected GPS protocol %s from %s", protocol.value, session.remote_address)
@@ -88,7 +88,7 @@ class ProtocolDispatcher:
         state.pending.clear()
         if handler is None:
             state.rejected = True
-            return ProtocolResponse(b"\\x00")
+            return ProtocolResponse(b"\x00")
         return await handler(session, payload)
 
     def _cleanup_closed_sessions(self) -> None:
