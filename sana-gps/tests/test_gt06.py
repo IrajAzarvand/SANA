@@ -1,4 +1,4 @@
-from app.protocols.gt06 import (
+from app.protocols.decoders.gt06 import (
     GT06FrameError,
     GT06Framer,
     build_ack,
