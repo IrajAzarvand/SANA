@@ -90,10 +90,10 @@ class UnknownProtocolQueueRepository:
             row = connection.execute(
                 sql,
                 (
-                    str(session_id), transport, remote, bytes(payload),
-                    str(session_id), str(session_id),
-                    str(session_id), bytes(payload), self._MAX_SESSION_BYTES,
-                    str(session_id), self._MAX_SESSION_CHUNKS, self._MAX_TOTAL_ROWS,
+                    session_id, transport, remote, bytes(payload),
+                    session_id, session_id,
+                    session_id, bytes(payload), self._MAX_SESSION_BYTES,
+                    session_id, self._MAX_SESSION_CHUNKS, self._MAX_TOTAL_ROWS,
                 ),
             ).fetchone()
         if row is None:
