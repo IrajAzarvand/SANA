@@ -2,7 +2,7 @@ import { User, Shield, Building2, GitBranch, Users, Bell, Globe } from 'lucide-r
 import { useAuth } from '../context/AuthContext';
 
 export default function SettingsNav({ active, onChange }) {
-  const { isSiteAdmin, isMainUser, isBranchManager, isPersonal } = useAuth();
+  const { isSiteAdmin, isMainUser } = useAuth();
 
   // لیست آیتم‌ها بر اساس نقش
   const items = [
