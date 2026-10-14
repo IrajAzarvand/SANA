@@ -1,8 +1,8 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
-  ArrowRight, Building2, User as UserIcon, FileText, Package, CreditCard,
-  Pencil, Trash2, Plus, Calendar, Hash, Phone, MapPin, Users, Truck,
-  RotateCw, Ban, CheckCircle2, AlertTriangle, Boxes, XCircle, RefreshCw,
+  ArrowRight, Building2, User as UserIcon, Package, CreditCard,
+  Pencil, Trash2, Plus, Hash, Phone, MapPin,
+  RotateCw, Ban, CheckCircle2, AlertTriangle, XCircle, RefreshCw,
   History,
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
@@ -91,23 +91,6 @@ export default function SubscriptionDetail() {
   const { data: subscription, loading, error, refetch } =
     useApi(fetchSubscription, [id]);
 
-    // اگه ?renew=true بود، مودال تمدید باز بشه
-  useEffect(() => {
-    if (searchParams.get('renew') === 'true' && subscription && subscription.status !== 'cancelled') {
-      setRenewForm({
-        new_end_date: subscription.end_date,
-        notes: '',
-        add_devices: [],
-        remove_device_ids: [],
-        payments: [],
-        customer_changes: {},
-      });
-      setRenewModalOpen(true);
-      // پاک کردن query string
-      setSearchParams({}, { replace: true });
-    }
-  }, [subscription, searchParams, setSearchParams]);
-
   // ═══ State مودال‌ها ═══
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editForm, setEditForm] = useState({ start_date: '', end_date: '', notes: '', remove_device_ids: [], add_devices: [], remove_added_device_indices: [], payment_changes: {} });
@@ -147,7 +130,24 @@ export default function SubscriptionDetail() {
     payment_date: todayGregorian(),
     device_count: 0,
     description: '',
-  });
+  })
+
+  // Open the renewal modal when the URL requests it.
+  useEffect(() => {
+    if (searchParams.get('renew') === 'true' && subscription && subscription.status !== 'cancelled') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setRenewForm({
+        new_end_date: subscription.end_date,
+        notes: '',
+        add_devices: [],
+        remove_device_ids: [],
+        payments: [],
+        customer_changes: {},
+      });
+      setRenewModalOpen(true);
+      setSearchParams({}, { replace: true });
+    }
+  }, [subscription, searchParams, setSearchParams]);;
 
   const [deviceModalOpen, setDeviceModalOpen] = useState(false);
   const [deviceForm, setDeviceForm] = useState({
@@ -674,9 +674,6 @@ export default function SubscriptionDetail() {
     : subscription.user?.username || '';
 
   const totalPayments = Number(subscription.total_payment_amount || 0);
-  const paidPayments = Number(subscription.paid_payment_amount || 0);
-  const futurePayments = Number(subscription.future_payment_amount || 0);
-  const outstandingPayments = Number(subscription.outstanding_payment_amount || 0);
 
   const sectionClass = 'border border-border-base rounded-2xl bg-bg-elevated overflow-hidden';
 
