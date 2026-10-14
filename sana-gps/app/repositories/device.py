@@ -92,3 +92,17 @@ class DeviceRepository:
                 "SELECT imei FROM public.fleet_device WHERE imei IS NOT NULL"
             ).fetchall()
         return tuple(row[0] for row in rows if row[0])
+
+    def find_unknown_protocol_identifiers(self) -> tuple[str, ...]:
+        """Return identifiers for devices whose model and device protocol are blank."""
+        sql = """
+            SELECT d.imei
+            FROM public.fleet_device AS d
+            LEFT JOIN public.fleet_devicemodel AS dm ON dm.id = d.device_model_id
+            WHERE d.imei IS NOT NULL
+              AND COALESCE(NULLIF(BTRIM(dm.protocol), ''),
+                           NULLIF(BTRIM(d.protocol), ''), '') = ''
+        """
+        with self._pool.connection() as connection:
+            rows = connection.execute(sql).fetchall()
+        return tuple(row[0] for row in rows if row[0])
