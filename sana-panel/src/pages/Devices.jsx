@@ -224,6 +224,8 @@ function DevicesTab() {
 
     setSearchParams({}, { replace: true });
     if (action === 'history') {
+      // The URL action intentionally opens a modal after the device list loads.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setDeviceHistoryId(device.id);
     } else if (action === 'edit') {
       handleEdit(device);
