@@ -133,6 +133,6 @@ def test_default_registry_recognizes_incomplete_signature_prefixes() -> None:
     from app.protocols.registry import default_protocol_registry
 
     registry = default_protocol_registry()
-    assert registry.may_match_prefix(b"\\x00")
-    assert registry.may_match_prefix(b"\\x78")
+    assert registry.may_match_prefix(b"\x00")
+    assert registry.may_match_prefix(b"\x78")
     assert registry.may_match_prefix(b"*")
