@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
-from app.protocols.teltonika.decoder import TeltonikaAVLDecoder, TeltonikaDecodeError
+from app.protocols.decoders.teltonika import TeltonikaAVLDecoder, TeltonikaDecodeError
 from app.protocols.teltonika.framer import TeltonikaFrameError, TeltonikaFramer
 from app.protocols.teltonika.identifier import TeltonikaIdentifier
 from app.protocols.teltonika.normalizer import TeltonikaNormalizer

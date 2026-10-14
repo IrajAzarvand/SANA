@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.protocols.teltonika.decoder import TeltonikaAVLDecoder
+from app.protocols.decoders.teltonika import TeltonikaAVLDecoder
 from app.protocols.teltonika.handler import TeltonikaHandler
 from app.repositories.device import DeviceRecord
 from app.transport.session import Session, TransportType

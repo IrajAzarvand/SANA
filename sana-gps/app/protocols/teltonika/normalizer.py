@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
 from app.processing.telemetry import NormalizedTelemetry
-from app.protocols.teltonika.decoder import TeltonikaAVLRecord
+from app.protocols.decoders.teltonika import TeltonikaAVLRecord
 
 
 class TeltonikaNormalizer:

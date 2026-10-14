@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
-from app.protocols.h02_binary import H02BinaryError, decode_h02_binary
+from app.protocols.decoders.h02_binary import H02BinaryError, decode_h02_binary
 from app.protocols.types import ProtocolId, ProtocolResponse
 from app.repositories.device import DeviceRepository
 from app.repositories.gps_telemetry import GPSTelemetryRepository

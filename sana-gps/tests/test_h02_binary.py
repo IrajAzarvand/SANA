@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.protocols.h02_binary import decode_h02_binary
+from app.protocols.decoders.h02_binary import decode_h02_binary
 
 
 SAMPLE = bytes.fromhex(

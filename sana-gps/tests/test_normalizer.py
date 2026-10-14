@@ -6,7 +6,7 @@ from decimal import Decimal
 import pytest
 
 from app.processing.telemetry import NormalizedTelemetry
-from app.protocols.teltonika.decoder import TeltonikaAVLRecord
+from app.protocols.decoders.teltonika import TeltonikaAVLRecord
 from app.protocols.teltonika.normalizer import TeltonikaNormalizer
 
 

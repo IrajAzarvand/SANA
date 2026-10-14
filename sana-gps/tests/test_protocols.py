@@ -111,3 +111,28 @@ def test_registry_does_not_depend_on_transport_or_database() -> None:
         protocol=ProtocolId.TELTONIKA,
         matched=True,
     )
+
+def test_default_registry_detects_all_supported_shared_port_signatures() -> None:
+    from app.protocols.registry import default_protocol_registry
+
+    registry = default_protocol_registry()
+    samples = (
+        (bytes.fromhex("000f333532303934303832313433323533"), ProtocolId.TELTONIKA),
+        (bytes.fromhex("78780513000100000d0a"), ProtocolId.GT06),
+        (b"*HQ,9176515720,V1", ProtocolId.HQ),
+        (b"$9176515720", ProtocolId.HQ),
+        (b"X9176515720", ProtocolId.HQ),
+    )
+    for payload, expected in samples:
+        result = registry.detect(payload)
+        assert result.matched is True
+        assert result.protocol is expected
+
+
+def test_default_registry_recognizes_incomplete_signature_prefixes() -> None:
+    from app.protocols.registry import default_protocol_registry
+
+    registry = default_protocol_registry()
+    assert registry.may_match_prefix(b"\x00")
+    assert registry.may_match_prefix(b"\x78")
+    assert registry.may_match_prefix(b"*")

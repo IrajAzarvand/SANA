@@ -3,7 +3,7 @@ from __future__ import annotations
 from app.database.pool import DatabaseConnectionPool
 from app.processing.telemetry import NormalizedTelemetry
 from app.repositories.gps_telemetry import GPSTelemetryRepository
-from app.protocols.gt06 import GT06Position
+from app.protocols.decoders.gt06 import GT06Position
 from datetime import datetime, timezone
 from decimal import Decimal
 

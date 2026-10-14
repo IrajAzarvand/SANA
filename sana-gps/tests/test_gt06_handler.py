@@ -2,7 +2,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from app.protocols.gt06 import crc16_itu
+from app.protocols.decoders.gt06 import crc16_itu
 from app.protocols.gt06_handler import GT06Handler
 from app.repositories.device import DeviceRecord
 from app.transport.session import Session, TransportType

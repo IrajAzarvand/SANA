@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.protocols.teltonika.decoder import TeltonikaAVLDecoder, TeltonikaDecodeError
+from app.protocols.decoders.teltonika import TeltonikaAVLDecoder, TeltonikaDecodeError
 from app.protocols.teltonika.normalizer import TeltonikaNormalizer
 
 
