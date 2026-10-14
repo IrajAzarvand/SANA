@@ -5,6 +5,7 @@ import logging
 from dataclasses import dataclass, field
 from uuid import UUID
 
+from app.protocols.registry import ProtocolRegistry, default_protocol_registry
 from app.protocols.types import ProtocolId, ProtocolResponse
 from app.transport.session import Session, SessionState
 
@@ -22,26 +23,19 @@ class _DispatchState:
 
 
 class ProtocolDispatcher:
-    """Detect a protocol from incoming bytes, then pin it for the runtime session."""
-
-    _SIGNATURES = {
-        b"\x78\x78": ProtocolId.GT06,
-        b"\x79\x79": ProtocolId.GT06,
-        b"\x00\x0f": ProtocolId.TELTONIKA,
-        b"*H": ProtocolId.HQ,
-        b"$": ProtocolId.HQ,
-        b"X": ProtocolId.HQ,
-    }
+    """Detect and pin a protocol using the shared registry, then route to its handler."""
 
     def __init__(
         self,
         handlers: dict[ProtocolId, ProtocolHandler],
         *,
+        registry: ProtocolRegistry | None = None,
         max_detection_buffer: int = 8192,
     ) -> None:
         if max_detection_buffer < 2:
             raise ValueError("max_detection_buffer must be at least 2")
         self._handlers = dict(handlers)
+        self._registry = registry or default_protocol_registry()
         self._max_detection_buffer = max_detection_buffer
         self._states: dict[UUID, _DispatchState] = {}
 
@@ -63,7 +57,7 @@ class ProtocolDispatcher:
             handler = self._handlers.get(state.protocol)
             if handler is None:
                 state.rejected = True
-                return ProtocolResponse(b"\x00")
+                return ProtocolResponse(b"\\x00")
             return await handler(session, data)
 
         state.pending.extend(data)
@@ -71,22 +65,22 @@ class ProtocolDispatcher:
             logger.warning("Rejecting GPS session from %s: detection buffer limit exceeded", session.remote_address)
             state.pending.clear()
             state.rejected = True
-            return ProtocolResponse(b"\x00")
+            return ProtocolResponse(b"\\x00")
 
-        # Do not reject on an incomplete prefix. Wait for enough bytes to decide.
+        # Detection is delegated to the registry. Incomplete signatures remain
+        # buffered instead of being rejected before the next TCP read arrives.
         pending = bytes(state.pending)
-        protocol = next((proto for signature, proto in self._SIGNATURES.items()
-                         if pending.startswith(signature)), None)
-        if protocol is None:
-            possible_prefix = any(signature.startswith(pending) for signature in self._SIGNATURES)
-            if possible_prefix or len(pending) < 2:
+        detection = self._registry.detect(pending)
+        if not detection.matched:
+            if self._registry.may_match_prefix(pending) or len(pending) < 2:
                 return None
             logger.warning("Rejected TCP GPS connection from %s: unknown protocol prefix %s",
                            session.remote_address, pending[:8].hex())
             state.pending.clear()
             state.rejected = True
-            return ProtocolResponse(b"\x00")
+            return ProtocolResponse(b"\\x00")
 
+        protocol = detection.protocol
         logger.info("Detected GPS protocol %s from %s", protocol.value, session.remote_address)
         state.protocol = protocol
         handler = self._handlers.get(protocol)
@@ -94,7 +88,7 @@ class ProtocolDispatcher:
         state.pending.clear()
         if handler is None:
             state.rejected = True
-            return ProtocolResponse(b"\x00")
+            return ProtocolResponse(b"\\x00")
         return await handler(session, payload)
 
     def _cleanup_closed_sessions(self) -> None:
