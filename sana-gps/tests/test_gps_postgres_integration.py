@@ -83,9 +83,11 @@ DSN = os.getenv("SANA_GPS_TEST_DSN") or _make_dsn(
     password=_env_value("SANA_GPS_TEST_PASSWORD", GPS_ENV, _env_value("SANA_GPS_DB_PASSWORD", GPS_ENV, _env_value("DB_PASSWORD", BACKEND_ENV, "sana_password_123"))),
 )
 
-# All integration-test operations use the same sana_user DSN as the GPS service.
-# The test creates and removes only its uniquely identified fixture rows.
-ADMIN_DSN = DSN
+# Runtime telemetry operations use the same sana_user DSN as the GPS service.
+# Fixture setup/cleanup may use a separate test-admin DSN in CI, because the
+# production runtime role intentionally must not create or delete fleet devices.
+# If no admin DSN is configured locally, fall back to DSN for compatible setups.
+ADMIN_DSN = os.getenv("SANA_GPS_TEST_ADMIN_DSN") or DSN
 
 pytestmark = pytest.mark.skipif(
     not DSN,
