@@ -45,7 +45,8 @@ export function useApi(apiFunction, deps = [], options = {}) {
   useEffect(() => {
     isMountedRef.current = true;
     if (immediate) {
-      fetchData().catch(() => {});
+      // Defer the request to avoid synchronous state updates inside the effect body.
+      Promise.resolve().then(() => fetchData()).catch(() => {});
     }
     return () => {
       isMountedRef.current = false;
