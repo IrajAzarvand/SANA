@@ -561,18 +561,6 @@ export default function SubscriptionDetail() {
     }
   };
 
-  // ═══ حذف دستگاه ═══
-  const handleRemoveDevice = async (linkId) => {
-    if (!confirm('آیا از حذف این دستگاه از قرارداد اطمینان دارید؟\nدستگاه به انبار برمی‌گردد.')) return;
-    try {
-      await subscriptionDevicesAPI.delete(linkId);
-      refetch();
-    } catch (err) {
-      console.error('Error removing device:', err);
-      alert('خطا در حذف دستگاه');
-    }
-  };
-
   const openDeviceHistory = (deviceId) => {
     if (!deviceId) return;
     setDeviceHistoryId(deviceId);
