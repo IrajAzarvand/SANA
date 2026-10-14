@@ -2,7 +2,6 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Search, Plus, Users, Pencil, Trash2, Phone, CreditCard, Eye, Car, X } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
-import Badge from '../components/Badge';
 import Button from '../components/Button';
 import Input from '../components/Input';
 import Select from '../components/Select';
@@ -11,6 +10,7 @@ import EmptyState from '../components/EmptyState';
 import ActionMenu from '../components/ActionMenu';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
+import JalaliDatePicker from '../components/JalaliDatePicker';
 import { useAuth } from '../context/AuthContext';
 import { driversAPI, vehiclesAPI, driverVehicleAssignmentsAPI } from '../api/services/fleet';
 import { branchesAPI } from '../api/services/organizations';
@@ -98,6 +98,8 @@ export default function Drivers() {
   // اگه Branch Manager بود، شعبه‌اش رو پیش‌فرض کن
   useEffect(() => {
     if (isBranchManager && branches?.length === 1 && !form.branch) {
+      // Apply the branch default after the branch list has loaded.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setForm((f) => ({ ...f, branch: branches[0].id }));
     }
   }, [isBranchManager, branches]); // eslint-disable-line react-hooks/exhaustive-deps
