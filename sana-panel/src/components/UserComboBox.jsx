@@ -29,6 +29,8 @@ export default function UserComboBox({
 
   // sync search با value وقتی از بیرون عوض می‌شه
   useEffect(() => {
+    // The input keeps a local editable draft synchronized with its controlled value.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSearch(value);
   }, [value]);
 
