@@ -48,6 +48,8 @@ export default function Branches() {
   // اگه Main User بود، توی فرم، سازمانش رو پیش‌فرض انتخاب کن
   useEffect(() => {
     if (isMainUser && organizations?.length === 1 && !form.organization) {
+      // Apply the default organization once it has loaded for the main user.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setForm((f) => ({ ...f, organization: organizations[0].id }));
     }
   }, [isMainUser, organizations]); // eslint-disable-line react-hooks/exhaustive-deps
