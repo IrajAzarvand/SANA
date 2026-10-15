@@ -79,10 +79,7 @@ function LiveTerminal({ streamName, title, description, icon: Icon, accent }) {
   const bodyRef = useRef(null);
 
   useEffect(() => {
-    if (!running) {
-      setStatus('paused');
-      return undefined;
-    }
+    if (!running) return undefined;
     const controller = new AbortController();
     let cancelled = false;
     setStatus('connecting');
@@ -146,7 +143,8 @@ function LiveTerminal({ streamName, title, description, icon: Icon, accent }) {
     if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
   }, [lines]);
 
-  const statusLabel = status === 'live' ? 'زنده' : status === 'connecting' ? 'در حال اتصال' : status === 'paused' ? 'متوقف' : status === 'error' ? 'خطا' : 'قطع اتصال';
+  const displayStatus = running ? status : 'paused';
+  const statusLabel = displayStatus === 'live' ? 'زنده' : displayStatus === 'connecting' ? 'در حال اتصال' : displayStatus === 'paused' ? 'متوقف' : displayStatus === 'error' ? 'خطا' : 'قطع اتصال';
 
   return (
     <section className="min-w-0 overflow-hidden rounded-2xl border border-border-base bg-bg-elevated shadow-sm">
@@ -160,8 +158,8 @@ function LiveTerminal({ streamName, title, description, icon: Icon, accent }) {
             <p className="mt-1 text-xs leading-5 text-text-muted">{description}</p>
           </div>
         </div>
-        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${status === 'live' ? 'bg-emerald-500/10 text-emerald-600' : status === 'error' ? 'bg-danger/10 text-danger' : 'bg-bg-base text-text-muted'}`}>
-          <span className={`h-1.5 w-1.5 rounded-full ${status === 'live' ? 'animate-pulse bg-emerald-500' : status === 'error' ? 'bg-danger' : 'bg-text-muted'}`} />
+        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${displayStatus === 'live' ? 'bg-emerald-500/10 text-emerald-600' : displayStatus === 'error' ? 'bg-danger/10 text-danger' : 'bg-bg-base text-text-muted'}`}>
+          <span className={`h-1.5 w-1.5 rounded-full ${displayStatus === 'live' ? 'animate-pulse bg-emerald-500' : displayStatus === 'error' ? 'bg-danger' : 'bg-text-muted'}`} />
           {statusLabel}
         </span>
       </div>
@@ -194,7 +192,7 @@ function LiveTerminal({ streamName, title, description, icon: Icon, accent }) {
             <span className="whitespace-pre-wrap">{line.text}</span>
           </div>
         ))}
-        {status === 'live' && <span className="inline-block h-3.5 w-1.5 animate-pulse bg-emerald-400 align-middle" />}
+        {displayStatus === 'live' && <span className="inline-block h-3.5 w-1.5 animate-pulse bg-emerald-400 align-middle" />}
       </div>
       <div className="flex items-center justify-between gap-3 border-t border-border-base px-4 py-2 text-[11px] text-text-muted">
         <span>{lines.length} خط اخیر در نمایش</span>
@@ -225,9 +223,14 @@ function GPSQueueMonitor() {
   }, [filter]);
 
   useEffect(() => {
-    refresh();
+    const initialRefresh = window.setTimeout(() => {
+      refresh();
+    }, 0);
     const timer = window.setInterval(refresh, 3000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearTimeout(initialRefresh);
+      window.clearInterval(timer);
+    };
   }, [refresh]);
 
   return (
