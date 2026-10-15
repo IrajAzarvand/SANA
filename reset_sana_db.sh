@@ -309,7 +309,6 @@ sudo systemctl start sana-backend
 if ! systemctl is-active --quiet sana-backend; then
     die "سرویس Backend پس از راه‌اندازی فعال نشد."
 fi
-BACKEND_STOPPED=0
 echo "✅ سرویس Backend فعال است."
 
 echo "راه‌اندازی سرویس GPS..."
@@ -317,12 +316,11 @@ sudo systemctl start sana-gps
 if ! systemctl is-active --quiet sana-gps; then
     die "سرویس GPS پس از راه‌اندازی فعال نشد."
 fi
-SERVICE_STOPPED=0
 echo "✅ سرویس GPS فعال است."
 
 # اطمینان از اینکه هر سه پورت مورد انتظار واقعاً در حال شنود هستند.
 for port in 8000 9000 9001; do
-    if ! sudo ss -lntup | grep -Eq ":${port}\\b"; then
+    if ! sudo ss -lntup | grep -Eq ":${port}([[:space:]]|$)"; then
         die "هیچ سرویس TCP/UDP روی پورت مورد انتظار $port در حال شنود نیست."
     fi
 done
@@ -333,6 +331,8 @@ echo "✅ تنظیم مجوز tcpdump و sudoers دست‌نخورده باقی 
 echo "وضعیت Backend: sudo systemctl status sana-backend.service --no-pager"
 echo "وضعیت GPS: sudo systemctl status sana-gps.service --no-pager"
 
+BACKEND_STOPPED=0
+SERVICE_STOPPED=0
 RUN_SUCCEEDED=1
 
 echo
