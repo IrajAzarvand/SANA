@@ -91,7 +91,6 @@ function LiveTerminal({ streamName, title, description, icon: Icon, accent }) {
 
     const connect = async () => {
       while (!cancelled) {
-        let refreshedForThisConnection = false;
         try {
           setStatus('connecting');
           setError('');
@@ -112,7 +111,6 @@ function LiveTerminal({ streamName, title, description, icon: Icon, accent }) {
           if (response.status === 401) {
             try {
               const access = await refreshAccessToken();
-              refreshedForThisConnection = true;
               response = await fetch(
                 `${apiClient.defaults.baseURL}/gps-monitor/logs/${streamName}/`,
                 {
