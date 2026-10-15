@@ -44,7 +44,6 @@ class LiveLogStreamView(APIView):
     """Admin-only server-sent log stream for fixed, read-only diagnostic commands."""
 
     permission_classes = [IsAuthenticated, IsSiteAdmin]
-    authentication_classes = None  # Use DRF's configured JWT authentication below.
 
     def get(self, request, stream_name: str):
         _require_admin(request)
