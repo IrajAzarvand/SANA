@@ -149,7 +149,8 @@ class GPSQueueView(APIView):
         except DatabaseError:
             logger.exception("GPS temporary queue is unavailable")
             return JsonResponse(
-                {"detail": "جدول صف موقت GPS در دسترس نیست؛ migration و اتصال دیتابیس را بررسی کنید."}, status=503
+                {"detail": "جدول صف موقت GPS در دسترس نیست؛ migration و اتصال دیتابیس را بررسی کنید."},
+                status=503,
             )
 
         results = []
