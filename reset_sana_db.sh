@@ -247,22 +247,19 @@ with connection.cursor() as cursor:
             to_regclass(%s),
             to_regclass(%s),
             to_regclass(%s),
-            to_regclass(%s),
             to_regclass(%s)
     """, [
         "public.fleet_gpstelemetry",
-        "public.fleet_gt06position",
         "gps.raw_packet",
         "gps.location_history",
         "gps.current_state",
     ])
 
-    db, user, telemetry, gt06_position, raw, history, state = cursor.fetchone()
+    db, user, telemetry, raw, history, state = cursor.fetchone()
 
     print("Database:", db)
     print("Database user:", user)
     print("fleet_gpstelemetry:", telemetry)
-    print("fleet_gt06position:", gt06_position)
     print("gps.raw_packet:", raw)
     print("gps.location_history:", history)
     print("gps.current_state:", state)
