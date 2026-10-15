@@ -318,10 +318,21 @@ if ! systemctl is-active --quiet sana-gps; then
 fi
 echo "✅ سرویس GPS فعال است."
 
-# اطمینان از اینکه هر سه پورت مورد انتظار واقعاً در حال شنود هستند.
+# سرویس‌ها ممکن است چند ثانیه بعد از systemctl start پورت را باز کنند.
+# برای جلوگیری از خطای کاذب، برای هر پورت تا 30 ثانیه منتظر می‌مانیم.
 for port in 8000 9000 9001; do
-    if ! sudo ss -lntup | grep -Eq ":${port}([[:space:]]|$)"; then
-        die "هیچ سرویس TCP/UDP روی پورت مورد انتظار $port در حال شنود نیست."
+    port_ready=0
+    for attempt in {1..30}; do
+        if sudo ss -H -lntup | grep -Eq ":${port}([[:space:]]|$)"; then
+            port_ready=1
+            echo "✅ پورت ${port} در حال شنود است."
+            break
+        fi
+        sleep 1
+    done
+
+    if [[ "$port_ready" -ne 1 ]]; then
+        die "پس از 30 ثانیه هیچ سرویس TCP/UDP روی پورت مورد انتظار ${port} در حال شنود نیست."
     fi
 done
 
