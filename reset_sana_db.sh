@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# SANA - بازسازی دیتابیس آزمایشی و راه‌اندازی GPS
+# SANA - بازسازی کامل دیتابیس و جداول Django/GPS
 # اجرا: bash ~/Desktop/SANA/reset_sana_db.sh
+#
+# سرویس GPS پس از بازسازی عمداً متوقف باقی می‌ماند تا نتیجه دیتابیس بررسی شود.
+# مجوز پایش زنده شبکه (tcpdump wrapper و sudoers) تنظیم سیستم‌عامل است و این
+# اسکریپت آن را ایجاد، حذف یا تغییر نمی‌دهد.
 #
 # هشدار: دیتابیس sana_db کاملاً حذف و دوباره ساخته می‌شود.
 # همه داده‌ها، کاربران و سوپریوزر قبلی آن از بین می‌روند.
@@ -59,7 +63,7 @@ die() {
     exit 1
 }
 
-echo "SANA - Database Reset and GPS Bootstrap"
+echo "SANA - Database Reset (GPS service remains stopped)"
 echo "زمان: $(date --iso-8601=seconds)"
 echo "ریشه پروژه: $ROOT"
 echo "دیتابیس: $DB_NAME"
@@ -99,8 +103,8 @@ done
 echo
 echo "⚠️ هشدار: این عملیات دیتابیس '$DB_NAME' را کامل حذف می‌کند."
 echo "تمام کاربران، داده‌های GPS و اطلاعات داخل آن پاک خواهند شد."
-echo "جدول fleet_gpstelemetry نیز همراه دیتابیس حذف و با migrationها بازسازی می‌شود."
-echo "جدول fleet_gpstelemetry همراه کل دیتابیس حذف می‌شود و migrationهای Django باید آن را از نو بسازند."
+echo "تمام جدول‌های دیتابیس همراه خود دیتابیس حذف و بر اساس migrationهای فعلی و SQLهای GPS بازسازی می‌شوند."
+echo "تنظیم مجوز پایش زنده شبکه در لینوکس مستقل است و در این عملیات دست‌کاری نمی‌شود."
 echo
 
 read -r -p "برای تأیید، نام دیتابیس را دقیقاً وارد کن [$DB_NAME]: " CONFIRM
@@ -240,12 +244,12 @@ with connection.cursor() as cursor:
         "gps.current_state",
     ])
 
-    db, user, telemetry, legacy_gt06, raw, history, state = cursor.fetchone()
+    db, user, telemetry, gt06_position, raw, history, state = cursor.fetchone()
 
     print("Database:", db)
     print("Database user:", user)
     print("fleet_gpstelemetry:", telemetry)
-    print("legacy fleet_gt06position:", legacy_gt06)
+    print("fleet_gt06position:", gt06_position)
     print("gps.raw_packet:", raw)
     print("gps.location_history:", history)
     print("gps.current_state:", state)
@@ -253,7 +257,6 @@ with connection.cursor() as cursor:
     assert db == expected_db, f"Wrong database: {db}"
     assert user == expected_user, f"Wrong database user: {user}"
     assert telemetry is not None, "fleet_gpstelemetry is missing"
-    assert legacy_gt06 is None, "Legacy fleet_gt06position unexpectedly exists"
     assert raw is not None, "gps.raw_packet is missing"
     assert history is not None, "gps.location_history is missing"
     assert state is not None, "gps.current_state is missing"
@@ -285,36 +288,24 @@ echo "رمز در فایل اسکریپت یا گزارش ذخیره نمی‌ش
 
 echo "✅ مرحله ساخت سوپریوزر پایان یافت."
 
-# ۱۰. راه‌اندازی سرویس و بررسی پورت‌ها
-step "۱۰/۱۰ - راه‌اندازی و آزمون سرویس GPS"
+# ۱۰. کنترل نهایی؛ سرویس GPS عمداً روشن نمی‌شود
+step "۱۰/۱۰ - تأیید نهایی و نگه‌داشتن GPS در حالت توقف"
 
-sudo systemctl start sana-gps
-sleep 2
-
-if ! systemctl is-active --quiet sana-gps; then
-    die "سرویس GPS فعال نشد."
+if systemctl is-active --quiet sana-gps; then
+    die "سرویس GPS برخلاف انتظار فعال است؛ بازسازی پایان نمی‌یابد تا وضعیت بررسی شود."
 fi
 
-sudo systemctl status sana-gps --no-pager
+echo "✅ دیتابیس و سوپریوزر بررسی شدند."
+echo "✅ سرویس GPS عمداً متوقف باقی می‌ماند."
+echo "✅ تنظیم مجوز tcpdump و sudoers دست‌نخورده باقی مانده است."
+echo "برای مشاهده وضعیت فعلی سرویس: sudo systemctl status sana-gps.service --no-pager"
 
-echo
-echo "آخرین لاگ‌های GPS:"
-sudo journalctl -u sana-gps -n 30 --no-pager
-
-echo
-echo "پورت‌های GPS:"
-LISTENERS="$(sudo ss -lntup)"
-printf '%s\n' "$LISTENERS" | grep -E 'LISTEN .*:9000([[:space:]]|$)' ||
-    die "TCP port 9000 در وضعیت LISTEN نیست."
-printf '%s\n' "$LISTENERS" | grep -E 'UNCONN .*:9001([[:space:]]|$)' ||
-    die "UDP port 9001 در وضعیت فعال نیست."
-
-SERVICE_STOPPED=0
 RUN_SUCCEEDED=1
 
 echo
 echo "============================================================"
-echo "✅ تمام مراحل با موفقیت انجام شدند."
+echo "✅ مراحل بازسازی دیتابیس با موفقیت انجام شدند."
+echo "سرویس GPS روشن نشده است؛ قبل از ادامه، نتیجه را بررسی کن."
 echo "مدت اجرا: $(( $(date +%s) - START_TIME )) ثانیه"
 echo "گزارش کامل: $LOG_FILE"
 echo "============================================================"
