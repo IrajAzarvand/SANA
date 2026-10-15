@@ -1,0 +1,18 @@
+#!/bin/sh
+# Root-owned, fixed-filter packet capture for the SANA admin diagnostics page.
+# This wrapper intentionally accepts no arguments.
+set -eu
+
+if [ "$#" -ne 0 ]; then
+    echo "This diagnostic wrapper does not accept arguments." >&2
+    exit 64
+fi
+
+for tcpdump in /usr/sbin/tcpdump /usr/bin/tcpdump; do
+    if [ -x "$tcpdump" ]; then
+        exec "$tcpdump" -l -nn -tttt -i any '(tcp port 9000) or (udp port 9001)'
+    fi
+done
+
+echo "tcpdump is not installed in /usr/sbin or /usr/bin." >&2
+exit 127
