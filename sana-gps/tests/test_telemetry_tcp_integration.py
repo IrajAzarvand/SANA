@@ -5,14 +5,14 @@ from datetime import datetime, timezone
 
 import pytest
 
+from app.protocols.decoders.teltonika import TeltonikaAVLDecoder
 from app.protocols.dispatcher import ProtocolDispatcher
+from app.protocols.registry import default_protocol_registry
 from app.protocols.teltonika.handler import TeltonikaHandler
 from app.protocols.types import ProtocolId
-from app.protocols.registry import default_protocol_registry
 from app.repositories.device import DeviceRecord
 from app.transport.session import SessionManager
 from app.transport.tcp import TCPListener
-from app.protocols.decoders.teltonika import TeltonikaAVLDecoder
 
 
 IMEI = "352094082143253"
@@ -66,19 +66,19 @@ def codec8_frame() -> bytes:
     )
     record = (
         timestamp.to_bytes(8, "big")
-        + b"\\x00"
+        + b"\x00"
         + int(459321070).to_bytes(4, "big", signed=True)
         + int(378546450).to_bytes(4, "big", signed=True)
         + int(123).to_bytes(2, "big", signed=True)
         + int(180).to_bytes(2, "big")
-        + b"\\x08"
+        + b"\x08"
         + int(50).to_bytes(2, "big")
         + bytes((0, 1, 1, 239, 1, 0, 0, 0))
     )
-    data = bytes((8, 1)) + record + b"\\x01"
+    data = bytes((8, 1)) + record + b"\x01"
     crc = TeltonikaAVLDecoder._crc16_ibm(data)
     return (
-        b"\\x00\\x00\\x00\\x00"
+        b"\x00\x00\x00\x00"
         + len(data).to_bytes(4, "big")
         + data
         + crc.to_bytes(4, "big")
@@ -113,7 +113,7 @@ async def test_tcp_dispatch_decode_persist_and_ack_end_to_end() -> None:
         await writer.drain()
         writer.write(IMEI_FRAME[5:])
         await writer.drain()
-        assert await asyncio.wait_for(reader.readexactly(1), timeout=1) == b"\\x01"
+        assert await asyncio.wait_for(reader.readexactly(1), timeout=1) == b"\x01"
 
         frame = codec8_frame()
         # AVL framing must also survive fragmented TCP reads.
@@ -121,7 +121,7 @@ async def test_tcp_dispatch_decode_persist_and_ack_end_to_end() -> None:
         await writer.drain()
         writer.write(frame[9:])
         await writer.drain()
-        assert await asyncio.wait_for(reader.readexactly(4), timeout=1) == b"\\x00\\x00\\x00\\x01"
+        assert await asyncio.wait_for(reader.readexactly(4), timeout=1) == b"\x00\x00\x00\x01"
 
         assert devices.detected_protocols == [(7, "teltonika")]
         assert len(telemetry.saved) == 1
@@ -147,7 +147,7 @@ async def test_tcp_end_to_end_does_not_ack_avl_when_persistence_fails() -> None:
         reader, writer = await asyncio.open_connection("127.0.0.1", port)
         writer.write(IMEI_FRAME)
         await writer.drain()
-        assert await asyncio.wait_for(reader.readexactly(1), timeout=1) == b"\\x01"
+        assert await asyncio.wait_for(reader.readexactly(1), timeout=1) == b"\x01"
 
         writer.write(codec8_frame())
         await writer.drain()
@@ -169,7 +169,7 @@ async def test_tcp_end_to_end_rejects_unregistered_imei_without_persistence() ->
         reader, writer = await asyncio.open_connection("127.0.0.1", port)
         writer.write(IMEI_FRAME)
         await writer.drain()
-        assert await asyncio.wait_for(reader.readexactly(1), timeout=1) == b"\\x00"
+        assert await asyncio.wait_for(reader.readexactly(1), timeout=1) == b"\x00"
 
         writer.write(codec8_frame())
         await writer.drain()
