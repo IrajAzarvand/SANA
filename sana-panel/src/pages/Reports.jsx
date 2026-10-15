@@ -15,7 +15,7 @@ import {
   sampleTripsReport,
 } from '../data/reportsData';
 import { useAuth } from '../context/AuthContext';
-import apiClient from '../api/client';
+import apiClient, { clearAuthSession, refreshAccessToken } from '../api/client';
 
 // گزارش‌های مخصوص ادمین
 const adminReports = [
@@ -80,68 +80,162 @@ function LiveTerminal({ streamName, title, description, icon: Icon, accent }) {
 
   useEffect(() => {
     if (!running) return undefined;
+
     const controller = new AbortController();
     let cancelled = false;
+    let retryTimer = null;
+
+    const waitBeforeReconnect = () => new Promise((resolve) => {
+      retryTimer = window.setTimeout(resolve, 2000);
+    });
+
     const connect = async () => {
-      try {
-        const token = localStorage.getItem('sana_access_token');
-        const response = await fetch(`${apiClient.defaults.baseURL}/gps-monitor/logs/${streamName}/`, {
-          headers: token ? { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' } : { Accept: 'text/event-stream' },
-          signal: controller.signal,
-        });
-        if (!response.ok) {
-          const detail = response.status === 403
-            ? 'دسترسی فقط برای ادمین کل سایت مجاز است.'
-            : response.status === 401
-              ? 'نشست شما منقضی شده است؛ دوباره وارد شوید.'
-              : `خطای سرور: ${response.status}`;
-          throw new Error(detail);
-        }
-        if (!response.body) throw new Error('مرورگر از دریافت زنده پشتیبانی نمی‌کند.');
-        setStatus('live');
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        while (!cancelled) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const events = buffer.split('\n\n');
-          buffer = events.pop() || '';
-          for (const event of events) {
-            const dataLine = event.split('\n').find((line) => line.startsWith('data: '));
-            if (!dataLine) continue;
+      while (!cancelled) {
+        try {
+          setStatus('connecting');
+          setError('');
+
+          const accessTokenUsed = localStorage.getItem('sana_access_token') || '';
+          let response = await fetch(
+            `${apiClient.defaults.baseURL}/gps-monitor/logs/${streamName}/`,
+            {
+              headers: {
+                Authorization: `Bearer ${accessTokenUsed}`,
+                Accept: 'text/event-stream',
+              },
+              signal: controller.signal,
+              cache: 'no-store',
+            }
+          );
+
+          // fetch بر خلاف apiClient، interceptor تمدید توکن را اجرا نمی‌کند.
+          if (response.status === 401) {
             try {
-              const payload = JSON.parse(dataLine.slice(6));
-              if (payload.line) {
-                setLines((previous) => [...previous, { id: `${Date.now()}-${Math.random()}`, text: payload.line }].slice(-250));
+              // ممکن است درخواست دیگری در همین فاصله توکن را تازه کرده باشد؛
+              // در این حالت همان توکن جدید را استفاده کن و Refresh Token را دوباره مصرف نکن.
+              let access = localStorage.getItem('sana_access_token') || '';
+              if (!access || access === accessTokenUsed) {
+                access = await refreshAccessToken();
               }
-            } catch {
-              // Ignore incomplete or malformed server-sent events.
+              response = await fetch(
+                `${apiClient.defaults.baseURL}/gps-monitor/logs/${streamName}/`,
+                {
+                  headers: {
+                    Authorization: `Bearer ${access}`,
+                    Accept: 'text/event-stream',
+                  },
+                  signal: controller.signal,
+                  cache: 'no-store',
+                }
+              );
+            } catch (refreshError) {
+              if (cancelled || refreshError.name === 'AbortError') return;
+              if ([401, 403].includes(refreshError.response?.status) ||
+                  refreshError.message === 'No refresh token') {
+                setError('نشست شما منقضی شده است؛ دوباره وارد شوید.');
+                setStatus('error');
+                clearAuthSession();
+                return;
+              }
+              // خطای موقت شبکه در endpoint تمدید نباید به‌عنوان انقضای نشست گزارش شود.
+              throw refreshError;
             }
           }
+
+          if (response.status === 401) {
+            setError('نشست شما منقضی شده است؛ دوباره وارد شوید.');
+            setStatus('error');
+            clearAuthSession();
+            return;
+          }
+          if (response.status === 403) {
+            setError('دسترسی فقط برای ادمین کل سایت مجاز است.');
+            setStatus('error');
+            return;
+          }
+          if (!response.ok) {
+            throw new Error(`خطای سرور: ${response.status}`);
+          }
+          if (!response.body) {
+            throw new Error('مرورگر از دریافت زنده پشتیبانی نمی‌کند.');
+          }
+
+          setStatus('live');
+          setError('');
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+
+          while (!cancelled) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const events = buffer.split('\\n\\n');
+            buffer = events.pop() || '';
+            for (const event of events) {
+              const dataLine = event.split('\\n').find((line) => line.startsWith('data: '));
+              if (!dataLine) continue;
+              try {
+                const payload = JSON.parse(dataLine.slice(6));
+                if (payload.line) {
+                  setLines((previous) => [
+                    ...previous,
+                    { id: `${Date.now()}-${Math.random()}`, text: payload.line },
+                  ].slice(-250));
+                }
+              } catch {
+                // Ignore incomplete or malformed server-sent events.
+              }
+            }
+          }
+
+          if (cancelled) return;
+          // پایان غیرمنتظره جریان ممکن است ناشی از قطع شبکه یا خاتمه فرایند سمت سرور باشد.
+          setStatus('reconnecting');
+        } catch (err) {
+          if (cancelled || err.name === 'AbortError') return;
+          if (err.response?.status === 403) {
+            setError('دسترسی فقط برای ادمین کل سایت مجاز است.');
+            setStatus('error');
+            return;
+          }
+          // خطاهای موقت شبکه/سرور را با تأخیر کوتاه دوباره امتحان می‌کنیم.
+          setError('اتصال لاگ موقتاً قطع شده؛ تلاش برای اتصال مجدد…');
+          setStatus('reconnecting');
         }
-        if (!cancelled) setStatus('disconnected');
-      } catch (err) {
-        if (err.name !== 'AbortError' && !cancelled) {
-          setError(err.message || 'اتصال برقرار نشد.');
-          setStatus('error');
+
+        if (!cancelled) await waitBeforeReconnect();
+        if (retryTimer !== null) {
+          window.clearTimeout(retryTimer);
+          retryTimer = null;
         }
       }
     };
+
     connect();
     return () => {
       cancelled = true;
       controller.abort();
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
     };
   }, [running, streamName]);
 
   useEffect(() => {
     if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
-  }, [lines]);
+  }, [lines, error]);
 
   const displayStatus = running ? status : 'paused';
-  const statusLabel = displayStatus === 'live' ? 'زنده' : displayStatus === 'connecting' ? 'در حال اتصال' : displayStatus === 'paused' ? 'متوقف' : displayStatus === 'error' ? 'خطا' : 'قطع اتصال';
+  const statusLabel = displayStatus === 'live'
+    ? 'زنده'
+    : displayStatus === 'connecting'
+      ? 'در حال اتصال'
+      : displayStatus === 'reconnecting'
+        ? 'اتصال مجدد'
+        : displayStatus === 'paused'
+          ? 'متوقف'
+          : displayStatus === 'error'
+            ? 'خطا'
+            : 'قطع اتصال';
 
   return (
     <section className="min-w-0 overflow-hidden rounded-2xl border border-border-base bg-bg-elevated shadow-sm">
@@ -190,7 +284,7 @@ function LiveTerminal({ streamName, title, description, icon: Icon, accent }) {
             <p className="mt-1 text-slate-600">$ {streamName === 'service' ? 'journalctl -u sana-gps -f' : 'tcpdump -i any (tcp port 9000) or (udp port 9001)'}</p>
           </div>
         )}
-        {error && <p className="mb-2 whitespace-pre-wrap text-rose-300">خطا: {error}</p>}
+        {error && <p className="mb-2 whitespace-pre-wrap text-rose-300">{error}</p>}
         {lines.map((line) => (
           <div key={line.id} className="grid grid-cols-[auto_1fr] gap-2 break-words">
             <span className="select-none text-slate-600">$</span>
