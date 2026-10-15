@@ -38784,3 +38784,100 @@ SANA/
 - مدل Django و ثبت Admin مربوط به `GT06Position` حذف شده‌اند.
 - Migration تاریخی `0003_gt06position` عمداً نگه داشته می‌شود تا نصب‌های تازه و تاریخچه Migrationهای محیط‌های موجود سالم بماند. Migration جدید `0010_remove_gt06position` آن مدل را از state جنگو حذف می‌کند و هنگام اجرا، جدول قدیمی `fleet_gt06position` را از دیتابیس حذف خواهد کرد.
 - پیش از اعمال Migration در محیط عملیاتی، تعداد رکوردهای جدول قدیمی باید بررسی شود. اگر جدول دارای داده است، آن داده‌ها به‌صورت خودکار منتقل نمی‌شوند؛ زیرا مسیر فعلی دیگر از این جدول استفاده نمی‌کند و انتقال باید با تطبیق و deduplication انجام شود.
+
+
+---
+
+# دسترسی PostgreSQL و حساب واحد برنامه — ۲۰۲۶-۱۰-۱۵
+
+این بخش مرجع تنظیم دسترسی دیتابیس SANA است تا مستندات پروژه در همین فایل تجمیع شوند.
+
+## حساب‌های PostgreSQL و حساب‌های SANA
+
+- `postgres`: مدیر PostgreSQL برای راه‌اندازی اولیه، نصب PostGIS و نگهداری دیتابیس است؛ در فایل‌های محیطی برنامه استفاده نشود.
+- `sana_user`: تنها حساب معمول برنامه برای اتصال Django و سرویس دریافت GPS به PostgreSQL است. برای مدیران شرکت، مدیران شعب، مشتریان شخصی، سرویس GPS یا اجرای Migration حساب PostgreSQL جدا نسازید.
+- مدیر کل SANA یک حساب Django با نقش `site_admin` است که با `python manage.py createsuperuser` ساخته می‌شود؛ با کاربر PostgreSQL به نام `postgres` یکی نیست.
+- سطح دسترسی کاربران مشتری باید در Django/DRF، با QuerySetها و Permissionها محدود شود؛ ساختن نقش PostgreSQL برای هر مشتری راهکار کنترل دسترسی SANA نیست.
+- `sana_user` نباید Superuser در PostgreSQL باشد. مدیریت سراسری PostgreSQL فقط بر عهده `postgres` است.
+
+## متغیرهای محیطی
+
+نمونه تنظیمات Django در `sana-backend/.env`:
+
+```dotenv
+DB_NAME=sana_db
+DB_USER=sana_user
+DB_PASSWORD=<SET_A_PRIVATE_STRONG_PASSWORD>
+DB_HOST=localhost
+DB_PORT=5432
+```
+
+نمونه تنظیمات سرویس GPS در فایل محیطی خصوصی مانند `/etc/sana-gps.env`:
+
+```dotenv
+SANA_GPS_DB_NAME=sana_db
+SANA_GPS_DB_USER=sana_user
+SANA_GPS_DB_PASSWORD=<SAME_PRIVATE_STRONG_PASSWORD>
+SANA_GPS_DB_HOST=127.0.0.1
+SANA_GPS_DB_PORT=5432
+```
+
+رمزهای بالا placeholder هستند، نه مقدار واقعی. برای توسعه محلی نیز رمز واقعی را در فایل محیطی محلی نگه دارید و آن را در Git commit نکنید. در سرور مشترک/عملیاتی از رمز قوی و اختصاصی استفاده کنید.
+
+## راه‌اندازی دیتابیس تازه
+
+دستورها را از ریشه مخزن اجرا کنید و پیش از هر تغییر روی دیتابیس موجود نسخه پشتیبان بگیرید. اگر نقش یا دیتابیس از قبل وجود دارد، دستورهای `CREATE` را کورکورانه تکرار نکنید و ابتدا وضعیت موجود را بررسی کنید.
+
+۱. به‌عنوان مدیر PostgreSQL، نقش و دیتابیس را فقط در نصب تازه ایجاد کنید (مقدار رمز را با رمز خصوصی واقعی جایگزین کنید):
+
+```sql
+CREATE ROLE sana_user LOGIN PASSWORD '<PRIVATE_STRONG_PASSWORD>'
+    NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT;
+CREATE DATABASE sana_db OWNER sana_user;
+```
+
+برای دیتابیس موجود، پس از بررسی مالکیت و پشتیبان، مالکیت را در صورت نیاز تنظیم کنید و PostGIS را فعال کنید:
+
+```sql
+ALTER DATABASE sana_db OWNER TO sana_user;
+CREATE EXTENSION IF NOT EXISTS postgis;
+```
+
+۲. اسکریپت نقش‌ها/دسترسی GPS را با حساب مدیر اجرا کنید:
+
+```bash
+sudo -u postgres psql -d sana_db -v ON_ERROR_STOP=1 -f sana-gps/sql/0000_roles.sql
+```
+
+۳. با متغیرهای محیطی `sana_user`، Migrationهای Django را اجرا کنید و در صورت نیاز مدیر کل SANA بسازید:
+
+```bash
+cd sana-backend
+python manage.py migrate
+python manage.py createsuperuser
+```
+
+۴. از ریشه مخزن، اسکریپت‌های ساخت جداول GPS و تابع پاک‌سازی را با مدیر PostgreSQL اجرا کنید:
+
+```bash
+cd ..
+sudo -u postgres psql -d sana_db -v ON_ERROR_STOP=1 -f sana-gps/sql/0001_gps_schema.sql
+sudo -u postgres psql -d sana_db -v ON_ERROR_STOP=1 -f sana-gps/sql/0002_detected_protocol_registration.sql
+sudo -u postgres psql -d sana_db -v ON_ERROR_STOP=1 -f sana-gps/sql/0003_purge_device_telemetry.sql
+```
+
+۵. پیش از حذف نقش‌های قدیمی، فایل محیطی GPS را به `sana_user` تنظیم کنید، سرویس را راه‌اندازی مجدد کنید و اتصال/دریافت داده را بررسی کنید.
+
+۶. فقط پس از تهیه پشتیبان، تأیید اتصال هر دو برنامه با `sana_user` و بررسی اینکه هیچ سرویس یا استقرار قدیمی از نقش‌های قبلی استفاده نمی‌کند، اسکریپت پاک‌سازی نقش‌های قدیمی را اجرا کنید:
+
+```bash
+sudo -u postgres psql -d sana_db -v ON_ERROR_STOP=1 -f sana-gps/sql/0004_remove_legacy_roles.sql
+```
+
+این اسکریپت نقش‌های قدیمی مشخص‌شده را حذف می‌کند و اثر آن بالقوه مخرب است؛ آن را در راه‌اندازی معمول یا بدون بررسی و پشتیبان اجرا نکنید.
+
+## قواعد مهم
+
+- برای نصب تازه، نقش‌های PostgreSQL با نام‌های `sana_gps`، `sana_gps_test`، `sana_backend`، `sana_migrator` یا `sana_owner` ایجاد نکنید؛ تنظیم فعلی به آن‌ها نیاز ندارد.
+- حساب `sana_user` را Superuser نکنید.
+- دسترسی مستقیم دیتابیس، جایگزین مجوزهای کاربران در Backend نیست؛ مدیر شرکت، مدیر شعبه و مشتری شخصی فقط باید به دستگاه‌ها و عملیات مجاز خود دسترسی داشته باشند. عملیات سراسری مدیریت دستگاه مختص `site_admin` است.
