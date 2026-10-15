@@ -206,9 +206,11 @@ for file in "${SQL_FILES[@]}"; do
     echo
     echo "▶ اجرای $file"
 
+    # Read the SQL as the invoking user, then pass it over stdin to psql.
+    # postgres may not have permission to traverse the project under /home/iraj.
     sudo -u postgres psql -X -v ON_ERROR_STOP=1 \
         -d "$DB_NAME" \
-        -f "$SQL_DIR/$file"
+        < "$SQL_DIR/$file"
 done
 
 echo "✅ SQLهای GPS اجرا شدند."
