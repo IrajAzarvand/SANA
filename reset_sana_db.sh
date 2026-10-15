@@ -2,7 +2,7 @@
 # SANA - بازسازی کامل دیتابیس و جداول Django/GPS
 # اجرا: bash ~/Desktop/SANA/reset_sana_db.sh
 #
-# سرویس GPS پس از بازسازی عمداً متوقف باقی می‌ماند تا نتیجه دیتابیس بررسی شود.
+# برای جلوگیری از اتصال هنگام بازسازی، Backend و GPS متوقف می‌شوند؛ پس از موفقیت آزمون‌ها هر دو دوباره راه‌اندازی می‌شوند.
 # مجوز پایش زنده شبکه (tcpdump wrapper و sudoers) تنظیم سیستم‌عامل است و این
 # اسکریپت آن را ایجاد، حذف یا تغییر نمی‌دهد.
 #
@@ -28,6 +28,7 @@ LOG_FILE="$LOG_DIR/reset-sana-$(date +%Y%m%d-%H%M%S).log"
 
 STEP="آماده‌سازی"
 SERVICE_STOPPED=0
+BACKEND_STOPPED=0
 START_TIME="$(date +%s)"
 RUN_SUCCEEDED=0
 
@@ -46,6 +47,11 @@ on_exit() {
             sudo systemctl stop sana-gps >/dev/null 2>&1 || true
             echo "سرویس GPS متوقف نگه داشته شد."
         fi
+
+        if [[ "$BACKEND_STOPPED" == "1" ]]; then
+            sudo systemctl stop sana-backend >/dev/null 2>&1 || true
+            echo "سرویس Backend متوقف نگه داشته شد تا وضعیت دیتابیس بررسی شود."
+        fi
     fi
 }
 trap on_exit EXIT
@@ -63,7 +69,7 @@ die() {
     exit 1
 }
 
-echo "SANA - Database Reset (GPS service remains stopped)"
+echo "SANA - Database Reset (Backend and GPS restart after successful checks)"
 echo "زمان: $(date --iso-8601=seconds)"
 echo "ریشه پروژه: $ROOT"
 echo "دیتابیس: $DB_NAME"
@@ -115,17 +121,22 @@ read -r -p "برای تأیید، نام دیتابیس را دقیقاً وار
 step "آماده‌سازی دسترسی مدیریتی"
 sudo -v
 
-# ۱. توقف سرویس GPS
-step "۱/۱۰ - توقف سرویس GPS"
+# ۱. توقف سرویس GPS و Backend برای جلوگیری از اتصال هنگام بازسازی دیتابیس
+step "۱/۱۰ - توقف سرویس‌های GPS و Backend"
 
 sudo systemctl stop sana-gps
 SERVICE_STOPPED=1
-
 if systemctl is-active --quiet sana-gps; then
     die "سرویس GPS هنوز فعال است."
 fi
-
 echo "✅ سرویس GPS متوقف است."
+
+sudo systemctl stop sana-backend
+BACKEND_STOPPED=1
+if systemctl is-active --quiet sana-backend; then
+    die "سرویس Backend هنوز فعال است."
+fi
+echo "✅ سرویس Backend متوقف است."
 
 # ۲. بررسی نقش PostgreSQL
 step "۲/۱۰ - بررسی نقش PostgreSQL"
@@ -290,24 +301,44 @@ echo "رمز در فایل اسکریپت یا گزارش ذخیره نمی‌ش
 
 echo "✅ مرحله ساخت سوپریوزر پایان یافت."
 
-# ۱۰. کنترل نهایی؛ سرویس GPS عمداً روشن نمی‌شود
-step "۱۰/۱۰ - تأیید نهایی و نگه‌داشتن GPS در حالت توقف"
+# ۱۰. راه‌اندازی سرویس‌ها فقط پس از موفقیت آزمون دیتابیس و ساخت سوپریوزر
+step "۱۰/۱۰ - راه‌اندازی و تأیید نهایی سرویس‌ها"
 
-if systemctl is-active --quiet sana-gps; then
-    die "سرویس GPS برخلاف انتظار فعال است؛ بازسازی پایان نمی‌یابد تا وضعیت بررسی شود."
+echo "راه‌اندازی Backend Django..."
+sudo systemctl start sana-backend
+if ! systemctl is-active --quiet sana-backend; then
+    die "سرویس Backend پس از راه‌اندازی فعال نشد."
 fi
+echo "✅ سرویس Backend فعال است."
 
-echo "✅ دیتابیس و سوپریوزر بررسی شدند."
-echo "✅ سرویس GPS عمداً متوقف باقی می‌ماند."
+echo "راه‌اندازی سرویس GPS..."
+sudo systemctl start sana-gps
+if ! systemctl is-active --quiet sana-gps; then
+    die "سرویس GPS پس از راه‌اندازی فعال نشد."
+fi
+echo "✅ سرویس GPS فعال است."
+
+# اطمینان از اینکه هر سه پورت مورد انتظار واقعاً در حال شنود هستند.
+for port in 8000 9000 9001; do
+    if ! sudo ss -lntup | grep -Eq ":${port}([[:space:]]|$)"; then
+        die "هیچ سرویس TCP/UDP روی پورت مورد انتظار $port در حال شنود نیست."
+    fi
+done
+
+echo "✅ پورت‌های 8000، 9000 و 9001 در حال شنود هستند."
+echo "✅ دیتابیس، سوپریوزر و سرویس‌ها بررسی شدند."
 echo "✅ تنظیم مجوز tcpdump و sudoers دست‌نخورده باقی مانده است."
-echo "برای مشاهده وضعیت فعلی سرویس: sudo systemctl status sana-gps.service --no-pager"
+echo "وضعیت Backend: sudo systemctl status sana-backend.service --no-pager"
+echo "وضعیت GPS: sudo systemctl status sana-gps.service --no-pager"
 
+BACKEND_STOPPED=0
+SERVICE_STOPPED=0
 RUN_SUCCEEDED=1
 
 echo
 echo "============================================================"
-echo "✅ مراحل بازسازی دیتابیس با موفقیت انجام شدند."
-echo "سرویس GPS روشن نشده است؛ قبل از ادامه، نتیجه را بررسی کن."
+echo "✅ بازسازی دیتابیس و راه‌اندازی سرویس‌ها با موفقیت انجام شدند."
+echo "Backend و GPS فعال هستند؛ پنل Vite که جداگانه اجرا می‌شود در این اسکریپت مدیریت نمی‌شود."
 echo "مدت اجرا: $(( $(date +%s) - START_TIME )) ثانیه"
 echo "گزارش کامل: $LOG_FILE"
 echo "============================================================"
