@@ -41,10 +41,7 @@ class FakeDeviceRepository:
 
     def set_detected_protocol(self, device_id: int, protocol: str) -> bool:
         self.detected_protocols.append((device_id, protocol))
-        if self.device is not None and self.device.id == device_id:
-            self.device.protocol = protocol
-            return True
-        return False
+        return self.device is not None and self.device.id == device_id
 
 
 class FakeTelemetryRepository:
