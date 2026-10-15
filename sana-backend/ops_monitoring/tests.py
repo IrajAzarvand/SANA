@@ -4,6 +4,8 @@ from unittest.mock import patch
 from django.test import TestCase
 from rest_framework.test import APIClient
 
+from ops_monitoring.views import STREAM_COMMANDS
+
 
 class GPSMonitoringPermissionsTests(TestCase):
     def setUp(self):
@@ -32,6 +34,12 @@ class GPSMonitoringPermissionsTests(TestCase):
         self.client.force_authenticate(user=self.regular_user)
         self.assertEqual(self.client.get("/api/gps-monitor/logs/service/").status_code, 403)
         self.assertEqual(self.client.get("/api/gps-monitor/queue/").status_code, 403)
+
+    def test_network_capture_uses_only_the_privileged_fixed_wrapper(self):
+        self.assertEqual(
+            STREAM_COMMANDS["network"],
+            ["sudo", "-n", "/usr/local/sbin/sana-gps-network-capture"],
+        )
 
     def test_live_logs_accept_server_sent_events_without_406(self):
         self.client.force_authenticate(user=self.site_admin)
