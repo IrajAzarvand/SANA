@@ -2,7 +2,7 @@
 
 > این سند شامل تصمیماتی است که تا این مرحله درباره معماری GPS، دریافت داده و ساختار `Normalized Telemetry` در پروژه SANA قطعی شده‌اند.
 >
-> **وضعیت به‌روزرسانی ۲۰۲۶-۱۰-۱۳:** معماری مرجع حفظ شده، اما Implementation در `sana-gps` آغاز شده است. در نسخه فعلی، دریافت/Decode و ذخیره‌سازی چند مسیر پروتکلی، سیاست دریافت مستقل از Lifecycle/Contract و ثبت خودکار Protocol پیاده‌سازی شده‌اند. تست‌های فعلی روی محیط توسعه: `175 passed`. این سند باید وضعیت واقعی کد را از تصمیمات طراحیِ هنوز پیاده‌سازی‌نشده جدا کند.
+> **وضعیت به‌روزرسانی ۲۰۲۶-۱۰-۱۵:** این سند هم تصمیمات معماری و هم وضعیت واقعی Implementation را ثبت می‌کند؛ هرجا طراحی قدیمی با کد فعلی تعارض داشته باشد، بخش «وضعیت واقعی Implementation» و «Global Architectural Invariants» مرجع وضعیت اجرایی هستند. آخرین اجرای ثبت‌شده تست‌ها در محیط توسعه `178 passed` بوده است؛ این عدد باید پس از افزودن/تغییر تست‌ها با نتیجه اجرای کامل به‌روزرسانی شود.
 
 ---
 
@@ -213,7 +213,7 @@ Unknown Device
 → No Raw Packet Persistence by default
 ```
 
-فقط اگر یک Policy صریح `Pending / Diagnostic / Unknown Device Capture` فعال شده باشد، Raw Packet ناشناخته می‌تواند طبق Retention جداگانه ذخیره شود. این استثناء نباید به‌صورت پیش‌فرض فعال باشد.
+در پیاده‌سازی فعلی، بسته‌های ناشناخته/فاقد پروتکل یا Decoder قابل استفاده باید در جدول صف ناشناخته‌ها ذخیره شوند تا نمونه واقعی برای شناسایی پروتکل، تحلیل الگو و آماده‌سازی Decoder وجود داشته باشد. این ذخیره‌سازی به معنی پذیرش دستگاه به‌عنوان Device معتبر، اجرای Full Decode یا ورود داده به Normalized Telemetry نیست. وضعیت فعلی کد این ذخیره‌سازی را فعال انجام می‌دهد؛ محدودیت حجم و Retention عملیاتی باید جداگانه تکمیل و مستند شوند.
 
 ---
 
@@ -11228,9 +11228,7 @@ IMEI
 
 جلوگیری از دریافت و پردازش حجم زیادی از TCP/UDP درخواست‌های نامعتبر.
 
-در آینده در صورت نیاز می‌توان Unknown Device / Pending Device را اضافه کرد، ولی حالت پیش‌فرض:
-
-**Device باید قبلاً در سیستم تعریف شده باشد.**
+دستگاه ثبت‌نشده همچنان Device معتبر محسوب نمی‌شود و نباید Telemetry عادی تولید کند. بااین‌حال، برای اینکه بتوان پروتکل دستگاه‌های جدید را شناسایی و Decoder آن‌ها را آماده کرد، نمونه بسته‌های دریافتی ناشناخته در صف پایدار دیتابیس ذخیره می‌شوند. این صف ابزار تشخیص و توسعه است، نه مسیر پذیرش دستگاه یا پردازش عادی Telemetry.
 
 ---
 
@@ -38398,7 +38396,7 @@ ACK
 
 1. **مرز Decoder/Normalizer:** Decoder فقط Protocol Frame را Parse/Decode می‌کند و `ProtocolMessage` می‌سازد؛ Unit Conversion، Field Mapping و Representation Conversion فقط در Normalizer انجام می‌شوند.
 2. **ACK:** ACK موفق فقط پس از Commit موفق داده‌های مربوط به Packet/Batch ارسال می‌شود. خطای Commit به معنی عدم ارسال Successful ACK است.
-3. **Unknown Device:** دستگاه ناشناخته به‌صورت پیش‌فرض Session، Telemetry Processing و Raw Persistence ندارد؛ Capture فقط با Policy صریح Diagnostic/Pending مجاز است.
+3. **Unknown Device / Unknown Protocol:** بسته ناشناخته برای شناسایی پروتکل و آماده‌سازی Decoder در صف پایدار دیتابیس ذخیره می‌شود. این ذخیره‌سازی به‌تنهایی دستگاه را معتبر نمی‌کند و مجوز Full Decode، Telemetry Processing یا تغییر CurrentState/LocationHistory/Event/Trip نمی‌دهد. Session موقت Transport برای دریافت اولیه ممکن است وجود داشته باشد، اما نباید به Session عملیاتی متصل به Device معتبر تبدیل شود.
 4. **Processing Queue:** Queue در MVP فقط bounded و in-process است و جایگزین Broker، Durable Queue یا Source of Truth نیست.
 5. **Motion:** `motion` از نوع Boolean Nullable است؛ `true` یعنی حرکت تشخیص داده شده، `false` یعنی عدم حرکت تشخیص داده شده و `NULL` یعنی قابل تعیین نیست.
 6. **Location Ownership:** Location متعلق به Device است و ارتباط آن با Vehicle از طریق Assignment History تفسیر می‌شود.
@@ -38431,7 +38429,7 @@ ACK
 
 
 
-### وضعیت واقعی Implementation — ۲۰۲۶-۱۰-۱۳
+### وضعیت واقعی Implementation — ۲۰۲۶-۱۰-۱۵
 
 - [x] GPS service bootstrap/configuration و PostgreSQL pool در Runtime موجود است.
 - [x] TCP/UDP transport و Session management پیاده‌سازی شده‌اند.
@@ -38440,18 +38438,18 @@ ACK
 - [x] GT06 position و HQ telemetry در repositoryهای مربوطه ذخیره می‌شوند.
 - [x] دریافت Telemetry از IMEI ثبت‌شده مستقل از وضعیت Lifecycle/Contract است.
 - [x] ثبت خودکار Protocol شناسایی‌شده با تابع محدود PostgreSQL پیاده‌سازی شده است.
-- [x] تست‌های فعلی روی محیط توسعه: `175 passed`.
+- [x] آخرین اجرای ثبت‌شده تست‌ها در محیط توسعه: `178 passed` (این عدد با افزودن تست‌ها تغییر می‌کند و باید از خروجی اجرای کامل به‌روزرسانی شود).
 
-### موارد باقی‌مانده برای تکمیل و تأیید مراحل ۱ تا ۳
+### موارد باقی‌مانده برای تکمیل مسیر Telemetry
 
 - [ ] مرور یکپارچه مسیر هر Protocol از framing/identification تا decode, validation, persistence و ACK؛ رفع اختلاف‌های بین handlerها.
 - [ ] تأیید قرارداد Normalized Telemetry با مدل‌ها و ستون‌های واقعی PostgreSQL؛ مشخص‌کردن فیلدهای ذخیره‌شده، قابل‌دسترس‌نبودن و مقدار NULL.
-- [ ] تست‌های Integration با Packet واقعی/ثبت‌شده برای هر Protocol و حالت‌های fragmented/coalesced frame.
+- [ ] تست‌های Integration با Packet واقعی/ثبت‌شده برای مسیرهای Protocol پشتیبانی‌شده و حالت‌های fragmented/coalesced TCP frame. توسعه تشخیص/Decoder عمومی UDP فعلاً خارج از محدوده این سه مرحله است.
 - [ ] تست خطای DB و تضمین ACK فقط پس از Commit موفق در هر Protocolی که ACK دارد.
 - [ ] تست Unknown IMEI، Protocol mismatch، داده GPS نامعتبر، duplicate و out-of-order برای همه مسیرهای مرتبط.
 - [ ] تأیید behavior عملی روی دستگاه واقعی و تطبیق لاگ‌ها با رکوردهای دیتابیس.
 
-**توضیح وضعیت:** `Stage 1–3 CLOSED` در جدول بالا به بسته‌شدن تصمیمات معماری اشاره دارد، نه کامل‌بودن Implementation. Implementation باید با همین چک‌لیست مرحله‌به‌مرحله بررسی و تکمیل شود.
+**توضیح وضعیت:** برچسب `Stage 1–3 CLOSED` در جدول طراحی فقط بسته‌شدن تصمیمات معماری را نشان می‌دهد. از نظر Implementation، Bootstrap، Config، PostgreSQL Pool و Transport/Session پایه وجود دارند؛ اما تست‌های انتها‌به‌انتها و برخی موارد تطبیق قرارداد هنوز باز هستند. UDP Listener پیاده‌سازی شده، ولی تعمیم Protocol Detection و Decoder به مسیر UDP فعلاً جزو کارهای این مرحله نیست.
 
 
 ---

@@ -14,7 +14,7 @@ class DatabaseConnectionPoolTests(unittest.TestCase):
 
         config = DatabaseConfig(
             name="sana_db",
-            user="sana_gps",
+            user="sana_user",
             password="secret",
         )
         database_pool = DatabaseConnectionPool(config)
@@ -33,7 +33,7 @@ class DatabaseConnectionPoolTests(unittest.TestCase):
 
         config = DatabaseConfig(
             name="sana_db",
-            user="sana_gps",
+            user="sana_user",
             password="secret",
         )
         database_pool = DatabaseConnectionPool(config)
