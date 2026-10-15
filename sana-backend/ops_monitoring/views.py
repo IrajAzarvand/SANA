@@ -17,14 +17,15 @@ from accounts.permissions import IsSiteAdmin
 logger = logging.getLogger(__name__)
 
 # Commands and filters are deliberately fixed: request data is never passed to a shell.
+# Network capture runs through a root-owned, argument-free wrapper with a narrowly
+# scoped sudoers rule; the Django service itself must never run as root.
 STREAM_COMMANDS = {
     "service": [
         "journalctl", "--no-pager", "--follow", "--lines=50",
         "--unit=sana-gps.service", "--output=short-iso",
     ],
     "network": [
-        "tcpdump", "-l", "-nn", "-tttt", "-i", "any",
-        "(tcp port 9000) or (udp port 9001)",
+        "sudo", "-n", "/usr/local/sbin/sana-gps-network-capture",
     ],
 }
 
@@ -63,8 +64,13 @@ class LiveLogStreamView(APIView):
 
         executable = shutil.which(command[0])
         if not executable:
+            message = (
+                "برای ضبط ترافیک شبکه، sudo روی سرور لازم است."
+                if stream_name == "network" and command[0] == "sudo"
+                else f"ابزار {command[0]} روی سرور نصب نیست."
+            )
             return StreamingHttpResponse(
-                iter([_event(f"ابزار {command[0]} روی سرور نصب نیست.")]),
+                iter([_event(message)]),
                 content_type="text/event-stream",
                 status=200,
             )
@@ -143,8 +149,7 @@ class GPSQueueView(APIView):
         except DatabaseError:
             logger.exception("GPS temporary queue is unavailable")
             return JsonResponse(
-                {"detail": "جدول صف موقت GPS در دسترس نیست؛ migration و اتصال دیتابیس را بررسی کنید."},
-                status=503,
+                {"detail": "جدول صف موقت GPS در دسترس نیست؛ migration و اتصال دیتابیس را بررسی کنید."}, status=503
             )
 
         results = []
