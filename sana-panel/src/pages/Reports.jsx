@@ -82,9 +82,6 @@ function LiveTerminal({ streamName, title, description, icon: Icon, accent }) {
     if (!running) return undefined;
     const controller = new AbortController();
     let cancelled = false;
-    setStatus('connecting');
-    setError('');
-
     const connect = async () => {
       try {
         const token = localStorage.getItem('sana_access_token');
@@ -172,7 +169,15 @@ function LiveTerminal({ streamName, title, description, icon: Icon, accent }) {
         </div>
         <div className="flex items-center gap-1">
           <button type="button" onClick={() => setLines([])} title="پاک کردن نمایش" className="rounded-lg p-2 text-slate-400 hover:bg-white/10 hover:text-white"><Trash2 size={15} /></button>
-          <button type="button" onClick={() => setRunning((value) => !value)} title={running ? 'توقف نمایش زنده' : 'ادامه نمایش زنده'} className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-2.5 py-1.5 text-xs text-slate-100 hover:bg-white/15">
+          <button type="button" onClick={() => {
+            if (running) {
+              setRunning(false);
+            } else {
+              setStatus('connecting');
+              setError('');
+              setRunning(true);
+            }
+          }} title={running ? 'توقف نمایش زنده' : 'ادامه نمایش زنده'} className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-2.5 py-1.5 text-xs text-slate-100 hover:bg-white/15">
             {running ? <Pause size={13} /> : <Play size={13} />}
             {running ? 'توقف' : 'ادامه'}
           </button>
