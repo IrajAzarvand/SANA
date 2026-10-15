@@ -42,6 +42,7 @@ INSTALLED_APPS = [
     'organizations',
     'fleet',
     'dashboard',
+    'ops_monitoring.apps.OpsMonitoringConfig',
     'django_jalali',
 ]
 
