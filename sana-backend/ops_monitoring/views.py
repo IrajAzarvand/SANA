@@ -45,6 +45,16 @@ class LiveLogStreamView(APIView):
 
     permission_classes = [IsAuthenticated, IsSiteAdmin]
 
+    def perform_content_negotiation(self, request, force=False):
+        # The stream response is a Django StreamingHttpResponse, not a DRF Response.
+        # Negotiate JSON for DRF-generated auth/error responses while allowing browsers
+        # to request text/event-stream without DRF rejecting the request with HTTP 406.
+        from rest_framework.renderers import JSONRenderer
+
+        if "text/event-stream" in request.META.get("HTTP_ACCEPT", ""):
+            return JSONRenderer(), "application/json"
+        return super().perform_content_negotiation(request, force)
+
     def get(self, request, stream_name: str):
         _require_admin(request)
         command = STREAM_COMMANDS.get(stream_name)
