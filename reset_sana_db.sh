@@ -323,7 +323,7 @@ echo "✅ سرویس GPS فعال است."
 for port in 8000 9000 9001; do
     port_ready=0
     for attempt in {1..30}; do
-        if sudo ss -H -lntup | grep -Eq ":\${port}([[:space:]]|$)"; then
+        if sudo ss -H -lntup | grep -Eq ":${port}([[:space:]]|$)"; then
             port_ready=1
             echo "✅ پورت ${port} در حال شنود است."
             break
