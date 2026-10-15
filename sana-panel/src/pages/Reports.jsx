@@ -95,11 +95,12 @@ function LiveTerminal({ streamName, title, description, icon: Icon, accent }) {
           setStatus('connecting');
           setError('');
 
+          const accessTokenUsed = localStorage.getItem('sana_access_token') || '';
           let response = await fetch(
             `${apiClient.defaults.baseURL}/gps-monitor/logs/${streamName}/`,
             {
               headers: {
-                Authorization: `Bearer ${localStorage.getItem('sana_access_token') || ''}`,
+                Authorization: `Bearer ${accessTokenUsed}`,
                 Accept: 'text/event-stream',
               },
               signal: controller.signal,
@@ -110,7 +111,12 @@ function LiveTerminal({ streamName, title, description, icon: Icon, accent }) {
           // fetch بر خلاف apiClient، interceptor تمدید توکن را اجرا نمی‌کند.
           if (response.status === 401) {
             try {
-              const access = await refreshAccessToken();
+              // ممکن است درخواست دیگری در همین فاصله توکن را تازه کرده باشد؛
+              // در این حالت همان توکن جدید را استفاده کن و Refresh Token را دوباره مصرف نکن.
+              let access = localStorage.getItem('sana_access_token') || '';
+              if (!access || access === accessTokenUsed) {
+                access = await refreshAccessToken();
+              }
               response = await fetch(
                 `${apiClient.defaults.baseURL}/gps-monitor/logs/${streamName}/`,
                 {
