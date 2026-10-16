@@ -2,20 +2,25 @@
 
 ماژول مستقل نمایش نقشه در پروژه SANA. این پوشه فقط مسئول نمایش نقشه و نشانگرهای موقعیت است؛ دریافت داده و مجوزها در sana-backend و polling/auth در sana-panel باقی می‌مانند.
 
-## ساختار فعلی
+## ارائه‌دهنده‌ها
 
-- `src/LiveDeviceMap.jsx`: نقطه ورود عمومی نقشه و انتخاب provider
-- `src/config.js`: provider پیش‌فرض و تنظیمات نقشه
-- `src/providers/NeshanLeafletMap.jsx`: آداپتور Leaflet SDK نشان
+- `leaflet-osm`: کتابخانه Leaflet همراه با کاشی‌های OpenStreetMap؛ گزینه پیش‌فرض برای آزمایش بدون کلید API
+- `neshan-leaflet`: آداپتور Leaflet SDK نشان؛ برای استفاده به کلید وب نشان نیاز دارد
 
-## تنظیمات
+در فایل محیطی محلی `sana-panel/.env` می‌توانید انتخاب کنید:
 
-در فایل محیطی محلی `sana-panel/.env` مقدار `VITE_NESHAN_API_KEY` را تنظیم کنید. این کلید برای SDK سمت مرورگر است؛ کلیدهای وب‌سرویس‌های خصوصی نشان را در مرورگر قرار ندهید.
+```env
+VITE_MAP_PROVIDER=leaflet-osm
+```
 
-`VITE_MAP_PROVIDER=neshan-leaflet` provider پیش‌فرض فعلی است. قرارداد ورودی `LiveDeviceMap` مستقل از ارائه‌دهنده می‌ماند تا provider دیگری بعداً بدون تغییر API موقعیت و منطق ناوگان اضافه شود.
+برای بازگشت به نشان، مقدار را به `neshan-leaflet` تغییر دهید و `VITE_NESHAN_API_KEY` را تنظیم کنید. بعد از تغییر فایل محیطی، سرور Vite را متوقف و دوباره اجرا کنید. فایل `.env` را commit نکنید. کلیدهای وب‌سرویس خصوصی نشان را در متغیرهای `VITE_*` قرار ندهید.
 
 ## قرارداد موقعیت
 
-هر موقعیت باید دست‌کم شامل `device_id`, `imei`, `latitude`, `longitude`, `last_seen`, `status` باشد. `vehicle_plate`، `speed`، `heading` و `position_is_current` برای جزئیات اختیاری/تکمیلی‌اند.
+هر موقعیت باید دست‌کم شامل `device_id`, `imei`, `latitude`, `longitude`, `last_seen`, `status` باشد. `vehicle_plate`, `speed`, `heading` و `position_is_current` برای جزئیات اختیاری/تکمیلی‌اند.
 
 هیچ داده نمونه‌ای در این ماژول وجود ندارد؛ مختصات از API احراز هویت‌شده سانا دریافت می‌شوند.
+
+## محدودیت‌های OpenStreetMap
+
+نمایش کاشی‌ها به اتصال اینترنت و دسترس‌پذیری سرورهای عمومی کاشی OpenStreetMap وابسته است. برای استفاده پرترافیک یا تجاری در مقیاس بالا، سیاست استفاده از کاشی‌ها را بررسی و در صورت نیاز از ارائه‌دهنده مناسب یا سرور کاشی اختصاصی استفاده کنید.
