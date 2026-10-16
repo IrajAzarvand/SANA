@@ -4,19 +4,41 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const panelDir = dirname(fileURLToPath(import.meta.url))
+const nodeModules = resolve(panelDir, 'node_modules')
 
 export default defineConfig({
   plugins: [react()],
   resolve: {
-    // The sibling sana-map module shares React with sana-panel.
     alias: [
-      { find: /^react\/jsx-runtime$/, replacement: resolve(panelDir, 'node_modules/react/jsx-runtime.js') },
-      { find: /^react\/jsx-dev-runtime$/, replacement: resolve(panelDir, 'node_modules/react/jsx-dev-runtime.js') },
-      { find: /^react$/, replacement: resolve(panelDir, 'node_modules/react/index.js') },
+      {
+        find: /^react\/jsx-runtime$/,
+        replacement: resolve(nodeModules, 'react/jsx-runtime.js'),
+      },
+      {
+        find: /^react\/jsx-dev-runtime$/,
+        replacement: resolve(nodeModules, 'react/jsx-dev-runtime.js'),
+      },
+      {
+        find: /^react$/,
+        replacement: resolve(nodeModules, 'react/index.js'),
+      },
+      {
+        find: /^react-leaflet$/,
+        replacement: resolve(nodeModules, 'react-leaflet/lib/index.js'),
+      },
+      {
+        find: /^leaflet\/(.*)$/,
+        replacement: resolve(nodeModules, 'leaflet/$1'),
+      },
+      {
+        find: /^leaflet$/,
+        replacement: resolve(nodeModules, 'leaflet/dist/leaflet-src.js'),
+      },
     ],
   },
   server: {
-    // sana-map is a sibling root-level module shared by the panel.
-    fs: { allow: [resolve(panelDir, '..')] },
+    fs: {
+      allow: [resolve(panelDir, '..')],
+    },
   },
 })
