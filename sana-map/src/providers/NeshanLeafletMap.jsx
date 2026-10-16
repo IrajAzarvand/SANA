@@ -59,15 +59,20 @@ function markerColor(position) {
   return '#F59E0B';
 }
 
+function headingDegrees(position) {
+  const value = Number(position.heading);
+  return Number.isFinite(value) && value >= 0 && value <= 360 ? value % 360 : 0;
+}
+
 function createDeviceIcon(L, position) {
   const color = markerColor(position);
-  const pulse = position.status === 'moving' ? 'animation: sana-map-pulse 1.8s ease-in-out infinite;' : '';
+  const angle = headingDegrees(position);
   return L.divIcon({
     className: 'sana-map-device-icon',
-    iconSize: [42, 42],
-    iconAnchor: [21, 21],
-    popupAnchor: [0, -18],
-    html: `<div style="width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:${color}22;border:2px solid ${color};box-shadow:0 2px 10px #0005;${pulse}"><span style="font-size:19px;line-height:1">🚘</span></div>`,
+    iconSize: [36, 42],
+    iconAnchor: [18, 21],
+    popupAnchor: [0, -20],
+    html: `<div style="width:36px;height:42px;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 2px 3px #0006)"><svg width="32" height="40" viewBox="0 0 32 40" aria-hidden="true"><path d="M16 2 L29 35 L16 28 L3 35 Z" fill="${color}" stroke="#ffffff" stroke-width="2" stroke-linejoin="round" transform="rotate(${angle} 16 20)"/></svg></div>`,
   });
 }
 
