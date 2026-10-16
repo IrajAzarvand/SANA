@@ -93,7 +93,9 @@ export default function NeshanLeafletMap({ positions, onSelectDevice }) {
   const hasFitBoundsRef = useRef(false);
   const [loadError, setLoadError] = useState('');
 
-  positionsRef.current = positions;
+  useEffect(() => {
+    positionsRef.current = positions;
+  }, [positions]);
 
   useEffect(() => {
     let cancelled = false;
@@ -117,6 +119,11 @@ export default function NeshanLeafletMap({ positions, onSelectDevice }) {
         mapRef.current = map;
         setLoadError('');
         syncMarkers(L, map, positionsRef.current, markersRef, onSelectDevice);
+        if (!hasFitBoundsRef.current && positionsRef.current.length) {
+          const bounds = L.latLngBounds(positionsRef.current.map((item) => [item.latitude, item.longitude]));
+          map.fitBounds(bounds, { padding: [36, 36], maxZoom: 14 });
+          hasFitBoundsRef.current = true;
+        }
       })
       .catch((error) => {
         if (!cancelled) setLoadError(error.message || 'نقشه بارگذاری نشد.');
