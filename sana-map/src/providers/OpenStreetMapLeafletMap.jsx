@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet';
+import { Marker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet';
+import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 const DEFAULT_CENTER = [32.4279, 53.688];
@@ -9,6 +10,24 @@ function markerColor(position) {
   if (position.status === 'offline') return '#64748B';
   if (position.status === 'moving') return '#14B8A6';
   return '#F59E0B';
+}
+
+
+function headingDegrees(position) {
+  const value = Number(position.heading);
+  return Number.isFinite(value) && value >= 0 && value <= 360 ? value % 360 : 0;
+}
+
+function createDeviceIcon(position) {
+  const color = markerColor(position);
+  const angle = headingDegrees(position);
+  return L.divIcon({
+    className: 'sana-map-device-icon',
+    iconSize: [36, 42],
+    iconAnchor: [18, 21],
+    popupAnchor: [0, -20],
+    html: `<div style="width:36px;height:42px;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 2px 3px #0006)"><svg width="32" height="40" viewBox="0 0 32 40" aria-hidden="true"><path d="M16 2 L29 35 L16 28 L3 35 Z" fill="${color}" stroke="#ffffff" stroke-width="2" stroke-linejoin="round" transform="rotate(${angle} 16 20)"/></svg></div>`,
+  });
 }
 
 function formatLastSeen(value) {
@@ -70,16 +89,10 @@ export default function OpenStreetMapLeafletMap({ positions = [], onSelectDevice
             : position.status === 'offline' ? 'آفلاین' : 'متوقف';
           const title = position.vehicle_plate || position.imei || `دستگاه ${position.device_id}`;
           return (
-            <CircleMarker
+            <Marker
               key={String(position.device_id)}
-              center={[Number(position.latitude), Number(position.longitude)]}
-              radius={9}
-              pathOptions={{
-                color: markerColor(position),
-                fillColor: markerColor(position),
-                fillOpacity: 0.85,
-                weight: 3,
-              }}
+              position={[Number(position.latitude), Number(position.longitude)]}
+              icon={createDeviceIcon(position)}
               eventHandlers={{ click: () => onSelectDevice?.(position.device_id) }}
             >
               <Popup>
@@ -94,7 +107,7 @@ export default function OpenStreetMapLeafletMap({ positions = [], onSelectDevice
                   )}
                 </div>
               </Popup>
-            </CircleMarker>
+            </Marker>
           );
         })}
       </MapContainer>
