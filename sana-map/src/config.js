@@ -1,4 +1,4 @@
-export const MAP_PROVIDER = import.meta.env.VITE_MAP_PROVIDER || 'neshan-leaflet';
+export const MAP_PROVIDER = import.meta.env.VITE_MAP_PROVIDER || 'leaflet-osm';
 
 export const NESHAN_LEAFLET_CONFIG = {
   apiKey: import.meta.env.VITE_NESHAN_API_KEY || '',
@@ -8,5 +8,6 @@ export const NESHAN_LEAFLET_CONFIG = {
 };
 
 export const MAP_PROVIDERS = {
+  LEAFLET_OSM: 'leaflet-osm',
   NESHAN_LEAFLET: 'neshan-leaflet',
 };
