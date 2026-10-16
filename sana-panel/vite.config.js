@@ -10,8 +10,8 @@ export default defineConfig({
   resolve: {
     // The sibling sana-map module shares React with sana-panel.
     alias: [
-      { find: /^react\\/jsx-runtime$/, replacement: resolve(panelDir, 'node_modules/react/jsx-runtime.js') },
-      { find: /^react\\/jsx-dev-runtime$/, replacement: resolve(panelDir, 'node_modules/react/jsx-dev-runtime.js') },
+      { find: /^react\/jsx-runtime$/, replacement: resolve(panelDir, 'node_modules/react/jsx-runtime.js') },
+      { find: /^react\/jsx-dev-runtime$/, replacement: resolve(panelDir, 'node_modules/react/jsx-dev-runtime.js') },
       { find: /^react$/, replacement: resolve(panelDir, 'node_modules/react/index.js') },
     ],
   },
