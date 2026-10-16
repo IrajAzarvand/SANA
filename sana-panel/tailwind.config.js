@@ -3,6 +3,7 @@ export default {
   content: [
     "./index.html",
     "./src/**/*.{js,jsx}",
+    "../sana-map/src/**/*.{js,jsx}",
   ],
   theme: {
     extend: {

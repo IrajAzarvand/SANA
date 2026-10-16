@@ -2,6 +2,7 @@ from django.utils import timezone
 from django.db import connection, transaction
 from django.db.models import Exists, OuterRef, Prefetch, Q
 from rest_framework import viewsets, filters
+from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
@@ -217,6 +218,70 @@ class DeviceViewSet(viewsets.ModelViewSet):
         if page is not None:
             return self.get_paginated_response(serializer.data)
         return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], url_path='map-positions')
+    def map_positions(self, request):
+        """Return current/last-known GPS positions for devices visible to this user."""
+        devices = list(
+            self.filter_queryset(self.get_queryset())
+            
+            .select_related('vehicle')
+        )
+        if not devices:
+            return Response([])
+
+        devices_by_id = {device.pk: device for device in devices}
+        device_ids = list(devices_by_id)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT device_id,
+                       COALESCE(latitude, last_valid_latitude) AS latitude,
+                       COALESCE(longitude, last_valid_longitude) AS longitude,
+                       gps_valid, speed, heading, motion, last_seen, device_time
+                FROM gps.current_state
+                WHERE device_id = ANY(%s)
+                  AND (latitude IS NOT NULL OR last_valid_latitude IS NOT NULL)
+                  AND (longitude IS NOT NULL OR last_valid_longitude IS NOT NULL)
+                """,
+                [device_ids],
+            )
+            rows = cursor.fetchall()
+
+        now = timezone.now()
+        positions = []
+        for row in rows:
+            device_id, latitude, longitude, gps_valid, speed, heading, motion, last_seen, device_time = row
+            device = devices_by_id.get(device_id)
+            if device is None or latitude is None or longitude is None:
+                continue
+
+            is_online = last_seen is not None and (now - last_seen).total_seconds() <= 300
+            speed_value = float(speed) if speed is not None else 0.0
+            if not is_online:
+                status = 'offline'
+            elif motion is True or speed_value >= 3:
+                status = 'moving'
+            else:
+                status = 'stopped'
+
+            positions.append({
+                'device_id': device.pk,
+                'imei': device.imei,
+                'vehicle_id': device.vehicle_id,
+                'vehicle_plate': device.vehicle.plate if device.vehicle_id else None,
+                'latitude': float(latitude),
+                'longitude': float(longitude),
+                'position_is_current': bool(gps_valid),
+                'speed': speed_value,
+                'heading': float(heading) if heading is not None else None,
+                'last_seen': last_seen.isoformat() if last_seen else None,
+                'device_time': device_time.isoformat() if device_time else None,
+                'status': status,
+            })
+
+        positions.sort(key=lambda item: item['device_id'])
+        return Response(positions)
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:

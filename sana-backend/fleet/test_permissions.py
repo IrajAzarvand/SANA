@@ -42,3 +42,8 @@ class DeviceManagementPermissionTests(SimpleTestCase):
         view = DeviceViewSet()
         view.action = "list"
         self.assertIsInstance(view.get_permissions()[0], IsAuthenticated)
+
+    def test_live_map_positions_require_authentication(self):
+        view = DeviceViewSet()
+        view.action = "map_positions"
+        self.assertIsInstance(view.get_permissions()[0], IsAuthenticated)
