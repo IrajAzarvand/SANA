@@ -224,7 +224,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
         """Return current/last-known GPS positions for devices visible to this user."""
         devices = list(
             self.filter_queryset(self.get_queryset())
-            .filter(management_status__in=['sold', 'installed', 'active'])
+            
             .select_related('vehicle')
         )
         if not devices:
