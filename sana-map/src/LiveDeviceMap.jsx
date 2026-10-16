@@ -1,7 +1,9 @@
 import NeshanLeafletMap from './providers/NeshanLeafletMap';
+import OpenStreetMapLeafletMap from './providers/OpenStreetMapLeafletMap';
 import { MAP_PROVIDER } from './config';
 
 const providers = {
+  'leaflet-osm': OpenStreetMapLeafletMap,
   'neshan-leaflet': NeshanLeafletMap,
 };
 
