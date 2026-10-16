@@ -1,4 +1,5 @@
 import NeshanLeafletMap from './providers/NeshanLeafletMap';
+import { MAP_PROVIDER } from './config';
 
 const providers = {
   'neshan-leaflet': NeshanLeafletMap,
@@ -9,7 +10,7 @@ const providers = {
  * The live-position API contract does not depend on the map vendor.
  */
 export default function LiveDeviceMap({ positions = [], onSelectDevice }) {
-  const Provider = providers[import.meta.env.VITE_MAP_PROVIDER || 'neshan-leaflet'];
+  const Provider = providers[MAP_PROVIDER];
 
   if (!Provider) {
     return (
