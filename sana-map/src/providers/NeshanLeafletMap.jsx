@@ -106,10 +106,11 @@ function popupHtml(position) {
   </div>`;
 }
 
-export default function NeshanLeafletMap({ positions, onSelectDevice, followPosition = false, animationDuration = 10000 }) {
+export default function NeshanLeafletMap({ positions, onSelectDevice, followPosition = false, animationDuration = 10000, routeSegments = [] }) {
   const elementRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef(new Map());
+  const routeLayersRef = useRef([]);
   const positionsRef = useRef(positions);
   const hasFitBoundsRef = useRef(false);
   const [loadError, setLoadError] = useState('');
@@ -117,6 +118,22 @@ export default function NeshanLeafletMap({ positions, onSelectDevice, followPosi
   useEffect(() => {
     positionsRef.current = positions;
   }, [positions]);
+
+  useEffect(() => {
+    const L = window.L;
+    const map = mapRef.current;
+    if (!L || !map) return;
+    routeLayersRef.current.forEach((layer) => layer.remove());
+    routeLayersRef.current = [];
+    const points = routeSegments.flatMap((segment) => segment.coordinates || []);
+    routeSegments.forEach((segment) => {
+      if (!segment.coordinates || segment.coordinates.length < 2) return;
+      const line = L.polyline(segment.coordinates, { color: segment.color, weight: 5, opacity: 0.95, lineCap: 'round', lineJoin: 'round' }).addTo(map);
+      routeLayersRef.current.push(line);
+    });
+    if (points.length >= 2) map.fitBounds(L.latLngBounds(points), { padding: [36, 36], maxZoom: 15 });
+    return () => { routeLayersRef.current.forEach((layer) => layer.remove()); routeLayersRef.current = []; };
+  }, [routeSegments, loadError]);
 
   useEffect(() => {
     let cancelled = false;
