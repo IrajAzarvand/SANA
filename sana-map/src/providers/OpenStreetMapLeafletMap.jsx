@@ -48,7 +48,7 @@ function FitInitialBounds({ positions, followPosition = false }) {
       .map((item) => [Number(item.latitude), Number(item.longitude)]);
     if (!points.length) return;
     if (followPosition && points.length === 1) {
-      map.panTo(points[0], { animate: false });
+      map.setView(points[0], Math.max(map.getZoom(), 14), { animate: false });
       return;
     }
     if (fitted.current) return;
