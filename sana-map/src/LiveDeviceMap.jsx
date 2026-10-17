@@ -11,7 +11,7 @@ const providers = {
  * Provider-independent map entry point.
  * The live-position API contract does not depend on the map vendor.
  */
-export default function LiveDeviceMap({ positions = [], onSelectDevice, provider = MAP_PROVIDER, followPosition = false }) {
+export default function LiveDeviceMap({ positions = [], onSelectDevice, provider = MAP_PROVIDER, followPosition = false, animationDuration = 10000 }) {
   const Provider = providers[provider];
 
   if (!Provider) {
@@ -22,5 +22,5 @@ export default function LiveDeviceMap({ positions = [], onSelectDevice, provider
     );
   }
 
-  return <Provider positions={positions} onSelectDevice={onSelectDevice} followPosition={followPosition} />;
+  return <Provider positions={positions} onSelectDevice={onSelectDevice} followPosition={followPosition} animationDuration={animationDuration} />;
 }
