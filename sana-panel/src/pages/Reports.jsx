@@ -16,6 +16,7 @@ import {
 } from '../data/reportsData';
 import { useAuth } from '../context/AuthContext';
 import apiClient from '../api/client';
+import DeviceReportPlayback from '../components/DeviceReportPlayback';
 
 // گزارش‌های مخصوص ادمین
 const adminReports = [
@@ -431,6 +432,8 @@ export default function Reports() {
           ))}
         </div>
       )}
+
+      <DeviceReportPlayback isSiteAdmin={isSiteAdmin} />
 
       {isSiteAdmin && <AdminGPSMonitor />}
 
