@@ -235,14 +235,32 @@ class DeviceViewSet(viewsets.ModelViewSet):
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT device_id,
-                       COALESCE(latitude, last_valid_latitude) AS latitude,
-                       COALESCE(longitude, last_valid_longitude) AS longitude,
-                       gps_valid, speed, heading, motion, last_seen, device_time
-                FROM gps.current_state
-                WHERE device_id = ANY(%s)
-                  AND (latitude IS NOT NULL OR last_valid_latitude IS NOT NULL)
-                  AND (longitude IS NOT NULL OR last_valid_longitude IS NOT NULL)
+                SELECT s.device_id,
+                       COALESCE(m.matched_latitude, s.latitude, s.last_valid_latitude) AS latitude,
+                       COALESCE(m.matched_longitude, s.longitude, s.last_valid_longitude) AS longitude,
+                       s.gps_valid, s.speed, s.heading, s.motion, s.last_seen, s.device_time,
+                       (m.history_id IS NOT NULL) AS position_is_matched
+                FROM gps.current_state AS s
+                LEFT JOIN LATERAL (
+                    SELECT mm.history_id, mm.matched_latitude, mm.matched_longitude
+                    FROM gps.map_matched_position AS mm
+                    WHERE mm.device_id = s.device_id
+                      AND mm.device_time <= COALESCE(
+                          CASE WHEN s.gps_valid THEN s.device_time
+                               ELSE s.last_valid_device_time END,
+                          s.device_time
+                      )
+                      AND mm.device_time >= COALESCE(
+                          CASE WHEN s.gps_valid THEN s.device_time
+                               ELSE s.last_valid_device_time END,
+                          s.device_time
+                      ) - INTERVAL '5 minutes'
+                    ORDER BY mm.device_time DESC, mm.history_id DESC
+                    LIMIT 1
+                ) AS m ON TRUE
+                WHERE s.device_id = ANY(%s)
+                  AND (s.latitude IS NOT NULL OR s.last_valid_latitude IS NOT NULL)
+                  AND (s.longitude IS NOT NULL OR s.last_valid_longitude IS NOT NULL)
                 """,
                 [device_ids],
             )
@@ -251,7 +269,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
         now = timezone.now()
         positions = []
         for row in rows:
-            device_id, latitude, longitude, gps_valid, speed, heading, motion, last_seen, device_time = row
+            device_id, latitude, longitude, gps_valid, speed, heading, motion, last_seen, device_time, position_is_matched = row
             device = devices_by_id.get(device_id)
             if device is None or latitude is None or longitude is None:
                 continue
@@ -273,6 +291,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 'latitude': float(latitude),
                 'longitude': float(longitude),
                 'position_is_current': bool(gps_valid),
+                'position_is_matched': bool(position_is_matched),
                 'speed': speed_value,
                 'heading': float(heading) if heading is not None else None,
                 'last_seen': last_seen.isoformat() if last_seen else None,
