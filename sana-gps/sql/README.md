@@ -19,3 +19,25 @@ The database login is separate from Django's application-level users and roles. 
 The integration test workflow checks that `sana_owner`, `sana_migrator`, `sana_backend`, `sana_gps`, and `sana_gps_test` do not remain after provisioning/cleanup.
 
 The migration references the Django tables `public.fleet_device`, `public.fleet_devicemodel`, and `public.fleet_vehicle`; verify those names in the target database before applying.
+
+## Optional Neshan road matching
+
+Road matching stores display-only coordinates in `gps.map_matched_position`.
+It never changes `gps.location_history` or `gps.current_state` source coordinates.
+The backend uses a recent match when available and falls back to the raw/last-valid
+position when matching is disabled or no recent match exists.
+
+For an existing database, apply `0007_neshan_map_matching.sql` as a PostgreSQL
+administrator after the GPS schema has been installed:
+
+```bash
+sudo -u postgres psql -d sana_db -v ON_ERROR_STOP=1 \
+  -f ~/Desktop/SANA/sana-gps/sql/0007_neshan_map_matching.sql
+```
+
+The GPS service reads the optional `NESHAN_MAP_MATCHING_API_KEY` environment
+variable from its systemd environment file (normally `/etc/sana-gps.env`).
+Keep this service key on the server only; never put it in `sana-panel/.env`,
+a `VITE_*` variable, source control, or browser requests. If the key is absent,
+GPS ingestion continues normally and the map uses raw coordinates. After
+provisioning the table and key, restart `sana-gps` to load the environment.
