@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { NESHAN_LEAFLET_CONFIG } from '../config';
+import { animateLeafletMarker } from '../markerAnimation';
 
 const SDK_SCRIPT_ID = 'sana-neshan-leaflet-sdk';
 const SDK_STYLE_ID = 'sana-neshan-leaflet-style';
@@ -105,7 +106,7 @@ function popupHtml(position) {
   </div>`;
 }
 
-export default function NeshanLeafletMap({ positions, onSelectDevice, followPosition = false }) {
+export default function NeshanLeafletMap({ positions, onSelectDevice, followPosition = false, animationDuration = 10000 }) {
   const elementRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef(new Map());
@@ -138,7 +139,7 @@ export default function NeshanLeafletMap({ positions, onSelectDevice, followPosi
         L.control.zoom({ position: 'topleft' }).addTo(map);
         mapRef.current = map;
         setLoadError('');
-        syncMarkers(L, map, positionsRef.current, markersRef, onSelectDevice);
+        syncMarkers(L, map, positionsRef.current, markersRef, onSelectDevice, animationDuration);
         if (!hasFitBoundsRef.current && positionsRef.current.length) {
           const bounds = L.latLngBounds(positionsRef.current.map((item) => [item.latitude, item.longitude]));
           map.fitBounds(bounds, { padding: [36, 36], maxZoom: 14 });
@@ -164,16 +165,16 @@ export default function NeshanLeafletMap({ positions, onSelectDevice, followPosi
     const map = mapRef.current;
     const L = window.L;
     if (!map || !L) return;
-    syncMarkers(L, map, positions, markersRef, onSelectDevice);
+    syncMarkers(L, map, positions, markersRef, onSelectDevice, animationDuration);
 
     if (followPosition && positions.length === 1) {
-      map.setView([Number(positions[0].latitude), Number(positions[0].longitude)], Math.max(map.getZoom(), 14), { animate: false });
+      map.setView([Number(positions[0].latitude), Number(positions[0].longitude)], Math.max(map.getZoom(), 14), { animate: true, duration: Math.max(0.15, animationDuration / 1000) });
     } else if (!hasFitBoundsRef.current && positions.length) {
       const bounds = L.latLngBounds(positions.map((item) => [item.latitude, item.longitude]));
       map.fitBounds(bounds, { padding: [36, 36], maxZoom: 14 });
       hasFitBoundsRef.current = true;
     }
-  }, [positions, onSelectDevice, followPosition]);
+  }, [positions, onSelectDevice, followPosition, animationDuration]);
 
   return (
     <div className="relative h-full min-h-80 w-full">
@@ -191,7 +192,7 @@ export default function NeshanLeafletMap({ positions, onSelectDevice, followPosi
   );
 }
 
-function syncMarkers(L, map, positions, markersRef, onSelectDevice) {
+function syncMarkers(L, map, positions, markersRef, onSelectDevice, animationDuration = 10000) {
   const visibleIds = new Set(positions.map((item) => String(item.device_id)));
 
   for (const [id, marker] of markersRef.current.entries()) {
@@ -215,7 +216,7 @@ function syncMarkers(L, map, positions, markersRef, onSelectDevice) {
       marker.on('click', () => onSelectDevice?.(position.device_id));
       markersRef.current.set(id, marker);
     } else {
-      marker.setLatLng([Number(position.latitude), Number(position.longitude)]);
+      animateLeafletMarker(marker, [Number(position.latitude), Number(position.longitude)], Number(position.animation_duration_ms) || animationDuration);
       marker.setIcon(createDeviceIcon(L, position));
       marker.setPopupContent(content);
     }

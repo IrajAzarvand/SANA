@@ -118,7 +118,7 @@ export default function Map() {
             <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-brand-500" />به‌روزرسانی خودکار هر {refreshIntervalSeconds.toLocaleString('fa-IR')} ثانیه</span>
           </div>
         </div>
-        <div className="h-[min(72vh,760px)] min-h-[420px]"><LiveDeviceMap positions={positions} provider={mapProvider} /></div>
+        <div className="h-[min(72vh,760px)] min-h-[420px]"><LiveDeviceMap positions={positions} provider={mapProvider} animationDuration={refreshIntervalSeconds * 1000} /></div>
         {!loading && !error && positions.length === 0 && <div className="flex items-center gap-2 border-t border-border-base px-4 py-3 text-sm text-text-muted"><MapPin size={16} />هنوز موقعیت معتبری برای دستگاه‌های قابل‌دسترسی ثبت نشده است.</div>}
       </section>
     </div>

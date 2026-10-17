@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Marker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet';
 import L from 'leaflet';
+import { animateLeafletMarker } from '../markerAnimation';
 import 'leaflet/dist/leaflet.css';
 
 const DEFAULT_CENTER = [32.4279, 53.688];
@@ -37,7 +38,7 @@ function formatLastSeen(value) {
   return new Intl.DateTimeFormat('fa-IR', { dateStyle: 'short', timeStyle: 'medium' }).format(date);
 }
 
-function FitInitialBounds({ positions, followPosition = false }) {
+function FitInitialBounds({ positions, followPosition = false, animationDuration = 10000 }) {
   const map = useMap();
   const fitted = useRef(false);
 
@@ -48,7 +49,7 @@ function FitInitialBounds({ positions, followPosition = false }) {
       .map((item) => [Number(item.latitude), Number(item.longitude)]);
     if (!points.length) return;
     if (followPosition && points.length === 1) {
-      map.setView(points[0], Math.max(map.getZoom(), 14), { animate: false });
+      map.setView(points[0], Math.max(map.getZoom(), 14), { animate: true, duration: Math.max(0.15, animationDuration / 1000) });
       return;
     }
     if (fitted.current) return;
@@ -63,7 +64,7 @@ function FitInitialBounds({ positions, followPosition = false }) {
   return null;
 }
 
-export default function OpenStreetMapLeafletMap({ positions = [], onSelectDevice, followPosition = false }) {
+export default function OpenStreetMapLeafletMap({ positions = [], onSelectDevice, followPosition = false, animationDuration = 10000 }) {
   const validPositions = positions.filter((item) => (
     Number.isFinite(Number(item.latitude))
     && Number.isFinite(Number(item.longitude))
@@ -87,18 +88,19 @@ export default function OpenStreetMapLeafletMap({ positions = [], onSelectDevice
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           maxZoom={19}
         />
-        <FitInitialBounds positions={validPositions} followPosition={followPosition} />
+        <FitInitialBounds positions={validPositions} followPosition={followPosition} animationDuration={animationDuration} />
         {validPositions.map((position) => {
           const status = position.status === 'moving'
             ? 'در حرکت'
             : position.status === 'offline' ? 'آفلاین' : 'متوقف';
           const title = position.vehicle_plate || position.imei || `دستگاه ${position.device_id}`;
           return (
-            <Marker
+            <AnimatedDeviceMarker
               key={String(position.device_id)}
-              position={[Number(position.latitude), Number(position.longitude)]}
+              position={position}
               icon={createDeviceIcon(position)}
-              eventHandlers={{ click: () => onSelectDevice?.(position.device_id) }}
+              onSelectDevice={onSelectDevice}
+              animationDuration={Number(position.animation_duration_ms) || animationDuration}
             >
               <Popup>
                 <div dir="rtl" style={{ minWidth: 180, fontFamily: 'Tahoma, sans-serif', lineHeight: 1.9 }}>
@@ -115,10 +117,33 @@ export default function OpenStreetMapLeafletMap({ positions = [], onSelectDevice
                   )}
                 </div>
               </Popup>
-            </Marker>
+            </AnimatedDeviceMarker>
           );
         })}
       </MapContainer>
     </div>
+  );
+}
+
+
+function AnimatedDeviceMarker({ position, icon, onSelectDevice, animationDuration, children }) {
+  const markerRef = useRef(null);
+  const initialPositionRef = useRef([Number(position.latitude), Number(position.longitude)]);
+
+  useEffect(() => {
+    const marker = markerRef.current;
+    if (!marker) return;
+    animateLeafletMarker(marker, [Number(position.latitude), Number(position.longitude)], animationDuration);
+  }, [position.latitude, position.longitude, animationDuration]);
+
+  return (
+    <Marker
+      ref={markerRef}
+      position={initialPositionRef.current}
+      icon={icon}
+      eventHandlers={{ click: () => onSelectDevice?.(position.device_id) }}
+    >
+      {children}
+    </Marker>
   );
 }
