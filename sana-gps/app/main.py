@@ -17,6 +17,7 @@ from app.repositories.device import DeviceRepository
 from app.repositories.unknown_protocol_queue import UnknownProtocolQueueRepository
 from app.repositories.gt06_position import GT06PositionRepository
 from app.repositories.gps_telemetry import GPSTelemetryRepository
+from app.processing.map_matching import run_map_matching_worker
 from app.transport.server import TransportServer
 from app.transport.session import SessionManager, TransportType
 
@@ -93,6 +94,7 @@ async def run(
     gt06_capture = RawCapture(config.gt06_capture_file) if config.gt06_capture_file else None
     unknown_queue_repository = UnknownProtocolQueueRepository(database_pool)
     queue_task: asyncio.Task[None] | None = None
+    map_matching_task: asyncio.Task[None] | None = None
 
     async def on_gt06_data(session, data: bytes) -> ProtocolResponse | None:
         if gt06_capture is not None:
@@ -176,15 +178,25 @@ async def run(
             ),
             name="sana-unknown-gps-queue-monitor",
         )
+        map_matching_task = asyncio.create_task(
+            run_map_matching_worker(
+                shutdown_event,
+                database_pool,
+                config.neshan_map_matching_api_key,
+            ),
+            name="sana-neshan-map-matching-worker",
+        )
         await shutdown_event.wait()
         return 0
     except Exception as exc:
         print(f"SANA GPS runtime error: {exc}", file=sys.stderr)
         return 3
     finally:
-        if queue_task is not None:
-            queue_task.cancel()
-            await asyncio.gather(queue_task, return_exceptions=True)
+        tasks = [task for task in (queue_task, map_matching_task) if task is not None]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
         try:
             await transport_server.stop()
         finally:
