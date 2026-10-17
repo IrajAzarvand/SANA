@@ -22,22 +22,23 @@ The migration references the Django tables `public.fleet_device`, `public.fleet_
 
 ## Optional Neshan road matching
 
-Road matching stores display-only coordinates in `gps.map_matched_position`.
-It never changes `gps.location_history` or `gps.current_state` source coordinates.
-The backend uses a recent match when available and falls back to the raw/last-valid
-position when matching is disabled or no recent match exists.
+Road-matched coordinates are stored on the existing GPS rows:
+- `gps.current_state` holds the matched position for the current/last-valid fix used by the live map.
+- `gps.location_history` holds the matched position for each historical fix, so reports can reuse cached matches.
+Raw latitude/longitude values are never overwritten. The live map falls back to raw/last-valid coordinates until the exact current fix has a match.
 
-For an existing database, apply `0007_neshan_map_matching.sql` as a PostgreSQL
-administrator after the GPS schema has been installed:
-
-```bash
-sudo -u postgres psql -d sana_db -v ON_ERROR_STOP=1 \
-  -f ~/Desktop/SANA/sana-gps/sql/0007_neshan_map_matching.sql
-```
+For databases where migration `0007_neshan_map_matching.sql` has already been applied, apply `0008_store_map_matches_in_existing_tables.sql` to move any existing matches to the existing tables and drop the temporary `gps.map_matched_position` table. Fresh installations should apply the SQL migrations in order.
 
 The GPS service reads the optional `NESHAN_MAP_MATCHING_API_KEY` environment
 variable from its systemd environment file (normally `/etc/sana-gps.env`).
 Keep this service key on the server only; never put it in `sana-panel/.env`,
 a `VITE_*` variable, source control, or browser requests. If the key is absent,
 GPS ingestion continues normally and the map uses raw coordinates. After
-provisioning the table and key, restart `sana-gps` to load the environment.
+applying the schema migrations, restart `sana-gps` to load the environment.
+
+Historical-report matching is not yet an on-demand report workflow: the current
+background worker only processes recent fixes. The report implementation should
+process missing matches for the selected time range in ordered batches (with
+overlap points at batch boundaries), persist results to `gps.location_history`,
+and clearly identify any points that could not be matched rather than silently
+claiming every point is exact.
