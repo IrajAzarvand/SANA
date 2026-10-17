@@ -236,33 +236,11 @@ class DeviceViewSet(viewsets.ModelViewSet):
             cursor.execute(
                 """
                 SELECT s.device_id,
-                       COALESCE(m.matched_latitude, s.latitude, s.last_valid_latitude) AS latitude,
-                       COALESCE(m.matched_longitude, s.longitude, s.last_valid_longitude) AS longitude,
+                       COALESCE(s.matched_latitude, s.latitude, s.last_valid_latitude) AS latitude,
+                       COALESCE(s.matched_longitude, s.longitude, s.last_valid_longitude) AS longitude,
                        s.gps_valid, s.speed, s.heading, s.motion, s.last_seen, s.device_time,
-                       (m.history_id IS NOT NULL) AS position_is_matched
+                       (s.matched_latitude IS NOT NULL AND s.matched_longitude IS NOT NULL) AS position_is_matched
                 FROM gps.current_state AS s
-                LEFT JOIN LATERAL (
-                    SELECT mm.history_id, mm.matched_latitude, mm.matched_longitude
-                    FROM gps.map_matched_position AS mm
-                    WHERE mm.device_id = s.device_id
-                      AND mm.device_time = COALESCE(
-                          CASE WHEN s.gps_valid THEN s.device_time
-                               ELSE s.last_valid_device_time END,
-                          s.device_time
-                      )
-                      AND mm.original_latitude = COALESCE(
-                          CASE WHEN s.gps_valid THEN s.latitude
-                               ELSE s.last_valid_latitude END,
-                          s.latitude
-                      )
-                      AND mm.original_longitude = COALESCE(
-                          CASE WHEN s.gps_valid THEN s.longitude
-                               ELSE s.last_valid_longitude END,
-                          s.longitude
-                      )
-                    ORDER BY mm.history_id DESC
-                    LIMIT 1
-                ) AS m ON TRUE
                 WHERE s.device_id = ANY(%s)
                   AND (s.latitude IS NOT NULL OR s.last_valid_latitude IS NOT NULL)
                   AND (s.longitude IS NOT NULL OR s.last_valid_longitude IS NOT NULL)
