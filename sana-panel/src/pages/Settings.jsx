@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Plus, Pencil, Trash2, Camera, Mail, Phone,
   Shield, Smartphone, Building2, MapPin, Globe,
@@ -13,6 +13,8 @@ import Modal from '../components/Modal';
 import ActionMenu from '../components/ActionMenu';
 import SettingsNav from '../components/SettingsNav';
 import { useAuth } from '../context/AuthContext';
+import apiClient from '../api/client';
+import { MAP_PROVIDERS } from '../../../sana-map/src/config';
 import {
   currentUser,
   organization,
@@ -466,56 +468,157 @@ function NotificationsSection() {
 /* ============ تنظیمات سامانه (فقط ادمین) ============ */
 
 function SystemSection() {
+  const [settings, setSettings] = useState({
+    map_provider: MAP_PROVIDERS.LEAFLET_OSM,
+    map_refresh_interval_seconds: 10,
+  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    apiClient.get('/site-settings/')
+      .then(({ data }) => {
+        if (active) {
+          setSettings({
+            map_provider: data.map_provider || MAP_PROVIDERS.LEAFLET_OSM,
+            map_refresh_interval_seconds: Number(data.map_refresh_interval_seconds) || 10,
+          });
+        }
+      })
+      .catch((requestError) => {
+        if (active) setError(requestError.response?.data?.detail || 'دریافت تنظیمات سامانه ناموفق بود.');
+      })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  const saveSettings = async () => {
+    setSaving(true);
+    setError('');
+    setSuccess('');
+    try {
+      const { data } = await apiClient.patch('/site-settings/', {
+        map_provider: settings.map_provider,
+        map_refresh_interval_seconds: Number(settings.map_refresh_interval_seconds),
+      });
+      setSettings({
+        map_provider: data.map_provider,
+        map_refresh_interval_seconds: Number(data.map_refresh_interval_seconds),
+      });
+      setSuccess('تنظیمات با موفقیت ذخیره شد. از این پس نقشه با این مقادیر پیش‌فرض بارگذاری می‌شود.');
+    } catch (requestError) {
+      const data = requestError.response?.data;
+      const detail = data?.detail
+        || data?.map_provider?.[0]
+        || data?.map_refresh_interval_seconds?.[0]
+        || 'ذخیره تنظیمات انجام نشد؛ ارتباط با سرور را بررسی کنید.';
+      setError(detail);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
+      <Card title="تنظیمات نقشه زنده" subtitle="مقادیر سراسری سامانه؛ ذخیره‌شده در پایگاه داده و قابل استفاده برای همه کاربران">
+        <div className="space-y-6">
+          {error && <div role="alert" className="rounded-field border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div>}
+          {success && <div role="status" className="rounded-field border border-success/30 bg-success/10 px-4 py-3 text-sm text-success">{success}</div>}
 
-      <Card title="تنظیمات عمومی سامانه" subtitle="پیکربندی سراسری سانا">
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Input label="نام سامانه" value="سانا" />
-            <Input label="نسخه" value="1.0.0" disabled />
-            <Input label="منطقه زمانی" value="Asia/Tehran (UTC+3:30)" />
-            <Input label="زبان پیش‌فرض" value="فارسی" />
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+            <div className="rounded-card border border-border-base bg-bg-base p-4">
+              <div className="mb-3 flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-field bg-brand-500/10 text-brand-400"><GlobeIcon size={19} /></div>
+                <div>
+                  <h3 className="text-sm font-semibold text-text-primary">ارائه‌دهنده پیش‌فرض نقشه</h3>
+                  <p className="mt-1 text-xs text-text-muted">نقشه‌ای که هنگام بازکردن صفحه نقشه زنده نمایش داده می‌شود</p>
+                </div>
+              </div>
+              <label htmlFor="default-map-provider" className="mb-2 block text-sm text-text-secondary">انتخاب نقشه</label>
+              <select
+                id="default-map-provider"
+                value={settings.map_provider}
+                disabled={loading || saving}
+                onChange={(event) => setSettings((previous) => ({ ...previous, map_provider: event.target.value }))}
+                className="w-full rounded-field border border-border-base bg-bg-elevated px-4 py-3 text-sm text-text-primary outline-none transition focus:border-brand-500 disabled:opacity-60"
+              >
+                <option value={MAP_PROVIDERS.LEAFLET_OSM}>OpenStreetMap</option>
+                <option value={MAP_PROVIDERS.NESHAN_LEAFLET}>نشان</option>
+              </select>
+              <p className="mt-2 text-xs leading-6 text-text-muted">این گزینه پیش‌فرض مشترک سایت را تعیین می‌کند. انتخاب موقت داخل صفحه نقشه، تا بارگذاری مجدد همان صفحه اعمال می‌شود.</p>
+            </div>
+
+            <div className="rounded-card border border-border-base bg-bg-base p-4">
+              <div className="mb-3 flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-field bg-brand-500/10 text-brand-400"><ActivityIcon /></div>
+                <div>
+                  <h3 className="text-sm font-semibold text-text-primary">بازه به‌روزرسانی خودکار</h3>
+                  <p className="mt-1 text-xs text-text-muted">فاصله دریافت دوباره موقعیت دستگاه‌ها از API</p>
+                </div>
+              </div>
+              <label htmlFor="map-refresh-interval" className="mb-2 block text-sm text-text-secondary">فاصله زمانی (ثانیه)</label>
+              <div className="flex items-center gap-3">
+                <input
+                  id="map-refresh-interval"
+                  type="number"
+                  min="5"
+                  max="300"
+                  step="1"
+                  inputMode="numeric"
+                  value={settings.map_refresh_interval_seconds}
+                  disabled={loading || saving}
+                  onChange={(event) => setSettings((previous) => ({ ...previous, map_refresh_interval_seconds: event.target.value }))}
+                  className="w-full rounded-field border border-border-base bg-bg-elevated px-4 py-3 text-sm text-text-primary outline-none transition focus:border-brand-500 disabled:opacity-60"
+                />
+                <span className="whitespace-nowrap text-sm text-text-muted">ثانیه</span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs text-text-muted">
+                {[5, 10, 15, 30, 60].map((seconds) => (
+                  <button
+                    key={seconds}
+                    type="button"
+                    disabled={loading || saving}
+                    onClick={() => setSettings((previous) => ({ ...previous, map_refresh_interval_seconds: seconds }))}
+                    className={`rounded-full border px-3 py-1.5 transition ${Number(settings.map_refresh_interval_seconds) === seconds ? 'border-brand-500 bg-brand-500/10 text-brand-400' : 'border-border-base hover:bg-bg-hover'}`}
+                  >{seconds.toLocaleString('fa-IR')} ثانیه</button>
+                ))}
+              </div>
+              <p className="mt-2 text-xs leading-6 text-text-muted">مقدار مجاز بین ۵ تا ۳۰۰ ثانیه است. بازه کوتاه‌تر درخواست‌های بیشتری به سرور ارسال می‌کند.</p>
+            </div>
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-4 border-t border-border-base">
-            <Button>ذخیره تغییرات</Button>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border-base pt-4">
+            <p className="text-xs text-text-muted">تغییرات فقط پس از ذخیره، برای بارگذاری‌های بعدی صفحه نقشه اعمال می‌شوند.</p>
+            <Button onClick={saveSettings} disabled={loading || saving}>
+              {saving ? 'در حال ذخیره…' : loading ? 'در حال دریافت…' : 'ذخیره تنظیمات'}
+            </Button>
           </div>
         </div>
       </Card>
 
-      <Card title="وضعیت سرور و سرویس‌ها" subtitle="مانیتورینگ زیرساخت">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="flex items-center gap-3 p-4 bg-bg-base border border-border-base rounded-field">
-            <div className="w-10 h-10 rounded-field bg-success/10 flex items-center justify-center">
-              <Server size={18} className="text-success" />
-            </div>
-            <div>
-              <div className="text-xs text-text-muted">Ingestion Server</div>
-              <div className="text-sm font-medium text-success">فعال</div>
-            </div>
+      <Card title="وضعیت سرور و سرویس‌ها" subtitle="نمای کلی زیرساخت سامانه">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div className="flex items-center gap-3 rounded-field border border-border-base bg-bg-base p-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-field bg-success/10"><Server size={18} className="text-success" /></div>
+            <div><div className="text-xs text-text-muted">Ingestion Server</div><div className="text-sm font-medium text-text-primary">وضعیت از مانیتورینگ قابل بررسی است</div></div>
           </div>
-          <div className="flex items-center gap-3 p-4 bg-bg-base border border-border-base rounded-field">
-            <div className="w-10 h-10 rounded-field bg-success/10 flex items-center justify-center">
-              <Database size={18} className="text-success" />
-            </div>
-            <div>
-              <div className="text-xs text-text-muted">Database</div>
-              <div className="text-sm font-medium text-success">سالم</div>
-            </div>
+          <div className="flex items-center gap-3 rounded-field border border-border-base bg-bg-base p-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-field bg-brand-500/10"><Database size={18} className="text-brand-400" /></div>
+            <div><div className="text-xs text-text-muted">Database</div><div className="text-sm font-medium text-text-primary">تنظیمات در PostgreSQL ذخیره می‌شود</div></div>
           </div>
-          <div className="flex items-center gap-3 p-4 bg-bg-base border border-border-base rounded-field">
-            <div className="w-10 h-10 rounded-field bg-info/10 flex items-center justify-center">
-              <GlobeIcon size={18} className="text-info" />
-            </div>
-            <div>
-              <div className="text-xs text-text-muted">Neshan API</div>
-              <div className="text-sm font-medium text-info">فعال</div>
-            </div>
+          <div className="flex items-center gap-3 rounded-field border border-border-base bg-bg-base p-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-field bg-info/10"><GlobeIcon size={18} className="text-info" /></div>
+            <div><div className="text-xs text-text-muted">نقشه پیش‌فرض</div><div className="text-sm font-medium text-text-primary">{settings.map_provider === MAP_PROVIDERS.NESHAN_LEAFLET ? 'نشان' : 'OpenStreetMap'}</div></div>
           </div>
         </div>
       </Card>
-
     </div>
   );
+}
+
+function ActivityIcon() {
+  return <Globe size={19} />;
 }
