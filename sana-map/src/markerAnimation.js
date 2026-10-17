@@ -26,8 +26,9 @@ export function animateLeafletMarker(marker, target, duration = 10000) {
   const startedAt = performance.now();
   const tick = (now) => {
     const progress = Math.min(1, (now - startedAt) / total);
-    // Smooth ease-in/ease-out; interpolation is visual only, never persisted.
-    const eased = progress * progress * (3 - 2 * progress);
+    // Linear interpolation avoids the repeated slow-down/speed-up feeling
+    // when the next GPS point arrives and the animation is retargeted.
+    const eased = progress;
     marker.setLatLng([
       from.lat + (to.lat - from.lat) * eased,
       from.lng + (to.lng - from.lng) * eased,
