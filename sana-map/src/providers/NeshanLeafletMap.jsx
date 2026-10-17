@@ -114,6 +114,7 @@ export default function NeshanLeafletMap({ positions, onSelectDevice, followPosi
   const positionsRef = useRef(positions);
   const hasFitBoundsRef = useRef(false);
   const [loadError, setLoadError] = useState('');
+  const [mapReady, setMapReady] = useState(false);
 
   useEffect(() => {
     positionsRef.current = positions;
@@ -133,7 +134,7 @@ export default function NeshanLeafletMap({ positions, onSelectDevice, followPosi
     });
     if (points.length >= 2) map.fitBounds(L.latLngBounds(points), { padding: [36, 36], maxZoom: 15 });
     return () => { routeLayersRef.current.forEach((layer) => layer.remove()); routeLayersRef.current = []; };
-  }, [routeSegments, loadError]);
+  }, [routeSegments, loadError, mapReady]);
 
   useEffect(() => {
     let cancelled = false;
@@ -155,6 +156,7 @@ export default function NeshanLeafletMap({ positions, onSelectDevice, followPosi
         });
         L.control.zoom({ position: 'topleft' }).addTo(map);
         mapRef.current = map;
+        setMapReady(true);
         setLoadError('');
         syncMarkers(L, map, positionsRef.current, markersRef, onSelectDevice, animationDuration);
         if (!hasFitBoundsRef.current && positionsRef.current.length) {
