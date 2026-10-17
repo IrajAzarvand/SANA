@@ -68,9 +68,16 @@ def _request_matched_points(
             location = item["location"]
         except (KeyError, TypeError, ValueError):
             continue
-        if not 0 <= index < len(points) or not isinstance(location, (list, tuple)) or len(location) < 2:
+        if not 0 <= index < len(points):
             continue
-        coordinate = _valid_coordinate(location[0], location[1])
+        if isinstance(location, dict):
+            latitude = location.get("latitude")
+            longitude = location.get("longitude")
+        elif isinstance(location, (list, tuple)) and len(location) >= 2:
+            latitude, longitude = location[0], location[1]
+        else:
+            continue
+        coordinate = _valid_coordinate(latitude, longitude)
         if coordinate is not None:
             matched[index] = coordinate
     return matched
