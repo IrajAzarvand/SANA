@@ -275,7 +275,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
             <span className="text-xs text-text-muted">{points.length ? `${(pointIndex + 1).toLocaleString('fa-IR')} از ${points.length.toLocaleString('fa-IR')}` : 'بدون نقطه'}</span>
           </div>
           <input aria-label="موقعیت در مسیر" type="range" min="0" max={Math.max(0, points.length - 1)} value={pointIndex} onChange={(event) => { setPlaying(false); setPointIndex(Number(event.target.value)); }} disabled={!points.length} className="w-full accent-brand-500" style={{ backgroundSize: `${progress}% 100%` }} />
-          <div className="flex flex-wrap justify-between gap-2 text-xs text-text-muted"><span>زمان نقطه: {formatDate(currentPoint?.device_time)}</span><span>{currentPoint?.position_is_matched ? 'مختصات تطبیق‌یافته با جاده' : currentPoint ? 'مختصات خام GPS' : '—'}</span></div>
+          <div className="flex flex-wrap justify-between gap-2 text-xs text-text-muted"><span>زمان نقطه: {formatDate(currentPoint?.device_time)}</span><span>{currentPoint && currentPoint.matched_latitude != null && currentPoint.matched_longitude != null ? 'مختصات تطبیق‌یافته با جاده' : currentPoint ? 'مختصات خام GPS' : '—'}</span></div>
         </div>
       </div>
 
