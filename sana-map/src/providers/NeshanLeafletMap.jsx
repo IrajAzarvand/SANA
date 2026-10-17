@@ -167,7 +167,7 @@ export default function NeshanLeafletMap({ positions, onSelectDevice, followPosi
     syncMarkers(L, map, positions, markersRef, onSelectDevice);
 
     if (followPosition && positions.length === 1) {
-      map.panTo([Number(positions[0].latitude), Number(positions[0].longitude)], { animate: false });
+      map.setView([Number(positions[0].latitude), Number(positions[0].longitude)], Math.max(map.getZoom(), 14), { animate: false });
     } else if (!hasFitBoundsRef.current && positions.length) {
       const bounds = L.latLngBounds(positions.map((item) => [item.latitude, item.longitude]));
       map.fitBounds(bounds, { padding: [36, 36], maxZoom: 14 });
