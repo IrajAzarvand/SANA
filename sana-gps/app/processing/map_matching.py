@@ -124,7 +124,8 @@ def process_pending_map_matches(
     saved = 0
     for device_id, history in by_device.items():
         pending_indices = [index for index, point in enumerate(history) if not point[4]]
-        if not pending_indices:
+        if len(pending_indices) < 2:
+            # Batch new fixes instead of billing the API for every isolated sample.
             continue
 
         # Include up to two previously matched points before the first new fix,
