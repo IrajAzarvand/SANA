@@ -238,7 +238,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 SubscriptionDevice.objects.filter(
                     device=device,
                     unassigned_at__isnull=True,
-                    subscription__status='active',
+                    subscription__status__in=['active', 'expired'],
                 ).select_related('subscription').order_by('-start_date', '-id')
             )
             access_query = DeviceCustomerAccessPeriod.objects.filter(
@@ -270,8 +270,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 return Response({'detail': 'برای این دستگاه قرارداد و دسترسی فعال پیدا نشد.'}, status=403)
 
             link = links[0]
-            start_date = max(link.start_date, timezone.localdate(access.started_at))
-            end_date = link.end_date
+            start_date = max(link.start_date, link.subscription.start_date, timezone.localdate(access.started_at))
+            end_date = min(link.end_date, link.subscription.end_date)
             if access.ended_at:
                 end_date = min(end_date, timezone.localdate(access.ended_at))
             contract_start = timezone.make_aware(datetime.combine(start_date, datetime_time.min))
