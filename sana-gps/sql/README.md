@@ -8,7 +8,9 @@ Apply these files in order to the target SANA PostgreSQL database:
 2. Set the `sana_user` password interactively or through your local secret-management process. Do not commit passwords or put them in SQL files.
 3. Run `0001_gps_schema.sql` as a PostgreSQL administrator; the script switches to `sana_user` while creating GPS objects.
 4. Run `0002_detected_protocol_registration.sql` as a PostgreSQL administrator.
-5. Configure Django's ignored local/server environment file with `DB_USER=sana_user`; configure `/etc/sana-gps.env` with `SANA_GPS_DB_USER=sana_user`. Both must use the same database name, host/port as appropriate, and the same secret for `sana_user`.
+5. Run `0007_neshan_map_matching.sql` (retired compatibility migration; it does not create a table in current versions).
+6. Run `0008_store_map_matches_in_existing_tables.sql` to add road-match fields to `gps.current_state` and `gps.location_history`; it also removes the temporary table if an older deployment created it.
+7. Configure Django's ignored local/server environment file with `DB_USER=sana_user`; configure `/etc/sana-gps.env` with `SANA_GPS_DB_USER=sana_user`. Both must use the same database name, host/port as appropriate, and the same secret for `sana_user`.
 
 The database login is separate from Django's application-level users and roles. Do not confuse the PostgreSQL role `sana_user` with the SANA site-admin account.
 
