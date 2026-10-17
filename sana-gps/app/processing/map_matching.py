@@ -13,8 +13,8 @@ from app.database.pool import DatabaseConnectionPool
 _LOGGER = logging.getLogger(__name__)
 _ENDPOINT = "https://api.neshan.org/v3/map-matching"
 _MAX_POINTS_PER_REQUEST = 100
-_RECENT_WINDOW_MINUTES = 20
-_DEFAULT_POLL_SECONDS = 5.0
+_RECENT_WINDOW_MINUTES = 3
+_DEFAULT_POLL_SECONDS = 10.0
 _HTTP_TIMEOUT_SECONDS = 12.0
 
 
@@ -243,6 +243,7 @@ async def run_map_matching_worker(
 
     while not shutdown_event.is_set():
         started = time.monotonic()
+        work_task = None
         try:
             active_viewers = await asyncio.to_thread(
                 has_active_map_matching_viewers, pool
@@ -258,7 +259,8 @@ async def run_map_matching_worker(
         except asyncio.CancelledError:
             # Let an in-flight HTTP/database scan finish before the shared pool closes.
             try:
-                await work_task
+                if work_task is not None:
+                    await work_task
             finally:
                 raise
         except Exception:
