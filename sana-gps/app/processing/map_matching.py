@@ -204,8 +204,18 @@ async def run_map_matching_worker(
 
     while not shutdown_event.is_set():
         started = time.monotonic()
+        work_task = asyncio.create_task(
+            asyncio.to_thread(process_pending_map_matches, pool, api_key),
+            name="sana-neshan-map-matching-scan",
+        )
         try:
-            await asyncio.to_thread(process_pending_map_matches, pool, api_key)
+            await asyncio.shield(work_task)
+        except asyncio.CancelledError:
+            # Let an in-flight HTTP/database scan finish before the shared pool closes.
+            try:
+                await work_task
+            finally:
+                raise
         except Exception:
             _LOGGER.exception("Map-matching scan failed; GPS ingestion continues")
         delay = max(0.0, poll_seconds - (time.monotonic() - started))
