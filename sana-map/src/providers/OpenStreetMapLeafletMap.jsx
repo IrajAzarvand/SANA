@@ -37,28 +37,33 @@ function formatLastSeen(value) {
   return new Intl.DateTimeFormat('fa-IR', { dateStyle: 'short', timeStyle: 'medium' }).format(date);
 }
 
-function FitInitialBounds({ positions }) {
+function FitInitialBounds({ positions, followPosition = false }) {
   const map = useMap();
   const fitted = useRef(false);
 
   useEffect(() => {
-    if (fitted.current || !positions.length) return;
+    if (!positions.length) return;
     const points = positions
       .filter((item) => Number.isFinite(Number(item.latitude)) && Number.isFinite(Number(item.longitude)))
       .map((item) => [Number(item.latitude), Number(item.longitude)]);
     if (!points.length) return;
+    if (followPosition && points.length === 1) {
+      map.setView(points[0], Math.max(map.getZoom(), 14), { animate: false });
+      return;
+    }
+    if (fitted.current) return;
     if (points.length === 1) {
       map.setView(points[0], 14);
     } else {
       map.fitBounds(points, { padding: [36, 36], maxZoom: 14 });
     }
     fitted.current = true;
-  }, [map, positions]);
+  }, [map, positions, followPosition]);
 
   return null;
 }
 
-export default function OpenStreetMapLeafletMap({ positions = [], onSelectDevice }) {
+export default function OpenStreetMapLeafletMap({ positions = [], onSelectDevice, followPosition = false }) {
   const validPositions = positions.filter((item) => (
     Number.isFinite(Number(item.latitude))
     && Number.isFinite(Number(item.longitude))
@@ -82,7 +87,7 @@ export default function OpenStreetMapLeafletMap({ positions = [], onSelectDevice
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           maxZoom={19}
         />
-        <FitInitialBounds positions={validPositions} />
+        <FitInitialBounds positions={validPositions} followPosition={followPosition} />
         {validPositions.map((position) => {
           const status = position.status === 'moving'
             ? 'در حرکت'

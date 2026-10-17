@@ -1,4 +1,6 @@
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
+from datetime import datetime, time as datetime_time
 from django.db import connection, transaction
 from django.db.models import Exists, OuterRef, Prefetch, Q
 from rest_framework import viewsets, filters
@@ -218,6 +220,176 @@ class DeviceViewSet(viewsets.ModelViewSet):
         if page is not None:
             return self.get_paginated_response(serializer.data)
         return Response(serializer.data)
+
+    @action(detail=False, methods=['get'], url_path='report-history')
+    def report_history(self, request):
+        """Return authorized device history for map playback; customer dates are contract-bounded."""
+        device_id = request.query_params.get('device_id')
+        if not device_id:
+            return Response({'detail': 'انتخاب دستگاه الزامی است.'}, status=400)
+
+        device = self.get_queryset().filter(pk=device_id).select_related('vehicle').first()
+        if device is None:
+            return Response({'detail': 'دستگاه یافت نشد یا مجوز مشاهده آن را ندارید.'}, status=404)
+
+        range_start = range_end = None
+        if not request.user.is_site_admin:
+            links = list(
+                SubscriptionDevice.objects.filter(
+                    device=device,
+                    unassigned_at__isnull=True,
+                    subscription__status__in=['active', 'expired'],
+                ).select_related('subscription').order_by('-start_date', '-id')
+            )
+            access_query = DeviceCustomerAccessPeriod.objects.filter(
+                device=device, ended_at__isnull=True,
+            )
+            if request.user.is_personal_user:
+                access_query = access_query.filter(user=request.user)
+                links = [link for link in links if link.subscription.user_id == request.user.pk]
+            elif request.user.is_branch_manager:
+                access_query = access_query.filter(
+                    organization_id=request.user.organization_id,
+                    branch_id=request.user.branch_id,
+                )
+                links = [
+                    link for link in links
+                    if link.subscription.organization_id == request.user.organization_id
+                ]
+            elif request.user.is_main_user:
+                access_query = access_query.filter(organization_id=request.user.organization_id)
+                links = [
+                    link for link in links
+                    if link.subscription.organization_id == request.user.organization_id
+                ]
+            else:
+                links = []
+
+            access = access_query.order_by('-started_at').first()
+            if not links or access is None:
+                return Response({'detail': 'برای این دستگاه قرارداد و دسترسی فعال پیدا نشد.'}, status=403)
+
+            link = links[0]
+            start_date = max(link.start_date, link.subscription.start_date, timezone.localdate(access.started_at))
+            end_date = min(link.end_date, link.subscription.end_date)
+            if access.ended_at:
+                end_date = min(end_date, timezone.localdate(access.ended_at))
+            contract_start = timezone.make_aware(datetime.combine(start_date, datetime_time.min))
+            contract_end = timezone.make_aware(datetime.combine(end_date, datetime_time.max))
+            range_start = max(contract_start, access.started_at)
+            range_end = min(contract_end, access.ended_at) if access.ended_at else contract_end
+
+        if request.query_params.get('metadata') == 'true':
+            return Response({
+                'device': {
+                    'id': device.pk,
+                    'imei': device.imei,
+                    'sim_number': device.sim_number,
+                    'vehicle_plate': device.vehicle.plate if device.vehicle_id else None,
+                },
+                'range_start': range_start.isoformat() if range_start else None,
+                'range_end': range_end.isoformat() if range_end else None,
+                'unrestricted': bool(request.user.is_site_admin),
+            })
+
+        raw_start = parse_datetime(request.query_params.get('from', ''))
+        raw_end = parse_datetime(request.query_params.get('to', ''))
+        if raw_start is None or raw_end is None:
+            return Response({'detail': 'تاریخ و ساعت شروع و پایان الزامی است.'}, status=400)
+        if timezone.is_naive(raw_start):
+            raw_start = timezone.make_aware(raw_start)
+        if timezone.is_naive(raw_end):
+            raw_end = timezone.make_aware(raw_end)
+        if raw_start > raw_end:
+            return Response({'detail': 'زمان شروع باید قبل از زمان پایان باشد.'}, status=400)
+        if range_start and (raw_start < range_start or raw_end > range_end):
+            return Response({
+                'detail': 'بازه انتخابی خارج از محدوده مجاز قرارداد یا دسترسی دستگاه است.',
+                'range_start': range_start.isoformat(),
+                'range_end': range_end.isoformat(),
+            }, status=403)
+
+        try:
+            cursor_time = parse_datetime(request.query_params.get('cursor_time', ''))
+            cursor_id = int(request.query_params.get('cursor_id', '0'))
+        except (TypeError, ValueError):
+            return Response({'detail': 'نشانگر صفحه‌بندی نامعتبر است.'}, status=400)
+        if cursor_time is not None and timezone.is_naive(cursor_time):
+            cursor_time = timezone.make_aware(cursor_time)
+
+        limit = 5000
+        with connection.cursor() as cursor:
+            if cursor_time is not None and cursor_id > 0:
+                cursor.execute(
+                    """
+                    SELECT id, device_time, server_received_at, latitude, longitude,
+                           matched_latitude, matched_longitude, match_provider, matched_at,
+                           gps_valid, accuracy, speed, heading, altitude, motion, ignition,
+                           satellites, battery_voltage, external_voltage, gsm_signal,
+                           odometer, engine_hours, fuel_level, attributes
+                    FROM gps.location_history
+                    WHERE device_id = %s AND device_time >= %s AND device_time <= %s
+                      AND (device_time, id) > (%s, %s)
+                    ORDER BY device_time, id
+                    LIMIT %s
+                    """,
+                    [device.pk, raw_start, raw_end, cursor_time, cursor_id, limit + 1],
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT id, device_time, server_received_at, latitude, longitude,
+                           matched_latitude, matched_longitude, match_provider, matched_at,
+                           gps_valid, accuracy, speed, heading, altitude, motion, ignition,
+                           satellites, battery_voltage, external_voltage, gsm_signal,
+                           odometer, engine_hours, fuel_level, attributes
+                    FROM gps.location_history
+                    WHERE device_id = %s AND device_time >= %s AND device_time <= %s
+                    ORDER BY device_time, id
+                    LIMIT %s
+                    """,
+                    [device.pk, raw_start, raw_end, limit + 1],
+                )
+            columns = [column[0] for column in cursor.description]
+            rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        points = []
+        for row in rows:
+            item = {}
+            for key, value in row.items():
+                if hasattr(value, 'isoformat'):
+                    item[key] = value.isoformat()
+                elif key in {
+                    'latitude', 'longitude', 'matched_latitude', 'matched_longitude',
+                    'accuracy', 'speed', 'heading', 'altitude', 'battery_voltage',
+                    'external_voltage', 'odometer', 'engine_hours', 'fuel_level',
+                } and value is not None:
+                    item[key] = float(value)
+                elif key == 'attributes':
+                    item[key] = value if isinstance(value, dict) else {}
+                else:
+                    item[key] = value
+            points.append(item)
+
+        next_cursor = None
+        if has_more and points:
+            last = points[-1]
+            next_cursor = {'cursor_time': last['device_time'], 'cursor_id': last['id']}
+        return Response({
+            'device': {
+                'id': device.pk,
+                'imei': device.imei,
+                'sim_number': device.sim_number,
+                'vehicle_plate': device.vehicle.plate if device.vehicle_id else None,
+            },
+            'points': points,
+            'next_cursor': next_cursor,
+            'range_start': range_start.isoformat() if range_start else None,
+            'range_end': range_end.isoformat() if range_end else None,
+            'unrestricted': bool(request.user.is_site_admin),
+        })
 
     @action(detail=False, methods=['post'], url_path='map-matching-activity')
     def map_matching_activity(self, request):
