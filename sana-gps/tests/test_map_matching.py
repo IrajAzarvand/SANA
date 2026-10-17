@@ -1,7 +1,6 @@
 import json
 import unittest
-from io import BytesIO
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from app.processing.map_matching import _request_matched_points, _valid_coordinate
 
@@ -15,15 +14,16 @@ class MapMatchingTests(unittest.TestCase):
 
     @patch("app.processing.map_matching.urlopen")
     def test_sends_ordered_latitude_longitude_path_and_maps_original_indices(self, urlopen):
-        response = BytesIO(json.dumps({
+        response = MagicMock()
+        response.read.return_value = json.dumps({
             "snappedPoints": [
                 {"originalIndex": 1, "location": [35.701, 51.402]},
                 {"originalIndex": 0, "location": [35.700, 51.400]},
                 {"originalIndex": 2, "location": [999, 51.400]},
             ]
-        }).encode())
-        response.__enter__ = lambda self=response: self
-        response.__exit__ = lambda *_args: False
+        }).encode()
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
         urlopen.return_value = response
 
         points = [
