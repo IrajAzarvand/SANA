@@ -178,6 +178,36 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
     if (playing && points.length > 0 && pointIndex >= points.length - 1) setPlaying(false);
   }, [playing, pointIndex, points.length]);
 
+  const routeSegments = useMemo(() => {
+    const colorForSpeed = (value) => {
+      const speedValue = Number(value);
+      if (!Number.isFinite(speedValue) || speedValue < 20) return { color: '#2563EB', speedBand: '0-20' };
+      if (speedValue < 40) return { color: '#16A34A', speedBand: '20-40' };
+      if (speedValue < 60) return { color: '#EAB308', speedBand: '40-60' };
+      if (speedValue < 80) return { color: '#F97316', speedBand: '60-80' };
+      return { color: '#DC2626', speedBand: '80+' };
+    };
+    const segments = [];
+    for (let index = 1; index < points.length; index += 1) {
+      const previous = points[index - 1];
+      const current = points[index];
+      const previousLat = previous.matched_latitude ?? previous.latitude;
+      const previousLng = previous.matched_longitude ?? previous.longitude;
+      const currentLat = current.matched_latitude ?? current.latitude;
+      const currentLng = current.matched_longitude ?? current.longitude;
+      if ([previousLat, previousLng, currentLat, currentLng].some((value) => value == null || !Number.isFinite(Number(value)))) continue;
+      const band = colorForSpeed(current.speed ?? previous.speed ?? 0);
+      const coordinates = [[Number(previousLat), Number(previousLng)], [Number(currentLat), Number(currentLng)]];
+      const last = segments[segments.length - 1];
+      if (last && last.speedBand === band.speedBand && last.coordinates[last.coordinates.length - 1][0] === coordinates[0][0] && last.coordinates[last.coordinates.length - 1][1] === coordinates[0][1]) {
+        last.coordinates.push(coordinates[1]);
+      } else {
+        segments.push({ ...band, coordinates });
+      }
+    }
+    return segments;
+  }, [points]);
+
   const currentPoint = points[pointIndex] || null;
   const mapPosition = useMemo(() => {
     if (!currentPoint) return [];
@@ -305,9 +335,12 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
           <div className="text-xs text-text-muted">{points.length.toLocaleString('fa-IR')} نقطه {loadingHistory ? '· در حال بارگذاری' : ''}</div>
         </div>
         <div className="h-[min(62vh,680px)] min-h-[360px]">
-          {mapPosition.length ? <LiveDeviceMap positions={mapPosition} provider={provider} followPosition animationDuration={Math.max(150, 900 / speed)} /> : <div className="flex h-full items-center justify-center text-sm text-text-muted">پس از انتخاب دستگاه و بازه زمانی، مسیر در این نقشه نمایش داده می‌شود.</div>}
+          {mapPosition.length ? <LiveDeviceMap positions={mapPosition} provider={provider} animationDuration={Math.max(150, 900 / speed)} routeSegments={routeSegments} /> : <div className="flex h-full items-center justify-center text-sm text-text-muted">پس از انتخاب دستگاه و بازه زمانی، مسیر در این نقشه نمایش داده می‌شود.</div>}
         </div>
         <div className="space-y-3 border-t border-border-base p-4">
+          <div className="flex flex-wrap gap-3 text-xs text-text-secondary" aria-label="راهنمای رنگ مسیر بر اساس سرعت">
+            {[['#2563EB','۰ تا ۲۰'],['#16A34A','۲۰ تا ۴۰'],['#EAB308','۴۰ تا ۶۰'],['#F97316','۶۰ تا ۸۰'],['#DC2626','۸۰ به بالا']].map(([color,label]) => <span key={label} className="inline-flex items-center gap-1.5"><span className="inline-block h-1 w-5 rounded-full" style={{ backgroundColor: color }} />{label} km/h</span>)}
+          </div>
           <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3" dir="ltr">
             <div className="flex items-center justify-start gap-2">
               <button type="button" onClick={() => { setPointIndex(0); setPlaying(false); }} disabled={!points.length} title="ابتدای مسیر" aria-label="ابتدای مسیر" className="rounded-lg border border-border-base p-2 text-text-secondary disabled:opacity-40"><SkipBack size={17} /></button>

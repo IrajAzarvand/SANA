@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Marker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet';
+import { Marker, MapContainer, Popup, TileLayer, useMap, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import { animateLeafletMarker } from '../markerAnimation';
 import 'leaflet/dist/leaflet.css';
@@ -38,13 +38,14 @@ function formatLastSeen(value) {
   return new Intl.DateTimeFormat('fa-IR', { dateStyle: 'short', timeStyle: 'medium' }).format(date);
 }
 
-function FitInitialBounds({ positions, followPosition = false, animationDuration = 10000 }) {
+function FitInitialBounds({ positions, followPosition = false, animationDuration = 10000, routeSegments = [] }) {
   const map = useMap();
   const fitted = useRef(false);
 
   useEffect(() => {
     if (!positions.length) return;
-    const points = positions
+    const routePoints = routeSegments.flatMap((segment) => segment.coordinates || []);
+    const points = routePoints.length ? routePoints : positions
       .filter((item) => Number.isFinite(Number(item.latitude)) && Number.isFinite(Number(item.longitude)))
       .map((item) => [Number(item.latitude), Number(item.longitude)]);
     if (!points.length) return;
@@ -59,12 +60,12 @@ function FitInitialBounds({ positions, followPosition = false, animationDuration
       map.fitBounds(points, { padding: [36, 36], maxZoom: 14 });
     }
     fitted.current = true;
-  }, [map, positions, followPosition]);
+  }, [map, positions, followPosition, routeSegments]);
 
   return null;
 }
 
-export default function OpenStreetMapLeafletMap({ positions = [], onSelectDevice, followPosition = false, animationDuration = 10000 }) {
+export default function OpenStreetMapLeafletMap({ positions = [], onSelectDevice, followPosition = false, animationDuration = 10000, routeSegments = [] }) {
   const validPositions = positions.filter((item) => (
     Number.isFinite(Number(item.latitude))
     && Number.isFinite(Number(item.longitude))
@@ -88,7 +89,10 @@ export default function OpenStreetMapLeafletMap({ positions = [], onSelectDevice
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           maxZoom={19}
         />
-        <FitInitialBounds positions={validPositions} followPosition={followPosition} animationDuration={animationDuration} />
+        <FitInitialBounds positions={validPositions} followPosition={followPosition} animationDuration={animationDuration} routeSegments={routeSegments} />
+        {routeSegments.map((segment, index) => segment.coordinates?.length >= 2 && (
+          <Polyline key={`${segment.speedBand}-${index}`} positions={segment.coordinates} pathOptions={{ color: segment.color, weight: 5, opacity: 0.95, lineCap: 'round', lineJoin: 'round' }} />
+        ))}
         {validPositions.map((position) => {
           const status = position.status === 'moving'
             ? 'در حرکت'
