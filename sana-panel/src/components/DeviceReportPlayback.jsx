@@ -241,6 +241,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
                 autoComplete="off"
                 value={search}
                 onFocus={() => setDevicePickerOpen(true)}
+                onBlur={() => setDevicePickerOpen(false)}
                 onChange={(event) => {
                   setSearch(event.target.value);
                   setDeviceId('');
