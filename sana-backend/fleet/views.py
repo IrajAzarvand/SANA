@@ -245,17 +245,22 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     SELECT mm.history_id, mm.matched_latitude, mm.matched_longitude
                     FROM gps.map_matched_position AS mm
                     WHERE mm.device_id = s.device_id
-                      AND mm.device_time <= COALESCE(
+                      AND mm.device_time = COALESCE(
                           CASE WHEN s.gps_valid THEN s.device_time
                                ELSE s.last_valid_device_time END,
                           s.device_time
                       )
-                      AND mm.device_time >= COALESCE(
-                          CASE WHEN s.gps_valid THEN s.device_time
-                               ELSE s.last_valid_device_time END,
-                          s.device_time
-                      ) - INTERVAL '5 minutes'
-                    ORDER BY mm.device_time DESC, mm.history_id DESC
+                      AND mm.original_latitude = COALESCE(
+                          CASE WHEN s.gps_valid THEN s.latitude
+                               ELSE s.last_valid_latitude END,
+                          s.latitude
+                      )
+                      AND mm.original_longitude = COALESCE(
+                          CASE WHEN s.gps_valid THEN s.longitude
+                               ELSE s.last_valid_longitude END,
+                          s.longitude
+                      )
+                    ORDER BY mm.history_id DESC
                     LIMIT 1
                 ) AS m ON TRUE
                 WHERE s.device_id = ANY(%s)
