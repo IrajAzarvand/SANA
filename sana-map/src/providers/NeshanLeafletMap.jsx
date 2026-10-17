@@ -105,7 +105,7 @@ function popupHtml(position) {
   </div>`;
 }
 
-export default function NeshanLeafletMap({ positions, onSelectDevice }) {
+export default function NeshanLeafletMap({ positions, onSelectDevice, followPosition = false }) {
   const elementRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef(new Map());
@@ -166,12 +166,14 @@ export default function NeshanLeafletMap({ positions, onSelectDevice }) {
     if (!map || !L) return;
     syncMarkers(L, map, positions, markersRef, onSelectDevice);
 
-    if (!hasFitBoundsRef.current && positions.length) {
+    if (followPosition && positions.length === 1) {
+      map.panTo([Number(positions[0].latitude), Number(positions[0].longitude)], { animate: false });
+    } else if (!hasFitBoundsRef.current && positions.length) {
       const bounds = L.latLngBounds(positions.map((item) => [item.latitude, item.longitude]));
       map.fitBounds(bounds, { padding: [36, 36], maxZoom: 14 });
       hasFitBoundsRef.current = true;
     }
-  }, [positions, onSelectDevice]);
+  }, [positions, onSelectDevice, followPosition]);
 
   return (
     <div className="relative h-full min-h-80 w-full">
