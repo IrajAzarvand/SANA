@@ -5,14 +5,32 @@ import apiClient from '../api/client';
 import LiveDeviceMap from '../../../sana-map/src/LiveDeviceMap';
 import { MAP_PROVIDER, MAP_PROVIDERS } from '../../../sana-map/src/config';
 
-const REFRESH_INTERVAL_MS = 10_000;
-
 export default function Map() {
   const [positions, setPositions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState(null);
   const [mapProvider, setMapProvider] = useState(MAP_PROVIDER);
+  const [refreshIntervalSeconds, setRefreshIntervalSeconds] = useState(10);
+
+  useEffect(() => {
+    let active = true;
+    apiClient.get('/site-settings/')
+      .then(({ data }) => {
+        if (!active) return;
+        if ([MAP_PROVIDERS.LEAFLET_OSM, MAP_PROVIDERS.NESHAN_LEAFLET].includes(data?.map_provider)) {
+          setMapProvider(data.map_provider);
+        }
+        const interval = Number(data?.map_refresh_interval_seconds);
+        if (Number.isInteger(interval) && interval >= 5 && interval <= 300) {
+          setRefreshIntervalSeconds(interval);
+        }
+      })
+      .catch(() => {
+        // در صورت در دسترس نبودن تنظیمات، مقادیر پیش‌فرض محلی استفاده می‌شوند.
+      });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -33,9 +51,9 @@ export default function Map() {
       }
     };
     refreshPositions();
-    const intervalId = window.setInterval(refreshPositions, REFRESH_INTERVAL_MS);
+    const intervalId = window.setInterval(refreshPositions, refreshIntervalSeconds * 1000);
     return () => { active = false; window.clearInterval(intervalId); };
-  }, []);
+  }, [refreshIntervalSeconds]);
 
   const moving = positions.filter((item) => item.status === 'moving').length;
   const stopped = positions.filter((item) => item.status === 'stopped').length;
@@ -70,7 +88,7 @@ export default function Map() {
           </div>
           <div className="flex flex-wrap items-center gap-3 text-xs text-text-muted">
             <span>{loading ? 'در حال دریافت اطلاعات…' : lastUpdated ? 'آخرین به‌روزرسانی: ' + lastUpdated.toLocaleTimeString('fa-IR') : 'در انتظار اطلاعات'}</span>
-            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-brand-500" />به‌روزرسانی خودکار هر ۱۰ ثانیه</span>
+            <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-brand-500" />به‌روزرسانی خودکار هر {refreshIntervalSeconds.toLocaleString('fa-IR')} ثانیه</span>
           </div>
         </div>
         <div className="h-[min(72vh,760px)] min-h-[420px]"><LiveDeviceMap positions={positions} provider={mapProvider} /></div>
