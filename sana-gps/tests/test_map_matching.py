@@ -52,6 +52,29 @@ class MapMatchingTests(unittest.TestCase):
         pool.connection.return_value.__enter__.return_value.execute.return_value.fetchone.return_value = (False,)
         self.assertFalse(has_active_map_matching_viewers(pool))
 
+    @patch("app.processing.map_matching.urlopen")
+    def test_parses_real_neshan_location_object(self, urlopen):
+        response = MagicMock()
+        response.read.return_value = json.dumps({
+            "snappedPoints": [
+                {"originalIndex": 0, "location": {"latitude": 34.359806, "longitude": 47.091189}},
+                {"originalIndex": 1, "location": {"latitude": 34.360100, "longitude": 47.091500}},
+            ]
+        }).encode()
+        response.__enter__.return_value = response
+        response.__exit__.return_value = False
+        urlopen.return_value = response
+
+        result = _request_matched_points("test-key", [
+            (10, 34.3598, 47.0912),
+            (11, 34.3601, 47.0915),
+        ])
+
+        self.assertEqual(result, {
+            0: (34.359806, 47.091189),
+            1: (34.360100, 47.091500),
+        })
+
     def test_does_not_call_api_for_fewer_than_two_points(self):
         with patch("app.processing.map_matching.urlopen") as urlopen:
             self.assertEqual(_request_matched_points("test-key", [(1, 35.7, 51.4)]), {})
