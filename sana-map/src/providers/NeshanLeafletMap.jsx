@@ -93,6 +93,7 @@ function popupHtml(position) {
   const title = position.vehicle_plate || position.imei || `دستگاه ${position.device_id}`;
   const status = position.status === 'moving' ? 'در حرکت' : position.status === 'offline' ? 'آفلاین' : 'متوقف';
   const positionNote = position.position_is_current ? '' : '<div style="color:#F59E0B;margin-top:6px">آخرین مختصات معتبر (GPS فعلی فاقد Fix است)</div>';
+  const matchingNote = position.position_is_matched ? '<div style="color:#0F766E;margin-top:6px">موقعیت منطبق‌شده با مسیر جاده</div>' : '';
   return `<div dir="rtl" style="font-family:Tahoma,sans-serif;min-width:190px;color:#111">
     <div style="font-weight:700;margin-bottom:8px">${escapeHtml(title)}</div>
     <div>شناسه دستگاه: ${escapeHtml(position.imei)}</div>
@@ -100,6 +101,7 @@ function popupHtml(position) {
     <div>سرعت: ${position.speed == null ? '—' : escapeHtml(position.speed)} km/h</div>
     <div>آخرین ارتباط: ${escapeHtml(formatLastSeen(position.last_seen))}</div>
     ${positionNote}
+    ${matchingNote}
   </div>`;
 }
 
