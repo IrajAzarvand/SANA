@@ -33,6 +33,33 @@ export default function Map() {
   }, []);
 
   useEffect(() => {
+    // A short-lived heartbeat tells the GPS worker that somebody is viewing the map.
+    // The server expires the session automatically if the tab/browser disappears.
+    const sessionId = window.crypto?.randomUUID
+      ? window.crypto.randomUUID()
+      : `map-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const heartbeat = () => {
+      apiClient.post('/devices/map-matching-activity/', {
+        session_id: sessionId,
+        active: true,
+      }).catch(() => {
+        // Matching stays disabled if the activity endpoint is unavailable.
+      });
+    };
+    heartbeat();
+    const timer = window.setInterval(heartbeat, 15000);
+    return () => {
+      window.clearInterval(timer);
+      apiClient.post('/devices/map-matching-activity/', {
+        session_id: sessionId,
+        active: false,
+      }).catch(() => {
+        // The server-side expiry is the fallback cleanup.
+      });
+    };
+  }, []);
+
+  useEffect(() => {
     let active = true;
     let inFlight = false;
     const refreshPositions = async () => {

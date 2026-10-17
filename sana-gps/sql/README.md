@@ -10,7 +10,8 @@ Apply these files in order to the target SANA PostgreSQL database:
 4. Run `0002_detected_protocol_registration.sql` as a PostgreSQL administrator.
 5. Run `0007_neshan_map_matching.sql` (retired compatibility migration; it does not create a table in current versions).
 6. Run `0008_store_map_matches_in_existing_tables.sql` to add road-match fields to `gps.current_state` and `gps.location_history`; it also removes the temporary table if an older deployment created it.
-7. Configure Django's ignored local/server environment file with `DB_USER=sana_user`; configure `/etc/sana-gps.env` with `SANA_GPS_DB_USER=sana_user`. Both must use the same database name, host/port as appropriate, and the same secret for `sana_user`.
+7. Run `0009_on_demand_map_matching.sql` to create the expiring map-viewer heartbeat table. The worker uses this table to avoid billable matching while no map is open.
+8. Configure Django's ignored local/server environment file with `DB_USER=sana_user`; configure `/etc/sana-gps.env` with `SANA_GPS_DB_USER=sana_user`. Both must use the same database name, host/port as appropriate, and the same secret for `sana_user`.
 
 The database login is separate from Django's application-level users and roles. Do not confuse the PostgreSQL role `sana_user` with the SANA site-admin account.
 
@@ -37,6 +38,8 @@ Keep this service key on the server only; never put it in `sana-panel/.env`,
 a `VITE_*` variable, source control, or browser requests. If the key is absent,
 GPS ingestion continues normally and the map uses raw coordinates. After
 applying the schema migrations, restart `sana-gps` to load the environment.
+
+The on-demand live-map worker checks for a map-viewer heartbeat every 10 seconds and only processes recent fixes when at least one authenticated map session is active. Heartbeats expire after 45 seconds if a tab or browser disappears. Apply `0009_on_demand_map_matching.sql` before deploying the backend and worker changes.
 
 Historical-report matching is not yet an on-demand report workflow: the current
 background worker only processes recent fixes. The report implementation should

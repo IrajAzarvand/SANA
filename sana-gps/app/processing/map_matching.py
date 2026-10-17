@@ -13,8 +13,8 @@ from app.database.pool import DatabaseConnectionPool
 _LOGGER = logging.getLogger(__name__)
 _ENDPOINT = "https://api.neshan.org/v3/map-matching"
 _MAX_POINTS_PER_REQUEST = 100
-_RECENT_WINDOW_MINUTES = 20
-_DEFAULT_POLL_SECONDS = 30.0
+_RECENT_WINDOW_MINUTES = 3
+_DEFAULT_POLL_SECONDS = 10.0
 _HTTP_TIMEOUT_SECONDS = 12.0
 
 
@@ -68,12 +68,34 @@ def _request_matched_points(
             location = item["location"]
         except (KeyError, TypeError, ValueError):
             continue
-        if not 0 <= index < len(points) or not isinstance(location, (list, tuple)) or len(location) < 2:
+        if not 0 <= index < len(points):
             continue
-        coordinate = _valid_coordinate(location[0], location[1])
+        if isinstance(location, dict):
+            latitude = location.get("latitude")
+            longitude = location.get("longitude")
+        elif isinstance(location, (list, tuple)) and len(location) >= 2:
+            latitude, longitude = location[0], location[1]
+        else:
+            continue
+        coordinate = _valid_coordinate(latitude, longitude)
         if coordinate is not None:
             matched[index] = coordinate
     return matched
+
+
+def has_active_map_matching_viewers(pool: DatabaseConnectionPool) -> bool:
+    """Return whether at least one browser map session has a live heartbeat."""
+    with pool.connection() as connection:
+        row = connection.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM gps.map_matching_watchers
+                WHERE expires_at > CURRENT_TIMESTAMP
+            )
+            """
+        ).fetchone()
+    return bool(row and row[0])
 
 
 def process_pending_map_matches(
@@ -228,16 +250,24 @@ async def run_map_matching_worker(
 
     while not shutdown_event.is_set():
         started = time.monotonic()
-        work_task = asyncio.create_task(
-            asyncio.to_thread(process_pending_map_matches, pool, api_key),
-            name="sana-neshan-map-matching-scan",
-        )
+        work_task = None
         try:
-            await asyncio.shield(work_task)
+            active_viewers = await asyncio.to_thread(
+                has_active_map_matching_viewers, pool
+            )
+            if not active_viewers:
+                _LOGGER.debug("Skipping Neshan matching: no active map viewers")
+            else:
+                work_task = asyncio.create_task(
+                    asyncio.to_thread(process_pending_map_matches, pool, api_key),
+                    name="sana-neshan-map-matching-scan",
+                )
+                await asyncio.shield(work_task)
         except asyncio.CancelledError:
             # Let an in-flight HTTP/database scan finish before the shared pool closes.
             try:
-                await work_task
+                if work_task is not None:
+                    await work_task
             finally:
                 raise
         except Exception:
