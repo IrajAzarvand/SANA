@@ -68,6 +68,28 @@ class AppConfigTests(unittest.TestCase):
         self.assertEqual(config.database.user, "sana_user")
         self.assertEqual(config.database.password, "sana_password_123")
 
+    def test_loads_optional_neshan_map_matching_key(self):
+        env = {
+            "SANA_GPS_DB_NAME": "sana_db",
+            "SANA_GPS_DB_USER": "sana_user",
+            "SANA_GPS_DB_PASSWORD": "secret",
+            "NESHAN_MAP_MATCHING_API_KEY": "server-only-test-key",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            config = AppConfig.from_env()
+        self.assertEqual(config.neshan_map_matching_api_key, "server-only-test-key")
+
+    def test_empty_neshan_map_matching_key_disables_matching(self):
+        env = {
+            "SANA_GPS_DB_NAME": "sana_db",
+            "SANA_GPS_DB_USER": "sana_user",
+            "SANA_GPS_DB_PASSWORD": "secret",
+            "NESHAN_MAP_MATCHING_API_KEY": "   ",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            config = AppConfig.from_env()
+        self.assertIsNone(config.neshan_map_matching_api_key)
+
     def test_rejects_non_integer_database_port(self):
         env = {
             "SANA_GPS_DB_NAME": "sana_db",

@@ -81,6 +81,12 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -f sql/0001_gps_schema.sql
+      - name: Apply map-matching fields to existing GPS tables
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -f sql/0007_neshan_map_matching.sql
+          psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -f sql/0008_store_map_matches_in_existing_tables.sql
       - name: Install protocol registration function
         env:
           PGPASSWORD: postgres

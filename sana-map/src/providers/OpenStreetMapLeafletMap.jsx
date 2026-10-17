@@ -105,6 +105,9 @@ export default function OpenStreetMapLeafletMap({ positions = [], onSelectDevice
                   {!position.position_is_current && (
                     <div style={{ color: '#B45309' }}>آخرین مختصات معتبر (GPS فعلی فاقد Fix است)</div>
                   )}
+                  {position.position_is_matched && (
+                    <div style={{ color: '#0F766E' }}>موقعیت منطبق‌شده با مسیر جاده</div>
+                  )}
                 </div>
               </Popup>
             </Marker>

@@ -107,6 +107,7 @@ class AppConfig:
     capture_file: str | None = None
     database: DatabaseConfig | None = None
     gt06_capture_file: str | None = _DEFAULT_GT06_CAPTURE_FILE
+    neshan_map_matching_api_key: str | None = None
 
     @classmethod
     def from_env(cls) -> "AppConfig":
@@ -140,6 +141,9 @@ class AppConfig:
         gt06_capture_file = os.getenv(
             "SANA_GPS_GT06_CAPTURE_FILE", _DEFAULT_GT06_CAPTURE_FILE
         ).strip() or None
+        neshan_map_matching_api_key = os.getenv(
+            "NESHAN_MAP_MATCHING_API_KEY", ""
+        ).strip() or None
 
         log_level = os.getenv(
             "SANA_GPS_LOG_LEVEL", _DEFAULT_LOG_LEVEL
@@ -163,6 +167,7 @@ class AppConfig:
             capture_file=capture_file,
             database=DatabaseConfig.from_env(),
             gt06_capture_file=gt06_capture_file,
+            neshan_map_matching_api_key=neshan_map_matching_api_key,
         )
 
 
