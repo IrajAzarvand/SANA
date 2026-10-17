@@ -126,6 +126,11 @@ class GPSTelemetryRepository:
             engine_hours = EXCLUDED.engine_hours,
             fuel_level = EXCLUDED.fuel_level,
             attributes = EXCLUDED.attributes,
+            matched_latitude = NULL,
+            matched_longitude = NULL,
+            matched_geom = NULL,
+            match_provider = NULL,
+            matched_at = NULL,
             updated_at = CURRENT_TIMESTAMP
         WHERE gps.current_state.device_time IS NULL
            OR EXCLUDED.device_time > gps.current_state.device_time
