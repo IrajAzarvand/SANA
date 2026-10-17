@@ -3,6 +3,7 @@ import { Activity, MapPin } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import apiClient from '../api/client';
 import LiveDeviceMap from '../../../sana-map/src/LiveDeviceMap';
+import { MAP_PROVIDER, MAP_PROVIDERS } from '../../../sana-map/src/config';
 
 const REFRESH_INTERVAL_MS = 10_000;
 
@@ -11,6 +12,7 @@ export default function Map() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [mapProvider, setMapProvider] = useState(MAP_PROVIDER);
 
   useEffect(() => {
     let active = true;
@@ -50,14 +52,28 @@ export default function Map() {
       </div>
       {error && <div role="alert" className="rounded-card border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-text-primary">{error}{positions.length > 0 && <span className="mr-2 text-text-muted">موقعیت‌های قبلی تا دریافت داده جدید نمایش داده می‌شوند.</span>}</div>}
       <section className="overflow-hidden rounded-card border border-border-base bg-bg-elevated">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border-base px-4 py-3">
-          <div className="flex items-center gap-2 text-sm font-medium text-text-primary"><Activity size={17} className="text-brand-400" />موقعیت دستگاه‌ها</div>
-          <div className="flex items-center gap-3 text-xs text-text-muted">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-base px-4 py-3">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 text-sm font-medium text-text-primary"><Activity size={17} className="text-brand-400" />موقعیت دستگاه‌ها</div>
+            <label className="flex items-center gap-2 text-sm text-text-secondary">
+              <span>نقشه:</span>
+              <select
+                aria-label="انتخاب ارائه‌دهنده نقشه"
+                value={mapProvider}
+                onChange={(event) => setMapProvider(event.target.value)}
+                className="rounded-lg border border-border-base bg-bg-elevated px-3 py-2 text-sm text-text-primary outline-none focus:border-brand-400"
+              >
+                <option value={MAP_PROVIDERS.LEAFLET_OSM}>OpenStreetMap</option>
+                <option value={MAP_PROVIDERS.NESHAN_LEAFLET}>نشان</option>
+              </select>
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 text-xs text-text-muted">
             <span>{loading ? 'در حال دریافت اطلاعات…' : lastUpdated ? 'آخرین به‌روزرسانی: ' + lastUpdated.toLocaleTimeString('fa-IR') : 'در انتظار اطلاعات'}</span>
             <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-brand-500" />به‌روزرسانی خودکار هر ۱۰ ثانیه</span>
           </div>
         </div>
-        <div className="h-[min(72vh,760px)] min-h-[420px]"><LiveDeviceMap positions={positions} /></div>
+        <div className="h-[min(72vh,760px)] min-h-[420px]"><LiveDeviceMap positions={positions} provider={mapProvider} /></div>
         {!loading && !error && positions.length === 0 && <div className="flex items-center gap-2 border-t border-border-base px-4 py-3 text-sm text-text-muted"><MapPin size={16} />هنوز موقعیت معتبری برای دستگاه‌های قابل‌دسترسی ثبت نشده است.</div>}
       </section>
     </div>

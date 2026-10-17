@@ -4,14 +4,22 @@ import { NESHAN_LEAFLET_CONFIG } from '../config';
 const SDK_SCRIPT_ID = 'sana-neshan-leaflet-sdk';
 const SDK_STYLE_ID = 'sana-neshan-leaflet-style';
 const SDK_BASE = 'https://static.neshan.org/sdk/leaflet/v1.9.4/neshan-sdk/v1.0.8';
+const SDK_LOADED_FLAG = '__SANA_NESHAN_LEAFLET_SDK_LOADED__';
 
 function loadNeshanSdk() {
-  if (window.L?.Map) return Promise.resolve(window.L);
+  if (window[SDK_LOADED_FLAG] && window.L?.Map) return Promise.resolve(window.L);
 
   const existing = document.getElementById(SDK_SCRIPT_ID);
   if (existing) {
     return new Promise((resolve, reject) => {
-      existing.addEventListener('load', () => resolve(window.L), { once: true });
+      existing.addEventListener('load', () => {
+        if (window.L?.Map) {
+          window[SDK_LOADED_FLAG] = true;
+          resolve(window.L);
+        } else {
+          reject(new Error('SDK نشان بارگذاری شد اما Leaflet در دسترس نیست.'));
+        }
+      }, { once: true });
       existing.addEventListener('error', () => reject(new Error('بارگذاری SDK نقشه نشان ناموفق بود.')), { once: true });
     });
   }
@@ -29,9 +37,14 @@ function loadNeshanSdk() {
     script.id = SDK_SCRIPT_ID;
     script.src = `${SDK_BASE}/index.js`;
     script.async = true;
-    script.onload = () => window.L
-      ? resolve(window.L)
-      : reject(new Error('SDK نشان بارگذاری شد اما Leaflet در دسترس نیست.'));
+    script.onload = () => {
+      if (window.L?.Map) {
+        window[SDK_LOADED_FLAG] = true;
+        resolve(window.L);
+      } else {
+        reject(new Error('SDK نشان بارگذاری شد اما Leaflet در دسترس نیست.'));
+      }
+    };
     script.onerror = () => reject(new Error('بارگذاری SDK نقشه نشان ناموفق بود.'));
     document.head.appendChild(script);
   });
