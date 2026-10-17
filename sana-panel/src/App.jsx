@@ -9,6 +9,7 @@ import Vehicles from './pages/Vehicles';
 import Drivers from './pages/Drivers';
 import Devices from './pages/Devices';
 import Reports from './pages/Reports';
+import DeviceTripReport from './pages/DeviceTripReport';
 import Alerts from './pages/Alerts';
 import Settings from './pages/Settings';
 import Companies from './pages/Companies';
@@ -37,6 +38,7 @@ export default function App() {
             <Route path="map"       element={<Map />} />
             <Route path="devices"   element={<Devices />} />
             <Route path="reports"   element={<Reports />} />
+            <Route path="reports/trips" element={<DeviceTripReport />} />
             <Route path="alerts"    element={<Alerts />} />
             <Route path="settings"  element={<Settings />} />
 
