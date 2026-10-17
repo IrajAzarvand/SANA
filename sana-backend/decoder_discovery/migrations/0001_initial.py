@@ -126,6 +126,6 @@ class Migration(migrations.Migration):
         ),
         migrations.AddIndex(
             model_name="decodercandidate",
-            index=models.Index(fields=["compatibility", "status"], name="decoder_candidate_compat_status"),
+            index=models.Index(fields=["compatibility", "status"], name="dec_cand_compat_status"),
         ),
     ]

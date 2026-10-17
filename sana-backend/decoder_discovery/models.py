@@ -122,7 +122,7 @@ class DecoderCandidate(models.Model):
         ordering = ("-discovered_at", "-id")
         indexes = [
             models.Index(fields=("case", "status"), name="decoder_candidate_case_status"),
-            models.Index(fields=("compatibility", "status"), name="decoder_candidate_compat_status"),
+            models.Index(fields=("compatibility", "status"), name="dec_cand_compat_status"),
         ]
 
     def __str__(self):
