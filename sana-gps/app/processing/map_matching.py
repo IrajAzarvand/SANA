@@ -5,7 +5,6 @@ import json
 import logging
 import time
 from collections import defaultdict
-from decimal import Decimal, InvalidOperation
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
