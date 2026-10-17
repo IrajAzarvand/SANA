@@ -3,7 +3,6 @@ import { Activity, CalendarClock, ChevronLeft, ChevronRight, CircleAlert, Loader
 import apiClient from '../api/client';
 import LiveDeviceMap from '../../../sana-map/src/LiveDeviceMap';
 import { MAP_PROVIDER, MAP_PROVIDERS } from '../../../sana-map/src/config';
-import { driverVehicleAssignmentsAPI, vehiclesAPI } from '../api/services/fleet';
 
 const dateTimeLocal = (value) => {
   if (!value) return '';
@@ -32,9 +31,7 @@ async function getAllPages(path) {
 
 export default function DeviceReportPlayback({ isSiteAdmin }) {
   const [devices, setDevices] = useState([]);
-  const [drivers, setDrivers] = useState([]);
   const [assignments, setAssignments] = useState([]);
-  const [vehicles, setVehicles] = useState([]);
   const [loadingDevices, setLoadingDevices] = useState(true);
   const [search, setSearch] = useState('');
   const [deviceId, setDeviceId] = useState('');
@@ -57,37 +54,23 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
     let active = true;
     Promise.all([
       getAllPages('/devices/?page_size=1000'),
-      getAllPages('/drivers/?page_size=1000'),
       getAllPages('/driver-vehicle-assignments/?page_size=1000'),
-      getAllPages('/vehicles/?page_size=1000'),
-    ]).then(([deviceRows, driverRows, assignmentRows, vehicleRows]) => {
+    ]).then(([deviceRows, assignmentRows]) => {
       if (!active) return;
       setDevices(deviceRows);
-      setDrivers(driverRows);
       setAssignments(assignmentRows);
-      setVehicles(vehicleRows);
     }).catch((err) => {
       if (active) setError(err.response?.data?.detail || 'دریافت فهرست دستگاه‌های مجاز ناموفق بود.');
     }).finally(() => { if (active) setLoadingDevices(false); });
     return () => { active = false; };
   }, []);
 
-  const driverById = useMemo(() => new Map(drivers.map((item) => [String(item.id), item])), [drivers]);
-  const vehicleById = useMemo(() => new Map(vehicles.map((item) => [String(item.id), item])), [vehicles]);
   const searchableDevices = useMemo(() => devices.map((device) => {
     const plate = device.vehicle_plate || '';
-    const matchingAssignments = assignments.filter((assignment) => {
-      const vehicleId = assignment.vehicle_id ?? assignment.vehicle;
-      const assignedVehicle = vehicleById.get(String(vehicleId));
-      return assignedVehicle?.plate === plate && plate;
-    });
-    const driverNames = matchingAssignments.map((assignment) => {
-      const driverId = assignment.driver_id ?? assignment.driver;
-      const driver = driverById.get(String(driverId));
-      return assignment.driver_name || driver?.full_name || driver?.name || driver?.driver_name || '';
-    }).filter(Boolean);
+    const matchingAssignments = assignments.filter((assignment) => assignment.vehicle_plate === plate && plate);
+    const driverNames = matchingAssignments.map((assignment) => assignment.driver_name || '').filter(Boolean);
     return { ...device, driverNames, searchText: [device.imei, device.sim_number, plate, device.customer_name, ...driverNames].join(' ').toLocaleLowerCase() };
-  }), [devices, assignments, vehicleById, driverById]);
+  }), [devices, assignments]);
 
   const filteredDevices = useMemo(() => {
     const query = search.trim().toLocaleLowerCase();
@@ -277,7 +260,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
           <div className="text-xs text-text-muted">{points.length.toLocaleString('fa-IR')} نقطه {loadingHistory ? '· در حال بارگذاری' : ''}</div>
         </div>
         <div className="h-[min(62vh,680px)] min-h-[360px]">
-          {mapPosition.length ? <LiveDeviceMap positions={mapPosition} provider={provider} /> : <div className="flex h-full items-center justify-center text-sm text-text-muted">پس از انتخاب دستگاه و بازه زمانی، مسیر در این نقشه نمایش داده می‌شود.</div>}
+          {mapPosition.length ? <LiveDeviceMap positions={mapPosition} provider={provider} followPosition /> : <div className="flex h-full items-center justify-center text-sm text-text-muted">پس از انتخاب دستگاه و بازه زمانی، مسیر در این نقشه نمایش داده می‌شود.</div>}
         </div>
         <div className="space-y-3 border-t border-border-base p-4">
           <div className="flex flex-wrap items-center gap-2">
