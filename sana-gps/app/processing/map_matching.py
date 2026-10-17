@@ -82,21 +82,21 @@ def process_pending_map_matches(
 ) -> int:
     """Match recent valid GPS history in ordered per-device batches.
 
-    The raw GPS history is read-only here. Successful road-matched coordinates
-    are written to gps.map_matched_position and never replace source telemetry.
+    Raw coordinates remain unchanged. Matches are stored on the existing
+    gps.location_history row and copied to current_state only when that exact
+    fix is still the device's current/last-valid position.
     """
     query = """
         WITH recent AS (
             SELECT
                 h.id, h.device_id, h.device_time,
                 h.latitude, h.longitude,
-                (m.history_id IS NOT NULL) AS already_matched,
+                (h.matched_at IS NOT NULL) AS already_matched,
                 ROW_NUMBER() OVER (
                     PARTITION BY h.device_id
                     ORDER BY h.device_time DESC, h.id DESC
                 ) AS point_rank
             FROM gps.location_history AS h
-            LEFT JOIN gps.map_matched_position AS m ON m.history_id = h.id
             WHERE h.gps_valid IS TRUE
               AND h.latitude IS NOT NULL
               AND h.longitude IS NOT NULL
@@ -161,27 +161,51 @@ def process_pending_map_matches(
                     history_id, device_time, original_latitude, original_longitude, _ = segment[point_index]
                     connection.execute(
                         """
-                        INSERT INTO gps.map_matched_position (
-                            history_id, device_id, device_time,
-                            original_latitude, original_longitude,
-                            matched_latitude, matched_longitude, matched_geom,
-                            provider, matched_at
-                        ) VALUES (
-                            %s, %s, %s, %s, %s, %s, %s,
-                            ST_SetSRID(ST_MakePoint(%s::double precision, %s::double precision), 4326),
-                            'neshan', CURRENT_TIMESTAMP
-                        )
-                        ON CONFLICT (history_id) DO UPDATE SET
-                            matched_latitude = EXCLUDED.matched_latitude,
-                            matched_longitude = EXCLUDED.matched_longitude,
-                            matched_geom = EXCLUDED.matched_geom,
-                            provider = EXCLUDED.provider,
-                            matched_at = EXCLUDED.matched_at
+                        UPDATE gps.location_history
+                        SET matched_latitude = %s,
+                            matched_longitude = %s,
+                            matched_geom = ST_SetSRID(
+                                ST_MakePoint(%s::double precision, %s::double precision), 4326
+                            ),
+                            match_provider = 'neshan',
+                            matched_at = CURRENT_TIMESTAMP
+                        WHERE id = %s
+                          AND latitude = %s
+                          AND longitude = %s
                         """,
                         (
-                            history_id, device_id, device_time,
-                            original_latitude, original_longitude,
                             latitude, longitude, longitude, latitude,
+                            history_id, original_latitude, original_longitude,
+                        ),
+                    )
+                    connection.execute(
+                        """
+                        UPDATE gps.current_state
+                        SET matched_latitude = %s,
+                            matched_longitude = %s,
+                            matched_geom = ST_SetSRID(
+                                ST_MakePoint(%s::double precision, %s::double precision), 4326
+                            ),
+                            match_provider = 'neshan',
+                            matched_at = CURRENT_TIMESTAMP,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE device_id = %s
+                          AND COALESCE(
+                              CASE WHEN gps_valid THEN device_time ELSE last_valid_device_time END,
+                              device_time
+                          ) = %s
+                          AND COALESCE(
+                              CASE WHEN gps_valid THEN latitude ELSE last_valid_latitude END,
+                              latitude
+                          ) = %s
+                          AND COALESCE(
+                              CASE WHEN gps_valid THEN longitude ELSE last_valid_longitude END,
+                              longitude
+                          ) = %s
+                        """,
+                        (
+                            latitude, longitude, longitude, latitude,
+                            device_id, device_time, original_latitude, original_longitude,
                         ),
                     )
                     saved += 1
