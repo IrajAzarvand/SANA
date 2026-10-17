@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { FileBarChart, Calendar, Terminal, Radio, Activity, RefreshCw, Pause, Play, Trash2, ShieldCheck, Wifi, AlertCircle } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
@@ -16,7 +17,6 @@ import {
 } from '../data/reportsData';
 import { useAuth } from '../context/AuthContext';
 import apiClient from '../api/client';
-import DeviceReportPlayback from '../components/DeviceReportPlayback';
 
 // گزارش‌های مخصوص ادمین
 const adminReports = [
@@ -335,6 +335,7 @@ export default function Reports() {
   const [preview, setPreview] = useState(null);
 
   const { isSiteAdmin, isPersonal, isBranchManager, user } = useAuth();
+  const navigate = useNavigate();
 
   // لیست گزارش‌ها بر اساس نقش
   const availableReports = useMemo(() => {
@@ -427,13 +428,17 @@ export default function Reports() {
             <ReportCard
               key={report.id}
               report={report}
-              onPreview={setPreview}
+              onPreview={(report) => {
+                if (report.id === 'trips' || report.id === 'my-trips') {
+                  navigate('/panel/reports/trips');
+                  return;
+                }
+                setPreview(report);
+              }}
             />
           ))}
         </div>
       )}
-
-      <DeviceReportPlayback isSiteAdmin={isSiteAdmin} />
 
       {isSiteAdmin && <AdminGPSMonitor />}
 
