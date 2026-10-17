@@ -34,6 +34,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
   const [assignments, setAssignments] = useState([]);
   const [loadingDevices, setLoadingDevices] = useState(true);
   const [search, setSearch] = useState('');
+  const [devicePickerOpen, setDevicePickerOpen] = useState(false);
   const [deviceId, setDeviceId] = useState('');
   const [metadata, setMetadata] = useState(null);
   const [from, setFrom] = useState('');
@@ -79,6 +80,12 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
   }, [search, searchableDevices]);
 
   const selectedDevice = devices.find((item) => String(item.id) === String(deviceId));
+  const deviceLabel = (device) => [
+    device.imei,
+    device.sim_number ? `SIM ${device.sim_number}` : '',
+    device.vehicle_plate || '',
+    ...(device.driverNames || []),
+  ].filter(Boolean).join(' · ');
 
   useEffect(() => {
     setMetadata(null);
@@ -221,21 +228,58 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
       <div className="rounded-2xl border border-border-base bg-bg-elevated p-4 shadow-sm">
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(240px,1.3fr)_minmax(180px,1fr)_minmax(180px,1fr)]">
           <div className="relative">
-            <label htmlFor="device-report-search" className="mb-2 block text-sm font-medium text-text-primary">جست‌وجوی دستگاه، سیم‌کارت یا راننده</label>
+            <label htmlFor="device-report-search" className="mb-2 block text-sm font-medium text-text-primary">جست‌وجو و انتخاب دستگاه</label>
             <div className="relative">
               <Search size={17} className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted" />
-              <input ref={searchInputRef} id="device-report-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="IMEI، شماره سیم‌کارت، پلاک یا نام راننده" className="w-full rounded-xl border border-border-base bg-bg-base py-2.5 pr-10 pl-3 text-sm text-text-primary outline-none focus:border-brand-400" />
+              <input
+                ref={searchInputRef}
+                id="device-report-search"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded={devicePickerOpen}
+                aria-controls="device-report-options"
+                autoComplete="off"
+                value={search}
+                onFocus={() => setDevicePickerOpen(true)}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setDeviceId('');
+                  setDevicePickerOpen(true);
+                }}
+                placeholder={loadingDevices ? 'در حال دریافت دستگاه‌ها…' : 'شناسه، سیم‌کارت، پلاک یا نام راننده را بنویسید'}
+                disabled={loadingDevices}
+                className="w-full rounded-xl border border-border-base bg-bg-base py-2.5 pr-10 pl-3 text-sm text-text-primary outline-none focus:border-brand-400 disabled:opacity-60"
+              />
+              {devicePickerOpen && (
+                <div id="device-report-options" role="listbox" className="absolute inset-x-0 top-full z-[1200] mt-1 max-h-64 overflow-y-auto rounded-xl border border-border-base bg-bg-elevated p-1 shadow-xl">
+                  {filteredDevices.length > 0 ? filteredDevices.slice(0, 100).map((device) => (
+                    <button
+                      key={device.id}
+                      type="button"
+                      role="option"
+                      aria-selected={String(device.id) === String(deviceId)}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => {
+                        setDeviceId(String(device.id));
+                        setSearch(deviceLabel(device));
+                        setDevicePickerOpen(false);
+                      }}
+                      className={`block w-full rounded-lg px-3 py-2 text-right text-sm transition hover:bg-brand-500/10 ${String(device.id) === String(deviceId) ? 'bg-brand-500/10 text-brand-600' : 'text-text-primary'}`}
+                    >
+                      <span className="block font-medium">{device.imei || `دستگاه ${device.id}`}</span>
+                      <span className="mt-0.5 block text-xs text-text-muted">
+                        {[device.sim_number ? `سیم‌کارت: ${device.sim_number}` : '', device.vehicle_plate ? `پلاک: ${device.vehicle_plate}` : '', ...(device.driverNames || [])].filter(Boolean).join(' · ') || 'اطلاعات تکمیلی ثبت نشده'}
+                      </span>
+                    </button>
+                  )) : (
+                    <p className="px-3 py-3 text-sm text-text-muted">{loadingDevices ? 'در حال دریافت دستگاه‌ها…' : 'دستگاهی با این عبارت پیدا نشد.'}</p>
+                  )}
+                </div>
+              )}
             </div>
-            <label htmlFor="device-report-device" className="mb-2 mt-3 block text-sm font-medium text-text-primary">دستگاه</label>
-            <select id="device-report-device" value={deviceId} onChange={(event) => setDeviceId(event.target.value)} disabled={loadingDevices} className="w-full rounded-xl border border-border-base bg-bg-base px-3 py-2.5 text-sm text-text-primary outline-none focus:border-brand-400 disabled:opacity-60">
-              <option value="">{loadingDevices ? 'در حال دریافت دستگاه‌ها…' : 'انتخاب دستگاه مجاز'}</option>
-              {filteredDevices.map((device) => (
-                <option key={device.id} value={device.id}>{device.imei}{device.sim_number ? ` · SIM ${device.sim_number}` : ''}{device.vehicle_plate ? ` · ${device.vehicle_plate}` : ''}</option>
-              ))}
-            </select>
-            {!loadingDevices && filteredDevices.length === 0 && <p className="mt-2 text-xs text-text-muted">دستگاهی با این عبارت پیدا نشد.</p>}
+            {selectedDevice && !devicePickerOpen && <p className="mt-2 text-xs text-text-muted">دستگاه انتخاب‌شده: {deviceLabel(selectedDevice)}</p>}
           </div>
-          <div>
+                    <div>
             <label htmlFor="device-report-from" className="mb-2 block text-sm font-medium text-text-primary">از تاریخ و ساعت</label>
             <input id="device-report-from" type="datetime-local" value={from} min={!isSiteAdmin && metadata?.range_start ? dateTimeLocal(metadata.range_start) : undefined} max={!isSiteAdmin && metadata?.range_end ? dateTimeLocal(metadata.range_end) : undefined} onChange={(event) => setFrom(event.target.value)} className="w-full rounded-xl border border-border-base bg-bg-base px-3 py-2.5 text-sm text-text-primary outline-none focus:border-brand-400" />
             <p className="mt-2 text-xs text-text-muted">{isSiteAdmin ? 'ادمین: بدون محدودیت قراردادی' : metadata?.range_start ? `محدوده قرارداد: ${formatDate(metadata.range_start)} تا ${formatDate(metadata.range_end)}` : 'ابتدا دستگاه مجاز را انتخاب کنید.'}</p>
