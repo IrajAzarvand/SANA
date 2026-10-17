@@ -219,6 +219,37 @@ class DeviceViewSet(viewsets.ModelViewSet):
             return self.get_paginated_response(serializer.data)
         return Response(serializer.data)
 
+    @action(detail=False, methods=['post'], url_path='map-matching-activity')
+    def map_matching_activity(self, request):
+        """Heartbeat for a visible map; the GPS worker expires abandoned sessions."""
+        session_id = request.data.get('session_id')
+        active = request.data.get('active', True)
+        if not isinstance(session_id, str) or not session_id or len(session_id) > 100:
+            return Response({'detail': 'شناسه نشست نقشه نامعتبر است.'}, status=400)
+        if not isinstance(active, bool):
+            return Response({'detail': 'مقدار active باید بولی باشد.'}, status=400)
+
+        with connection.cursor() as cursor:
+            if active:
+                cursor.execute(
+                    """
+                    INSERT INTO gps.map_matching_watchers
+                        (session_id, user_id, expires_at, updated_at)
+                    VALUES (%s, %s, CURRENT_TIMESTAMP + INTERVAL '45 seconds', CURRENT_TIMESTAMP)
+                    ON CONFLICT (session_id) DO UPDATE
+                    SET user_id = EXCLUDED.user_id,
+                        expires_at = EXCLUDED.expires_at,
+                        updated_at = CURRENT_TIMESTAMP
+                    """,
+                    [session_id, request.user.pk],
+                )
+            else:
+                cursor.execute(
+                    "DELETE FROM gps.map_matching_watchers WHERE session_id = %s AND user_id = %s",
+                    [session_id, request.user.pk],
+                )
+        return Response({'active': active})
+
     @action(detail=False, methods=['get'], url_path='map-positions')
     def map_positions(self, request):
         """Return current/last-known GPS positions for devices visible to this user."""
