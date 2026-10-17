@@ -3,10 +3,8 @@ import { Activity, CalendarClock, ChevronLeft, ChevronRight, CircleAlert, Loader
 import apiClient from '../api/client';
 import LiveDeviceMap from '../../../sana-map/src/LiveDeviceMap';
 import { MAP_PROVIDER, MAP_PROVIDERS } from '../../../sana-map/src/config';
-import { driversAPI, driverVehicleAssignmentsAPI, vehiclesAPI } from '../api/services/fleet';
+import { driverVehicleAssignmentsAPI, vehiclesAPI } from '../api/services/fleet';
 
-const PAGE_SIZE = 5000;
-const PAGE_DELAY = 0;
 const dateTimeLocal = (value) => {
   if (!value) return '';
   const date = new Date(value);
@@ -86,7 +84,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
     const driverNames = matchingAssignments.map((assignment) => {
       const driverId = assignment.driver_id ?? assignment.driver;
       const driver = driverById.get(String(driverId));
-      return driver?.full_name || driver?.name || driver?.driver_name || '';
+      return assignment.driver_name || driver?.full_name || driver?.name || driver?.driver_name || '';
     }).filter(Boolean);
     return { ...device, driverNames, searchText: [device.imei, device.sim_number, plate, device.customer_name, ...driverNames].join(' ').toLocaleLowerCase() };
   }), [devices, assignments, vehicleById, driverById]);
@@ -154,7 +152,6 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
         cursor = data.next_cursor || null;
         page += 1;
         if (page > 200) throw new Error('بازه انتخابی بیش از حد بزرگ است؛ بازه کوتاه‌تری انتخاب کنید.');
-        if (cursor && PAGE_DELAY) await new Promise((resolve) => window.setTimeout(resolve, PAGE_DELAY));
       } while (cursor);
       const validPoints = allPoints.filter((point) =>
         (point.matched_latitude !== null && point.matched_latitude !== undefined && point.matched_longitude !== null && point.matched_longitude !== undefined) ||
@@ -162,7 +159,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
       );
       setPoints(validPoints);
       if (validPoints.length === 0) setNotice('در این بازه نقطه مکانی معتبر ثبت نشده است.');
-      else if (validPoints.some((point) => !point.matched_latitude || !point.matched_longitude)) {
+      else if (validPoints.some((point) => point.matched_latitude == null || point.matched_longitude == null)) {
         setNotice('برخی نقاط هنوز مختصات تطبیق‌یافته ندارند؛ برای آن نقاط از مختصات خام GPS استفاده می‌شود.');
       }
     } catch (err) {
@@ -177,11 +174,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
     timerRef.current = window.setInterval(() => {
       setPointIndex((current) => {
         const next = current + 1;
-        if (next >= points.length) {
-          setPlaying(false);
-          return points.length - 1;
-        }
-        return next;
+        return Math.min(next, points.length - 1);
       });
     }, Math.max(150, 900 / speed));
     return () => { if (timerRef.current) window.clearInterval(timerRef.current); };
@@ -190,6 +183,10 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
   useEffect(() => {
     setProgress(points.length > 1 ? (pointIndex / (points.length - 1)) * 100 : 0);
   }, [pointIndex, points.length]);
+
+  useEffect(() => {
+    if (playing && points.length > 0 && pointIndex >= points.length - 1) setPlaying(false);
+  }, [playing, pointIndex, points.length]);
 
   const currentPoint = points[pointIndex] || null;
   const mapPosition = useMemo(() => {
