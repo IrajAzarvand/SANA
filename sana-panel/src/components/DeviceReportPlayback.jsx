@@ -260,7 +260,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
           <div className="text-xs text-text-muted">{points.length.toLocaleString('fa-IR')} نقطه {loadingHistory ? '· در حال بارگذاری' : ''}</div>
         </div>
         <div className="h-[min(62vh,680px)] min-h-[360px]">
-          {mapPosition.length ? <LiveDeviceMap positions={mapPosition} provider={provider} followPosition /> : <div className="flex h-full items-center justify-center text-sm text-text-muted">پس از انتخاب دستگاه و بازه زمانی، مسیر در این نقشه نمایش داده می‌شود.</div>}
+          {mapPosition.length ? <LiveDeviceMap positions={mapPosition} provider={provider} followPosition animationDuration={Math.max(150, 900 / speed)} /> : <div className="flex h-full items-center justify-center text-sm text-text-muted">پس از انتخاب دستگاه و بازه زمانی، مسیر در این نقشه نمایش داده می‌شود.</div>}
         </div>
         <div className="space-y-3 border-t border-border-base p-4">
           <div className="flex flex-wrap items-center gap-2">
