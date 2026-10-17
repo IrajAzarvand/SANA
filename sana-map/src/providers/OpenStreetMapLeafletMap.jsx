@@ -38,7 +38,7 @@ function formatLastSeen(value) {
   return new Intl.DateTimeFormat('fa-IR', { dateStyle: 'short', timeStyle: 'medium' }).format(date);
 }
 
-function FitInitialBounds({ positions, followPosition = false }) {
+function FitInitialBounds({ positions, followPosition = false, animationDuration = 10000 }) {
   const map = useMap();
   const fitted = useRef(false);
 
@@ -49,7 +49,7 @@ function FitInitialBounds({ positions, followPosition = false }) {
       .map((item) => [Number(item.latitude), Number(item.longitude)]);
     if (!points.length) return;
     if (followPosition && points.length === 1) {
-      map.setView(points[0], Math.max(map.getZoom(), 14), { animate: false });
+      map.setView(points[0], Math.max(map.getZoom(), 14), { animate: true, duration: Math.max(0.15, animationDuration / 1000) });
       return;
     }
     if (fitted.current) return;
@@ -88,7 +88,7 @@ export default function OpenStreetMapLeafletMap({ positions = [], onSelectDevice
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           maxZoom={19}
         />
-        <FitInitialBounds positions={validPositions} followPosition={followPosition} />
+        <FitInitialBounds positions={validPositions} followPosition={followPosition} animationDuration={animationDuration} />
         {validPositions.map((position) => {
           const status = position.status === 'moving'
             ? 'در حرکت'
