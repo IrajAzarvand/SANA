@@ -274,8 +274,10 @@ class DeviceViewSet(viewsets.ModelViewSet):
             end_date = link.end_date
             if access.ended_at:
                 end_date = min(end_date, timezone.localdate(access.ended_at))
-            range_start = timezone.make_aware(datetime.combine(start_date, datetime_time.min))
-            range_end = timezone.make_aware(datetime.combine(end_date, datetime_time.max))
+            contract_start = timezone.make_aware(datetime.combine(start_date, datetime_time.min))
+            contract_end = timezone.make_aware(datetime.combine(end_date, datetime_time.max))
+            range_start = max(contract_start, access.started_at)
+            range_end = min(contract_end, access.ended_at) if access.ended_at else contract_end
 
         if request.query_params.get('metadata') == 'true':
             return Response({
