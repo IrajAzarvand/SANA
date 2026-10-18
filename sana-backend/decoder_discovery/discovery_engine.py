@@ -121,7 +121,7 @@ def analyze_unknown_sessions(
         truncated = False
         for row in ordered:
             chunk = bytes(row.raw_payload)
-            if len(payload) + len(chunk) > max_session_bytes:
+            if max_session_bytes and len(payload) + len(chunk) > max_session_bytes:
                 truncated = True
                 break
             payload.extend(chunk)
