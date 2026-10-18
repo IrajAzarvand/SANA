@@ -147,7 +147,8 @@ def analyze_unknown_sessions(
         # Do not infer that an IMEI is equivalent to a protocol terminal number.
         header_ids = set(protocol_evidence["jt808_terminal_id_candidates"])
         exact_header_matches = sorted(header_ids.intersection(identifiers))
-        candidates = sorted(set(candidates) | set(exact_header_matches))
+        # Keep protocol terminal IDs separate from registered Device.imei matches:
+        # a JT808 terminal phone number is not necessarily an IMEI.
         reports.append(
             {
                 "session_id": session_id,
@@ -163,6 +164,7 @@ def analyze_unknown_sessions(
                     "ambiguous" if len(candidates) > 1 else
                     "unmatched"
                 ),
+                "identity_confirmed": len(candidates) == 1 and candidates[0] in identifiers,
                 "truncated": truncated,
                 "features": features,
                 "protocol_evidence": protocol_evidence,
