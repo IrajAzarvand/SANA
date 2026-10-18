@@ -83,3 +83,19 @@ class JT808HeaderEvidenceTests(unittest.TestCase):
         self.assertEqual(evidence["jt808_frame_evidence"][0]["message_id"], "0x0100")
         self.assertEqual(evidence["jt808_frame_evidence"][0]["terminal_id_digits"], "019176533355")
         self.assertIn("19176533355", evidence["jt808_terminal_id_candidates"])
+
+    def test_session_report_exposes_search_clues_without_assigning_protocol(self):
+        session = uuid4()
+        payload = bytes.fromhex(
+            "7e0100002d01917653335500270022044e373034343456335f4f50454e5f4a54"
+            "3830380000000000000000000000000000000000000000000000000000007e"
+        )
+        row = SimpleNamespace(
+            id=1, session_id=session, transport="tcp", raw_payload=payload,
+            identifier_candidate="", received_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        )
+        report = analyze_unknown_sessions([row], ["352016703005868"])[0]
+        self.assertIn("jt808_like_framing", report["protocol_hints"])
+        self.assertIn("open_jt808_marker", report["protocol_hints"])
+        self.assertTrue(report["decoder_research_queries"])
+        self.assertFalse(report["exact_header_identifier_matches"])
