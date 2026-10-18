@@ -44,6 +44,7 @@ class DiscoveryCase(models.Model):
         CLOSED = "closed", "بسته‌شده"
 
     identifier_candidate = models.CharField(max_length=128, blank=True, db_index=True)
+    queue_session_id = models.UUIDField(null=True, blank=True, unique=True, db_index=True)
     protocol_hint = models.CharField(max_length=80, blank=True)
     device_model_hint = models.CharField(max_length=160, blank=True)
     status = models.CharField(max_length=24, choices=Status.choices, default=Status.PENDING_SEARCH, db_index=True)
