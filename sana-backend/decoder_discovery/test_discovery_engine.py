@@ -99,3 +99,6 @@ class JT808HeaderEvidenceTests(unittest.TestCase):
         self.assertIn("open_jt808_marker", report["protocol_hints"])
         self.assertTrue(report["decoder_research_queries"])
         self.assertFalse(report["exact_header_identifier_matches"])
+        self.assertEqual(report["registered_identifier_candidates"], [])
+        self.assertEqual(report["identifier_match_status"], "unmatched")
+        self.assertFalse(report["identity_confirmed"])
