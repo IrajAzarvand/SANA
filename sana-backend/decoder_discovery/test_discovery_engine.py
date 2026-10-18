@@ -67,3 +67,19 @@ class UnknownSessionAnalysisTests(unittest.TestCase):
         report = analyze_unknown_sessions(rows, [], max_session_bytes=5)[0]
         self.assertTrue(report["truncated"])
         self.assertEqual(report["features"]["byte_length"], 4)
+
+
+class JT808HeaderEvidenceTests(unittest.TestCase):
+    def test_extracts_terminal_bcd_and_registration_message_as_evidence(self):
+        from .discovery_engine import _extract_jt808_header_evidence
+
+        # Frame header: 7E | 0100 | 002D | 019176533355 | 0027 | body | 7E
+        payload = bytes.fromhex(
+            "7e0100002d01917653335500270022044e373034343456335f4f50454e5f4a54"
+            "3830380000000000000000000000000000000000000000000000000000007e"
+        )
+        evidence = _extract_jt808_header_evidence(payload)
+        self.assertGreaterEqual(evidence["jt808_frame_evidence_count"], 1)
+        self.assertEqual(evidence["jt808_frame_evidence"][0]["message_id"], "0x0100")
+        self.assertEqual(evidence["jt808_frame_evidence"][0]["terminal_id_digits"], "019176533355")
+        self.assertIn("19176533355", evidence["jt808_terminal_id_candidates"])
