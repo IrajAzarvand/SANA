@@ -12,6 +12,7 @@ export default function Map() {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [mapProvider, setMapProvider] = useState(MAP_PROVIDER);
   const [refreshIntervalSeconds, setRefreshIntervalSeconds] = useState(10);
+  const [followedDeviceId, setFollowedDeviceId] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -82,6 +83,17 @@ export default function Map() {
     return () => { active = false; window.clearInterval(intervalId); };
   }, [refreshIntervalSeconds]);
 
+  useEffect(() => {
+    if (!positions.length) {
+      setFollowedDeviceId(null);
+      return;
+    }
+    setFollowedDeviceId((current) => {
+      if (current && positions.some((item) => String(item.device_id) === String(current))) return current;
+      return positions[0].device_id;
+    });
+  }, [positions]);
+
   const moving = positions.filter((item) => item.status === 'moving').length;
   const stopped = positions.filter((item) => item.status === 'stopped').length;
   const offline = positions.filter((item) => item.status === 'offline').length;
@@ -115,10 +127,21 @@ export default function Map() {
           </div>
           <div className="flex flex-wrap items-center gap-3 text-xs text-text-muted">
             <span>{loading ? 'در حال دریافت اطلاعات…' : lastUpdated ? 'آخرین به‌روزرسانی: ' + lastUpdated.toLocaleTimeString('fa-IR') : 'در انتظار اطلاعات'}</span>
+            {followedDeviceId && (
+              <span className="text-text-secondary">مارکر انتخاب‌شده در مرکز نقشه می‌ماند. برای تغییر دستگاه، روی مارکر دیگری کلیک کنید.</span>
+            )}
             <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-brand-500" />به‌روزرسانی خودکار هر {refreshIntervalSeconds.toLocaleString('fa-IR')} ثانیه</span>
           </div>
         </div>
-        <div className="h-[min(72vh,760px)] min-h-[420px]"><LiveDeviceMap positions={positions} provider={mapProvider} animationDuration={refreshIntervalSeconds * 1000} /></div>
+        <div className="h-[min(72vh,760px)] min-h-[420px]">
+          <LiveDeviceMap
+            positions={positions}
+            provider={mapProvider}
+            followPosition={followedDeviceId || false}
+            onSelectDevice={setFollowedDeviceId}
+            animationDuration={refreshIntervalSeconds * 1000}
+          />
+        </div>
         {!loading && !error && positions.length === 0 && <div className="flex items-center gap-2 border-t border-border-base px-4 py-3 text-sm text-text-muted"><MapPin size={16} />هنوز موقعیت معتبری برای دستگاه‌های قابل‌دسترسی ثبت نشده است.</div>}
       </section>
     </div>

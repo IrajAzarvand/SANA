@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Marker, MapContainer, Popup, TileLayer, useMap, Polyline } from 'react-leaflet';
 import L from 'leaflet';
-import { animateLeafletMarker } from '../markerAnimation';
+import { animateLeafletMarker, getFollowedPosition } from '../markerAnimation';
 import 'leaflet/dist/leaflet.css';
 
 const DEFAULT_CENTER = [32.4279, 53.688];
@@ -38,22 +38,34 @@ function formatLastSeen(value) {
   return new Intl.DateTimeFormat('fa-IR', { dateStyle: 'short', timeStyle: 'medium' }).format(date);
 }
 
-function FitInitialBounds({ positions, followPosition = false, animationDuration = 10000, routeSegments = [] }) {
+function FitInitialBounds({ positions, followPosition = false, routeSegments = [] }) {
   const map = useMap();
   const fitted = useRef(false);
+  const lastFollowKey = useRef(null);
 
   useEffect(() => {
-    if (!positions.length) return;
-    const routePoints = routeSegments.flatMap((segment) => segment.coordinates || []);
+    const followed = getFollowedPosition(positions, followPosition);
+    if (followed) {
+      const key = String(followed.device_id);
+      if (lastFollowKey.current !== key) {
+        map.setView(
+          [Number(followed.latitude), Number(followed.longitude)],
+          Math.max(map.getZoom(), 14),
+          { animate: false },
+        );
+        lastFollowKey.current = key;
+        fitted.current = true;
+      }
+      return;
+    }
+
+    lastFollowKey.current = null;
+    if (!positions.length || fitted.current) return;
+    const routePoints = followPosition ? [] : routeSegments.flatMap((segment) => segment.coordinates || []);
     const points = routePoints.length ? routePoints : positions
       .filter((item) => Number.isFinite(Number(item.latitude)) && Number.isFinite(Number(item.longitude)))
       .map((item) => [Number(item.latitude), Number(item.longitude)]);
     if (!points.length) return;
-    if (followPosition && points.length === 1) {
-      map.setView(points[0], Math.max(map.getZoom(), 14), { animate: true, duration: Math.max(0.15, animationDuration / 1000) });
-      return;
-    }
-    if (fitted.current) return;
     if (points.length === 1) {
       map.setView(points[0], 14);
     } else {
@@ -74,6 +86,7 @@ export default function OpenStreetMapLeafletMap({ positions = [], onSelectDevice
     && Number(item.longitude) >= -180
     && Number(item.longitude) <= 180
   ));
+  const followed = getFollowedPosition(validPositions, followPosition);
 
   return (
     <div className="relative h-full min-h-80 w-full">
@@ -89,7 +102,7 @@ export default function OpenStreetMapLeafletMap({ positions = [], onSelectDevice
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           maxZoom={19}
         />
-        <FitInitialBounds positions={validPositions} followPosition={followPosition} animationDuration={animationDuration} routeSegments={routeSegments} />
+        <FitInitialBounds positions={validPositions} followPosition={followPosition} routeSegments={routeSegments} />
         {routeSegments.map((segment, index) => segment.coordinates?.length >= 2 && (
           <Polyline key={`${segment.speedBand}-${index}`} positions={segment.coordinates} pathOptions={{ color: segment.color, weight: 5, opacity: 0.95, lineCap: 'round', lineJoin: 'round' }} />
         ))}
@@ -105,6 +118,7 @@ export default function OpenStreetMapLeafletMap({ positions = [], onSelectDevice
               icon={createDeviceIcon(position)}
               onSelectDevice={onSelectDevice}
               animationDuration={Number(position.animation_duration_ms) || animationDuration}
+              keepCentered={Boolean(followed && String(followed.device_id) === String(position.device_id))}
             >
               <Popup>
                 <div dir="rtl" style={{ minWidth: 180, fontFamily: 'Tahoma, sans-serif', lineHeight: 1.9 }}>
@@ -130,15 +144,19 @@ export default function OpenStreetMapLeafletMap({ positions = [], onSelectDevice
 }
 
 
-function AnimatedDeviceMarker({ position, icon, onSelectDevice, animationDuration, children }) {
+function AnimatedDeviceMarker({ position, icon, onSelectDevice, animationDuration, keepCentered = false, children }) {
+  const map = useMap();
   const markerRef = useRef(null);
   const initialPositionRef = useRef([Number(position.latitude), Number(position.longitude)]);
 
   useEffect(() => {
     const marker = markerRef.current;
     if (!marker) return;
-    animateLeafletMarker(marker, [Number(position.latitude), Number(position.longitude)], animationDuration);
-  }, [position.latitude, position.longitude, animationDuration]);
+    animateLeafletMarker(marker, [Number(position.latitude), Number(position.longitude)], animationDuration, {
+      map,
+      keepCentered,
+    });
+  }, [map, position.latitude, position.longitude, animationDuration, keepCentered]);
 
   return (
     <Marker
