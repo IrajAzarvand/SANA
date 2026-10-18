@@ -6,6 +6,53 @@ from typing import Any, Iterable
 from .sample_analysis import analyze_raw_payload
 
 
+def _extract_jt808_header_evidence(payload: bytes) -> dict[str, Any]:
+    """Extract conservative JT/T 808 framing/header evidence from 0x7E frames.
+
+    This is evidence only: it does not validate checksum, decode the body, or
+    assign a protocol to a device.
+    """
+    frames: list[dict[str, Any]] = []
+    terminal_ids: list[str] = []
+    start = 0
+    while True:
+        begin = payload.find(b"\\x7e", start)
+        if begin < 0:
+            break
+        end = payload.find(b"\\x7e", begin + 1)
+        if end < 0:
+            break
+        frame = payload[begin + 1:end]
+        start = end
+        # Base JT/T 808 header: msg id (2), attributes (2), terminal BCD (6),
+        # serial number (2). Escaping can alter the body, so only inspect a
+        # conservative raw-frame header prefix here.
+        if len(frame) < 12:
+            continue
+        message_id = int.from_bytes(frame[0:2], "big")
+        attributes = int.from_bytes(frame[2:4], "big")
+        terminal_bcd = frame[4:10]
+        nibbles = "".join(f"{byte >> 4:x}{byte & 0x0f:x}" for byte in terminal_bcd)
+        if all(char in "0123456789" for char in nibbles):
+            terminal_id = nibbles.lstrip("0") or "0"
+            terminal_ids.append(terminal_id)
+        frames.append({
+            "message_id": f"0x{message_id:04X}",
+            "attributes": attributes,
+            "terminal_id_bcd_raw": terminal_bcd.hex(),
+            "terminal_id_digits": nibbles,
+            "frame_bytes": len(frame) + 2,
+        })
+        if len(frames) >= 50:
+            break
+
+    return {
+        "jt808_frame_evidence_count": len(frames),
+        "jt808_frame_evidence": frames[:10],
+        "jt808_terminal_id_candidates": sorted(set(terminal_ids)),
+    }
+
+
 def find_identifier_candidates(
     payload: bytes,
     registered_identifiers: Iterable[str],
@@ -92,6 +139,12 @@ def analyze_unknown_sessions(
         )
         candidates = sorted(set(candidates) | recorded_candidates)
         features = analyze_raw_payload(combined)
+        protocol_evidence = _extract_jt808_header_evidence(combined)
+        # Compare the header BCD field only as an exact identifier candidate.
+        # Do not infer that an IMEI is equivalent to a protocol terminal number.
+        header_ids = set(protocol_evidence["jt808_terminal_id_candidates"])
+        exact_header_matches = sorted(header_ids.intersection(identifiers))
+        candidates = sorted(set(candidates) | set(exact_header_matches))
         reports.append(
             {
                 "session_id": session_id,
@@ -109,6 +162,13 @@ def analyze_unknown_sessions(
                 ),
                 "truncated": truncated,
                 "features": features,
+                "protocol_evidence": protocol_evidence,
+                "exact_header_identifier_matches": exact_header_matches,
+                "protocol_hints": (
+                    ["jt808_like_framing"]
+                    if protocol_evidence["jt808_frame_evidence_count"]
+                    else []
+                ),
                 "evidence_strings": features.get("printable_runs", []),
             }
         )
