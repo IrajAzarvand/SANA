@@ -73,6 +73,7 @@ class Command(BaseCommand):
             self.stdout.write(
                 f"session={report['session_id']} rows={report['row_count']} "
                 f"identifier_status={report['identifier_match_status']} "
+                f"identity_confirmed={str(report['identity_confirmed']).lower()} "
                 f"identifiers={','.join(report['registered_identifier_candidates']) or '-'} "
                 f"bytes={features['byte_length']} entropy={features['entropy_bits_per_byte']} "
                 f"protocol_hints={','.join(report['protocol_hints']) or '-'} "
