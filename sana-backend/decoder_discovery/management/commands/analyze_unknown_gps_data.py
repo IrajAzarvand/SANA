@@ -75,5 +75,9 @@ class Command(BaseCommand):
                 f"identifier_status={report['identifier_match_status']} "
                 f"identifiers={','.join(report['registered_identifier_candidates']) or '-'} "
                 f"bytes={features['byte_length']} entropy={features['entropy_bits_per_byte']} "
+                f"protocol_hints={','.join(report['protocol_hints']) or '-'} "
+                f"terminal_ids={','.join(report['protocol_evidence']['jt808_terminal_id_candidates']) or '-'} "
+                f"message_ids={','.join(sorted({item['message_id'] for item in report['protocol_evidence']['jt808_frame_evidence']})) or '-'} "
+                f"search_queries={'; '.join(report['decoder_research_queries']) or '-'} "
                 f"printable={','.join(report['evidence_strings']) or '-'}"
             )
