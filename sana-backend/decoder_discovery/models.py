@@ -182,3 +182,29 @@ class PublishedDecoderVersion(models.Model):
 
     def __str__(self):
         return f"{self.protocol} v{self.version}"
+
+
+class DiscoverySample(models.Model):
+    """Immutable reference and protocol-neutral analysis for one raw queue row."""
+
+    case = models.ForeignKey(
+        DiscoveryCase, on_delete=models.CASCADE, related_name="samples",
+    )
+    queue_row = models.OneToOneField(
+        "fleet.UnknownGPSData",
+        on_delete=models.PROTECT,
+        related_name="discovery_sample",
+    )
+    payload_sha256 = models.CharField(max_length=64, db_index=True)
+    payload_size_bytes = models.PositiveIntegerField(default=0)
+    features = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("queue_row_id",)
+        indexes = [
+            models.Index(fields=("case", "queue_row"), name="decoder_sample_case_queue"),
+        ]
+
+    def __str__(self):
+        return f"Discovery sample #{self.pk or 'new'} ({self.payload_size_bytes} bytes)"
