@@ -41,7 +41,8 @@ def test_matcher_finds_complete_ascii_identifier_and_avoids_partial_digit_match(
     identifiers = ("9176515720", "352094082143253", "9176515720")
     assert match_registered_identifiers(b"*HQ,9176515720,V1#", identifiers) == ("9176515720",)
     assert match_registered_identifiers(b"X191765157201Y", ("9176515720",)) == ()
-    assert match_registered_identifiers(bytes.fromhex("9176515720"), ("9176515720",)) == ()
+    # The same bytes are valid packed BCD and should now be recognized.
+    assert match_registered_identifiers(bytes.fromhex("9176515720"), ("9176515720",)) == ("9176515720",)
 
 
 def test_matcher_finds_packed_bcd_identifier():
