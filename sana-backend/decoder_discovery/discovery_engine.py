@@ -140,6 +140,9 @@ def analyze_unknown_sessions(
         candidates = sorted(set(candidates) | recorded_candidates)
         features = analyze_raw_payload(combined)
         protocol_evidence = _extract_jt808_header_evidence(combined)
+        printable_lower = " ".join(features.get("printable_runs", [])).lower()
+        jt808_hint = bool(protocol_evidence["jt808_frame_evidence_count"])
+        open_jt808_hint = "open_jt808" in printable_lower
         # Compare the header BCD field only as an exact identifier candidate.
         # Do not infer that an IMEI is equivalent to a protocol terminal number.
         header_ids = set(protocol_evidence["jt808_terminal_id_candidates"])
@@ -165,9 +168,14 @@ def analyze_unknown_sessions(
                 "protocol_evidence": protocol_evidence,
                 "exact_header_identifier_matches": exact_header_matches,
                 "protocol_hints": (
-                    ["jt808_like_framing"]
-                    if protocol_evidence["jt808_frame_evidence_count"]
-                    else []
+                    (["jt808_like_framing"] if jt808_hint else [])
+                    + (["open_jt808_marker"] if open_jt808_hint else [])
+                ),
+                "decoder_research_queries": (
+                    [
+                        "JT/T 808 decoder open source Python",
+                        "JT808 0x7E 0x0100 terminal registration decoder",
+                    ] if jt808_hint or open_jt808_hint else []
                 ),
                 "evidence_strings": features.get("printable_runs", []),
             }
