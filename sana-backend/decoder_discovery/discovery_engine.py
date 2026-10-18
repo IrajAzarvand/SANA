@@ -16,10 +16,10 @@ def _extract_jt808_header_evidence(payload: bytes) -> dict[str, Any]:
     terminal_ids: list[str] = []
     start = 0
     while True:
-        begin = payload.find(b"\\x7e", start)
+        begin = payload.find(b"\x7e", start)
         if begin < 0:
             break
-        end = payload.find(b"\\x7e", begin + 1)
+        end = payload.find(b"\x7e", begin + 1)
         if end < 0:
             break
         frame = payload[begin + 1:end]
