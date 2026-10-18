@@ -8,7 +8,7 @@ from .sample_analysis import analyze_raw_payload
 
 class RawSampleAnalysisTests(unittest.TestCase):
     def test_extracts_generic_features_without_protocol_classification(self):
-        payload = b"\\x7e\\x01DEVICE-ABC\\x00\\x7e"
+        payload = b"\x7e\x01DEVICE-ABC\x00\x7e"
         result = analyze_raw_payload(payload)
 
         self.assertEqual(result["byte_length"], len(payload))
