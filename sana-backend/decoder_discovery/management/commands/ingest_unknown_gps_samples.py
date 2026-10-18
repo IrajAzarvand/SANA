@@ -28,7 +28,10 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         limit = max(1, min(options["limit"], 10000))
         rows = list(
-            UnknownGPSData.objects.filter(status__in=("pending", "matched", "failed"))
+            UnknownGPSData.objects.filter(
+                status__in=("pending", "matched", "failed"),
+                discovery_sample__isnull=True,
+            )
             .order_by("id")[:limit]
         )
         grouped = defaultdict(list)
@@ -36,12 +39,8 @@ class Command(BaseCommand):
             grouped[row.session_id].append(row)
 
         if options["dry_run"]:
-            already_imported = DiscoverySample.objects.filter(
-                queue_row_id__in=[row.pk for row in rows]
-            ).count()
             self.stdout.write(
-                f"dry_run=true rows={len(rows)} sessions={len(grouped)} "
-                f"already_imported={already_imported}"
+                f"dry_run=true unimported_rows={len(rows)} sessions={len(grouped)}"
             )
             return
 
@@ -105,9 +104,31 @@ class Command(BaseCommand):
                 case.raw_sample_count = DiscoverySample.objects.filter(case=case).count()
                 case.save(update_fields=("queue_references", "raw_sample_count", "updated_at"))
 
+        # A queue session may have been matched to a registered identifier after its
+        # sample was first imported. Refresh that fact without inferring a protocol.
+        unresolved_cases = DiscoveryCase.objects.filter(
+            queue_session_id__isnull=False,
+            identifier_candidate="",
+        )
+        refreshed_cases = 0
+        for case in unresolved_cases.iterator():
+            identifier = (
+                UnknownGPSData.objects.filter(
+                    session_id=case.queue_session_id,
+                    identifier_candidate__gt="",
+                )
+                .order_by("id")
+                .values_list("identifier_candidate", flat=True)
+                .first()
+            )
+            if identifier:
+                case.identifier_candidate = identifier
+                case.save(update_fields=("identifier_candidate", "updated_at"))
+                refreshed_cases += 1
+
         self.stdout.write(
             self.style.SUCCESS(
                 f"Imported queue rows: {created_samples}; new discovery cases: {created_cases}; "
-                f"sessions scanned: {len(grouped)}"
+                f"sessions scanned: {len(grouped)}; refreshed identifiers: {refreshed_cases}"
             )
         )
