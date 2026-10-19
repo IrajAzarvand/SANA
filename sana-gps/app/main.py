@@ -20,6 +20,11 @@ from app.repositories.gps_telemetry import GPSTelemetryRepository
 from app.processing.map_matching import run_map_matching_worker
 from app.transport.server import TransportServer
 from app.transport.session import SessionManager, TransportType
+from app.traccar.client import TraccarClient
+from app.traccar.device_sync import run_device_sync_worker, sync_devices_once
+from app.traccar.pending_repository import TraccarPendingDeviceRepository
+from app.traccar.position_receiver import TraccarPositionReceiver
+from app.traccar.webhook_server import TraccarWebhookServer
 
 
 _LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
@@ -74,6 +79,8 @@ async def run(
     if config.database is None:
         print("Database configuration is missing", file=sys.stderr)
         return 2
+    if shutdown_event is None:
+        shutdown_event = asyncio.Event()
 
     database_pool = DatabaseConnectionPool(config.database)
     session_manager = SessionManager()
@@ -95,6 +102,8 @@ async def run(
     unknown_queue_repository = UnknownProtocolQueueRepository(database_pool)
     queue_task: asyncio.Task[None] | None = None
     map_matching_task: asyncio.Task[None] | None = None
+    traccar_sync_task: asyncio.Task[None] | None = None
+    traccar_webhook: TraccarWebhookServer | None = None
 
     async def on_gt06_data(session, data: bytes) -> ProtocolResponse | None:
         if gt06_capture is not None:
@@ -153,8 +162,86 @@ async def run(
     try:
         database_pool.open()
         unknown_queue_repository.check_schema()
+        pending_traccar_repository = TraccarPendingDeviceRepository(database_pool)
+        pending_schema_available = pending_traccar_repository.check_schema()
+        if not pending_schema_available:
+            logger.warning(
+                "Traccar unknown-device staging is unavailable until SQL migration "
+                "0010 is applied; existing GPS listeners will continue"
+            )
         print("PostgreSQL pool initialized")
         print("Database connection OK")
+
+        # Traccar integration is additive: existing TCP/UDP ingestion remains
+        # active. Credentials enable immediate and recurring device reconciliation.
+        traccar_client: TraccarClient | None = None
+        if config.traccar_api_username and config.traccar_api_password:
+            traccar_client = TraccarClient(
+                api_url=config.traccar_api_url,
+                username=config.traccar_api_username,
+                password=config.traccar_api_password,
+            )
+            try:
+                created = await asyncio.to_thread(
+                    sync_devices_once,
+                    traccar_client,
+                    device_repository,
+                    pending_traccar_repository,
+                )
+                logger.info("Traccar startup reconciliation complete; created=%d", created)
+            except Exception:
+                logger.exception(
+                    "Initial Traccar synchronization failed; periodic retry will continue"
+                )
+            traccar_sync_task = asyncio.create_task(
+                run_device_sync_worker(
+                    shutdown_event,
+                    traccar_client,
+                    device_repository,
+                    pending_traccar_repository,
+                    interval_seconds=config.traccar_sync_interval,
+                ),
+                name="sana-traccar-device-sync",
+            )
+        else:
+            logger.warning(
+                "Traccar device sync disabled: set SANA_GPS_TRACCAR_API_USERNAME "
+                "and SANA_GPS_TRACCAR_API_PASSWORD in the service environment"
+            )
+
+        if config.traccar_webhook_secret:
+            if traccar_client is None:
+                logger.warning(
+                    "Traccar position webhook is not started because Traccar API credentials are missing"
+                )
+            else:
+                position_receiver = TraccarPositionReceiver(
+                    client=traccar_client,
+                    device_repository=device_repository,
+                    telemetry_repository=telemetry_repository,
+                )
+                traccar_webhook = TraccarWebhookServer(
+                    host=config.traccar_webhook_host,
+                    port=config.traccar_webhook_port,
+                    secret=config.traccar_webhook_secret,
+                    receiver=position_receiver,
+                )
+                try:
+                    await traccar_webhook.start()
+                    logger.info(
+                        "Traccar webhook listening on %s:%d",
+                        config.traccar_webhook_host,
+                        config.traccar_webhook_port,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Traccar webhook could not start; existing GPS listeners will continue"
+                    )
+                    traccar_webhook = None
+        else:
+            logger.warning(
+                "Traccar position webhook disabled: SANA_GPS_TRACCAR_WEBHOOK_SECRET is not set"
+            )
 
         await transport_server.start()
 
@@ -167,10 +254,8 @@ async def run(
         if gt06_capture is not None:
             print("GT06 raw capture:", gt06_capture.path)
         print("Unknown protocol queue: PostgreSQL durable storage; device scan every 5 seconds")
+        print("Traccar integration: startup reconciliation plus periodic sync when credentials are configured")
         print("SANA GPS ready")
-
-        if shutdown_event is None:
-            shutdown_event = asyncio.Event()
 
         queue_task = asyncio.create_task(
             _monitor_unknown_protocol_queue(
@@ -192,11 +277,16 @@ async def run(
         print(f"SANA GPS runtime error: {exc}", file=sys.stderr)
         return 3
     finally:
-        tasks = [task for task in (queue_task, map_matching_task) if task is not None]
+        tasks = [
+            task for task in (queue_task, map_matching_task, traccar_sync_task)
+            if task is not None
+        ]
         for task in tasks:
             task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+        if traccar_webhook is not None:
+            await traccar_webhook.stop()
         try:
             await transport_server.stop()
         finally:

@@ -39183,3 +39183,88 @@ python manage.py test ops_monitoring
 | [#70](https://github.com/IrajAzarvand/SANA/pull/70) | اصلاح اولیه ترتیب کنترل‌های بازپخش در RTL | ادغام شد؛ سپس چیدمان دقیق‌تر در #71 اصلاح شد |
 | [#71](https://github.com/IrajAzarvand/SANA/pull/71) | چیدمان سه‌ستونه کنترل‌های بازپخش | ادغام شد؛ CI build موفق |
 
+
+
+---
+
+# Traccar integration — implementation decisions and rollout (2026-10-19)
+
+## Architecture agreed with the project owner
+
+Traccar is the protocol-reception and decoding service; SANA remains the authoritative fleet and business system. Traccar's own database is independent and must not be queried directly by SANA. Integration is through the Traccar REST API and its JSON position-forwarding feature.
+
+- Every IMEI already registered in `public.fleet_device` is reconciled into Traccar automatically when `sana-gps` starts and then periodically. Reconciliation is idempotent: existing Traccar devices are kept; missing devices are created with `name=uniqueId=IMEI`.
+- Traccar remains responsible for tracker protocol reception, decoding and extracting device identifiers.
+- Traccar JSON positions are delivered to a loopback-only authenticated HTTP endpoint in `sana-gps`; they are normalized and persisted through the existing `GPSTelemetryRepository` into `gps.raw_packet`, `gps.location_history` and `gps.current_state`. The forwarded JSON is explicitly labelled `traccar-json`; it is not misrepresented as the original tracker wire packet.
+- Traccar's numeric `deviceId` is mapped back to `uniqueId` using the Traccar API/cache, then checked against `public.fleet_device`. Position data from an identifier not registered in SANA is never written to official GPS telemetry tables.
+- A Traccar device absent from SANA is recorded separately in `gps.traccar_unknown_device` as `pending`. This is a staging/review record, not a `fleet_device` row and not a contract or ownership assignment. If it is later registered in SANA, its review status becomes `registered`. An admin-facing review page/API is a separate UI/backend step and is not included in the GPS service integration itself.
+- Traccar auto-registration of unknown identifiers, if enabled, applies only to Traccar's own database. It does not auto-create official SANA devices. This is needed for the reconciliation worker to discover protocol-recognized unknown IDs and stage them for admin review. If `database.registerUnknown` is left disabled, unknown devices may only appear in Traccar logs and will not be discoverable through `GET /api/devices`.
+- Existing SANA TCP/UDP protocol listeners remain running during the migration. Do not stop or redirect them until the Traccar path is configured and verified against live device data.
+
+## Folder ownership
+
+```text
+sana-gps/app/traccar/
+├── client.py                 # Traccar REST API and device cache
+├── device_sync.py             # Startup + recurring device reconciliation
+├── pending_repository.py      # Staging table for Traccar-only device IDs
+├── position_receiver.py       # JSON validation, mapping and normalization
+└── webhook_server.py          # Loopback HTTP endpoint with bearer authentication
+```
+
+Schema change: `sana-gps/sql/0010_traccar_integration.sql` creates the staging table. No test files were added and no automated tests were run, per the project owner's instruction. Verification is to be performed with the real PostgreSQL database, running Traccar API, and live device data.
+
+## Required service configuration
+
+Set the following in `/etc/sana-gps.env`; do not commit credentials or the webhook secret:
+
+```ini
+SANA_GPS_TRACCAR_API_URL=http://127.0.0.1:8082/api
+SANA_GPS_TRACCAR_API_USERNAME=<Traccar administrator username>
+SANA_GPS_TRACCAR_API_PASSWORD=<Traccar administrator password>
+SANA_GPS_TRACCAR_SYNC_INTERVAL=60
+SANA_GPS_TRACCAR_WEBHOOK_HOST=127.0.0.1
+SANA_GPS_TRACCAR_WEBHOOK_PORT=8765
+SANA_GPS_TRACCAR_WEBHOOK_SECRET=<long random secret>
+```
+
+The sync worker is intentionally disabled if API credentials are absent. The webhook is intentionally disabled if the secret is absent. Both must be configured for the full integration.
+
+## Required Traccar configuration
+
+Back up `/opt/traccar/conf/traccar.xml` before editing it. Add or set the equivalent Traccar configuration entries (do not expose port 8082 publicly):
+
+```xml
+<entry key='database.registerUnknown'>true</entry>
+<entry key='forward.enable'>true</entry>
+<entry key='forward.type'>json</entry>
+<entry key='forward.url'>http://127.0.0.1:8765/traccar/positions</entry>
+<entry key='forward.header'>Authorization: Bearer REPLACE_WITH_THE_SAME_WEBHOOK_SECRET</entry>
+<entry key='forward.retry.enable'>true</entry>
+```
+
+Use the same secret in Traccar and `/etc/sana-gps.env`. Traccar's web/API listener must remain bound to `127.0.0.1:8082`; the tracker listener remains on `5027`. Do not enable or change these settings until the migration SQL has been applied and the service environment is ready.
+
+## Data mapping and limitations
+
+- Traccar `speed` is converted from knots to SANA's canonical km/h.
+- `course` becomes SANA heading; coordinates are accepted only when valid and within geographic ranges.
+- `fixTime` / `deviceTime` / `serverTime` are considered in that order; the selected source is retained in attributes.
+- Position attributes are retained as JSONB attributes. Traccar's forwarded JSON is the source payload for the integration packet fingerprint.
+- The webhook binds to loopback by default and requires `Authorization: Bearer ...`. No public webhook firewall rule is required.
+- The staging table records identifiers and review status, but this commit does not yet add the Django admin API or panel screen for approving/rejecting them. That UI/backend workflow remains a follow-up before the feature can be considered complete.
+
+## Current implementation status — 2026-10-19
+
+- [x] Traccar REST client using standard-library HTTP; no additional Python dependency.
+- [x] Immediate startup reconciliation and recurring reconciliation.
+- [x] Create missing Traccar device entries from SANA IMEIs.
+- [x] Stage Traccar identifiers absent from SANA in a separate GPS schema table.
+- [x] Authenticated loopback JSON position receiver and persistence via the canonical GPS repository.
+- [x] Documentation of operational configuration and safety boundaries.
+- [ ] Apply SQL migration `0010_traccar_integration.sql` on the company database.
+- [ ] Add credentials and webhook secret to `/etc/sana-gps.env`.
+- [ ] Configure Traccar forwarding and unknown-device registration.
+- [ ] Restart `sana-gps` and Traccar, then verify real synchronization and live positions.
+- [ ] Add manager-facing SANA API/UI for pending-device review.
+- [ ] Keep the legacy SANA listener active until real-device verification succeeds.
