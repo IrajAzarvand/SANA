@@ -167,7 +167,7 @@ async def run(
         if not pending_schema_available:
             logger.warning(
                 "Traccar unknown-device staging is unavailable until SQL migration "
-                "0009 is applied; existing GPS listeners will continue"
+                "0010 is applied; existing GPS listeners will continue"
             )
         print("PostgreSQL pool initialized")
         print("Database connection OK")
@@ -226,12 +226,18 @@ async def run(
                     secret=config.traccar_webhook_secret,
                     receiver=position_receiver,
                 )
-                await traccar_webhook.start()
-                logger.info(
-                    "Traccar webhook listening on %s:%d",
-                    config.traccar_webhook_host,
-                    config.traccar_webhook_port,
-                )
+                try:
+                    await traccar_webhook.start()
+                    logger.info(
+                        "Traccar webhook listening on %s:%d",
+                        config.traccar_webhook_host,
+                        config.traccar_webhook_port,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Traccar webhook could not start; existing GPS listeners will continue"
+                    )
+                    traccar_webhook = None
         else:
             logger.warning(
                 "Traccar position webhook disabled: SANA_GPS_TRACCAR_WEBHOOK_SECRET is not set"
