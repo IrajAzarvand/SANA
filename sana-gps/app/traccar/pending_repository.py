@@ -1,6 +1,27 @@
 from __future__ import annotations
 
+from datetime import datetime
+from typing import Iterable
+
+from psycopg.types.json import Jsonb
+
 from app.database.pool import DatabaseConnectionPool
+
+
+def _parse_timestamp(value) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    raw = value.strip()
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        result = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if result.tzinfo is None:
+        from datetime import timezone
+        return result.replace(tzinfo=timezone.utc)
+    return result
 
 
 class TraccarPendingDeviceRepository:
@@ -25,57 +46,67 @@ class TraccarPendingDeviceRepository:
 
     def __init__(self, pool: DatabaseConnectionPool) -> None:
         self._pool = pool
+        self._available = False
 
-    def check_schema(self) -> None:
-        with self._pool.connection() as connection:
-            row = connection.execute(
-                "SELECT to_regclass('gps.traccar_unknown_device')"
-            ).fetchone()
-        if row is None or row[0] is None:
-            raise RuntimeError(
-                "Missing gps.traccar_unknown_device; apply "
-                "sana-gps/sql/0009_traccar_integration.sql before starting SANA GPS"
-            )
-
-    def record_unknown(self, device: dict) -> bool:
-        unique_id = str(device.get("uniqueId") or "").strip()
-        if not unique_id:
-            return False
-        device_id = device.get("id")
-        if device_id is None:
-            return False
+    def check_schema(self) -> bool:
+        """Check staging schema without taking down the existing GPS service."""
         try:
-            traccar_device_id = int(device_id)
-        except (TypeError, ValueError):
-            return False
-        last_seen = device.get("lastUpdate")
-        metadata = {
-            "category": device.get("category"),
-            "disabled": device.get("disabled"),
-            "positionId": device.get("positionId"),
-        }
-        with self._pool.connection() as connection:
-            connection.execute(
-                self._UPSERT_UNKNOWN,
-                (
-                    traccar_device_id,
-                    unique_id[:128],
-                    str(device.get("name") or unique_id)[:160],
-                    str(device.get("status") or "unknown")[:32],
-                    last_seen,
-                    __import__("psycopg").types.json.Jsonb(metadata),
-                ),
-            )
-        return True
+            with self._pool.connection() as connection:
+                row = connection.execute(
+                    "SELECT to_regclass('gps.traccar_unknown_device')"
+                ).fetchone()
+            self._available = bool(row and row[0])
+        except Exception:
+            self._available = False
+        return self._available
 
-    def mark_registered(self, unique_id: str) -> None:
+    def record_unknown_many(self, devices: Iterable[dict]) -> int:
+        if not self._available:
+            return 0
+        rows = []
+        for device in devices:
+            unique_id = str(device.get("uniqueId") or "").strip()
+            if not unique_id or len(unique_id) > 128 or device.get("id") is None:
+                continue
+            try:
+                traccar_device_id = int(device["id"])
+            except (TypeError, ValueError):
+                continue
+            metadata = {
+                "category": device.get("category"),
+                "disabled": device.get("disabled"),
+                "positionId": device.get("positionId"),
+            }
+            rows.append((
+                traccar_device_id,
+                unique_id,
+                str(device.get("name") or unique_id)[:160],
+                str(device.get("status") or "unknown")[:32],
+                _parse_timestamp(device.get("lastUpdate")),
+                Jsonb(metadata),
+            ))
+        if not rows:
+            return 0
         with self._pool.connection() as connection:
-            connection.execute(
+            with connection.transaction():
+                connection.executemany(self._UPSERT_UNKNOWN, rows)
+        return len(rows)
+
+    def mark_registered_many(self, unique_ids: Iterable[str]) -> int:
+        if not self._available:
+            return 0
+        identifiers = tuple({item.strip() for item in unique_ids if item and item.strip()})
+        if not identifiers:
+            return 0
+        with self._pool.connection() as connection:
+            cursor = connection.execute(
                 """
                 UPDATE gps.traccar_unknown_device
                 SET review_status = 'registered',
                     last_synced_at = CURRENT_TIMESTAMP
-                WHERE unique_id = %s
+                WHERE unique_id = ANY(%s)
+                  AND review_status <> 'registered'
                 """,
-                (unique_id,),
+                (list(identifiers),),
             )
+            return cursor.rowcount

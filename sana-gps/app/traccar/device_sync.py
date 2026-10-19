@@ -16,6 +16,7 @@ def sync_devices_once(
     pending_repository: TraccarPendingDeviceRepository,
 ) -> int:
     """Create missing SANA devices in Traccar and stage Traccar-only identifiers."""
+    pending_repository.check_schema()
     sana_ids = {
         identifier.strip()
         for identifier in device_repository.find_all_identifiers()
@@ -40,14 +41,15 @@ def sync_devices_once(
     # Refresh after creating records, then identify Traccar devices not present
     # in SANA's authoritative fleet table. They never enter telemetry storage.
     refreshed = client.list_devices()
+    unknown = []
     for device in refreshed:
         unique_id = str(device.get("uniqueId") or "").strip()
         if not unique_id:
             continue
-        if unique_id in sana_ids:
-            pending_repository.mark_registered(unique_id)
-        else:
-            pending_repository.record_unknown(device)
+        if unique_id not in sana_ids:
+            unknown.append(device)
+    pending_repository.record_unknown_many(unknown)
+    pending_repository.mark_registered_many(sana_ids)
     return created
 
 

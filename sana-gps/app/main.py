@@ -79,6 +79,8 @@ async def run(
     if config.database is None:
         print("Database configuration is missing", file=sys.stderr)
         return 2
+    if shutdown_event is None:
+        shutdown_event = asyncio.Event()
 
     database_pool = DatabaseConnectionPool(config.database)
     session_manager = SessionManager()
@@ -161,7 +163,12 @@ async def run(
         database_pool.open()
         unknown_queue_repository.check_schema()
         pending_traccar_repository = TraccarPendingDeviceRepository(database_pool)
-        pending_traccar_repository.check_schema()
+        pending_schema_available = pending_traccar_repository.check_schema()
+        if not pending_schema_available:
+            logger.warning(
+                "Traccar unknown-device staging is unavailable until SQL migration "
+                "0009 is applied; existing GPS listeners will continue"
+            )
         print("PostgreSQL pool initialized")
         print("Database connection OK")
 
@@ -188,7 +195,7 @@ async def run(
                 )
             traccar_sync_task = asyncio.create_task(
                 run_device_sync_worker(
-                    shutdown_event if shutdown_event is not None else asyncio.Event(),
+                    shutdown_event,
                     traccar_client,
                     device_repository,
                     pending_traccar_repository,
@@ -243,9 +250,6 @@ async def run(
         print("Unknown protocol queue: PostgreSQL durable storage; device scan every 5 seconds")
         print("Traccar integration: startup reconciliation plus periodic sync when credentials are configured")
         print("SANA GPS ready")
-
-        if shutdown_event is None:
-            shutdown_event = asyncio.Event()
 
         queue_task = asyncio.create_task(
             _monitor_unknown_protocol_queue(
