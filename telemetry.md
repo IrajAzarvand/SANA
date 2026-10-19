@@ -39212,7 +39212,7 @@ sana-gps/app/traccar/
 └── webhook_server.py          # Loopback HTTP endpoint with bearer authentication
 ```
 
-Schema change: `sana-gps/sql/0009_traccar_integration.sql` creates the staging table. No test files were added and no automated tests were run, per the project owner's instruction. Verification is to be performed with the real PostgreSQL database, running Traccar API, and live device data.
+Schema change: `sana-gps/sql/0010_traccar_integration.sql` creates the staging table. No test files were added and no automated tests were run, per the project owner's instruction. Verification is to be performed with the real PostgreSQL database, running Traccar API, and live device data.
 
 ## Required service configuration
 
@@ -39262,7 +39262,7 @@ Use the same secret in Traccar and `/etc/sana-gps.env`. Traccar's web/API listen
 - [x] Stage Traccar identifiers absent from SANA in a separate GPS schema table.
 - [x] Authenticated loopback JSON position receiver and persistence via the canonical GPS repository.
 - [x] Documentation of operational configuration and safety boundaries.
-- [ ] Apply SQL migration `0009_traccar_integration.sql` on the company database.
+- [ ] Apply SQL migration `0010_traccar_integration.sql` on the company database.
 - [ ] Add credentials and webhook secret to `/etc/sana-gps.env`.
 - [ ] Configure Traccar forwarding and unknown-device registration.
 - [ ] Restart `sana-gps` and Traccar, then verify real synchronization and live positions.

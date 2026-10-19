@@ -1,5 +1,5 @@
--- SANA GPS schema migration 0009: Traccar synchronization and unknown-device review.
--- Apply as a database administrator after migrations 0001-0008.
+-- SANA GPS schema migration 0010: Traccar synchronization and unknown-device review.
+-- Apply as a database administrator after migrations 0001-0009.
 BEGIN;
 SET ROLE sana_user;
 
