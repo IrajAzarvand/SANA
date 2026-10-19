@@ -70,8 +70,10 @@ class TraccarPositionReceiver:
                 result["invalid"] += 1
                 logger.warning("Rejected malformed Traccar position payload")
             except Exception:
-                result["invalid"] += 1
-                logger.exception("Could not persist Traccar position")
+                # Infrastructure failures must reach the HTTP handler so it can
+                # return 5xx and let Traccar's forwarding retry policy replay data.
+                logger.exception("Traccar position processing failed; requesting upstream retry")
+                raise
         return result
 
     def _receive_position(self, position: dict[str, Any]) -> bool:
