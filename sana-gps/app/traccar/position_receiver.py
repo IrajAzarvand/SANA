@@ -56,13 +56,23 @@ class TraccarPositionReceiver:
     def receive_payload(self, payload: Any) -> dict[str, int]:
         positions = payload if isinstance(payload, list) else [payload]
         result = {"received": 0, "saved": 0, "unknown": 0, "invalid": 0}
-        for position in positions:
+        for item in positions:
             result["received"] += 1
+            if not isinstance(item, dict):
+                result["invalid"] += 1
+                continue
+            # Traccar JSON forwarding wraps each Position in a position/device envelope.
+            # Continue accepting bare Position objects and arrays for compatibility.
+            position = item.get("position", item)
             if not isinstance(position, dict):
                 result["invalid"] += 1
                 continue
+            embedded_device = item.get("device") if "position" in item else None
+            if embedded_device is not None and not isinstance(embedded_device, dict):
+                result["invalid"] += 1
+                continue
             try:
-                if self._receive_position(position):
+                if self._receive_position(position, embedded_device=embedded_device):
                     result["saved"] += 1
                 else:
                     result["unknown"] += 1
@@ -76,12 +86,27 @@ class TraccarPositionReceiver:
                 raise
         return result
 
-    def _receive_position(self, position: dict[str, Any]) -> bool:
+    def _receive_position(
+        self,
+        position: dict[str, Any],
+        *,
+        embedded_device: dict[str, Any] | None = None,
+    ) -> bool:
         raw_device_id = position.get("deviceId")
         try:
             traccar_device_id = int(raw_device_id)
         except (TypeError, ValueError) as exc:
-            raise ValueError("missing Traccar deviceId") from exc
+            raise ValueError("missing Traccar position.deviceId") from exc
+
+        # Traccar's internal ID must agree between the envelope and Position.
+        # It is not the SANA database ID; uniqueId is resolved via Traccar API.
+        if embedded_device is not None and embedded_device.get("id") is not None:
+            try:
+                embedded_id = int(embedded_device["id"])
+            except (TypeError, ValueError) as exc:
+                raise ValueError("invalid Traccar device.id") from exc
+            if embedded_id != traccar_device_id:
+                raise ValueError("Traccar position/device ID mismatch")
 
         traccar_device = self._client.get_device_by_id(traccar_device_id)
         if not traccar_device:
