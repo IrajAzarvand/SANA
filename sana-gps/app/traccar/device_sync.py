@@ -62,6 +62,11 @@ async def run_device_sync_worker(
     interval_seconds: float,
 ) -> None:
     """Run reconciliation immediately, then periodically with retry on failures."""
+    try:
+        await asyncio.wait_for(shutdown_event.wait(), timeout=interval_seconds)
+        return
+    except asyncio.TimeoutError:
+        pass
     while not shutdown_event.is_set():
         try:
             created = await asyncio.to_thread(
