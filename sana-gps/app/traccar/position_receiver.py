@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+from app.policies.device_access import device_access_denial_reason
 from app.processing.telemetry import NormalizedTelemetry
 from app.repositories.device import DeviceRepository
 from app.repositories.gps_telemetry import GPSTelemetryRepository
@@ -118,6 +119,14 @@ class TraccarPositionReceiver:
             # Unknown devices are staged by the API reconciliation worker. Do not
             # create a fleet_device or write telemetry until SANA admin approval.
             logger.info("Ignoring position from unapproved Traccar device uniqueId=%s", unique_id)
+            return False
+        denial_reason = device_access_denial_reason(device)
+        if denial_reason is not None:
+            logger.warning(
+                "Rejected Traccar telemetry for device %s: %s",
+                device.imei,
+                denial_reason,
+            )
             return False
 
         device_time = (
