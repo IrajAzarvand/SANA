@@ -124,7 +124,7 @@ def fetch_catalog():
         match = re.search(r"\b(\d{2,5})\b", port_label)
         port = int(match.group(1)) if match else None
         key = (manufacturer.casefold(), model_name.casefold())
-        catalog[key] = {
+        entry = {
             "manufacturer": manufacturer[:100],
             "name": model_name[:100],
             "protocol": protocol[:50],
@@ -137,6 +137,14 @@ def fetch_catalog():
             "traccar_version": CATALOG_VERSION,
             "is_verified": True,
         }
+        existing = catalog.get(key)
+        # If the same label appears as a generic clone and with a concrete
+        # protocol elsewhere in the official table, keep the concrete entry.
+        if existing is None or (
+            existing["protocol"] in {"clones", "unknown"}
+            and protocol not in {"clones", "unknown"}
+        ):
+            catalog[key] = entry
 
     if len(catalog) < 500:
         raise CommandError(
