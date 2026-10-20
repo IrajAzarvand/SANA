@@ -106,9 +106,6 @@ class Device(models.Model):
     ]
 
     imei = models.CharField(max_length=20, unique=True, verbose_name='IMEI')
-    # برند و مدل تجاری دستگاه؛ مستقل از پروتکل شناسایی‌شده در ارتباط GPS.
-    brand = models.CharField(max_length=100, blank=True, default='', verbose_name='برند دستگاه')
-    model_name = models.CharField(max_length=100, blank=True, default='', verbose_name='مدل دستگاه (متنی)')
     # مدل دستگاه اختیاری است؛ ثبت اولیه فقط با IMEI انجام می‌شود.
     device_model = models.ForeignKey(
         DeviceModel,
