@@ -82,9 +82,9 @@ class DeviceModelSerializer(serializers.ModelSerializer):
 
 class DeviceSerializer(serializers.ModelSerializer):
     def validate_device_model(self, value):
-        if value and (not value.is_verified or value.traccar_version != '6.16.0'):
+        if value and not value.is_verified:
             raise serializers.ValidationError(
-                'مدل انتخاب‌شده در کاتالوگ تأییدشده Traccar 6.16.0 وجود ندارد.'
+                'مدل انتخاب‌شده در فهرست رسمی فعلی Traccar فعال نیست.'
             )
         return value
 
