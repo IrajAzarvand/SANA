@@ -1,14 +1,109 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Package, Hash, Phone } from 'lucide-react';
+import { Package, Hash, Phone, ChevronDown, Search } from 'lucide-react';
 import Modal from './Modal';
 import Button from './Button';
 import Input from './Input';
-import Select from './Select';
 import { devicesAPI, deviceModelsAPI } from '../api/services/fleet';
 
+function SearchablePicker({
+  label, value, options, onChange, placeholder, disabled = false, required = false,
+}) {
+  const [query, setQuery] = useState('');
+  const [open, setOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+
+  const selected = options.find((option) => String(option.value) === String(value));
+
+  useEffect(() => {
+    if (!isEditing) setQuery(selected?.label || '');
+  }, [selected?.value, selected?.label, isEditing]);
+
+  const filteredOptions = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase();
+    if (!normalized || normalized === selected?.label?.toLocaleLowerCase()) return options;
+    return options.filter((option) =>
+      option.label.toLocaleLowerCase().includes(normalized)
+    );
+  }, [options, query, selected?.label]);
+
+  return (
+    <div className="relative">
+      {label && (
+        <label className="block text-sm text-text-secondary mb-2">
+          {label}
+          {required && <span className="text-danger mr-1">*</span>}
+        </label>
+      )}
+      <div className="relative">
+        <Search size={16} className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
+        <input
+          type="text"
+          role="combobox"
+          aria-expanded={open}
+          aria-autocomplete="list"
+          value={query}
+          onChange={(event) => {
+            const nextQuery = event.target.value;
+            setQuery(nextQuery);
+            setIsEditing(true);
+            if (selected && nextQuery !== selected.label) onChange('');
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setOpen(false)}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') setOpen(false);
+            if (event.key === 'Enter' && open && filteredOptions.length) {
+              event.preventDefault();
+              setIsEditing(false);
+              onChange(String(filteredOptions[0].value));
+              setQuery(filteredOptions[0].label);
+              setOpen(false);
+            }
+          }}
+          disabled={disabled}
+          required={required}
+          placeholder={placeholder}
+          className="w-full bg-bg-base border border-border-base rounded-field pr-9 pl-10 py-2.5 text-sm text-text-primary focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 disabled:opacity-60 disabled:cursor-not-allowed"
+        />
+        <ChevronDown size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
+      </div>
+      {open && !disabled && (
+        <div
+          role="listbox"
+          className="absolute z-50 mt-1 w-full max-h-60 overflow-y-auto rounded-field border border-border-base bg-bg-base shadow-lg"
+        >
+          {filteredOptions.length ? filteredOptions.slice(0, 250).map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="option"
+              aria-selected={String(option.value) === String(value)}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                setIsEditing(false);
+                onChange(String(option.value));
+                setQuery(option.label);
+                setOpen(false);
+              }}
+              className={`block w-full px-3 py-2 text-right text-sm hover:bg-bg-subtle focus:bg-bg-subtle focus:outline-none ${String(option.value) === String(value) ? 'bg-bg-subtle font-semibold' : ''}`}
+            >
+              {option.label}
+            </button>
+          )) : (
+            <p className="px-3 py-3 text-sm text-text-muted">موردی با این عبارت پیدا نشد.</p>
+          )}
+          {filteredOptions.length > 250 && (
+            <p className="px-3 py-2 text-xs text-text-muted">برای محدودتر کردن نتایج، عبارت دقیق‌تری بنویسید.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
- * مودال افزودن دستگاه جدید به انبار.
- * برند و مدل فقط از کاتالوگ تأییدشده Traccar انتخاب می‌شوند.
+ * Add a device to inventory. Manufacturer and model can be selected or searched by typing.
  */
 export default function AddDeviceModal({ open, onClose, onSuccess }) {
   const [form, setForm] = useState({ imei: '', sim_number: '', manufacturer: '', device_model: '' });
@@ -52,6 +147,10 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    if (!form.manufacturer || !form.device_model) {
+      setError('لطفاً برند و مدل را از گزینه‌های فهرست انتخاب کنید.');
+      return;
+    }
     setSaving(true);
 
     try {
@@ -114,22 +213,22 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
           required
         />
 
-        <Select
+        <SearchablePicker
           label="برند"
           value={form.manufacturer}
-          onChange={(e) => setForm({ ...form, manufacturer: e.target.value, device_model: '' })}
+          onChange={(manufacturer) => setForm({ ...form, manufacturer, device_model: '' })}
           options={brandOptions}
-          placeholder={loadingModels ? 'در حال دریافت فهرست...' : 'برند را انتخاب کنید'}
+          placeholder={loadingModels ? 'در حال دریافت فهرست...' : 'برای جستجو، نام برند را بنویسید یا از فهرست انتخاب کنید'}
           required
           disabled={loadingModels || !brandOptions.length}
         />
 
-        <Select
+        <SearchablePicker
           label="مدل دستگاه"
           value={form.device_model}
-          onChange={(e) => setForm({ ...form, device_model: e.target.value })}
+          onChange={(device_model) => setForm({ ...form, device_model })}
           options={filteredModels}
-          placeholder={!form.manufacturer ? 'ابتدا برند را انتخاب کنید' : 'مدل را انتخاب کنید'}
+          placeholder={!form.manufacturer ? 'ابتدا برند را انتخاب کنید' : 'برای جستجو، نام مدل را بنویسید یا از فهرست انتخاب کنید'}
           required
           disabled={!form.manufacturer || loadingModels || !filteredModels.length}
         />
@@ -137,7 +236,7 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
         {selectedModel && (
           <div className="rounded-field border border-border-base bg-bg-subtle p-3 space-y-1">
             <p className="text-sm text-text-primary">پورت پیش‌فرض Traccar: <strong>{selectedModel.port ?? 'نامشخص'}</strong></p>
-            <p className="text-xs text-text-secondary">پروتکل کاتالوگ: {selectedModel.protocol} · نسخه بررسی‌شده: {selectedModel.traccar_version}</p>
+            <p className="text-xs text-text-secondary">پروتکل کاتالوگ: {selectedModel.protocol} · منبع: فهرست رسمی Traccar</p>
             <p className="text-xs text-text-secondary">این پورت، مقدار پیش‌فرض مستندشده است و ممکن است با تنظیمات سرور متفاوت باشد.</p>
           </div>
         )}
@@ -154,7 +253,7 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
         <div className="bg-info/10 border border-info/30 rounded-field p-3 flex items-start gap-2">
           <Package size={16} className="text-info flex-shrink-0 mt-0.5" />
           <p className="text-xs text-text-secondary leading-relaxed">
-            برند و مدل از کاتالوگ ثابت Traccar انتخاب می‌شوند. پروتکل واقعی دستگاه همچنان پس از اولین ارتباط معتبر توسط سرویس دریافت داده شناسایی می‌شود؛ انتخاب مدل به‌تنهایی پروتکل واقعی را تعیین نمی‌کند.
+            برند و مدل از فهرست رسمی Traccar انتخاب می‌شوند. برخی ردیف‌های فهرست فقط به خانواده/دستگاه‌های مشابه اشاره دارند و لزوماً مدل سخت‌افزاری مستقل نیستند. پروتکل واقعی دستگاه همچنان پس از اولین ارتباط معتبر شناسایی می‌شود؛ انتخاب مدل به‌تنهایی پروتکل واقعی را تعیین نمی‌کند.
           </p>
         </div>
       </form>
