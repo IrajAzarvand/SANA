@@ -71,7 +71,7 @@ function DevicesTab() {
   const [editingDevice, setEditingDevice] = useState(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [editForm, setEditForm] = useState({ imei: '', sim_number: '' });
+  const [editForm, setEditForm] = useState({ imei: '', sim_number: '', brand: '', model_name: '' });
   const [deviceHistoryId, setDeviceHistoryId] = useState(null);
 
   const { isSiteAdmin, isPersonal } = useAuth();
@@ -134,7 +134,12 @@ function DevicesTab() {
     e.preventDefault();
     setSaving(true);
     try {
-      await devicesAPI.update(editingDevice.id, { imei: editForm.imei, sim_number: editForm.sim_number });
+      await devicesAPI.update(editingDevice.id, {
+        imei: editForm.imei,
+        sim_number: editForm.sim_number,
+        brand: editForm.brand,
+        model_name: editForm.model_name,
+      });
       setEditModalOpen(false);
       setEditingDevice(null);
       refetch();
@@ -148,7 +153,12 @@ function DevicesTab() {
 
   const handleEdit = (device) => {
     setEditingDevice(device);
-    setEditForm({ imei: device.imei, sim_number: device.sim_number || '' });
+    setEditForm({
+      imei: device.imei,
+      sim_number: device.sim_number || '',
+      brand: device.brand || device.device_model_manufacturer || '',
+      model_name: device.model_name || device.device_model_name || '',
+    });
     setEditModalOpen(true);
   };
 
@@ -285,7 +295,7 @@ function DevicesTab() {
               <thead>
                 <tr className="border-b border-border-base">
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">IMEI</th>
-                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">پروتکل شناسایی‌شده</th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">برند / مدل دستگاه</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">SIM</th>
                   {isSiteAdmin && (
                     <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">مشتری</th>
@@ -312,7 +322,10 @@ function DevicesTab() {
                       </td>
                       <td className="py-3 px-4">
                         <Badge variant={d.protocol ? 'brand' : 'muted'}>
-                          {protocolLabelMap[(d.protocol || '').toLowerCase()] || d.protocol || 'در انتظار شناسایی'}
+                          {[
+                            d.brand || d.device_model_manufacturer,
+                            d.model_name || d.device_model_name,
+                          ].filter(Boolean).join(' - ') || protocolLabelMap[(d.protocol || '').toLowerCase()] || d.protocol || 'در انتظار شناسایی'}
                         </Badge>
                       </td>
                       <td className="py-3 px-4">
@@ -427,6 +440,18 @@ function DevicesTab() {
               onChange={(e) => setEditForm({ ...editForm, imei: e.target.value })}
               placeholder="۱۵ رقم"
               required
+            />
+            <Input
+              label="برند دستگاه (اختیاری)"
+              value={editForm.brand}
+              onChange={(e) => setEditForm({ ...editForm, brand: e.target.value })}
+              placeholder="مثلاً Teltonika یا HQ"
+            />
+            <Input
+              label="مدل دستگاه (اختیاری)"
+              value={editForm.model_name}
+              onChange={(e) => setEditForm({ ...editForm, model_name: e.target.value })}
+              placeholder="مثلاً FMB920"
             />
             <Input
               label="شماره SIM"
