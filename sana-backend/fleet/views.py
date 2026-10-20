@@ -95,8 +95,9 @@ class VehicleViewSet(viewsets.ModelViewSet):
 
 class DeviceModelViewSet(viewsets.ReadOnlyModelViewSet):
     """Legacy model metadata is readable, but model CRUD is no longer part of device registration."""
-    queryset = DeviceModel.objects.all()
+    queryset = DeviceModel.objects.filter(is_verified=True)
     serializer_class = DeviceModelSerializer
+    pagination_class = None
     permission_classes = [IsAuthenticated]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['manufacturer', 'name', 'code', 'protocol']
