@@ -33,6 +33,13 @@ export const deviceLifecycleAPI = {
   },
 };
 
+export const deviceModelsAPI = {
+  list: async (params = {}) => {
+    const response = await apiClient.get('/device-models/', { params });
+    return response.data;
+  },
+};
+
 export const devicesAPI = {
   list: async (params = {}) => {
     const response = await apiClient.get('/devices/', { params });
