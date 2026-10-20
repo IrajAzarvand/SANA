@@ -254,7 +254,7 @@ class Migration(migrations.Migration):
             model_name="devicemodel",
             constraint=models.UniqueConstraint(
                 fields=("manufacturer", "name", "traccar_version"),
-                name="fleet_devmodel_brand_name_version_uniq",
+                name="fleet_dmodel_brand_ver_uniq",
             ),
         ),
         migrations.RunPython(seed_catalog, unseed_catalog),
