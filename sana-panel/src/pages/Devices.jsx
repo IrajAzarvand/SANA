@@ -116,6 +116,10 @@ function DevicesTab() {
     return devices.filter((d) => {
       if (search && !d.imei.includes(search) &&
           !(d.sim_number && d.sim_number.includes(search)) &&
+          !(d.brand && d.brand.toLowerCase().includes(search.toLowerCase())) &&
+          !(d.model_name && d.model_name.toLowerCase().includes(search.toLowerCase())) &&
+          !(d.device_model_manufacturer && d.device_model_manufacturer.toLowerCase().includes(search.toLowerCase())) &&
+          !(d.device_model_name && d.device_model_name.toLowerCase().includes(search.toLowerCase())) &&
           !(d.vehicle_plate && d.vehicle_plate.includes(search))) return false;
       if (filterStatus && d.management_status !== filterStatus) return false;
       if (filterWarehouse === 'yes' && !d.is_in_warehouse) return false;
