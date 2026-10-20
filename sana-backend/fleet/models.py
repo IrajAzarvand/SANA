@@ -76,7 +76,7 @@ class DeviceModel(models.Model):
 
     manufacturer = models.CharField(max_length=100, verbose_name='سازنده')
     name = models.CharField(max_length=100, verbose_name='نام مدل')
-    code = models.CharField(max_length=80, verbose_name='کد مدل')
+    code = models.CharField(max_length=50, verbose_name='کد مدل')
     protocol = models.CharField(max_length=50, verbose_name='پروتکل Traccar')
     # پورت پیش‌فرضی که Traccar برای پروتکل این مدل معرفی کرده است؛
     # ممکن است در تنظیمات نصب واقعی سرور تغییر داده شده باشد.
