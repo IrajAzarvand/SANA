@@ -15,11 +15,11 @@ from .models import VehicleType, Vehicle, Device, Driver
 @admin.register(Device)
 class DeviceAdmin(admin.ModelAdmin):
     list_display = [
-        'imei', 'protocol', 'get_customer',
+        'imei', 'brand', 'model_name', 'protocol', 'get_customer',
         'vehicle', 'management_status', 'created_at',
     ]
     list_filter = ['management_status', 'protocol']
-    search_fields = ['imei', 'sim_number']
+    search_fields = ['imei', 'sim_number', 'brand', 'model_name']
     ordering = ['-created_at']
     raw_id_fields = ['organization', 'owner_user', 'branch', 'vehicle']
 
