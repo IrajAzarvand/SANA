@@ -10,12 +10,13 @@ function SearchablePicker({
 }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
 
   const selected = options.find((option) => String(option.value) === String(value));
 
   useEffect(() => {
-    setQuery(selected?.label || '');
-  }, [selected?.value, selected?.label]);
+    if (!isEditing) setQuery(selected?.label || '');
+  }, [selected?.value, selected?.label, isEditing]);
 
   const filteredOptions = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
@@ -42,7 +43,10 @@ function SearchablePicker({
           aria-autocomplete="list"
           value={query}
           onChange={(event) => {
-            setQuery(event.target.value);
+            const nextQuery = event.target.value;
+            setQuery(nextQuery);
+            setIsEditing(true);
+            if (selected && nextQuery !== selected.label) onChange('');
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
@@ -51,6 +55,7 @@ function SearchablePicker({
             if (event.key === 'Escape') setOpen(false);
             if (event.key === 'Enter' && open && filteredOptions.length) {
               event.preventDefault();
+              setIsEditing(false);
               onChange(String(filteredOptions[0].value));
               setQuery(filteredOptions[0].label);
               setOpen(false);
@@ -76,6 +81,7 @@ function SearchablePicker({
               aria-selected={String(option.value) === String(value)}
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => {
+                setIsEditing(false);
                 onChange(String(option.value));
                 setQuery(option.label);
                 setOpen(false);
