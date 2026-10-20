@@ -107,7 +107,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
     queryset = Device.objects.select_related('device_model', 'organization', 'branch', 'vehicle', 'owner_user').all()
     permission_classes = [IsAuthenticated]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['imei', 'sim_number', 'brand', 'model_name']
+    search_fields = ['imei', 'sim_number', 'device_model__manufacturer', 'device_model__name']
     ordering_fields = ['created_at', 'imei']
 
     def get_serializer_class(self):
