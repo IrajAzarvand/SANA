@@ -72,21 +72,33 @@ class Vehicle(models.Model):
 
 
 class DeviceModel(models.Model):
-    """مدل دستگاه GPS"""
+    """کاتالوگ ثابت مدل‌های GPS سازگار با نسخه مشخص Traccar."""
+
     manufacturer = models.CharField(max_length=100, verbose_name='سازنده')
     name = models.CharField(max_length=100, verbose_name='نام مدل')
-    code = models.CharField(max_length=50, verbose_name='کد مدل')
-    protocol = models.CharField(max_length=50, verbose_name='پروتکل')
+    code = models.CharField(max_length=80, verbose_name='کد مدل')
+    protocol = models.CharField(max_length=50, verbose_name='پروتکل Traccar')
+    # پورت پیش‌فرضی که Traccar برای پروتکل این مدل معرفی کرده است؛
+    # ممکن است در تنظیمات نصب واقعی سرور تغییر داده شده باشد.
+    port = models.PositiveIntegerField(null=True, blank=True, verbose_name='پورت پیش‌فرض Traccar')
+    traccar_version = models.CharField(max_length=20, default='6.16.0', verbose_name='نسخه Traccar')
+    source_url = models.URLField(max_length=300, blank=True, default='', verbose_name='منبع')
+    is_verified = models.BooleanField(default=False, verbose_name='پشتیبانی نسخه تأیید شده')
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = 'مدل دستگاه'
         verbose_name_plural = 'مدل‌های دستگاه'
         ordering = ['manufacturer', 'name']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['manufacturer', 'name', 'traccar_version'],
+                name='fleet_devmodel_brand_name_version_uniq',
+            ),
+        ]
 
     def __str__(self):
         return f'{self.manufacturer} — {self.name}'
-
 
 class Device(models.Model):
     """دستگاه GPS"""
