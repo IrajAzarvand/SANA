@@ -15,7 +15,7 @@ import { devicesAPI } from '../api/services/fleet';
  * @param {Function} onSuccess - callback با device جدید
  */
 export default function AddDeviceModal({ open, onClose, onSuccess }) {
-  const [form, setForm] = useState({ imei: '', sim_number: '' });
+  const [form, setForm] = useState({ imei: '', sim_number: '', brand: '', model_name: '' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -28,13 +28,15 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
       const payload = {
         imei: form.imei.trim(),
         sim_number: form.sim_number.trim(),
+        brand: form.brand.trim(),
+        model_name: form.model_name.trim(),
         management_status: 'warehouse',
       };
 
       const created = await devicesAPI.create(payload);
 
       // پاک کردن فرم
-      setForm({ imei: '', sim_number: '' });
+      setForm({ imei: '', sim_number: '', brand: '', model_name: '' });
 
       // کال بک موفقیت
       if (onSuccess) onSuccess(created);
@@ -87,6 +89,20 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
           placeholder="۱۵ رقم"
           icon={Hash}
           required
+        />
+
+        <Input
+          label="برند دستگاه (اختیاری)"
+          value={form.brand}
+          onChange={(e) => setForm({ ...form, brand: e.target.value })}
+          placeholder="مثلاً Teltonika یا HQ"
+        />
+
+        <Input
+          label="مدل دستگاه (اختیاری)"
+          value={form.model_name}
+          onChange={(e) => setForm({ ...form, model_name: e.target.value })}
+          placeholder="مثلاً FMB920"
         />
 
         <Input
