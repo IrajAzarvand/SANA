@@ -81,6 +81,14 @@ class DeviceModelSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
 class DeviceSerializer(serializers.ModelSerializer):
+    def validate_device_model(self, value):
+        if value and (not value.is_verified or value.traccar_version != '6.16.0'):
+            raise serializers.ValidationError(
+                'مدل انتخاب‌شده در کاتالوگ تأییدشده Traccar 6.16.0 وجود ندارد.'
+            )
+        return value
+
+
     current_holder_organization_name = serializers.CharField(source='current_holder_organization.name', read_only=True)
     current_holder_user_name = serializers.CharField(source='current_holder_user.full_name', read_only=True)
     device_model_name = serializers.CharField(source='device_model.name', read_only=True, allow_null=True)
