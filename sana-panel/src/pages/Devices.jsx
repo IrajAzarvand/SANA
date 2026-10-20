@@ -71,7 +71,7 @@ function DevicesTab() {
   const [editingDevice, setEditingDevice] = useState(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [editForm, setEditForm] = useState({ imei: '', sim_number: '', brand: '', model_name: '' });
+  const [editForm, setEditForm] = useState({ imei: '', sim_number: '' });
   const [deviceHistoryId, setDeviceHistoryId] = useState(null);
 
   const { isSiteAdmin, isPersonal } = useAuth();
@@ -116,8 +116,6 @@ function DevicesTab() {
     return devices.filter((d) => {
       if (search && !d.imei.includes(search) &&
           !(d.sim_number && d.sim_number.includes(search)) &&
-          !(d.brand && d.brand.toLowerCase().includes(search.toLowerCase())) &&
-          !(d.model_name && d.model_name.toLowerCase().includes(search.toLowerCase())) &&
           !(d.device_model_manufacturer && d.device_model_manufacturer.toLowerCase().includes(search.toLowerCase())) &&
           !(d.device_model_name && d.device_model_name.toLowerCase().includes(search.toLowerCase())) &&
           !(d.vehicle_plate && d.vehicle_plate.includes(search))) return false;
@@ -141,8 +139,6 @@ function DevicesTab() {
       await devicesAPI.update(editingDevice.id, {
         imei: editForm.imei,
         sim_number: editForm.sim_number,
-        brand: editForm.brand,
-        model_name: editForm.model_name,
       });
       setEditModalOpen(false);
       setEditingDevice(null);
@@ -160,8 +156,6 @@ function DevicesTab() {
     setEditForm({
       imei: device.imei,
       sim_number: device.sim_number || '',
-      brand: device.brand || device.device_model_manufacturer || '',
-      model_name: device.model_name || device.device_model_name || '',
     });
     setEditModalOpen(true);
   };
@@ -327,8 +321,8 @@ function DevicesTab() {
                       <td className="py-3 px-4">
                         <Badge variant={d.protocol ? 'brand' : 'muted'}>
                           {[
-                            d.brand || d.device_model_manufacturer,
-                            d.model_name || d.device_model_name,
+                            d.device_model_manufacturer,
+                            d.device_model_name,
                           ].filter(Boolean).join(' - ') || protocolLabelMap[(d.protocol || '').toLowerCase()] || d.protocol || 'در انتظار شناسایی'}
                         </Badge>
                       </td>
@@ -444,18 +438,6 @@ function DevicesTab() {
               onChange={(e) => setEditForm({ ...editForm, imei: e.target.value })}
               placeholder="۱۵ رقم"
               required
-            />
-            <Input
-              label="برند دستگاه (اختیاری)"
-              value={editForm.brand}
-              onChange={(e) => setEditForm({ ...editForm, brand: e.target.value })}
-              placeholder="مثلاً Teltonika یا HQ"
-            />
-            <Input
-              label="مدل دستگاه (اختیاری)"
-              value={editForm.model_name}
-              onChange={(e) => setEditForm({ ...editForm, model_name: e.target.value })}
-              placeholder="مثلاً FMB920"
             />
             <Input
               label="شماره SIM"
