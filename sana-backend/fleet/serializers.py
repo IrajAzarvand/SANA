@@ -77,7 +77,7 @@ class DeviceModelSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DeviceModel
-        fields = ['id', 'manufacturer', 'name', 'code', 'protocol', 'devices_count', 'created_at']
+        fields = ['id', 'manufacturer', 'name', 'code', 'protocol', 'port', 'traccar_version', 'source_url', 'is_verified', 'devices_count', 'created_at']
         read_only_fields = ['id', 'created_at']
 
 class DeviceSerializer(serializers.ModelSerializer):
@@ -85,6 +85,8 @@ class DeviceSerializer(serializers.ModelSerializer):
     current_holder_user_name = serializers.CharField(source='current_holder_user.full_name', read_only=True)
     device_model_name = serializers.CharField(source='device_model.name', read_only=True, allow_null=True)
     device_model_manufacturer = serializers.CharField(source='device_model.manufacturer', read_only=True, allow_null=True)
+    device_model_port = serializers.IntegerField(source='device_model.port', read_only=True, allow_null=True)
+    device_model_catalog_protocol = serializers.CharField(source='device_model.protocol', read_only=True, allow_null=True)
     protocol = serializers.CharField(read_only=True)
     organization_name = serializers.CharField(source='organization.name', read_only=True)
     branch_name = serializers.CharField(source='branch.name', read_only=True)
@@ -102,7 +104,7 @@ class DeviceSerializer(serializers.ModelSerializer):
         model = Device
         fields = [
             'id', 'imei',
-            'device_model', 'device_model_name', 'device_model_manufacturer', 'protocol',
+            'device_model', 'device_model_name', 'device_model_manufacturer', 'device_model_port', 'device_model_catalog_protocol', 'protocol',
             'organization', 'organization_name',
             'owner_user', 'owner_name',
             'branch', 'branch_name',
@@ -115,7 +117,7 @@ class DeviceSerializer(serializers.ModelSerializer):
             'installed_at',
             'created_at', 'updated_at',
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'device_model', 'protocol']
+        read_only_fields = ['id', 'created_at', 'updated_at', 'protocol']
         extra_kwargs = {
             'organization': {'required': False, 'allow_null': True},
             'owner_user': {'required': False, 'allow_null': True},
