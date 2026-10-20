@@ -101,7 +101,7 @@ class DeviceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Device
         fields = [
-            'id', 'imei', 'brand', 'model_name',
+            'id', 'imei',
             'device_model', 'device_model_name', 'device_model_manufacturer', 'protocol',
             'organization', 'organization_name',
             'owner_user', 'owner_name',
@@ -181,7 +181,7 @@ class DeviceListSerializer(serializers.ModelSerializer):
     class Meta:
         model = Device
         fields = [
-            'id', 'imei', 'brand', 'model_name',
+            'id', 'imei',
             'device_model_name', 'device_model_manufacturer', 'protocol',
             'sim_number',
             'organization', 'organization_name',
