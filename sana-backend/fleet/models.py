@@ -93,7 +93,7 @@ class DeviceModel(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=['manufacturer', 'name', 'traccar_version'],
-                name='fleet_devmodel_brand_name_version_uniq',
+                name='fleet_dmodel_brand_ver_uniq',
             ),
         ]
 
