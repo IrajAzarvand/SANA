@@ -304,6 +304,14 @@ with connection.cursor() as cursor:
         "gps.raw_packet",
         "gps.location_history",
         "gps.current_state",
+        "gps.raw_packet",
+        "gps.location_history",
+        "gps.event",
+        "gps.trip",
+        "gps.geofence",
+        "gps.geofence_version",
+        "gps.geofence_assignment",
+        "gps.vehicle_geofence_state",
         "gps.traccar_unknown_device",
     ]
     for table in forbidden_tables:
