@@ -1,5 +1,5 @@
 -- SANA GPS schema migration 0011: Traccar is the only raw telemetry store.
--- Run after Django migrations and SQL migrations 0001-0010.
+-- Run after Django migrations and sql/0000_roles.sql; apply sql/0009_on_demand_map_matching.sql first.
 -- This migration intentionally removes SANA's duplicate raw GPS tables.
 BEGIN;
 SET ROLE sana_user;
