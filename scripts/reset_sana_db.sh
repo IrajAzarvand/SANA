@@ -111,27 +111,27 @@ configure_traccar_credentials() {
     fi
 
     local username password
-    username="$(read_env_value TRACCAR_API_USERNAME)"
-    password="$(read_env_value TRACCAR_API_PASSWORD)"
+    echo "برای اتصال Backend به Traccar، مشخصات حساب را وارد کن."
+    read -r -p "نام کاربری Traccar: " username
+    [[ -n "$username" ]] || die "نام کاربری Traccar نمی‌تواند خالی باشد."
+    read -r -s -p "رمز عبور Traccar: " password
+    echo
+    [[ -n "$password" ]] || die "رمز عبور Traccar نمی‌تواند خالی باشد."
 
-    # Reuse GPS worker credentials if Django-standard aliases are absent.
-    [[ -n "$username" ]] || username="$(read_env_value SANA_GPS_TRACCAR_API_USERNAME)"
-    [[ -n "$password" ]] || password="$(read_env_value SANA_GPS_TRACCAR_API_PASSWORD)"
-    [[ -n "$username" ]] || username="iraj.azarvand@gmail.com"
-
-    if [[ -z "$password" ]]; then
-        echo "رمز Traccar در $TRACCAR_ENV_FILE پیدا نشد."
-        read -r -s -p "رمز عبور حساب Traccar را وارد کن (در گزارش نمایش داده نمی‌شود): " password
-        echo
-        [[ -n "$password" ]] || die "رمز Traccar خالی است؛ ادامه بازسازی متوقف شد."
-    fi
-
-    if [[ -z "$(read_env_value TRACCAR_API_USERNAME)" ]]; then
-        ensure_env_value TRACCAR_API_USERNAME "$username"
-    fi
-    if [[ -z "$(read_env_value TRACCAR_API_PASSWORD)" ]]; then
-        ensure_env_value TRACCAR_API_PASSWORD "$password"
-    fi
+    # Store both Django-standard and GPS-worker names in the protected env file.
+    # Remove previous assignments first so the new interactive values take effect.
+    local tmp_env
+    tmp_env="$(mktemp)"
+    sudo awk '
+        !/^[[:space:]]*(TRACCAR_API_USERNAME|TRACCAR_API_PASSWORD|SANA_GPS_TRACCAR_API_USERNAME|SANA_GPS_TRACCAR_API_PASSWORD)=/
+    ' "$TRACCAR_ENV_FILE" > "$tmp_env"
+    printf '%s=%s\n' \
+        "TRACCAR_API_USERNAME" "$username" \
+        "TRACCAR_API_PASSWORD" "$password" \
+        "SANA_GPS_TRACCAR_API_USERNAME" "$username" \
+        "SANA_GPS_TRACCAR_API_PASSWORD" "$password" >> "$tmp_env"
+    sudo install -o root -g root -m 600 "$tmp_env" "$TRACCAR_ENV_FILE"
+    rm -f "$tmp_env"
 
     sudo chown root:root "$TRACCAR_ENV_FILE"
     sudo chmod 600 "$TRACCAR_ENV_FILE"
