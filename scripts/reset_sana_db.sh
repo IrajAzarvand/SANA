@@ -298,10 +298,24 @@ with connection.cursor() as cursor:
         print(f"{table}: {exists}")
         assert exists is not None, f"Required table is missing: {table}"
 
+    forbidden_tables = [
+        "public.fleet_gpstelemetry",
+        "public.fleet_unknowngpsdata",
+        "gps.raw_packet",
+        "gps.location_history",
+        "gps.current_state",
+        "gps.traccar_unknown_device",
+    ]
+    for table in forbidden_tables:
+        cursor.execute("SELECT to_regclass(%s)", [table])
+        exists = cursor.fetchone()[0]
+        print(f"Legacy table must be absent: {table} -> {exists}")
+        assert exists is None, f"Obsolete duplicate GPS table still exists: {table}"
+
     # Validate columns that were added by the latest SQL schema changes, not just
     # table names. This catches a partially applied or outdated GPS schema.
     required_columns = {
-        # Final Django schema after fleet migrations through 0012.
+        # Final Django schema after fleet migrations through 0014.
         "public.fleet_device": {
             "imei", "device_model_id", "protocol", "organization_id", "owner_user_id",
             "branch_id", "current_holder_organization_id", "current_holder_user_id",
