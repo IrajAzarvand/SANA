@@ -32,6 +32,7 @@ GPS="$ROOT/sana-gps"
 MANAGE="$BACKEND/manage.py"
 PYTHON="$BACKEND/venv/bin/python"
 SQL_DIR="$GPS/sql"
+ROLE_SQL="0000_roles.sql"
 
 DB_NAME="${SANA_DB_NAME:-sana_db}"
 DB_OWNER="${SANA_DB_OWNER:-sana_user}"
@@ -111,7 +112,6 @@ command -v systemctl >/dev/null || die "systemctl پیدا نشد."
 # 0000_roles.sql پیش از migrationهای Django اجرا می‌شود؛ SQLهای بعدی پس از
 # ایجاد جدول‌های Django اجرا می‌شوند. 0004 و 0006 نقش‌های سطح کلاستر را حذف می‌کنند
 # و عمداً اجرا نمی‌شوند. 0007 بازنشسته/no-op است؛ 0008 وضعیت نهایی تطبیق نقشه را می‌سازد.
-ROLE_SQL="0000_roles.sql"
 SQL_FILES=(
     "0001_gps_schema.sql"
     "0002_detected_protocol_registration.sql"
@@ -144,7 +144,7 @@ step "آماده‌سازی دسترسی مدیریتی"
 sudo -v
 
 # ۱. توقف سرویس GPS و Backend برای جلوگیری از اتصال هنگام بازسازی دیتابیس
-step "۱/۱۰ - توقف سرویس‌های GPS و Backend"
+step "۱/۱۱ - توقف سرویس‌های GPS و Backend"
 
 sudo systemctl stop sana-gps
 SERVICE_STOPPED=1
@@ -161,7 +161,7 @@ fi
 echo "✅ سرویس Backend متوقف است."
 
 # ۲. بررسی نقش PostgreSQL
-step "۲/۱۰ - بررسی نقش PostgreSQL"
+step "۲/۱۱ - بررسی نقش PostgreSQL"
 
 ROLE_EXISTS="$(
     sudo -u postgres psql -X -d postgres -At \
@@ -176,7 +176,7 @@ SQL
 echo "✅ نقش $DB_OWNER موجود است."
 
 # ۳. حذف و ساخت دیتابیس
-step "۳/۱۰ - بازسازی دیتابیس"
+step "۳/۱۱ - بازسازی دیتابیس"
 
 sudo -u postgres psql -X -v ON_ERROR_STOP=1 \
     -d postgres -v dbname="$DB_NAME" <<'SQL'
@@ -202,7 +202,7 @@ SQL
 echo "✅ دیتابیس جدید ساخته شد."
 
 # ۴. فعال‌سازی PostGIS
-step "۴/۱۰ - فعال‌سازی PostGIS"
+step "۴/۱۱ - فعال‌سازی PostGIS"
 
 sudo -u postgres psql -X -v ON_ERROR_STOP=1 \
     -d "$DB_NAME" \
