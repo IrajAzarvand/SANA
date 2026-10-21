@@ -573,7 +573,15 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 {'detail': 'برای حذف دستگاه، IMEI را دقیقاً در confirm_imei ارسال کن.'},
                 status=400,
             )
-        return super().destroy(request, *args, **kwargs)
+        with transaction.atomic():
+            # GPS raw telemetry is owned by Traccar; SANA has no GPS purge function.
+            # Remove operations referencing this device before deleting the fleet record.
+            DeviceOperation.objects.filter(
+                Q(device=instance) | Q(replacement_device=instance)
+            ).delete()
+            instance.delete()
+
+        return Response(status=204)
 
     def get_queryset(self):
         user = self.request.user
