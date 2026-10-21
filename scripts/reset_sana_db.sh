@@ -100,7 +100,7 @@ ensure_env_value() {
     local key="$1"
     local value="$2"
     [[ -n "$value" ]] || return 1
-    printf '%s=%s\\n' "$key" "$value" | sudo tee -a "$TRACCAR_ENV_FILE" >/dev/null
+    printf '%s=%s\n' "$key" "$value" | sudo tee -a "$TRACCAR_ENV_FILE" >/dev/null
 }
 
 configure_traccar_credentials() {
@@ -138,7 +138,7 @@ configure_traccar_credentials() {
 
     # Have systemd expose this protected file to the Django backend service.
     sudo install -d -o root -g root -m 755 "$(dirname "$BACKEND_ENV_DROPIN")"
-    printf '[Service]\\nEnvironmentFile=%s\\n' "$TRACCAR_ENV_FILE" \
+    printf '[Service]\nEnvironmentFile=%s\n' "$TRACCAR_ENV_FILE" \
         | sudo tee "$BACKEND_ENV_DROPIN" >/dev/null
     sudo chown root:root "$BACKEND_ENV_DROPIN"
     sudo chmod 644 "$BACKEND_ENV_DROPIN"
