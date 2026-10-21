@@ -192,7 +192,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
         return qs
 
     def list(self, request, *args, **kwargs):
-        """List devices and enrich the page with GPS state using the same DB login."""
+        """List authorized SANA devices and use Traccar for last-seen timestamps."""
         queryset = self.filter_queryset(self.get_queryset())
         page = self.paginate_queryset(queryset)
         devices = list(page if page is not None else queryset)
