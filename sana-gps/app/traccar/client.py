@@ -102,3 +102,20 @@ class TraccarClient:
             if result.get("uniqueId") is not None:
                 self._devices_by_unique_id[str(result["uniqueId"]).strip()] = result
         return result
+
+    def list_positions(self, device_id: int, from_time: str, to_time: str) -> list[dict]:
+        """Fetch raw history from Traccar; SANA never stores the returned raw points."""
+        from urllib.parse import urlencode
+
+        query = urlencode({"deviceId": int(device_id), "from": from_time, "to": to_time})
+        result = self._request("GET", f"positions?{query}")
+        if not isinstance(result, list):
+            raise TraccarAPIError("Traccar API /positions returned an unexpected response")
+        return [item for item in result if isinstance(item, dict)]
+
+    def list_current_positions(self) -> list[dict]:
+        """Return Traccar's current/last known position for each accessible device."""
+        result = self._request("GET", "positions")
+        if not isinstance(result, list):
+            raise TraccarAPIError("Traccar API /positions returned an unexpected response")
+        return [item for item in result if isinstance(item, dict)]
