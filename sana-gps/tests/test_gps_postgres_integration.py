@@ -40,7 +40,7 @@ def test_postgres_schema_keeps_only_matched_positions_and_map_watchers():
         result = connection.execute(
             """
             SELECT table_name, to_regclass(table_name)
-            FROM unnest(%s::text[]) AS table_name
+            FROM unnest(%s::text[]) AS t(table_name)
             """,
             (sorted(all_tables),),
         ).fetchall()
