@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SANA - بازسازی کامل دیتابیس و جداول Django/GPS
-# اجرا: bash ~/Desktop/SANA/reset_sana_db.sh
+# اجرا از هر مسیر: bash ~/Desktop/SANA/scripts/reset_sana_db.sh
 #
 # برای جلوگیری از اتصال هنگام بازسازی، Backend و GPS متوقف می‌شوند؛ پس از موفقیت آزمون‌ها هر دو دوباره راه‌اندازی می‌شوند.
 # مجوز پایش زنده شبکه (tcpdump wrapper و sudoers) تنظیم سیستم‌عامل است و این
@@ -12,7 +12,21 @@
 set -Eeuo pipefail
 IFS=$'\n\t'
 
-ROOT="${SANA_ROOT:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)}"
+# Resolve the repository root whether this script is run from the repository root
+# or from scripts/reset_sana_db.sh. SANA_ROOT can explicitly override discovery.
+if [[ -n "${SANA_ROOT:-}" ]]; then
+    ROOT="$(cd -- "$SANA_ROOT" && pwd)"
+else
+    SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+    if [[ -d "$SCRIPT_DIR/sana-backend" && -d "$SCRIPT_DIR/sana-gps" ]]; then
+        ROOT="$SCRIPT_DIR"
+    elif [[ -d "$SCRIPT_DIR/../sana-backend" && -d "$SCRIPT_DIR/../sana-gps" ]]; then
+        ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
+    else
+        echo "❌ ریشه پروژه تشخیص داده نشد؛ SANA_ROOT را روی مسیر ریشه SANA تنظیم کن." >&2
+        exit 1
+    fi
+fi
 BACKEND="$ROOT/sana-backend"
 GPS="$ROOT/sana-gps"
 MANAGE="$BACKEND/manage.py"
@@ -92,13 +106,22 @@ command -v sudo >/dev/null || die "sudo نصب نیست."
 command -v psql >/dev/null || die "psql پیدا نشد."
 command -v systemctl >/dev/null || die "systemctl پیدا نشد."
 
-# اسکریپت‌های SQL لازم برای این نسخه
+# SQLهای لازم برای schema فعلی GPS و اتصال Traccar.
+# ترتیب اجرا مهم است: schema پایه، توابع/مجوزها، تطبیق نقشه، watcherها و سپس
+# صف دستگاه‌های ناشناخته Traccar.
+#
+# عمداً 0004 و 0006 اجرا نمی‌شوند: این دو فایل نقش‌های سطح کلاستر PostgreSQL
+# را پاک می‌کنند و بخشی از بازسازی یک دیتابیس نیستند.
+# 0007 نیز بازنشسته و عملاً no-op است؛ 0008 وضعیت نهایی تطبیق نقشه را می‌سازد.
 SQL_FILES=(
     "0000_roles.sql"
     "0001_gps_schema.sql"
     "0002_detected_protocol_registration.sql"
     "0003_purge_device_telemetry.sql"
     "0005_grant_sana_user_gps_permissions.sql"
+    "0008_store_map_matches_in_existing_tables.sql"
+    "0009_on_demand_map_matching.sql"
+    "0010_traccar_integration.sql"
 )
 
 for file in "${SQL_FILES[@]}"; do
@@ -110,6 +133,7 @@ echo
 echo "⚠️ هشدار: این عملیات دیتابیس '$DB_NAME' را کامل حذف می‌کند."
 echo "تمام کاربران، داده‌های GPS و اطلاعات داخل آن پاک خواهند شد."
 echo "تمام جدول‌های دیتابیس همراه خود دیتابیس حذف و بر اساس migrationهای فعلی و SQLهای GPS بازسازی می‌شوند."
+echo "نکته معماری: کد فعلی هنوز برای نمایش نقشه/گزارش و دریافت موقعیت به جدول‌های GPS سانا وابسته است؛ این اسکریپت آن‌ها را فعلاً به‌عنوان لایه سازگاری بازسازی می‌کند. حذف ذخیره‌سازی تکراری باید پس از اصلاح و آزمون مسیر خواندن مستقیم از Traccar انجام شود."
 echo "تنظیم مجوز پایش زنده شبکه در لینوکس مستقل است و در این عملیات دست‌کاری نمی‌شود."
 echo
 
@@ -235,47 +259,105 @@ EXPECTED_DB="$DB_NAME" EXPECTED_USER="$DB_OWNER" \
 "$PYTHON" "$MANAGE" shell -c '
 import os
 from django.db import connection
+from django.db.migrations.loader import MigrationLoader
 
 expected_db = os.environ["EXPECTED_DB"]
 expected_user = os.environ["EXPECTED_USER"]
 
+# Confirm that Django applied every leaf migration currently present in the repo.
+loader = MigrationLoader(connection)
+applied = loader.applied_migrations
+unapplied_leaves = [
+    node for node in loader.graph.leaf_nodes()
+    if node not in applied
+]
+assert not unapplied_leaves, f"Unapplied migration leaves: {unapplied_leaves}"
+print("Django migration leaves:", sorted(loader.graph.leaf_nodes()))
+
+required_tables = [
+    "public.fleet_gpstelemetry",
+    "public.fleet_unknowngpsdata",
+    "gps.raw_packet",
+    "gps.location_history",
+    "gps.current_state",
+    "gps.event",
+    "gps.trip",
+    "gps.geofence",
+    "gps.geofence_version",
+    "gps.geofence_assignment",
+    "gps.vehicle_geofence_state",
+    "gps.map_matching_watchers",
+    "gps.traccar_unknown_device",
+]
+
 with connection.cursor() as cursor:
-    cursor.execute("""
-        SELECT
-            current_database(),
-            current_user,
-            to_regclass(%s),
-            to_regclass(%s),
-            to_regclass(%s),
-            to_regclass(%s)
-    """, [
-        "public.fleet_gpstelemetry",
-        "gps.raw_packet",
-        "gps.location_history",
-        "gps.current_state",
-    ])
-
-    db, user, telemetry, raw, history, state = cursor.fetchone()
-
+    cursor.execute("SELECT current_database(), current_user")
+    db, user = cursor.fetchone()
     print("Database:", db)
     print("Database user:", user)
-    print("fleet_gpstelemetry:", telemetry)
-    print("gps.raw_packet:", raw)
-    print("gps.location_history:", history)
-    print("gps.current_state:", state)
-
     assert db == expected_db, f"Wrong database: {db}"
     assert user == expected_user, f"Wrong database user: {user}"
-    assert telemetry is not None, "fleet_gpstelemetry is missing"
-    assert raw is not None, "gps.raw_packet is missing"
-    assert history is not None, "gps.location_history is missing"
-    assert state is not None, "gps.current_state is missing"
 
-    # آزمون واقعی SELECT با کاربر برنامه
+    for table in required_tables:
+        cursor.execute("SELECT to_regclass(%s)", [table])
+        exists = cursor.fetchone()[0]
+        print(f"{table}: {exists}")
+        assert exists is not None, f"Required table is missing: {table}"
+
+    # Validate columns that were added by the latest SQL schema changes, not just
+    # table names. This catches a partially applied or outdated GPS schema.
+    required_columns = {
+        "public.fleet_gpstelemetry": {
+            "device_id", "protocol", "gps_time", "latitude", "longitude",
+            "gps_valid", "speed_kmh", "heading_deg", "altitude_m",
+            "satellites", "attributes", "fingerprint", "raw_payload", "received_at",
+        },
+        "public.fleet_unknowngpsdata": {
+            "session_id", "transport", "remote_address", "raw_payload",
+            "identifier_candidate", "status", "received_at",
+        },
+        "gps.raw_packet": {
+            "device_id", "protocol", "fingerprint", "received_at", "payload", "metadata",
+        },
+        "gps.location_history": {
+            "device_id", "device_time", "server_received_at", "latitude", "longitude",
+            "geom", "gps_valid", "matched_latitude", "matched_longitude",
+            "matched_geom", "match_provider", "matched_at",
+        },
+        "gps.current_state": {
+            "device_id", "device_time", "server_received_at", "last_seen",
+            "latitude", "longitude", "geom", "gps_valid", "last_valid_latitude",
+            "last_valid_longitude", "matched_latitude", "matched_longitude",
+            "matched_geom", "match_provider", "matched_at",
+        },
+        "gps.map_matching_watchers": {
+            "session_id", "user_id", "expires_at", "updated_at",
+        },
+        "gps.traccar_unknown_device": {
+            "traccar_device_id", "unique_id", "name", "traccar_status",
+            "first_seen_at", "last_seen_at", "last_synced_at", "review_status",
+            "reviewed_at", "metadata",
+        },
+    }
+    for table, expected_columns in required_columns.items():
+        schema, table_name = table.split(".", 1)
+        cursor.execute("""
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = %s AND table_name = %s
+        """, [schema, table_name])
+        actual_columns = {row[0] for row in cursor.fetchall()}
+        missing = expected_columns - actual_columns
+        assert not missing, f"{table} missing columns: {sorted(missing)}"
+        print(f"Columns OK: {table} ({len(expected_columns)} checked)")
+
+    # Exercise SELECT privileges using the actual application database login.
     for table in (
         "gps.raw_packet",
         "gps.location_history",
         "gps.current_state",
+        "gps.map_matching_watchers",
+        "gps.traccar_unknown_device",
     ):
         cursor.execute(f"SELECT COUNT(*) FROM {table}")
         print(f"SELECT access OK: {table}; rows={cursor.fetchone()[0]}")
@@ -283,7 +365,7 @@ with connection.cursor() as cursor:
     cursor.execute("SELECT postgis_full_version()")
     print("PostGIS:", cursor.fetchone()[0])
 
-print("✅ Database checks passed.")
+print("✅ Database, Django migrations, current GPS schema and privileges passed.")
 '
 
 echo "✅ جداول و دسترسی‌های اصلی تأیید شدند."
