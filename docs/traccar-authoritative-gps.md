@@ -33,4 +33,4 @@ The GPS worker uses `SANA_GPS_TRACCAR_API_URL`, `SANA_GPS_TRACCAR_API_USERNAME`,
 
 ## Operational note
 
-The SANA GPS service no longer binds the legacy SANA TCP/UDP ports and no longer accepts position webhooks. Device protocol ports and forwarding must point to Traccar. Do not remove or change Traccar's listener configuration as part of a SANA database reset.
+The SANA GPS service no longer binds the legacy SANA TCP/UDP ports and no longer accepts position webhooks. Remove any Traccar-side webhook/forwarder that POSTs positions to SANA, otherwise it will send requests to a retired endpoint. Device protocol ports and forwarding must point to Traccar. Do not remove or change Traccar's listener configuration as part of a SANA database reset.
