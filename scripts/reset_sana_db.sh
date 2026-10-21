@@ -142,7 +142,7 @@ step "آماده‌سازی دسترسی مدیریتی"
 sudo -v
 
 # ۱. توقف سرویس GPS و Backend برای جلوگیری از اتصال هنگام بازسازی دیتابیس
-step "۱/۱۱ - توقف سرویس‌های GPS و Backend"
+step "۱/۱۲ - توقف سرویس‌های GPS و Backend"
 
 sudo systemctl stop sana-gps
 SERVICE_STOPPED=1
@@ -159,7 +159,7 @@ fi
 echo "✅ سرویس Backend متوقف است."
 
 # ۲. بررسی نقش PostgreSQL
-step "۲/۱۱ - بررسی نقش PostgreSQL"
+step "۲/۱۲ - بررسی نقش PostgreSQL"
 
 ROLE_EXISTS="$(
     sudo -u postgres psql -X -d postgres -At \
@@ -174,7 +174,7 @@ SQL
 echo "✅ نقش $DB_OWNER موجود است."
 
 # ۳. حذف و ساخت دیتابیس
-step "۳/۱۱ - بازسازی دیتابیس"
+step "۳/۱۲ - بازسازی دیتابیس"
 
 sudo -u postgres psql -X -v ON_ERROR_STOP=1 \
     -d postgres -v dbname="$DB_NAME" <<'SQL'
@@ -200,7 +200,7 @@ SQL
 echo "✅ دیتابیس جدید ساخته شد."
 
 # ۴. فعال‌سازی PostGIS
-step "۴/۱۱ - فعال‌سازی PostGIS"
+step "۴/۱۲ - فعال‌سازی PostGIS"
 
 sudo -u postgres psql -X -v ON_ERROR_STOP=1 \
     -d "$DB_NAME" \
@@ -209,12 +209,12 @@ sudo -u postgres psql -X -v ON_ERROR_STOP=1 \
 echo "✅ PostGIS فعال است."
 
 # ۵. آماده‌سازی نقش و schema پایه پیش از migrationهای Django.
-step "۵/۱۱ - آماده‌سازی نقش PostgreSQL"
+step "۵/۱۲ - آماده‌سازی نقش PostgreSQL"
 sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d "$DB_NAME" < "$SQL_DIR/$ROLE_SQL"
 echo "✅ نقش sana_user و schema پایه آماده شدند."
 
 # ۶. اجرای migrationهای Django؛ Django وابستگی‌ها را از graph واقعی می‌خواند.
-step "۶/۱۱ - اجرای migrationهای Django"
+step "۶/۱۲ - اجرای migrationهای Django"
 cd "$BACKEND"
 "$PYTHON" "$MANAGE" migrate --noinput
 echo "✅ اجرای migrationها کامل شد."
