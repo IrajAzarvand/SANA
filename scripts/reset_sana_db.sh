@@ -85,6 +85,68 @@ die() {
     exit 1
 }
 
+# Ensure the Traccar credentials are available to both the GPS worker and Django.
+# Secrets are written only to the root-owned /etc/sana-gps.env, never committed here.
+TRACCAR_ENV_FILE="/etc/sana-gps.env"
+BACKEND_ENV_DROPIN="/etc/systemd/system/sana-backend.service.d/traccar-env.conf"
+
+read_env_value() {
+    local key="$1"
+    sudo grep -E "^[[:space:]]*${key}=" "$TRACCAR_ENV_FILE" 2>/dev/null \
+        | tail -n 1 | sed -E "s/^[[:space:]]*${key}=//" || true
+}
+
+ensure_env_value() {
+    local key="$1"
+    local value="$2"
+    [[ -n "$value" ]] || return 1
+    printf '%s=%s\\n' "$key" "$value" | sudo tee -a "$TRACCAR_ENV_FILE" >/dev/null
+}
+
+configure_traccar_credentials() {
+    step "بررسی تنظیمات اتصال Traccar برای Backend و GPS"
+
+    if ! sudo test -f "$TRACCAR_ENV_FILE"; then
+        sudo install -o root -g root -m 600 /dev/null "$TRACCAR_ENV_FILE"
+    fi
+
+    local username password
+    username="$(read_env_value TRACCAR_API_USERNAME)"
+    password="$(read_env_value TRACCAR_API_PASSWORD)"
+
+    # Reuse GPS worker credentials if Django-standard aliases are absent.
+    [[ -n "$username" ]] || username="$(read_env_value SANA_GPS_TRACCAR_API_USERNAME)"
+    [[ -n "$password" ]] || password="$(read_env_value SANA_GPS_TRACCAR_API_PASSWORD)"
+    [[ -n "$username" ]] || username="iraj.azarvand@gmail.com"
+
+    if [[ -z "$password" ]]; then
+        echo "رمز Traccar در $TRACCAR_ENV_FILE پیدا نشد."
+        read -r -s -p "رمز عبور حساب Traccar را وارد کن (در گزارش نمایش داده نمی‌شود): " password
+        echo
+        [[ -n "$password" ]] || die "رمز Traccar خالی است؛ ادامه بازسازی متوقف شد."
+    fi
+
+    if [[ -z "$(read_env_value TRACCAR_API_USERNAME)" ]]; then
+        ensure_env_value TRACCAR_API_USERNAME "$username"
+    fi
+    if [[ -z "$(read_env_value TRACCAR_API_PASSWORD)" ]]; then
+        ensure_env_value TRACCAR_API_PASSWORD "$password"
+    fi
+
+    sudo chown root:root "$TRACCAR_ENV_FILE"
+    sudo chmod 600 "$TRACCAR_ENV_FILE"
+
+    # Have systemd expose this protected file to the Django backend service.
+    sudo install -d -o root -g root -m 755 "$(dirname "$BACKEND_ENV_DROPIN")"
+    printf '[Service]\\nEnvironmentFile=%s\\n' "$TRACCAR_ENV_FILE" \
+        | sudo tee "$BACKEND_ENV_DROPIN" >/dev/null
+    sudo chown root:root "$BACKEND_ENV_DROPIN"
+    sudo chmod 644 "$BACKEND_ENV_DROPIN"
+    sudo systemctl daemon-reload
+
+    echo "✅ متغیرهای TRACCAR_API_* برای Backend بررسی شدند؛ مقادیر محرمانه نمایش داده نمی‌شوند."
+}
+
 echo "SANA - Database Reset (Backend and GPS restart after successful checks)"
 echo "زمان: $(date --iso-8601=seconds)"
 echo "ریشه پروژه: $ROOT"
@@ -136,6 +198,9 @@ echo
 read -r -p "برای تأیید، نام دیتابیس را دقیقاً وارد کن [$DB_NAME]: " CONFIRM
 [[ "$CONFIRM" == "$DB_NAME" ]] ||
     die "تأیید صحیح نبود؛ دیتابیس حذف نشد."
+
+# Validate/prepare Traccar API environment before stopping services or dropping the DB.
+configure_traccar_credentials
 
 # بررسی اعتبار sudo پیش از توقف سرویس یا هر عملیات مخرب
 step "آماده‌سازی دسترسی مدیریتی"
