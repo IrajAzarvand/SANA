@@ -6,7 +6,6 @@ import shutil
 import subprocess
 from typing import Iterator
 
-from django.db import DatabaseError, connection
 from django.http import StreamingHttpResponse, JsonResponse
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
