@@ -35,6 +35,7 @@ SQL_DIR="$GPS/sql"
 
 DB_NAME="${SANA_DB_NAME:-sana_db}"
 DB_OWNER="${SANA_DB_OWNER:-sana_user}"
+[[ "$DB_OWNER" == "sana_user" ]] || { echo "❌ در معماری فعلی، SANA_DB_OWNER باید sana_user باشد." >&2; exit 1; }
 
 LOG_DIR="$ROOT/logs"
 mkdir -p "$LOG_DIR"
@@ -101,20 +102,17 @@ echo "گزارش اجرا: $LOG_FILE"
 [[ -f "$MANAGE" ]] || die "فایل manage.py پیدا نشد."
 [[ -x "$PYTHON" ]] || die "Python محیط مجازی پیدا نشد."
 [[ -d "$SQL_DIR" ]] || die "پوشه sql پیدا نشد."
+[[ -f "$SQL_DIR/$ROLE_SQL" ]] || die "فایل SQL نقش‌ها پیدا نشد: $SQL_DIR/$ROLE_SQL"
 
 command -v sudo >/dev/null || die "sudo نصب نیست."
 command -v psql >/dev/null || die "psql پیدا نشد."
 command -v systemctl >/dev/null || die "systemctl پیدا نشد."
 
-# SQLهای لازم برای schema فعلی GPS و اتصال Traccar.
-# ترتیب اجرا مهم است: schema پایه، توابع/مجوزها، تطبیق نقشه، watcherها و سپس
-# صف دستگاه‌های ناشناخته Traccar.
-#
-# عمداً 0004 و 0006 اجرا نمی‌شوند: این دو فایل نقش‌های سطح کلاستر PostgreSQL
-# را پاک می‌کنند و بخشی از بازسازی یک دیتابیس نیستند.
-# 0007 نیز بازنشسته و عملاً no-op است؛ 0008 وضعیت نهایی تطبیق نقشه را می‌سازد.
+# 0000_roles.sql پیش از migrationهای Django اجرا می‌شود؛ SQLهای بعدی پس از
+# ایجاد جدول‌های Django اجرا می‌شوند. 0004 و 0006 نقش‌های سطح کلاستر را حذف می‌کنند
+# و عمداً اجرا نمی‌شوند. 0007 بازنشسته/no-op است؛ 0008 وضعیت نهایی تطبیق نقشه را می‌سازد.
+ROLE_SQL="0000_roles.sql"
 SQL_FILES=(
-    "0000_roles.sql"
     "0001_gps_schema.sql"
     "0002_detected_protocol_registration.sql"
     "0003_purge_device_telemetry.sql"
@@ -133,7 +131,7 @@ echo
 echo "⚠️ هشدار: این عملیات دیتابیس '$DB_NAME' را کامل حذف می‌کند."
 echo "تمام کاربران، داده‌های GPS و اطلاعات داخل آن پاک خواهند شد."
 echo "تمام جدول‌های دیتابیس همراه خود دیتابیس حذف و بر اساس migrationهای فعلی و SQLهای GPS بازسازی می‌شوند."
-echo "نکته معماری: کد فعلی هنوز برای نمایش نقشه/گزارش و دریافت موقعیت به جدول‌های GPS سانا وابسته است؛ این اسکریپت آن‌ها را فعلاً به‌عنوان لایه سازگاری بازسازی می‌کند. حذف ذخیره‌سازی تکراری باید پس از اصلاح و آزمون مسیر خواندن مستقیم از Traccar انجام شود."
+echo "نکته معماری: تصمیم نهایی این است که Traccar مرجع داده خام GPS باشد؛ اما کد فعلی هنوز listenerهای مستقیم GPS را فعال می‌کند و webhook ترکر را هم در جدول‌های gps.* ذخیره می‌کند. این اسکریپت جدول‌های فعلی را برای جلوگیری از خرابی runtime حفظ می‌کند و ادعا نمی‌کند حذف ذخیره‌سازی تکراری انجام شده است. حذف آن‌ها فقط پس از مهاجرت کامل مسیرهای دریافت/خواندن/گزارش و آزمون یکپارچه مجاز است."
 echo "تنظیم مجوز پایش زنده شبکه در لینوکس مستقل است و در این عملیات دست‌کاری نمی‌شود."
 echo
 
@@ -212,19 +210,19 @@ sudo -u postgres psql -X -v ON_ERROR_STOP=1 \
 
 echo "✅ PostGIS فعال است."
 
-# ۵. اجرای تمام migrationهای Django
-step "۵/۱۰ - اجرای migrationهای Django"
+# ۵. آماده‌سازی نقش و schema پایه پیش از migrationهای Django.
+step "۵/۱۱ - آماده‌سازی نقش PostgreSQL"
+sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d "$DB_NAME" < "$SQL_DIR/$ROLE_SQL"
+echo "✅ نقش sana_user و schema پایه آماده شدند."
 
+# ۶. اجرای migrationهای Django؛ Django وابستگی‌ها را از graph واقعی می‌خواند.
+step "۶/۱۱ - اجرای migrationهای Django"
 cd "$BACKEND"
-
-# نام migrationها hard-code نشده است.
-# Django تمام migrationهای ثبت‌شده و وابستگی‌هایشان را پیدا می‌کند.
 "$PYTHON" "$MANAGE" migrate --noinput
-
 echo "✅ اجرای migrationها کامل شد."
 
 # ۶. بررسی Django و وضعیت migrationها
-step "۶/۱۰ - آزمون تنظیمات Django"
+step "۷/۱۱ - آزمون تنظیمات Django"
 
 "$PYTHON" "$MANAGE" check
 
@@ -233,7 +231,7 @@ step "۶/۱۰ - آزمون تنظیمات Django"
 echo "✅ بررسی Django موفق بود."
 
 # ۷. ساخت schema و تنظیمات GPS
-step "۷/۱۰ - اجرای SQLهای GPS"
+step "۸/۱۱ - اجرای SQLهای GPS"
 
 cd "$GPS"
 
@@ -251,7 +249,7 @@ done
 echo "✅ SQLهای GPS اجرا شدند."
 
 # ۸. آزمون اتصال، وجود جداول و دسترسی به جداول مشترک
-step "۸/۱۰ - آزمون دیتابیس و جداول"
+step "۹/۱۱ - آزمون دیتابیس و جداول"
 
 cd "$BACKEND"
 
@@ -331,14 +329,17 @@ with connection.cursor() as cursor:
         },
         "gps.location_history": {
             "device_id", "device_time", "server_received_at", "latitude", "longitude",
-            "geom", "gps_valid", "matched_latitude", "matched_longitude",
+            "geom", "gps_valid", "accuracy", "speed", "heading", "altitude", "motion", "ignition",
+            "satellites", "battery_voltage", "external_voltage", "gsm_signal", "odometer",
+            "engine_hours", "fuel_level", "attributes", "matched_latitude", "matched_longitude",
             "matched_geom", "match_provider", "matched_at",
         },
         "gps.current_state": {
-            "device_id", "device_time", "server_received_at", "last_seen",
+            "device_id", "device_time", "server_received_at", "last_seen", "updated_at",
             "latitude", "longitude", "geom", "gps_valid", "last_valid_latitude",
-            "last_valid_longitude", "matched_latitude", "matched_longitude",
-            "matched_geom", "match_provider", "matched_at",
+            "last_valid_longitude", "last_valid_geom", "last_valid_device_time",
+            "last_valid_server_received_at", "last_valid_accuracy",
+            "matched_latitude", "matched_longitude", "matched_geom", "match_provider", "matched_at",
         },
         "gps.map_matching_watchers": {
             "session_id", "user_id", "expires_at", "updated_at",
@@ -381,7 +382,7 @@ print("✅ Database, Django migrations, current GPS schema and privileges passed
 echo "✅ جداول و دسترسی‌های اصلی تأیید شدند."
 
 # ۹. ساخت سوپریوزر
-step "۹/۱۰ - ساخت سوپریوزر سایت"
+step "۱۰/۱۱ - ساخت سوپریوزر سایت"
 
 echo "نام کاربری، ایمیل و رمز را در پرسش‌های Django وارد کن."
 echo "رمز در فایل اسکریپت یا گزارش ذخیره نمی‌شود."
@@ -391,7 +392,7 @@ echo "رمز در فایل اسکریپت یا گزارش ذخیره نمی‌ش
 echo "✅ مرحله ساخت سوپریوزر پایان یافت."
 
 # ۱۰. راه‌اندازی سرویس‌ها فقط پس از موفقیت آزمون دیتابیس و ساخت سوپریوزر
-step "۱۰/۱۰ - راه‌اندازی و تأیید نهایی سرویس‌ها"
+step "۱۱/۱۱ - راه‌اندازی و تأیید نهایی سرویس‌ها"
 
 echo "راه‌اندازی Backend Django..."
 sudo systemctl start sana-backend
