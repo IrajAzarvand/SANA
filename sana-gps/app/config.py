@@ -113,10 +113,6 @@ class AppConfig:
     traccar_api_username: str = ""
     traccar_api_password: str = ""
     traccar_sync_interval: float = 60.0
-    traccar_webhook_host: str = "127.0.0.1"
-    traccar_webhook_port: int = 8765
-    traccar_webhook_secret: str | None = None
-
     @classmethod
     def from_env(cls) -> "AppConfig":
         host = os.getenv("SANA_GPS_HOST", _DEFAULT_HOST).strip()
@@ -162,17 +158,6 @@ class AppConfig:
         traccar_sync_interval = _parse_float_env(
             "SANA_GPS_TRACCAR_SYNC_INTERVAL", 60.0, minimum=5.0
         )
-        traccar_webhook_host = os.getenv(
-            "SANA_GPS_TRACCAR_WEBHOOK_HOST", "127.0.0.1"
-        ).strip()
-        if not traccar_webhook_host:
-            raise ConfigurationError("SANA_GPS_TRACCAR_WEBHOOK_HOST must not be empty")
-        traccar_webhook_port = _parse_int_env(
-            "SANA_GPS_TRACCAR_WEBHOOK_PORT", 8765, minimum=1, maximum=65535
-        )
-        traccar_webhook_secret = os.getenv(
-            "SANA_GPS_TRACCAR_WEBHOOK_SECRET", ""
-        ).strip() or None
         if bool(traccar_api_username) != bool(traccar_api_password):
             raise ConfigurationError(
                 "SANA_GPS_TRACCAR_API_USERNAME and SANA_GPS_TRACCAR_API_PASSWORD must be set together"
@@ -205,9 +190,6 @@ class AppConfig:
             traccar_api_username=traccar_api_username,
             traccar_api_password=traccar_api_password,
             traccar_sync_interval=traccar_sync_interval,
-            traccar_webhook_host=traccar_webhook_host,
-            traccar_webhook_port=traccar_webhook_port,
-            traccar_webhook_secret=traccar_webhook_secret,
         )
 
 

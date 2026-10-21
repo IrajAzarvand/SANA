@@ -109,17 +109,15 @@ command -v sudo >/dev/null || die "sudo نصب نیست."
 command -v psql >/dev/null || die "psql پیدا نشد."
 command -v systemctl >/dev/null || die "systemctl پیدا نشد."
 
-# 0000_roles.sql پیش از migrationهای Django اجرا می‌شود؛ SQLهای بعدی پس از
-# ایجاد جدول‌های Django اجرا می‌شوند. 0004 و 0006 نقش‌های سطح کلاستر را حذف می‌کنند
-# و عمداً اجرا نمی‌شوند. 0007 بازنشسته/no-op است؛ 0008 وضعیت نهایی تطبیق نقشه را می‌سازد.
+# 0000_roles.sql پیش از migrationهای Django اجرا می‌شود. پس از migrationها،
+# فقط SQLهای watcher و جدول نتیجه تطبیق Traccar اجرا می‌شوند؛ schema قدیمی GPS
+# و جدول‌های کپی تله‌متری عمداً ساخته نمی‌شوند.
+# Fresh databases create only the watcher registry and the Traccar-linked
+# Neshan match table. Legacy SQL files remain for historical reference but are
+# deliberately not applied by this reset script.
 SQL_FILES=(
-    "0001_gps_schema.sql"
-    "0002_detected_protocol_registration.sql"
-    "0003_purge_device_telemetry.sql"
-    "0005_grant_sana_user_gps_permissions.sql"
-    "0008_store_map_matches_in_existing_tables.sql"
     "0009_on_demand_map_matching.sql"
-    "0010_traccar_integration.sql"
+    "0011_traccar_authoritative_telemetry.sql"
 )
 
 for file in "${SQL_FILES[@]}"; do
@@ -131,7 +129,7 @@ echo
 echo "⚠️ هشدار: این عملیات دیتابیس '$DB_NAME' را کامل حذف می‌کند."
 echo "تمام کاربران، داده‌های GPS و اطلاعات داخل آن پاک خواهند شد."
 echo "تمام جدول‌های دیتابیس همراه خود دیتابیس حذف و بر اساس migrationهای فعلی و SQLهای GPS بازسازی می‌شوند."
-echo "نکته معماری: تصمیم نهایی این است که Traccar مرجع داده خام GPS باشد؛ اما کد فعلی هنوز listenerهای مستقیم GPS را فعال می‌کند و webhook ترکر را هم در جدول‌های gps.* ذخیره می‌کند. این اسکریپت جدول‌های فعلی را برای جلوگیری از خرابی runtime حفظ می‌کند و ادعا نمی‌کند حذف ذخیره‌سازی تکراری انجام شده است. حذف آن‌ها فقط پس از مهاجرت کامل مسیرهای دریافت/خواندن/گزارش و آزمون یکپارچه مجاز است."
+echo "معماری GPS: Traccar منبع داده خام است؛ سانا فقط نتیجه تطبیق Neshan و نشست‌های فعال نقشه را نگه می‌دارد."
 echo "تنظیم مجوز پایش زنده شبکه در لینوکس مستقل است و در این عملیات دست‌کاری نمی‌شود."
 echo
 
@@ -144,7 +142,7 @@ step "آماده‌سازی دسترسی مدیریتی"
 sudo -v
 
 # ۱. توقف سرویس GPS و Backend برای جلوگیری از اتصال هنگام بازسازی دیتابیس
-step "۱/۱۱ - توقف سرویس‌های GPS و Backend"
+step "۱/۱۲ - توقف سرویس‌های GPS و Backend"
 
 sudo systemctl stop sana-gps
 SERVICE_STOPPED=1
@@ -161,7 +159,7 @@ fi
 echo "✅ سرویس Backend متوقف است."
 
 # ۲. بررسی نقش PostgreSQL
-step "۲/۱۱ - بررسی نقش PostgreSQL"
+step "۲/۱۲ - بررسی نقش PostgreSQL"
 
 ROLE_EXISTS="$(
     sudo -u postgres psql -X -d postgres -At \
@@ -176,7 +174,7 @@ SQL
 echo "✅ نقش $DB_OWNER موجود است."
 
 # ۳. حذف و ساخت دیتابیس
-step "۳/۱۱ - بازسازی دیتابیس"
+step "۳/۱۲ - بازسازی دیتابیس"
 
 sudo -u postgres psql -X -v ON_ERROR_STOP=1 \
     -d postgres -v dbname="$DB_NAME" <<'SQL'
@@ -202,7 +200,7 @@ SQL
 echo "✅ دیتابیس جدید ساخته شد."
 
 # ۴. فعال‌سازی PostGIS
-step "۴/۱۱ - فعال‌سازی PostGIS"
+step "۴/۱۲ - فعال‌سازی PostGIS"
 
 sudo -u postgres psql -X -v ON_ERROR_STOP=1 \
     -d "$DB_NAME" \
@@ -211,12 +209,12 @@ sudo -u postgres psql -X -v ON_ERROR_STOP=1 \
 echo "✅ PostGIS فعال است."
 
 # ۵. آماده‌سازی نقش و schema پایه پیش از migrationهای Django.
-step "۵/۱۱ - آماده‌سازی نقش PostgreSQL"
+step "۵/۱۲ - آماده‌سازی نقش PostgreSQL"
 sudo -u postgres psql -X -v ON_ERROR_STOP=1 -d "$DB_NAME" < "$SQL_DIR/$ROLE_SQL"
 echo "✅ نقش sana_user و schema پایه آماده شدند."
 
 # ۶. اجرای migrationهای Django؛ Django وابستگی‌ها را از graph واقعی می‌خواند.
-step "۶/۱۱ - اجرای migrationهای Django"
+step "۶/۱۲ - اجرای migrationهای Django"
 cd "$BACKEND"
 "$PYTHON" "$MANAGE" migrate --noinput
 echo "✅ اجرای migrationها کامل شد."
@@ -265,6 +263,7 @@ EXPECTED_DB="$DB_NAME" EXPECTED_USER="$DB_OWNER" \
 import os
 from django.db import connection
 from django.db.migrations.loader import MigrationLoader
+from django.conf import settings
 
 expected_db = os.environ["EXPECTED_DB"]
 expected_user = os.environ["EXPECTED_USER"]
@@ -278,21 +277,16 @@ unapplied_leaves = [
 ]
 assert not unapplied_leaves, f"Unapplied migration leaves: {unapplied_leaves}"
 print("Django migration leaves:", sorted(loader.graph.leaf_nodes()))
+if not settings.TRACCAR_API_USERNAME or not settings.TRACCAR_API_PASSWORD:
+    print("WARNING: TRACCAR_API_USERNAME/PASSWORD are not configured; live map and reports will return 503.")
+else:
+    print("Traccar API credentials are configured for the Django backend.")
 
 required_tables = [
-    "public.fleet_gpstelemetry",
-    "public.fleet_unknowngpsdata",
-    "gps.raw_packet",
-    "gps.location_history",
-    "gps.current_state",
-    "gps.event",
-    "gps.trip",
-    "gps.geofence",
-    "gps.geofence_version",
-    "gps.geofence_assignment",
-    "gps.vehicle_geofence_state",
+    "public.fleet_device",
+    "public.fleet_devicemodel",
     "gps.map_matching_watchers",
-    "gps.traccar_unknown_device",
+    "gps.map_matched_position",
 ]
 
 with connection.cursor() as cursor:
@@ -309,10 +303,30 @@ with connection.cursor() as cursor:
         print(f"{table}: {exists}")
         assert exists is not None, f"Required table is missing: {table}"
 
+    forbidden_tables = [
+        "public.fleet_gpstelemetry",
+        "public.fleet_unknowngpsdata",
+        "gps.raw_packet",
+        "gps.location_history",
+        "gps.current_state",
+        "gps.event",
+        "gps.trip",
+        "gps.geofence",
+        "gps.geofence_version",
+        "gps.geofence_assignment",
+        "gps.vehicle_geofence_state",
+        "gps.traccar_unknown_device",
+    ]
+    for table in forbidden_tables:
+        cursor.execute("SELECT to_regclass(%s)", [table])
+        exists = cursor.fetchone()[0]
+        print(f"Legacy table must be absent: {table} -> {exists}")
+        assert exists is None, f"Obsolete duplicate GPS table still exists: {table}"
+
     # Validate columns that were added by the latest SQL schema changes, not just
     # table names. This catches a partially applied or outdated GPS schema.
     required_columns = {
-        # Final Django schema after fleet migrations through 0012.
+        # Final Django schema after fleet migrations through 0014.
         "public.fleet_device": {
             "imei", "device_model_id", "protocol", "organization_id", "owner_user_id",
             "branch_id", "current_holder_organization_id", "current_holder_user_id",
@@ -322,39 +336,12 @@ with connection.cursor() as cursor:
             "manufacturer", "name", "code", "protocol", "port", "traccar_version",
             "source_url", "is_verified", "created_at",
         },
-        "public.fleet_gpstelemetry": {
-            "device_id", "protocol", "gps_time", "latitude", "longitude",
-            "gps_valid", "speed_kmh", "heading_deg", "altitude_m",
-            "satellites", "attributes", "fingerprint", "raw_payload", "received_at",
-        },
-        "public.fleet_unknowngpsdata": {
-            "session_id", "transport", "remote_address", "raw_payload",
-            "identifier_candidate", "status", "received_at",
-        },
-        "gps.raw_packet": {
-            "device_id", "protocol", "fingerprint", "received_at", "payload", "metadata",
-        },
-        "gps.location_history": {
-            "device_id", "device_time", "server_received_at", "latitude", "longitude",
-            "geom", "gps_valid", "accuracy", "speed", "heading", "altitude", "motion", "ignition",
-            "satellites", "battery_voltage", "external_voltage", "gsm_signal", "odometer",
-            "engine_hours", "fuel_level", "attributes", "matched_latitude", "matched_longitude",
-            "matched_geom", "match_provider", "matched_at",
-        },
-        "gps.current_state": {
-            "device_id", "device_time", "server_received_at", "last_seen", "updated_at",
-            "latitude", "longitude", "geom", "gps_valid", "last_valid_latitude",
-            "last_valid_longitude", "last_valid_geom", "last_valid_device_time",
-            "last_valid_server_received_at", "last_valid_accuracy",
-            "matched_latitude", "matched_longitude", "matched_geom", "match_provider", "matched_at",
-        },
         "gps.map_matching_watchers": {
             "session_id", "user_id", "expires_at", "updated_at",
         },
-        "gps.traccar_unknown_device": {
-            "traccar_device_id", "unique_id", "name", "traccar_status",
-            "first_seen_at", "last_seen_at", "last_synced_at", "review_status",
-            "reviewed_at", "metadata",
+        "gps.map_matched_position": {
+            "traccar_position_id", "traccar_device_id", "device_id", "device_time",
+            "matched_latitude", "matched_longitude", "matched_geom", "match_provider", "matched_at",
         },
     }
     for table, expected_columns in required_columns.items():
@@ -371,11 +358,8 @@ with connection.cursor() as cursor:
 
     # Exercise SELECT privileges using the actual application database login.
     for table in (
-        "gps.raw_packet",
-        "gps.location_history",
-        "gps.current_state",
         "gps.map_matching_watchers",
-        "gps.traccar_unknown_device",
+        "gps.map_matched_position",
     ):
         cursor.execute(f"SELECT COUNT(*) FROM {table}")
         print(f"SELECT access OK: {table}; rows={cursor.fetchone()[0]}")
@@ -417,7 +401,7 @@ echo "✅ سرویس GPS فعال است."
 
 # سرویس‌ها ممکن است چند ثانیه بعد از systemctl start پورت را باز کنند.
 # برای جلوگیری از خطای کاذب، برای هر پورت تا 30 ثانیه منتظر می‌مانیم.
-for port in 8000 9000 9001; do
+for port in 8000; do
     port_ready=0
     for attempt in {1..30}; do
         if sudo ss -H -lntup | grep -Eq ":${port}([[:space:]]|$)"; then
@@ -433,7 +417,7 @@ for port in 8000 9000 9001; do
     fi
 done
 
-echo "✅ پورت‌های 8000، 9000 و 9001 در حال شنود هستند."
+echo "✅ پورت Backend (8000) در حال شنود است؛ سرویس GPS دیگر listener مستقیم TCP/UDP ندارد."
 echo "✅ دیتابیس، سوپریوزر و سرویس‌ها بررسی شدند."
 echo "✅ تنظیم مجوز tcpdump و sudoers دست‌نخورده باقی مانده است."
 echo "وضعیت Backend: sudo systemctl status sana-backend.service --no-pager"

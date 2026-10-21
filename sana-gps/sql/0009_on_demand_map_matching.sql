@@ -1,5 +1,6 @@
 -- Store short-lived map viewers so the GPS worker only pays for matching while a map is open.
 BEGIN;
+SET ROLE sana_user;
 CREATE TABLE IF NOT EXISTS gps.map_matching_watchers (
     session_id text PRIMARY KEY,
     user_id bigint NOT NULL,

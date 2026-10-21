@@ -24,6 +24,7 @@ from .serializers import (
 )
 from organizations.models import SubscriptionDevice
 from accounts.permissions import IsSiteAdmin, IsOrganizationMember
+from .traccar_api import TraccarAPIError, traccar_current_positions, traccar_device_positions, traccar_devices
 
 
 class VehicleTypeViewSet(viewsets.ModelViewSet):
@@ -191,31 +192,27 @@ class DeviceViewSet(viewsets.ModelViewSet):
         return qs
 
     def list(self, request, *args, **kwargs):
-        """List devices and enrich the page with GPS state using the same DB login."""
+        """List authorized SANA devices and use Traccar for last-seen timestamps."""
         queryset = self.filter_queryset(self.get_queryset())
         page = self.paginate_queryset(queryset)
         devices = list(page if page is not None else queryset)
 
-        # Default to null for devices that have not sent GPS data yet.
+        # Traccar owns last-seen timestamps; SANA does not keep a GPS current-state copy.
         for device in devices:
             device.last_data_received_at = None
-
-        device_ids = [device.pk for device in devices]
-        if device_ids:
-            # GPS reads use the same sana_user database login as all other queries.
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT device_id, last_seen
-                    FROM gps.current_state
-                    WHERE device_id = ANY(%s)
-                    """,
-                    [device_ids],
-                )
-                timestamps = dict(cursor.fetchall())
-
+        try:
+            traccar_by_imei = {
+                str(item.get('uniqueId') or '').strip(): item
+                for item in traccar_devices()
+                if str(item.get('uniqueId') or '').strip()
+            }
             for device in devices:
-                device.last_data_received_at = timestamps.get(device.pk)
+                traccar_device = traccar_by_imei.get(str(device.imei).strip())
+                last_update = traccar_device.get('lastUpdate') if traccar_device else None
+                device.last_data_received_at = parse_datetime(last_update) if last_update else None
+        except TraccarAPIError:
+            # The device list remains available during a temporary Traccar outage.
+            pass
 
         serializer = self.get_serializer(devices, many=True)
         if page is not None:
@@ -319,60 +316,97 @@ class DeviceViewSet(viewsets.ModelViewSet):
             cursor_time = timezone.make_aware(cursor_time)
 
         limit = 5000
-        with connection.cursor() as cursor:
-            if cursor_time is not None and cursor_id > 0:
-                cursor.execute(
-                    """
-                    SELECT id, device_time, server_received_at, latitude, longitude,
-                           matched_latitude, matched_longitude, match_provider, matched_at,
-                           gps_valid, accuracy, speed, heading, altitude, motion, ignition,
-                           satellites, battery_voltage, external_voltage, gsm_signal,
-                           odometer, engine_hours, fuel_level, attributes
-                    FROM gps.location_history
-                    WHERE device_id = %s AND device_time >= %s AND device_time <= %s
-                      AND (device_time, id) > (%s, %s)
-                    ORDER BY device_time, id
-                    LIMIT %s
-                    """,
-                    [device.pk, raw_start, raw_end, cursor_time, cursor_id, limit + 1],
-                )
-            else:
-                cursor.execute(
-                    """
-                    SELECT id, device_time, server_received_at, latitude, longitude,
-                           matched_latitude, matched_longitude, match_provider, matched_at,
-                           gps_valid, accuracy, speed, heading, altitude, motion, ignition,
-                           satellites, battery_voltage, external_voltage, gsm_signal,
-                           odometer, engine_hours, fuel_level, attributes
-                    FROM gps.location_history
-                    WHERE device_id = %s AND device_time >= %s AND device_time <= %s
-                    ORDER BY device_time, id
-                    LIMIT %s
-                    """,
-                    [device.pk, raw_start, raw_end, limit + 1],
-                )
-            columns = [column[0] for column in cursor.description]
-            rows = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        try:
+            traccar_device = next(
+                (
+                    item for item in traccar_devices()
+                    if str(item.get('uniqueId') or '').strip() == str(device.imei).strip()
+                ),
+                None,
+            )
+            if traccar_device is None or traccar_device.get('id') is None:
+                return Response({'detail': 'دستگاه در Traccar ثبت نشده است.'}, status=404)
+            positions = traccar_device_positions(
+                int(traccar_device['id']),
+                raw_start.isoformat().replace('+00:00', 'Z'),
+                raw_end.isoformat().replace('+00:00', 'Z'),
+            )
+        except TraccarAPIError:
+            return Response({'detail': 'دریافت تاریخچه از Traccar موقتاً ممکن نیست.'}, status=503)
 
-        has_more = len(rows) > limit
-        rows = rows[:limit]
+        normalized = []
+        for item in positions:
+            try:
+                point_id = int(item['id'])
+                point_time = parse_datetime(item.get('fixTime') or item.get('deviceTime') or item.get('serverTime') or '')
+                latitude = float(item['latitude'])
+                longitude = float(item['longitude'])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if point_time is None:
+                continue
+            if timezone.is_naive(point_time):
+                point_time = timezone.make_aware(point_time)
+            if cursor_time is not None and cursor_id > 0 and (point_time, point_id) <= (cursor_time, cursor_id):
+                continue
+            normalized.append((point_time, point_id, item, latitude, longitude))
+        normalized.sort(key=lambda row: (row[0], row[1]))
+        has_more = len(normalized) > limit
+        normalized = normalized[:limit]
+        point_ids = [row[1] for row in normalized]
+        matches = {}
+        if point_ids:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT traccar_position_id, matched_latitude, matched_longitude,
+                           match_provider, matched_at
+                    FROM gps.map_matched_position
+                    WHERE traccar_position_id = ANY(%s)
+                    """,
+                    [point_ids],
+                )
+                matches = {
+                    int(row[0]): {
+                        'matched_latitude': float(row[1]),
+                        'matched_longitude': float(row[2]),
+                        'match_provider': row[3],
+                        'matched_at': row[4].isoformat() if row[4] else None,
+                    }
+                    for row in cursor.fetchall()
+                }
+
         points = []
-        for row in rows:
-            item = {}
-            for key, value in row.items():
-                if hasattr(value, 'isoformat'):
-                    item[key] = value.isoformat()
-                elif key in {
-                    'latitude', 'longitude', 'matched_latitude', 'matched_longitude',
-                    'accuracy', 'speed', 'heading', 'altitude', 'battery_voltage',
-                    'external_voltage', 'odometer', 'engine_hours', 'fuel_level',
-                } and value is not None:
-                    item[key] = float(value)
-                elif key == 'attributes':
-                    item[key] = value if isinstance(value, dict) else {}
-                else:
-                    item[key] = value
-            points.append(item)
+        for point_time, point_id, item, latitude, longitude in normalized:
+            attributes = item.get('attributes') if isinstance(item.get('attributes'), dict) else {}
+            match = matches.get(point_id, {})
+            points.append({
+                'id': point_id,
+                'traccar_position_id': point_id,
+                'device_time': point_time.isoformat(),
+                'server_received_at': item.get('serverTime'),
+                'latitude': latitude,
+                'longitude': longitude,
+                'matched_latitude': match.get('matched_latitude'),
+                'matched_longitude': match.get('matched_longitude'),
+                'match_provider': match.get('match_provider'),
+                'matched_at': match.get('matched_at'),
+                'gps_valid': bool(item.get('valid', True)),
+                'accuracy': item.get('accuracy'),
+                'speed': float(item.get('speed') or 0) * 1.852,
+                'heading': item.get('course'),
+                'altitude': item.get('altitude'),
+                'motion': attributes.get('motion'),
+                'ignition': attributes.get('ignition'),
+                'satellites': attributes.get('sat'),
+                'battery_voltage': attributes.get('battery'),
+                'external_voltage': attributes.get('power'),
+                'gsm_signal': attributes.get('rssi'),
+                'odometer': attributes.get('odometer'),
+                'engine_hours': attributes.get('hours'),
+                'fuel_level': attributes.get('fuel'),
+                'attributes': attributes,
+            })
 
         next_cursor = None
         if has_more and points:
@@ -425,69 +459,105 @@ class DeviceViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='map-positions')
     def map_positions(self, request):
-        """Return current/last-known GPS positions for devices visible to this user."""
-        devices = list(
-            self.filter_queryset(self.get_queryset())
-            
-            .select_related('vehicle')
-        )
+        """Return live positions from Traccar; only Neshan match overlays come from SANA."""
+        devices = list(self.filter_queryset(self.get_queryset()).select_related('vehicle'))
         if not devices:
             return Response([])
 
-        devices_by_id = {device.pk: device for device in devices}
-        device_ids = list(devices_by_id)
-        with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT s.device_id,
-                       COALESCE(s.matched_latitude, s.latitude, s.last_valid_latitude) AS latitude,
-                       COALESCE(s.matched_longitude, s.longitude, s.last_valid_longitude) AS longitude,
-                       s.gps_valid, s.speed, s.heading, s.motion, s.last_seen, s.device_time,
-                       (s.matched_latitude IS NOT NULL AND s.matched_longitude IS NOT NULL) AS position_is_matched
-                FROM gps.current_state AS s
-                WHERE s.device_id = ANY(%s)
-                  AND (s.latitude IS NOT NULL OR s.last_valid_latitude IS NOT NULL)
-                  AND (s.longitude IS NOT NULL OR s.last_valid_longitude IS NOT NULL)
-                """,
-                [device_ids],
+        sana_by_imei = {str(device.imei).strip(): device for device in devices}
+        try:
+            traccar_devices_list = traccar_devices()
+            traccar_positions = traccar_current_positions()
+        except TraccarAPIError:
+            return Response(
+                {'detail': 'دریافت موقعیت زنده از Traccar موقتاً ممکن نیست.'},
+                status=503,
             )
-            rows = cursor.fetchall()
+
+        traccar_by_id = {
+            int(item['id']): item
+            for item in traccar_devices_list
+            if item.get('id') is not None
+        }
+        eligible = {}
+        for traccar_id, traccar_device in traccar_by_id.items():
+            unique_id = str(traccar_device.get('uniqueId') or '').strip()
+            sana_device = sana_by_imei.get(unique_id)
+            if sana_device is not None:
+                eligible[traccar_id] = (sana_device, traccar_device)
+
+        current = []
+        for position in traccar_positions:
+            try:
+                traccar_id = int(position['deviceId'])
+                position_id = int(position['id'])
+                latitude = float(position['latitude'])
+                longitude = float(position['longitude'])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if traccar_id not in eligible or not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+                continue
+            sana_device, traccar_device = eligible[traccar_id]
+            current.append((position_id, traccar_id, sana_device, traccar_device, position, latitude, longitude))
+
+        position_ids = [row[0] for row in current]
+        matches = {}
+        if position_ids:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT traccar_position_id, matched_latitude, matched_longitude, match_provider, matched_at
+                    FROM gps.map_matched_position
+                    WHERE traccar_position_id = ANY(%s)
+                    """,
+                    [position_ids],
+                )
+                matches = {
+                    int(row[0]): {
+                        'latitude': float(row[1]),
+                        'longitude': float(row[2]),
+                        'provider': row[3],
+                        'matched_at': row[4].isoformat() if row[4] else None,
+                    }
+                    for row in cursor.fetchall()
+                }
 
         now = timezone.now()
-        positions = []
-        for row in rows:
-            device_id, latitude, longitude, gps_valid, speed, heading, motion, last_seen, device_time, position_is_matched = row
-            device = devices_by_id.get(device_id)
-            if device is None or latitude is None or longitude is None:
-                continue
-
-            is_online = last_seen is not None and (now - last_seen).total_seconds() <= 300
-            speed_value = float(speed) if speed is not None else 0.0
-            if not is_online:
-                status = 'offline'
-            elif motion is True or speed_value >= 3:
-                status = 'moving'
-            else:
-                status = 'stopped'
-
-            positions.append({
+        output = []
+        for position_id, traccar_id, device, traccar_device, position, latitude, longitude in current:
+            last_update = parse_datetime(str(traccar_device.get('lastUpdate') or ''))
+            if last_update is not None and timezone.is_naive(last_update):
+                last_update = timezone.make_aware(last_update)
+            is_online = (
+                str(traccar_device.get('status') or '').lower() == 'online'
+                and last_update is not None
+                and (now - last_update).total_seconds() <= 300
+            )
+            attributes = position.get('attributes') if isinstance(position.get('attributes'), dict) else {}
+            match = matches.get(position_id)
+            valid = bool(position.get('valid', True))
+            speed_kmh = float(position.get('speed') or 0) * 1.852
+            motion = attributes.get('motion')
+            status = 'offline' if not is_online else ('moving' if motion is True or speed_kmh >= 3 else 'stopped')
+            output.append({
                 'device_id': device.pk,
                 'imei': device.imei,
                 'vehicle_id': device.vehicle_id,
                 'vehicle_plate': device.vehicle.plate if device.vehicle_id else None,
-                'latitude': float(latitude),
-                'longitude': float(longitude),
-                'position_is_current': bool(gps_valid),
-                'position_is_matched': bool(position_is_matched),
-                'speed': speed_value,
-                'heading': float(heading) if heading is not None else None,
-                'last_seen': last_seen.isoformat() if last_seen else None,
-                'device_time': device_time.isoformat() if device_time else None,
+                'latitude': match['latitude'] if match else latitude,
+                'longitude': match['longitude'] if match else longitude,
+                'position_is_current': valid,
+                'position_is_matched': match is not None,
+                'match_provider': match['provider'] if match else None,
+                'matched_at': match['matched_at'] if match else None,
+                'speed': speed_kmh,
+                'heading': position.get('course'),
+                'last_seen': traccar_device.get('lastUpdate') or position.get('serverTime'),
+                'device_time': position.get('fixTime') or position.get('deviceTime'),
                 'status': status,
             })
-
-        positions.sort(key=lambda item: item['device_id'])
-        return Response(positions)
+        output.sort(key=lambda item: item['device_id'])
+        return Response(output)
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
@@ -495,36 +565,23 @@ class DeviceViewSet(viewsets.ModelViewSet):
         return super().get_permissions()
 
     def destroy(self, request, *args, **kwargs):
-        """Permanently delete a device and its related records only after explicit IMEI confirmation."""
+        """Permanently delete a device after explicit IMEI confirmation."""
         instance = self.get_object()
         confirmed_imei = request.data.get('confirm_imei')
         if confirmed_imei != instance.imei:
             return Response(
-                {'detail': 'برای حذف دائمی، IMEI دستگاه باید دقیقاً تأیید شود.'},
+                {'detail': 'برای حذف دستگاه، IMEI را دقیقاً در confirm_imei ارسال کن.'},
                 status=400,
             )
-
         with transaction.atomic():
-            # SECURITY DEFINER function removes GPS-schema rows that reference this device.
-            with connection.cursor() as cursor:
-                cursor.execute('SELECT gps.purge_device_data(%s)', [instance.pk])
-            # DeviceOperation protects its referenced devices from accidental deletion.
-            # Explicitly remove operations where this device is either the subject or replacement.
+            # GPS raw telemetry is owned by Traccar; SANA has no GPS purge function.
+            # Remove operations referencing this device before deleting the fleet record.
             DeviceOperation.objects.filter(
                 Q(device=instance) | Q(replacement_device=instance)
             ).delete()
             instance.delete()
 
         return Response(status=204)
-
-
-class DriverViewSet(viewsets.ModelViewSet):
-    queryset = Driver.objects.select_related('organization', 'branch').all()
-    serializer_class = DriverSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['first_name', 'last_name', 'mobile', 'personnel_code']
-    ordering_fields = ['last_name', 'created_at']
 
     def get_queryset(self):
         user = self.request.user
