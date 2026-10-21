@@ -307,6 +307,16 @@ with connection.cursor() as cursor:
     # Validate columns that were added by the latest SQL schema changes, not just
     # table names. This catches a partially applied or outdated GPS schema.
     required_columns = {
+        # Final Django schema after fleet migrations through 0012.
+        "public.fleet_device": {
+            "imei", "device_model_id", "protocol", "organization_id", "owner_user_id",
+            "branch_id", "current_holder_organization_id", "current_holder_user_id",
+            "vehicle_id", "management_status", "installed_at", "created_at", "updated_at",
+        },
+        "public.fleet_devicemodel": {
+            "manufacturer", "name", "code", "protocol", "port", "traccar_version",
+            "source_url", "is_verified", "created_at",
+        },
         "public.fleet_gpstelemetry": {
             "device_id", "protocol", "gps_time", "latitude", "longitude",
             "gps_valid", "speed_kmh", "heading_deg", "altitude_m",
