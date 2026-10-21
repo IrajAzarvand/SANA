@@ -334,17 +334,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
         except TraccarAPIError:
             return Response({'detail': 'دریافت تاریخچه از Traccar موقتاً ممکن نیست.'}, status=503)
 
-        positions = []
-        # (The actual API response is assigned separately to avoid shadowing the name.)
-        try:
-            positions = traccar_device_positions(
-                int(traccar_device['id']),
-                raw_start.isoformat().replace('+00:00', 'Z'),
-                raw_end.isoformat().replace('+00:00', 'Z'),
-            )
-        except TraccarAPIError:
-            return Response({'detail': 'دریافت تاریخچه از Traccar موقتاً ممکن نیست.'}, status=503)
-
         normalized = []
         for item in positions:
             try:
@@ -576,36 +565,15 @@ class DeviceViewSet(viewsets.ModelViewSet):
         return super().get_permissions()
 
     def destroy(self, request, *args, **kwargs):
-        """Permanently delete a device and its related records only after explicit IMEI confirmation."""
+        """Permanently delete a device after explicit IMEI confirmation."""
         instance = self.get_object()
         confirmed_imei = request.data.get('confirm_imei')
         if confirmed_imei != instance.imei:
             return Response(
-                {'detail': 'برای حذف دائمی، IMEI دستگاه باید دقیقاً تأیید شود.'},
+                {'detail': 'برای حذف دستگاه، IMEI را دقیقاً در confirm_imei ارسال کن.'},
                 status=400,
             )
-
-        with transaction.atomic():
-            # SECURITY DEFINER function removes GPS-schema rows that reference this device.
-            with connection.cursor() as cursor:
-                cursor.execute('SELECT gps.purge_device_data(%s)', [instance.pk])
-            # DeviceOperation protects its referenced devices from accidental deletion.
-            # Explicitly remove operations where this device is either the subject or replacement.
-            DeviceOperation.objects.filter(
-                Q(device=instance) | Q(replacement_device=instance)
-            ).delete()
-            instance.delete()
-
-        return Response(status=204)
-
-
-class DriverViewSet(viewsets.ModelViewSet):
-    queryset = Driver.objects.select_related('organization', 'branch').all()
-    serializer_class = DriverSerializer
-    permission_classes = [IsAuthenticated]
-    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
-    search_fields = ['first_name', 'last_name', 'mobile', 'personnel_code']
-    ordering_fields = ['last_name', 'created_at']
+        return super().destroy(request, *args, **kwargs)
 
     def get_queryset(self):
         user = self.request.user
