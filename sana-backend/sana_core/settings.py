@@ -96,6 +96,11 @@ DATABASES = {
 
 
 # Custom User Model
+# Traccar is the authoritative source for raw/current GPS positions.
+TRACCAR_API_URL = config('TRACCAR_API_URL', default='http://127.0.0.1:8082/api')
+TRACCAR_API_USERNAME = config('TRACCAR_API_USERNAME', default='')
+TRACCAR_API_PASSWORD = config('TRACCAR_API_PASSWORD', default='')
+
 AUTH_USER_MODEL = 'accounts.User'
 
 
