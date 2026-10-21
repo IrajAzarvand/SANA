@@ -583,6 +583,15 @@ class DeviceViewSet(viewsets.ModelViewSet):
 
         return Response(status=204)
 
+
+class DriverViewSet(viewsets.ModelViewSet):
+    queryset = Driver.objects.select_related('organization', 'branch').all()
+    serializer_class = DriverSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['first_name', 'last_name', 'mobile', 'personnel_code']
+    ordering_fields = ['last_name', 'created_at']
+
     def get_queryset(self):
         user = self.request.user
         qs = Driver.objects.select_related('organization', 'branch')
@@ -602,6 +611,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
             qs = qs.filter(branch_id=branch)
 
         return qs
+
 
 class DriverVehicleAssignmentViewSet(viewsets.ModelViewSet):
     """تاریخچه و مدیریت تخصیص راننده به خودرو."""
