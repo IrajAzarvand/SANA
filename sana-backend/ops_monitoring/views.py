@@ -115,56 +115,15 @@ class LiveLogStreamView(APIView):
 
 
 class GPSQueueView(APIView):
-    """Read-only view of recent raw, not-yet-fully-classified GPS network chunks."""
+    """Compatibility endpoint for a retired queue of unknown-device raw packets."""
 
     permission_classes = [IsAuthenticated, IsSiteAdmin]
 
     def get(self, request):
         _require_admin(request)
-        status_filter = request.query_params.get("status", "all")
-        allowed_statuses = {"all", "pending", "matched"}
-        if status_filter not in allowed_statuses:
-            return JsonResponse({"detail": "فیلتر وضعیت نامعتبر است."}, status=400)
-
-        where = ""
-        params: list[object] = []
-        if status_filter != "all":
-            where = "WHERE status = %s"
-            params.append(status_filter)
-
-        try:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    f"""
-                    SELECT id, received_at, transport, remote_address,
-                           identifier_candidate, status, raw_payload
-                    FROM public.fleet_unknowngpsdata
-                    {where}
-                    ORDER BY received_at DESC, id DESC
-                    LIMIT 50
-                    """,
-                    params,
-                )
-                rows = cursor.fetchall()
-        except DatabaseError:
-            logger.exception("GPS temporary queue is unavailable")
-            return JsonResponse(
-                {"detail": "جدول صف موقت GPS در دسترس نیست؛ migration و اتصال دیتابیس را بررسی کنید."},
-                status=503,
-            )
-
-        results = []
-        for row_id, received_at, transport, remote, candidate, status, payload in rows:
-            raw = bytes(payload or b"")
-            results.append({
-                "id": row_id,
-                "received_at": received_at.isoformat() if received_at else None,
-                "transport": transport,
-                "remote_address": remote,
-                "identifier_candidate": candidate or "",
-                "status": status,
-                "payload_hex": raw[:64].hex(" "),
-                "payload_bytes": len(raw),
-                "payload_truncated": len(raw) > 64,
-            })
-        return JsonResponse({"results": results, "count": len(results)})
+        # Unknown Traccar-only devices are intentionally not staged or retained by SANA.
+        return JsonResponse({
+            "results": [],
+            "count": 0,
+            "detail": "صف داده خام دستگاه‌های ناشناس حذف شده است؛ Traccar مرجع داده خام GPS است.",
+        })
