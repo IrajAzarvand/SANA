@@ -309,8 +309,6 @@ with connection.cursor() as cursor:
         "gps.raw_packet",
         "gps.location_history",
         "gps.current_state",
-        "gps.raw_packet",
-        "gps.location_history",
         "gps.event",
         "gps.trip",
         "gps.geofence",
