@@ -109,9 +109,9 @@ command -v sudo >/dev/null || die "sudo نصب نیست."
 command -v psql >/dev/null || die "psql پیدا نشد."
 command -v systemctl >/dev/null || die "systemctl پیدا نشد."
 
-# 0000_roles.sql پیش از migrationهای Django اجرا می‌شود؛ SQLهای بعدی پس از
-# ایجاد جدول‌های Django اجرا می‌شوند. 0004 و 0006 نقش‌های سطح کلاستر را حذف می‌کنند
-# و عمداً اجرا نمی‌شوند. 0007 بازنشسته/no-op است؛ 0008 وضعیت نهایی تطبیق نقشه را می‌سازد.
+# 0000_roles.sql پیش از migrationهای Django اجرا می‌شود. پس از migrationها،
+# فقط SQLهای watcher و جدول نتیجه تطبیق Traccar اجرا می‌شوند؛ schema قدیمی GPS
+# و جدول‌های کپی تله‌متری عمداً ساخته نمی‌شوند.
 # Fresh databases create only the watcher registry and the Traccar-linked
 # Neshan match table. Legacy SQL files remain for historical reference but are
 # deliberately not applied by this reset script.
@@ -263,6 +263,7 @@ EXPECTED_DB="$DB_NAME" EXPECTED_USER="$DB_OWNER" \
 import os
 from django.db import connection
 from django.db.migrations.loader import MigrationLoader
+from django.conf import settings
 
 expected_db = os.environ["EXPECTED_DB"]
 expected_user = os.environ["EXPECTED_USER"]
@@ -276,6 +277,10 @@ unapplied_leaves = [
 ]
 assert not unapplied_leaves, f"Unapplied migration leaves: {unapplied_leaves}"
 print("Django migration leaves:", sorted(loader.graph.leaf_nodes()))
+if not settings.TRACCAR_API_USERNAME or not settings.TRACCAR_API_PASSWORD:
+    print("WARNING: TRACCAR_API_USERNAME/PASSWORD are not configured; live map and reports will return 503.")
+else:
+    print("Traccar API credentials are configured for the Django backend.")
 
 required_tables = [
     "public.fleet_device",
