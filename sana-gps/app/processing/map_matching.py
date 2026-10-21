@@ -75,7 +75,17 @@ def has_active_map_matching_viewers(pool: DatabaseConnectionPool) -> bool:
     """Neshan matching is enabled only while a map viewer heartbeat is current."""
     with pool.connection() as connection:
         row = connection.execute(
-            "SELECT EXISTS (SELECT 1 FROM gps.map_matching_watchers WHERE expires_at > CURRENT_TIMESTAMP)"
+            """
+            WITH expired AS (
+                DELETE FROM gps.map_matching_watchers
+                WHERE expires_at <= CURRENT_TIMESTAMP
+                RETURNING session_id
+            )
+            SELECT EXISTS (
+                SELECT 1 FROM gps.map_matching_watchers
+                WHERE expires_at > CURRENT_TIMESTAMP
+            )
+            """
         ).fetchone()
     return bool(row and row[0])
 
