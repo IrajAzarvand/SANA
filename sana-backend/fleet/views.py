@@ -566,9 +566,10 @@ class DeviceViewSet(viewsets.ModelViewSet):
             attributes = position.get('attributes') if isinstance(position.get('attributes'), dict) else {}
             match = matches.get(position_id)
             valid = bool(position.get('valid', True))
-            speed_kmh = round(float(position.get('speed') or 0) * 1.852, 1)
+            speed_kmh_raw = float(position.get('speed') or 0) * 1.852
+            speed_kmh = round(speed_kmh_raw, 1)
             motion = attributes.get('motion')
-            status = 'offline' if not is_online else ('moving' if motion is True or speed_kmh >= 3 else 'stopped')
+            status = 'offline' if not is_online else ('moving' if motion is True or speed_kmh_raw >= 3 else 'stopped')
             output.append({
                 'device_id': device.pk,
                 'imei': device.imei,
