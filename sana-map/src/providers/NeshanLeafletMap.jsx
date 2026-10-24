@@ -67,6 +67,11 @@ function formatLastSeen(value) {
   }).format(date);
 }
 
+function formatSpeed(value) {
+  const speed = Number(value);
+  return value == null || !Number.isFinite(speed) ? '—' : speed.toFixed(1);
+}
+
 function markerColor(position) {
   if (position.status === 'offline') return '#64748B';
   if (position.status === 'moving') return '#14B8A6';
@@ -99,7 +104,7 @@ function popupHtml(position) {
     <div style="font-weight:700;margin-bottom:8px">${escapeHtml(title)}</div>
     <div>شناسه دستگاه: ${escapeHtml(position.imei)}</div>
     <div>وضعیت: ${status}</div>
-    <div>سرعت: ${position.speed == null ? '—' : escapeHtml(position.speed)} km/h</div>
+    <div>سرعت: ${escapeHtml(formatSpeed(position.speed))} km/h</div>
     <div>آخرین ارتباط: ${escapeHtml(formatLastSeen(position.last_seen))}</div>
     ${positionNote}
     ${matchingNote}

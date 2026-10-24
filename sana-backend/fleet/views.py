@@ -197,22 +197,52 @@ class DeviceViewSet(viewsets.ModelViewSet):
         page = self.paginate_queryset(queryset)
         devices = list(page if page is not None else queryset)
 
-        # Traccar owns last-seen timestamps; SANA does not keep a GPS current-state copy.
+        # Traccar is the source of GPS receipt timestamps; SANA only adds this
+        # transient serializer attribute and does not persist a duplicate timestamp.
         for device in devices:
             device.last_data_received_at = None
+
+        traccar_by_imei = {}
         try:
             traccar_by_imei = {
                 str(item.get('uniqueId') or '').strip(): item
                 for item in traccar_devices()
                 if str(item.get('uniqueId') or '').strip()
             }
-            for device in devices:
-                traccar_device = traccar_by_imei.get(str(device.imei).strip())
-                last_update = traccar_device.get('lastUpdate') if traccar_device else None
-                device.last_data_received_at = parse_datetime(last_update) if last_update else None
         except TraccarAPIError:
-            # The device list remains available during a temporary Traccar outage.
+            # Keep the device list available during a temporary Traccar outage.
             pass
+
+        # /positions supplies serverTime: when Traccar received the position.
+        # GPS-originated fixTime/deviceTime are deliberately not used for this field.
+        received_at_by_traccar_id = {}
+        if traccar_by_imei:
+            try:
+                for position in traccar_current_positions():
+                    try:
+                        traccar_id = int(position.get('deviceId'))
+                    except (TypeError, ValueError):
+                        continue
+                    received_at = parse_datetime(str(position.get('serverTime') or ''))
+                    if received_at is not None:
+                        received_at_by_traccar_id[traccar_id] = received_at
+            except TraccarAPIError:
+                # Fall back to the device-level lastUpdate value below.
+                pass
+
+        for device in devices:
+            traccar_device = traccar_by_imei.get(str(device.imei).strip())
+            traccar_id = traccar_device.get('id') if traccar_device else None
+            received_at = None
+            if traccar_id is not None:
+                try:
+                    received_at = received_at_by_traccar_id.get(int(traccar_id))
+                except (TypeError, ValueError):
+                    pass
+            if received_at is None and traccar_device:
+                last_update = traccar_device.get('lastUpdate')
+                received_at = parse_datetime(str(last_update)) if last_update else None
+            device.last_data_received_at = received_at
 
         serializer = self.get_serializer(devices, many=True)
         if page is not None:
@@ -536,9 +566,10 @@ class DeviceViewSet(viewsets.ModelViewSet):
             attributes = position.get('attributes') if isinstance(position.get('attributes'), dict) else {}
             match = matches.get(position_id)
             valid = bool(position.get('valid', True))
-            speed_kmh = float(position.get('speed') or 0) * 1.852
+            speed_kmh_raw = float(position.get('speed') or 0) * 1.852
+            speed_kmh = round(speed_kmh_raw, 1)
             motion = attributes.get('motion')
-            status = 'offline' if not is_online else ('moving' if motion is True or speed_kmh >= 3 else 'stopped')
+            status = 'offline' if not is_online else ('moving' if motion is True or speed_kmh_raw >= 3 else 'stopped')
             output.append({
                 'device_id': device.pk,
                 'imei': device.imei,
@@ -552,7 +583,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 'matched_at': match['matched_at'] if match else None,
                 'speed': speed_kmh,
                 'heading': position.get('course'),
-                'last_seen': traccar_device.get('lastUpdate') or position.get('serverTime'),
+                'last_seen': position.get('serverTime') or traccar_device.get('lastUpdate'),
                 'device_time': position.get('fixTime') or position.get('deviceTime'),
                 'status': status,
             })
