@@ -38,6 +38,11 @@ function formatLastSeen(value) {
   return new Intl.DateTimeFormat('fa-IR', { dateStyle: 'short', timeStyle: 'medium' }).format(date);
 }
 
+function formatSpeed(value) {
+  const speed = Number(value);
+  return value == null || !Number.isFinite(speed) ? '—' : speed.toFixed(1);
+}
+
 function FitInitialBounds({ positions, followPosition = false, routeSegments = [] }) {
   const map = useMap();
   const fitted = useRef(false);
@@ -125,7 +130,7 @@ export default function OpenStreetMapLeafletMap({ positions = [], onSelectDevice
                   <strong>{title}</strong>
                   <div>شناسه دستگاه: {position.imei || '—'}</div>
                   <div>وضعیت: {status}</div>
-                  <div>سرعت: {position.speed == null ? '—' : position.speed} km/h</div>
+                  <div>سرعت: {formatSpeed(position.speed)} km/h</div>
                   <div>آخرین ارتباط: {formatLastSeen(position.last_seen)}</div>
                   {!position.position_is_current && (
                     <div style={{ color: '#B45309' }}>آخرین مختصات معتبر (GPS فعلی فاقد Fix است)</div>
