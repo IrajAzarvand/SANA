@@ -147,19 +147,15 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (!form.manufacturer || !form.device_model) {
-      setError('لطفاً برند و مدل را از گزینه‌های فهرست انتخاب کنید.');
-      return;
-    }
     setSaving(true);
 
     try {
       const payload = {
         imei: form.imei.trim(),
         sim_number: form.sim_number.trim(),
-        device_model: Number(form.device_model),
         management_status: 'warehouse',
       };
+      if (form.device_model) payload.device_model = Number(form.device_model);
 
       const created = await devicesAPI.create(payload);
       setForm({ imei: '', sim_number: '', manufacturer: '', device_model: '' });
@@ -191,7 +187,7 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
           <Button variant="secondary" onClick={onClose} disabled={saving}>
             انصراف
           </Button>
-          <Button type="submit" form="add-device-modal-form" disabled={saving || loadingModels || !models.length}>
+          <Button type="submit" form="add-device-modal-form" disabled={saving}>
             {saving ? 'در حال ذخیره...' : 'ذخیره'}
           </Button>
         </>
@@ -219,7 +215,6 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
           onChange={(manufacturer) => setForm({ ...form, manufacturer, device_model: '' })}
           options={brandOptions}
           placeholder={loadingModels ? 'در حال دریافت فهرست...' : 'برای جستجو، نام برند را بنویسید یا از فهرست انتخاب کنید'}
-          required
           disabled={loadingModels || !brandOptions.length}
         />
 
@@ -229,7 +224,6 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
           onChange={(device_model) => setForm({ ...form, device_model })}
           options={filteredModels}
           placeholder={!form.manufacturer ? 'ابتدا برند را انتخاب کنید' : 'برای جستجو، نام مدل را بنویسید یا از فهرست انتخاب کنید'}
-          required
           disabled={!form.manufacturer || loadingModels || !filteredModels.length}
         />
 
@@ -253,7 +247,7 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
         <div className="bg-info/10 border border-info/30 rounded-field p-3 flex items-start gap-2">
           <Package size={16} className="text-info flex-shrink-0 mt-0.5" />
           <p className="text-xs text-text-secondary leading-relaxed">
-            برند و مدل از فهرست رسمی Traccar انتخاب می‌شوند. برخی ردیف‌های فهرست فقط به خانواده/دستگاه‌های مشابه اشاره دارند و لزوماً مدل سخت‌افزاری مستقل نیستند. پروتکل واقعی دستگاه همچنان پس از اولین ارتباط معتبر شناسایی می‌شود؛ انتخاب مدل به‌تنهایی پروتکل واقعی را تعیین نمی‌کند.
+            فقط شناسه دستگاه (IMEI) برای ثبت اجباری است. برند و مدل اختیاری‌اند؛ پس از ثبت و زمانی که Traccar مدل معتبر و قابل تطبیقی گزارش کند، سانا آن را تکمیل می‌کند. اگر Traccar مدل را گزارش نکند یا تطبیق مطمئن نباشد، اطلاعات خالی می‌ماند و حدس زده نمی‌شود.
           </p>
         </div>
       </form>

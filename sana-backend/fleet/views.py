@@ -191,6 +191,49 @@ class DeviceViewSet(viewsets.ModelViewSet):
 
         return qs
 
+    @staticmethod
+    def _sync_models_from_traccar(devices, traccar_by_imei):
+        """Persist only exact, verified model matches explicitly reported by Traccar.
+
+        Traccar's device name is user-defined and is deliberately not treated as
+        hardware metadata. If model is absent or cannot be matched confidently,
+        the existing SANA model is left untouched.
+        """
+        catalog = list(
+            DeviceModel.objects.filter(is_verified=True).only(
+                'id', 'manufacturer', 'name'
+            )
+        )
+        full_labels = {}
+        models_by_name = {}
+        for model in catalog:
+            full_label = " ".join(
+                f"{model.manufacturer} {model.name}".split()
+            ).casefold()
+            full_labels.setdefault(full_label, model)
+            name_key = " ".join(model.name.split()).casefold()
+            models_by_name.setdefault(name_key, []).append(model)
+
+        for device in devices:
+            traccar_device = traccar_by_imei.get(str(device.imei).strip())
+            if not traccar_device:
+                continue
+            reported_model = " ".join(
+                str(traccar_device.get('model') or '').split()
+            ).casefold()
+            if not reported_model:
+                continue
+            # Full manufacturer + model is unambiguous. A model-only match is
+            # accepted only when that model name belongs to exactly one brand.
+            matched_model = full_labels.get(reported_model)
+            if matched_model is None:
+                candidates = models_by_name.get(reported_model, [])
+                if len(candidates) == 1:
+                    matched_model = candidates[0]
+            if matched_model and device.device_model_id != matched_model.id:
+                device.device_model = matched_model
+                device.save(update_fields=['device_model', 'updated_at'])
+
     def list(self, request, *args, **kwargs):
         """List authorized SANA devices and use Traccar for last-seen timestamps."""
         queryset = self.filter_queryset(self.get_queryset())
@@ -212,6 +255,10 @@ class DeviceViewSet(viewsets.ModelViewSet):
         except TraccarAPIError:
             # Keep the device list available during a temporary Traccar outage.
             pass
+
+        # Only explicit Traccar model metadata can update the SANA catalog link.
+        # User-defined Traccar device names are not considered model evidence.
+        self._sync_models_from_traccar(devices, traccar_by_imei)
 
         # /positions supplies serverTime: when Traccar received the position.
         # GPS-originated fixTime/deviceTime are deliberately not used for this field.
