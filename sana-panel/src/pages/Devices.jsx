@@ -75,6 +75,7 @@ function DevicesTab() {
   const [models, setModels] = useState([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [editError, setEditError] = useState('');
+  const [editModelLoaded, setEditModelLoaded] = useState(false);
   const [deviceHistoryId, setDeviceHistoryId] = useState(null);
 
   const { isSiteAdmin, isPersonal } = useAuth();
@@ -172,11 +173,18 @@ function DevicesTab() {
     setEditError('');
     setSaving(true);
     try {
-      await devicesAPI.update(editingDevice.id, {
+      const payload = {
         imei: editForm.imei.trim(),
         sim_number: editForm.sim_number.trim(),
-        device_model: editForm.device_model ? Number(editForm.device_model) : null,
-      });
+      };
+      // If detail loading failed, do not accidentally clear the existing model.
+      // A selected replacement is still safe to submit explicitly.
+      if (editForm.device_model) {
+        payload.device_model = Number(editForm.device_model);
+      } else if (editModelLoaded) {
+        payload.device_model = null;
+      }
+      await devicesAPI.update(editingDevice.id, payload);
       setEditModalOpen(false);
       setEditingDevice(null);
       await refetch();
@@ -198,6 +206,7 @@ function DevicesTab() {
 
   const handleEdit = async (device) => {
     setEditError('');
+    setEditModelLoaded(false);
     setEditingDevice(device);
     setEditForm({
       imei: device.imei || '',
@@ -210,6 +219,7 @@ function DevicesTab() {
       // so models filled automatically from Traccar remain editable here.
       const detail = await devicesAPI.get(device.id);
       setEditingDevice(detail);
+      setEditModelLoaded(true);
       setEditForm({
         imei: detail.imei || '',
         sim_number: detail.sim_number || '',
