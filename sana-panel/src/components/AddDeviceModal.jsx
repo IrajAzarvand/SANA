@@ -103,12 +103,14 @@ function SearchablePicker({
 }
 
 /**
- * Add a device to inventory. Manufacturer and model can be selected or searched by typing.
+ * Add a device to inventory. Only the IMEI is required; brand and model are optional
+ * and are completed later from the protocol Traccar receives from the device.
  */
 export default function AddDeviceModal({ open, onClose, onSuccess }) {
   const [form, setForm] = useState({ imei: '', sim_number: '', manufacturer: '', device_model: '' });
   const [models, setModels] = useState([]);
   const [loadingModels, setLoadingModels] = useState(false);
+  const [catalogError, setCatalogError] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -118,10 +120,13 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
     setLoadingModels(true);
     deviceModelsAPI.list()
       .then((data) => {
-        if (!cancelled) setModels(Array.isArray(data) ? data : (data.results || []));
+        if (!cancelled) {
+          setCatalogError('');
+          setModels(Array.isArray(data) ? data : (data.results || []));
+        }
       })
       .catch(() => {
-        if (!cancelled) setError('دریافت فهرست برندها و مدل‌های Traccar ناموفق بود.');
+        if (!cancelled) setCatalogError('دریافت فهرست برندها و مدل‌های Traccar ناموفق بود؛ ثبت دستگاه فقط با IMEI انجام می‌شود.');
       })
       .finally(() => {
         if (!cancelled) setLoadingModels(false);
@@ -147,8 +152,8 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    if (!form.manufacturer || !form.device_model) {
-      setError('لطفاً برند و مدل را از گزینه‌های فهرست انتخاب کنید.');
+    if (Boolean(form.manufacturer) !== Boolean(form.device_model)) {
+      setError('برند و مدل باید هر دو انتخاب شوند یا هر دو خالی بمانند.');
       return;
     }
     setSaving(true);
@@ -157,9 +162,11 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
       const payload = {
         imei: form.imei.trim(),
         sim_number: form.sim_number.trim(),
-        device_model: Number(form.device_model),
         management_status: 'warehouse',
       };
+      if (form.device_model) {
+        payload.device_model = Number(form.device_model);
+      }
 
       const created = await devicesAPI.create(payload);
       setForm({ imei: '', sim_number: '', manufacturer: '', device_model: '' });
@@ -191,7 +198,7 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
           <Button variant="secondary" onClick={onClose} disabled={saving}>
             انصراف
           </Button>
-          <Button type="submit" form="add-device-modal-form" disabled={saving || loadingModels || !models.length}>
+          <Button type="submit" form="add-device-modal-form" disabled={saving}>
             {saving ? 'در حال ذخیره...' : 'ذخیره'}
           </Button>
         </>
@@ -201,6 +208,12 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
         {error && (
           <div className="bg-danger/10 border border-danger/30 rounded-field p-3">
             <p className="text-xs text-danger whitespace-pre-line">{error}</p>
+          </div>
+        )}
+
+        {catalogError && (
+          <div className="bg-info/10 border border-info/30 rounded-field p-3">
+            <p className="text-xs text-text-secondary">{catalogError}</p>
           </div>
         )}
 
@@ -214,22 +227,20 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
         />
 
         <SearchablePicker
-          label="برند"
+          label="برند (اختیاری)"
           value={form.manufacturer}
           onChange={(manufacturer) => setForm({ ...form, manufacturer, device_model: '' })}
           options={brandOptions}
           placeholder={loadingModels ? 'در حال دریافت فهرست...' : 'برای جستجو، نام برند را بنویسید یا از فهرست انتخاب کنید'}
-          required
           disabled={loadingModels || !brandOptions.length}
         />
 
         <SearchablePicker
-          label="مدل دستگاه"
+          label="مدل دستگاه (اختیاری)"
           value={form.device_model}
           onChange={(device_model) => setForm({ ...form, device_model })}
           options={filteredModels}
           placeholder={!form.manufacturer ? 'ابتدا برند را انتخاب کنید' : 'برای جستجو، نام مدل را بنویسید یا از فهرست انتخاب کنید'}
-          required
           disabled={!form.manufacturer || loadingModels || !filteredModels.length}
         />
 
@@ -253,7 +264,7 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
         <div className="bg-info/10 border border-info/30 rounded-field p-3 flex items-start gap-2">
           <Package size={16} className="text-info flex-shrink-0 mt-0.5" />
           <p className="text-xs text-text-secondary leading-relaxed">
-            برند و مدل از فهرست رسمی Traccar انتخاب می‌شوند. برخی ردیف‌های فهرست فقط به خانواده/دستگاه‌های مشابه اشاره دارند و لزوماً مدل سخت‌افزاری مستقل نیستند. پروتکل واقعی دستگاه همچنان پس از اولین ارتباط معتبر شناسایی می‌شود؛ انتخاب مدل به‌تنهایی پروتکل واقعی را تعیین نمی‌کند.
+            ثبت دستگاه فقط با شناسه (IMEI) انجام می‌شود و انتخاب برند و مدل اختیاری است. اگر برند و مدل را خالی بگذارید، پس از ارسال اولین داده دستگاه به Traccar و تشخیص پروتکل، برند و مدل—در صورت وجود تطابق یکتا در فهرست رسمی—به‌صورت خودکار تکمیل می‌شود. اگر مقدار ثبت‌شده با پروتکل تشخیص‌داده‌شده مغایرت داشته باشد، همان مقدار نیز اصلاح می‌شود.
           </p>
         </div>
       </form>
