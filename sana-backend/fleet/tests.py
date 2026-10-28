@@ -1,8 +1,10 @@
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from django.test import SimpleTestCase, override_settings
 
 from .traccar_api import TraccarAPIError, traccar_device_positions, traccar_devices
+from .views import DeviceViewSet
 
 
 @override_settings(
@@ -50,3 +52,54 @@ class TraccarAPIClientTests(SimpleTestCase):
     def test_missing_credentials_fail_closed(self):
         with self.assertRaises(TraccarAPIError):
             traccar_devices()
+
+
+
+class TraccarDeviceModelSyncTests(SimpleTestCase):
+    def make_device(self, imei, model_id=None):
+        device = MagicMock()
+        device.imei = imei
+        device.device_model_id = model_id
+        device.device_model = None
+        device.save = MagicMock()
+        return device
+
+    @patch("fleet.views.DeviceModel.objects.filter")
+    def test_exact_traccar_model_fills_missing_sana_model(self, filter_models):
+        catalog_model = SimpleNamespace(
+            id=12, manufacturer="Teltonika", name="FMB920"
+        )
+        filter_models.return_value.only.return_value = [catalog_model]
+        device = self.make_device("352016703005868")
+        traccar = {
+            "352016703005868": {
+                "uniqueId": "352016703005868",
+                "model": "Teltonika FMB920",
+                "name": "Truck 01",
+            }
+        }
+
+        DeviceViewSet._sync_models_from_traccar([device], traccar)
+
+        self.assertEqual(device.device_model, catalog_model)
+        device.save.assert_called_once_with(update_fields=["device_model", "updated_at"])
+
+    @patch("fleet.views.DeviceModel.objects.filter")
+    def test_missing_or_unmatched_traccar_model_does_not_guess_from_name(self, filter_models):
+        catalog_model = SimpleNamespace(
+            id=12, manufacturer="Teltonika", name="FMB920"
+        )
+        filter_models.return_value.only.return_value = [catalog_model]
+        device = self.make_device("352016703005868", model_id=99)
+        traccar = {
+            "352016703005868": {
+                "uniqueId": "352016703005868",
+                "model": "",
+                "name": "Teltonika FMB920",
+            }
+        }
+
+        DeviceViewSet._sync_models_from_traccar([device], traccar)
+
+        self.assertEqual(device.device_model_id, 99)
+        device.save.assert_not_called()
