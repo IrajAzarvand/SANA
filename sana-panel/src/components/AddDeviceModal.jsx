@@ -135,14 +135,45 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
       .map((manufacturer) => ({ value: manufacturer, label: manufacturer }));
   }, [models]);
 
+  // With a brand selected, limit models to that brand; otherwise show every model
+  // so the user can pick by model name first and have the brand filled in.
   const filteredModels = useMemo(() => {
-    return models
-      .filter((model) => model.manufacturer === form.manufacturer)
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((model) => ({ value: String(model.id), label: model.name }));
+    const list = form.manufacturer
+      ? models.filter((model) => model.manufacturer === form.manufacturer)
+      : models;
+    return list
+      .sort((a, b) => {
+        const byName = a.name.localeCompare(b.name);
+        return byName !== 0 ? byName : a.manufacturer.localeCompare(b.manufacturer);
+      })
+      .map((model) => ({
+        value: String(model.id),
+        label: form.manufacturer ? model.name : `${model.name} — ${model.manufacturer}`,
+      }));
   }, [models, form.manufacturer]);
 
   const selectedModel = models.find((model) => String(model.id) === form.device_model);
+
+  const handleBrandChange = (manufacturer) => {
+    setForm((prev) => {
+      const current = models.find((model) => String(model.id) === prev.device_model);
+      const keepModel = current && (!manufacturer || current.manufacturer === manufacturer);
+      return {
+        ...prev,
+        manufacturer,
+        device_model: keepModel ? prev.device_model : '',
+      };
+    });
+  };
+
+  const handleModelChange = (device_model) => {
+    const model = models.find((item) => String(item.id) === String(device_model));
+    setForm((prev) => ({
+      ...prev,
+      device_model,
+      manufacturer: model?.manufacturer || prev.manufacturer,
+    }));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -212,7 +243,7 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
         <SearchablePicker
           label="برند"
           value={form.manufacturer}
-          onChange={(manufacturer) => setForm({ ...form, manufacturer, device_model: '' })}
+          onChange={handleBrandChange}
           options={brandOptions}
           placeholder={loadingModels ? 'در حال دریافت فهرست...' : 'برای جستجو، نام برند را بنویسید یا از فهرست انتخاب کنید'}
           disabled={loadingModels || !brandOptions.length}
@@ -221,10 +252,10 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
         <SearchablePicker
           label="مدل دستگاه"
           value={form.device_model}
-          onChange={(device_model) => setForm({ ...form, device_model })}
+          onChange={handleModelChange}
           options={filteredModels}
-          placeholder={!form.manufacturer ? 'ابتدا برند را انتخاب کنید' : 'برای جستجو، نام مدل را بنویسید یا از فهرست انتخاب کنید'}
-          disabled={!form.manufacturer || loadingModels || !filteredModels.length}
+          placeholder={loadingModels ? 'در حال دریافت فهرست...' : 'برای جستجو، نام مدل را بنویسید یا از فهرست انتخاب کنید'}
+          disabled={loadingModels || !models.length}
         />
 
         {selectedModel && (

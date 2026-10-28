@@ -159,14 +159,45 @@ function DevicesTab() {
       .map((manufacturer) => ({ value: manufacturer, label: manufacturer }));
   }, [models]);
 
+  // With a brand selected, limit models to that brand; otherwise show every model
+  // so the user can pick by model name first and have the brand filled in.
   const filteredModels = useMemo(() => {
-    return models
-      .filter((model) => model.manufacturer === editForm.manufacturer)
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((model) => ({ value: String(model.id), label: model.name }));
+    const list = editForm.manufacturer
+      ? models.filter((model) => model.manufacturer === editForm.manufacturer)
+      : models;
+    return list
+      .sort((a, b) => {
+        const byName = a.name.localeCompare(b.name);
+        return byName !== 0 ? byName : a.manufacturer.localeCompare(b.manufacturer);
+      })
+      .map((model) => ({
+        value: String(model.id),
+        label: editForm.manufacturer ? model.name : `${model.name} — ${model.manufacturer}`,
+      }));
   }, [models, editForm.manufacturer]);
 
   const selectedModel = models.find((model) => String(model.id) === editForm.device_model);
+
+  const handleEditBrandChange = (manufacturer) => {
+    setEditForm((prev) => {
+      const current = models.find((model) => String(model.id) === prev.device_model);
+      const keepModel = current && (!manufacturer || current.manufacturer === manufacturer);
+      return {
+        ...prev,
+        manufacturer,
+        device_model: keepModel ? prev.device_model : '',
+      };
+    });
+  };
+
+  const handleEditModelChange = (device_model) => {
+    const model = models.find((item) => String(item.id) === String(device_model));
+    setEditForm((prev) => ({
+      ...prev,
+      device_model,
+      manufacturer: model?.manufacturer || prev.manufacturer,
+    }));
+  };
 
   const handleEditSubmit = async (e) => {
     e.preventDefault();
@@ -523,7 +554,7 @@ function DevicesTab() {
             <SearchablePicker
               label="برند"
               value={editForm.manufacturer}
-              onChange={(manufacturer) => setEditForm({ ...editForm, manufacturer, device_model: '' })}
+              onChange={handleEditBrandChange}
               options={brandOptions}
               placeholder={loadingModels ? 'در حال دریافت فهرست...' : 'برای جستجو، نام برند را بنویسید یا از فهرست انتخاب کنید'}
               disabled={loadingModels || !brandOptions.length}
@@ -532,10 +563,10 @@ function DevicesTab() {
             <SearchablePicker
               label="مدل دستگاه"
               value={editForm.device_model}
-              onChange={(device_model) => setEditForm({ ...editForm, device_model })}
+              onChange={handleEditModelChange}
               options={filteredModels}
-              placeholder={!editForm.manufacturer ? 'ابتدا برند را انتخاب کنید' : 'برای جستجو، نام مدل را بنویسید یا از فهرست انتخاب کنید'}
-              disabled={!editForm.manufacturer || loadingModels || !filteredModels.length}
+              placeholder={loadingModels ? 'در حال دریافت فهرست...' : 'برای جستجو، نام مدل را بنویسید یا از فهرست انتخاب کنید'}
+              disabled={loadingModels || !models.length}
             />
 
             {selectedModel && (
