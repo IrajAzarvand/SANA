@@ -31,6 +31,21 @@ The Django backend needs read-only Traccar API credentials for live-map and repo
 
 The GPS worker uses `SANA_GPS_TRACCAR_API_URL`, `SANA_GPS_TRACCAR_API_USERNAME`, and `SANA_GPS_TRACCAR_API_PASSWORD` from its own service environment. Do not commit credentials.
 
+## Device brand/model completion
+
+Devices are registered with their IMEI only; brand and model are optional. Traccar does not detect a physical brand or model, only the protocol a device used. The Django management command `sync_device_models_from_traccar` reads Traccar's current devices and positions and writes a catalog model to a device when, and only when:
+
+- the device's brand/model is blank and exactly one verified catalog model matches the protocol Traccar reports, or
+- the registered model's catalog protocol contradicts the reported protocol and exactly one verified catalog model matches it.
+
+Ambiguous protocols (for example `gt06`, shared by many manufacturers) are left unchanged so no model is guessed. Run the command from a periodic scheduler with the backend environment, for example every five minutes:
+
+```cron
+*/5 * * * * cd <sana-backend-dir> && <python> manage.py sync_device_models_from_traccar >> <log-file> 2>&1
+```
+
+Use `--dry-run` to review planned changes without writing.
+
 ## Operational note
 
 Legacy protocol handlers remain only as decoder/test code; the production GPS runtime does not instantiate them, and the former telemetry repository now refuses raw writes. The unknown-device queue likewise refuses to store payloads. The SANA GPS service no longer binds the legacy SANA TCP/UDP ports and no longer accepts position webhooks. Remove any Traccar-side webhook/forwarder that POSTs positions to SANA, otherwise it will send requests to a retired endpoint. Device protocol ports and forwarding must point to Traccar. Do not remove or change Traccar's listener configuration as part of a SANA database reset.
