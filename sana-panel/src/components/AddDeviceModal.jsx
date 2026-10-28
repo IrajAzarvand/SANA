@@ -5,7 +5,7 @@ import Button from './Button';
 import Input from './Input';
 import { devicesAPI, deviceModelsAPI } from '../api/services/fleet';
 
-function SearchablePicker({
+export function SearchablePicker({
   label, value, options, onChange, placeholder, disabled = false, required = false,
 }) {
   const [query, setQuery] = useState('');
