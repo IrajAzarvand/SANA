@@ -204,20 +204,32 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 'id', 'manufacturer', 'name'
             )
         )
-        normalized_catalog = {}
+        full_labels = {}
+        models_by_name = {}
         for model in catalog:
-            full_label = f"{model.manufacturer} {model.name}".strip()
-            normalized_catalog.setdefault(model.name.casefold().strip(), model)
-            normalized_catalog.setdefault(full_label.casefold().strip(), model)
+            full_label = " ".join(
+                f"{model.manufacturer} {model.name}".split()
+            ).casefold()
+            full_labels.setdefault(full_label, model)
+            name_key = " ".join(model.name.split()).casefold()
+            models_by_name.setdefault(name_key, []).append(model)
 
         for device in devices:
             traccar_device = traccar_by_imei.get(str(device.imei).strip())
             if not traccar_device:
                 continue
-            reported_model = str(traccar_device.get('model') or '').strip()
+            reported_model = " ".join(
+                str(traccar_device.get('model') or '').split()
+            ).casefold()
             if not reported_model:
                 continue
-            matched_model = normalized_catalog.get(reported_model.casefold())
+            # Full manufacturer + model is unambiguous. A model-only match is
+            # accepted only when that model name belongs to exactly one brand.
+            matched_model = full_labels.get(reported_model)
+            if matched_model is None:
+                candidates = models_by_name.get(reported_model, [])
+                if len(candidates) == 1:
+                    matched_model = candidates[0]
             if matched_model and device.device_model_id != matched_model.id:
                 device.device_model = matched_model
                 device.save(update_fields=['device_model', 'updated_at'])
