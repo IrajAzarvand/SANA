@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
-  Search, Plus, Cpu, Pencil, Trash2 , Hash, Phone, Eye, History, Activity,
+  Search, Plus, Cpu, Pencil, Trash2, Hash, Phone, Eye, History, Activity, Package,
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
@@ -13,11 +13,11 @@ import EmptyState from '../components/EmptyState';
 import ActionMenu from '../components/ActionMenu';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
-import AddDeviceModal from '../components/AddDeviceModal';
+import AddDeviceModal, { SearchablePicker } from '../components/AddDeviceModal';
 import DeviceHistoryModal from '../components/DeviceHistoryModal';
 import { useAuth } from '../context/AuthContext';
 import { useSearchParams } from 'react-router-dom';
-import { devicesAPI } from '../api/services/fleet';
+import { devicesAPI, deviceModelsAPI } from '../api/services/fleet';
 import { useApi } from '../hooks/useApi';
 
 const protocolLabelMap = {
@@ -71,7 +71,10 @@ function DevicesTab() {
   const [editingDevice, setEditingDevice] = useState(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [editForm, setEditForm] = useState({ imei: '', sim_number: '' });
+  const [editForm, setEditForm] = useState({ imei: '', sim_number: '', manufacturer: '', device_model: '' });
+  const [models, setModels] = useState([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [editError, setEditError] = useState('');
   const [deviceHistoryId, setDeviceHistoryId] = useState(null);
 
   const { isSiteAdmin, isPersonal } = useAuth();
@@ -132,31 +135,91 @@ function DevicesTab() {
     }));
   }, []);
 
+  useEffect(() => {
+    if (!editModalOpen) return;
+    let cancelled = false;
+    setLoadingModels(true);
+    deviceModelsAPI.list()
+      .then((data) => {
+        if (!cancelled) setModels(Array.isArray(data) ? data : (data.results || []));
+      })
+      .catch(() => {
+        if (!cancelled) setEditError('دریافت فهرست برندها و مدل‌های Traccar ناموفق بود.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingModels(false);
+      });
+    return () => { cancelled = true; };
+  }, [editModalOpen]);
+
+  const brandOptions = useMemo(() => {
+    return [...new Set(models.map((model) => model.manufacturer))]
+      .sort((a, b) => a.localeCompare(b))
+      .map((manufacturer) => ({ value: manufacturer, label: manufacturer }));
+  }, [models]);
+
+  const filteredModels = useMemo(() => {
+    return models
+      .filter((model) => model.manufacturer === editForm.manufacturer)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((model) => ({ value: String(model.id), label: model.name }));
+  }, [models, editForm.manufacturer]);
+
+  const selectedModel = models.find((model) => String(model.id) === editForm.device_model);
+
   const handleEditSubmit = async (e) => {
     e.preventDefault();
+    setEditError('');
     setSaving(true);
     try {
       await devicesAPI.update(editingDevice.id, {
-        imei: editForm.imei,
-        sim_number: editForm.sim_number,
+        imei: editForm.imei.trim(),
+        sim_number: editForm.sim_number.trim(),
+        device_model: editForm.device_model ? Number(editForm.device_model) : null,
       });
       setEditModalOpen(false);
       setEditingDevice(null);
-      refetch();
+      await refetch();
     } catch (err) {
       console.error('Error updating device:', err);
-      alert('خطا در ویرایش دستگاه');
+      const errData = err.response?.data;
+      if (errData) {
+        const messages = Object.entries(errData)
+          .map(([key, value]) => `${key}: ${Array.isArray(value) ? value[0] : value}`)
+          .join('\\n');
+        setEditError(messages);
+      } else {
+        setEditError('خطا در ویرایش دستگاه. لطفاً دوباره تلاش کنید.');
+      }
     } finally {
       setSaving(false);
     }
   };
 
-  const handleEdit = (device) => {
+  const handleEdit = async (device) => {
+    setEditError('');
     setEditingDevice(device);
     setEditForm({
-      imei: device.imei,
+      imei: device.imei || '',
       sim_number: device.sim_number || '',
+      manufacturer: device.device_model_manufacturer || '',
+      device_model: '',
     });
+    try {
+      // The list serializer does not expose the related model ID; fetch detail
+      // so models filled automatically from Traccar remain editable here.
+      const detail = await devicesAPI.get(device.id);
+      setEditingDevice(detail);
+      setEditForm({
+        imei: detail.imei || '',
+        sim_number: detail.sim_number || '',
+        manufacturer: detail.device_model_manufacturer || device.device_model_manufacturer || '',
+        device_model: detail.device_model ? String(detail.device_model) : '',
+      });
+    } catch (err) {
+      console.error('Error loading device details for editing:', err);
+      // Keep the list values available if detail retrieval temporarily fails.
+    }
     setEditModalOpen(true);
   };
 
@@ -432,20 +495,62 @@ function DevicesTab() {
           }
         >
           <form id="edit-device-form" onSubmit={handleEditSubmit} className="space-y-4">
+            {editError && (
+              <div className="bg-danger/10 border border-danger/30 rounded-field p-3">
+                <p className="text-xs text-danger whitespace-pre-line">{editError}</p>
+              </div>
+            )}
+
             <Input
-              label="IMEI"
+              label="شناسه دستگاه (IMEI)"
               value={editForm.imei}
               onChange={(e) => setEditForm({ ...editForm, imei: e.target.value })}
-              placeholder="۱۵ رقم"
+              placeholder="IMEI دستگاه"
+              icon={Hash}
               required
             />
-            <Input
-              label="شماره SIM"
-              value={editForm.sim_number}
-              onChange={(e) => setEditForm({ ...editForm, sim_number: e.target.value })}
-              placeholder="۰۹xxxxxxxxx"
+
+            <SearchablePicker
+              label="برند"
+              value={editForm.manufacturer}
+              onChange={(manufacturer) => setEditForm({ ...editForm, manufacturer, device_model: '' })}
+              options={brandOptions}
+              placeholder={loadingModels ? 'در حال دریافت فهرست...' : 'برای جستجو، نام برند را بنویسید یا از فهرست انتخاب کنید'}
+              disabled={loadingModels || !brandOptions.length}
             />
 
+            <SearchablePicker
+              label="مدل دستگاه"
+              value={editForm.device_model}
+              onChange={(device_model) => setEditForm({ ...editForm, device_model })}
+              options={filteredModels}
+              placeholder={!editForm.manufacturer ? 'ابتدا برند را انتخاب کنید' : 'برای جستجو، نام مدل را بنویسید یا از فهرست انتخاب کنید'}
+              disabled={!editForm.manufacturer || loadingModels || !filteredModels.length}
+            />
+
+            {selectedModel && (
+              <div className="rounded-field border border-border-base bg-bg-subtle p-3 space-y-1">
+                <p className="text-sm text-text-primary">پورت پیش‌فرض Traccar: <strong>{selectedModel.port ?? 'نامشخص'}</strong></p>
+                <p className="text-xs text-text-secondary">پروتکل کاتالوگ: {selectedModel.protocol} · منبع: فهرست رسمی Traccar</p>
+                <p className="text-xs text-text-secondary">این پورت، مقدار پیش‌فرض مستندشده است و ممکن است با تنظیمات سرور متفاوت باشد.</p>
+              </div>
+            )}
+
+            <Input
+              label="شماره سیم‌کارت (اختیاری)"
+              value={editForm.sim_number}
+              onChange={(e) => setEditForm({ ...editForm, sim_number: e.target.value })}
+              placeholder="شماره سیم‌کارت را وارد کنید"
+              icon={Phone}
+              inputMode="tel"
+            />
+
+            <div className="bg-info/10 border border-info/30 rounded-field p-3 flex items-start gap-2">
+              <Package size={16} className="text-info flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-text-secondary leading-relaxed">
+                فقط شناسه دستگاه (IMEI) برای ثبت اجباری است. برند و مدل اختیاری‌اند؛ اگر Traccar مدل معتبر و قابل تطبیقی گزارش کند، سانا می‌تواند اطلاعات مدل را تکمیل کند. اگر Traccar مدل را گزارش نکند یا تطبیق مطمئن نباشد، اطلاعات خالی می‌ماند و حدس زده نمی‌شود. مدل انتخاب‌شده نیز قابل تغییر یا پاک کردن است.
+              </p>
+            </div>
           </form>
         </Modal>
       )}
