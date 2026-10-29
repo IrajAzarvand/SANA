@@ -13,6 +13,7 @@ from rest_framework.exceptions import PermissionDenied
 
 from accounts.permissions import IsSiteAdmin
 from fleet.models import DeviceModel
+from fleet.traccar_api import TraccarAPIError, traccar_current_positions
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +136,12 @@ class TraccarPortOperationView(APIView):
     permission_classes = [IsAuthenticated, IsSiteAdmin]
     helper = "/usr/local/sbin/sana-traccar-port-manager"
 
+    def perform_content_negotiation(self, request, force=False):
+        from rest_framework.renderers import JSONRenderer
+        if "text/event-stream" in request.META.get("HTTP_ACCEPT", ""):
+            return JSONRenderer(), "application/json"
+        return super().perform_content_negotiation(request, force)
+
     def post(self, request):
         _require_admin(request)
         action = str(request.data.get("action", "")).strip().lower()
@@ -164,7 +171,14 @@ class TraccarPortOperationView(APIView):
 
         def generate():
             process = None
+            positions_before = None
             try:
+                if action == "test":
+                    try:
+                        positions_before = traccar_current_positions()
+                        yield _event(f"پیش از آزمون، {len(positions_before)} موقعیت فعلی از API ترکر خوانده شد.")
+                    except TraccarAPIError:
+                        yield _event("هشدار: اتصال API ترکر برای مقایسه موقعیت قبل/بعد در دسترس نیست؛ آزمون بسته شبکه همچنان اجرا می‌شود.")
                 executable = shutil.which(command[0])
                 if not executable:
                     yield _event("خطا: sudo روی سرور نصب یا در PATH سرویس در دسترس نیست.")
@@ -180,6 +194,29 @@ class TraccarPortOperationView(APIView):
                     yield _event(line)
                 return_code = process.wait()
                 yield _event("عملیات با موفقیت پایان یافت." if return_code == 0 else f"عملیات ناموفق بود (کد {return_code}).")
+                if action == "test" and positions_before is not None:
+                    try:
+                        positions_after = traccar_current_positions()
+                        before_by_device = {
+                            str(item.get("deviceId")): (
+                                item.get("id"), item.get("serverTime"), item.get("fixTime"),
+                                item.get("latitude"), item.get("longitude")
+                            )
+                            for item in positions_before
+                        }
+                        changed = [
+                            item for item in positions_after
+                            if before_by_device.get(str(item.get("deviceId"))) != (
+                                item.get("id"), item.get("serverTime"), item.get("fixTime"),
+                                item.get("latitude"), item.get("longitude")
+                            )
+                        ]
+                        if changed:
+                            yield _event(f"تأیید API ترکر: در بازه آزمون، {len(changed)} موقعیت فعلی تغییر کرده/ثبت شده است.")
+                        else:
+                            yield _event("تأیید ثبت جدید از API ترکر ممکن نشد: موقعیت فعلی دستگاه‌ها در بازه آزمون تغییر نکرد. اگر بسته شبکه دیده شد، بررسی لاگ Traccar و IMEI لازم است.")
+                    except TraccarAPIError:
+                        yield _event("ترافیک شبکه آزمون شد، اما بررسی ثبت موقعیت از API ترکر به دلیل خطای اتصال ممکن نشد.")
             except (OSError, ValueError, subprocess.SubprocessError) as exc:
                 logger.warning("Traccar port operation failed: %s", exc)
                 yield _event("اجرای عملیات ممکن نشد؛ نصب واسط مدیریتی و مجوز sudo را بررسی کنید.")
