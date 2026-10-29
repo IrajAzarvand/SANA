@@ -13,7 +13,11 @@ from rest_framework.exceptions import PermissionDenied
 
 from accounts.permissions import IsSiteAdmin
 from fleet.models import DeviceModel
-from fleet.traccar_api import TraccarAPIError, traccar_current_positions
+from fleet.traccar_api import (
+    TraccarAPIError,
+    traccar_current_positions,
+    traccar_devices,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +165,9 @@ class TraccarPortOperationView(APIView):
                 except TraccarAPIError as exc:
                     logger.info("Traccar API connectivity test failed: %s", exc)
                     yield _event(f"آزمون API ناموفق بود: {exc}")
+                except Exception:
+                    logger.exception("Unexpected error during Traccar API connectivity test")
+                    yield _event("آزمون API به دلیل خطای داخلی بک‌اند متوقف شد؛ جزئیات در لاگ سرویس ثبت شده است.")
 
             response = StreamingHttpResponse(
                 generate_api_test(), content_type="text/event-stream"
