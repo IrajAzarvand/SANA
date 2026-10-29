@@ -93,3 +93,17 @@ class TraccarPortManagementPermissionsTests(GPSMonitoringPermissionsTests):
             format="json",
         )
         self.assertEqual(response.status_code, 400)
+
+    def test_port_operation_streams_a_clear_message_when_helper_is_not_installed(self):
+        self.client.force_authenticate(user=self.site_admin)
+        with patch("ops_monitoring.views.shutil.which", return_value=None):
+            response = self.client.post(
+                "/api/gps-monitor/ports/",
+                {"action": "status", "port": 9026},
+                format="json",
+                HTTP_ACCEPT="text/event-stream",
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response["Content-Type"], "text/event-stream")
+            output = "".join(response.streaming_content)
+        self.assertIn("sudo", output)
