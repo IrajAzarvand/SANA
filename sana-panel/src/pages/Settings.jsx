@@ -599,6 +599,8 @@ function SystemSection() {
         </div>
       </Card>
 
+      <TraccarPortManager />
+
       <Card title="وضعیت سرور و سرویس‌ها" subtitle="نمای کلی زیرساخت سامانه">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <div className="flex items-center gap-3 rounded-field border border-border-base bg-bg-base p-4">
@@ -621,4 +623,178 @@ function SystemSection() {
 
 function ActivityIcon() {
   return <Globe size={19} />;
+}
+
+
+/* ============ مدیریت پورت‌های ورودی Traccar (ادمین) ============ */
+
+function TraccarPortManager() {
+  const [port, setPort] = useState('9026');
+  const [models, setModels] = useState([]);
+  const [modelSearch, setModelSearch] = useState('');
+  const [modelId, setModelId] = useState('');
+  const [modelsLoading, setModelsLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [logs, setLogs] = useState([
+    'آماده؛ ابتدا مدل دستگاه را انتخاب کنید، سپس پیکربندی یا آزمون را اجرا کنید.',
+  ]);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    apiClient.get('/device-models/')
+      .then(({ data }) => {
+        if (active) setModels(Array.isArray(data) ? data : (data.results || []));
+      })
+      .catch((requestError) => {
+        if (active) setError(requestError.response?.data?.detail || 'دریافت فهرست مدل‌های دستگاه ناموفق بود.');
+      })
+      .finally(() => { if (active) setModelsLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  const matchingModels = models.filter((model) => {
+    const label = `${model.manufacturer || ''} ${model.name || ''} ${model.code || ''}`.toLowerCase();
+    return label.includes(modelSearch.trim().toLowerCase());
+  }).slice(0, 100);
+
+  const runOperation = async (action) => {
+    const parsedPort = Number(port);
+    if (!Number.isInteger(parsedPort) || parsedPort < 1024 || parsedPort > 65535) {
+      setError('شماره پورت باید عدد صحیح بین ۱۰۲۴ و ۶۵۵۳۵ باشد.');
+      return;
+    }
+    if (action === 'apply' && !modelId) {
+      setError('برای پیکربندی خودکار Traccar، مدل دستگاه را انتخاب کنید.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    setLogs((previous) => [...previous, `> شروع عملیات ${action} برای پورت ${parsedPort}…`]);
+    try {
+      const token = localStorage.getItem('sana_access_token');
+      const response = await fetch(`${apiClient.defaults.baseURL}/gps-monitor/ports/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'text/event-stream',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          action,
+          port: parsedPort,
+          ...(action === 'apply' ? { device_model_id: Number(modelId) } : {}),
+        }),
+      });
+      if (!response.ok) {
+        let detail = `درخواست با خطای HTTP ${response.status} مواجه شد.`;
+        try {
+          const body = await response.json();
+          detail = body.detail || detail;
+        } catch { /* پاسخ خطا ممکن است JSON نباشد. */ }
+        throw new Error(detail);
+      }
+      if (!response.body) throw new Error('مرورگر امکان دریافت جریان زنده لاگ را فراهم نکرد.');
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+        const events = buffer.split('\n\n');
+        buffer = events.pop() || '';
+        for (const event of events) {
+          const dataLine = event.split('\n').find((line) => line.startsWith('data: '));
+          if (!dataLine) continue;
+          try {
+            const item = JSON.parse(dataLine.slice(6));
+            setLogs((previous) => [...previous, item.line]);
+          } catch {
+            setLogs((previous) => [...previous, dataLine.slice(6)]);
+          }
+        }
+        if (done) break;
+      }
+    } catch (requestError) {
+      setError(requestError.message || 'اجرای عملیات ناموفق بود.');
+      setLogs((previous) => [...previous, `خطا: ${requestError.message || 'ارتباط با سرور برقرار نشد.'}`]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card title="مدیریت پورت‌های ورودی GPS" subtitle="پیکربندی شنونده Traccar، تنظیم فایروال و بررسی دریافت ترافیک ورودی">
+      <div className="space-y-5">
+        {error && <div role="alert" className="rounded-field border border-danger/30 bg-danger/10 px-4 py-3 text-sm text-danger">{error}</div>}
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <label htmlFor="traccar-input-port" className="mb-2 block text-sm text-text-secondary">شماره پورت</label>
+            <input
+              id="traccar-input-port"
+              type="number"
+              min="1024"
+              max="65535"
+              step="1"
+              value={port}
+              disabled={busy}
+              onChange={(event) => setPort(event.target.value)}
+              className="w-full rounded-field border border-border-base bg-bg-elevated px-4 py-3 text-sm text-text-primary outline-none focus:border-brand-500 disabled:opacity-60"
+              placeholder="مثلاً 9026"
+            />
+            <p className="mt-2 text-xs leading-6 text-text-muted">این شماره باید با پورت تنظیم‌شده روی دستگاه و فورواردشده توسط ISP مطابقت داشته باشد.</p>
+          </div>
+          <div>
+            <label htmlFor="traccar-device-model-search" className="mb-2 block text-sm text-text-secondary">مدل دستگاه برای تنظیم خودکار Traccar</label>
+            <input
+              id="traccar-device-model-search"
+              type="search"
+              value={modelSearch}
+              disabled={busy || modelsLoading}
+              onChange={(event) => setModelSearch(event.target.value)}
+              className="mb-2 w-full rounded-field border border-border-base bg-bg-elevated px-4 py-3 text-sm text-text-primary outline-none focus:border-brand-500 disabled:opacity-60"
+              placeholder="جست‌وجوی سازنده یا مدل…"
+            />
+            <select
+              aria-label="مدل دستگاه"
+              value={modelId}
+              disabled={busy || modelsLoading}
+              onChange={(event) => setModelId(event.target.value)}
+              className="w-full rounded-field border border-border-base bg-bg-elevated px-4 py-3 text-sm text-text-primary outline-none focus:border-brand-500 disabled:opacity-60"
+            >
+              <option value="">{modelsLoading ? 'در حال دریافت مدل‌ها…' : 'انتخاب مدل دستگاه'}</option>
+              {matchingModels.map((model) => (
+                <option key={model.id} value={model.id}>{model.manufacturer} — {model.name}</option>
+              ))}
+            </select>
+            <p className="mt-2 text-xs leading-6 text-text-muted">پروتکل در رابط کاربری نمایش داده یا انتخاب نمی‌شود؛ تنظیم داخلی از کاتالوگ مدل انتخاب‌شده استخراج می‌شود.</p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Button disabled={busy || modelsLoading || !modelId} onClick={() => runOperation('apply')}>
+            {busy ? 'در حال اجرا…' : 'پیکربندی فایروال و Traccar'}
+          </Button>
+          <Button variant="secondary" disabled={busy} onClick={() => runOperation('status')}>بررسی شنونده پورت</Button>
+          <Button variant="secondary" disabled={busy} onClick={() => runOperation('test')}>آزمون ترافیک ورودی (۲۰ ثانیه)</Button>
+          <Button variant="secondary" disabled={busy} onClick={() => setLogs([])}>پاک‌کردن خروجی</Button>
+        </div>
+
+        <div className="overflow-hidden rounded-field border border-border-base bg-[#0b1220]">
+          <div className="flex items-center justify-between border-b border-white/10 px-4 py-2">
+            <span className="text-xs font-medium text-slate-200">گزارش اجرای عملیات</span>
+            <span className="text-[10px] text-slate-400">{busy ? 'در حال اجرا' : 'آماده'}</span>
+          </div>
+          <pre
+            role="log"
+            aria-live="polite"
+            className="max-h-80 min-h-36 overflow-auto whitespace-pre-wrap break-words p-4 font-mono text-xs leading-6 text-emerald-300"
+          >{logs.length ? logs.join('\n') : 'خروجی خالی است.'}</pre>
+        </div>
+        <p className="text-xs leading-6 text-text-muted">
+          توجه: مشاهده شنونده یا بسته شبکه به‌تنهایی اثبات نمی‌کند که موقعیت GPS توسط Traccar رمزگشایی و در پایگاه داده ثبت شده است. برای تأیید نهایی، هنگام آزمون دستگاه باید ارسال داده فعال باشد و آخرین موقعیت دستگاه در Traccar بررسی شود.
+        </p>
+      </div>
+    </Card>
+  );
 }
