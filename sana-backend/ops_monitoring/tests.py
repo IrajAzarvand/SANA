@@ -55,6 +55,42 @@ class GPSMonitoringPermissionsTests(TestCase):
 
 
 class TraccarPortManagementPermissionsTests(GPSMonitoringPermissionsTests):
+
+    def test_traccar_api_test_reports_device_and_position_counts(self):
+        self.client.force_authenticate(user=self.site_admin)
+        with patch("ops_monitoring.views.traccar_devices", return_value=[{"id": 1}, {"id": 2}]), patch(
+            "ops_monitoring.views.traccar_current_positions", return_value=[{"deviceId": 1}]
+        ), patch("ops_monitoring.views.subprocess.Popen") as popen:
+            response = self.client.post(
+                "/api/gps-monitor/ports/",
+                {"action": "api-test"},
+                format="json",
+                HTTP_ACCEPT="text/event-stream",
+            )
+            self.assertEqual(response.status_code, 200)
+            output = "".join(response.streaming_content)
+        self.assertIn("اتصال API ترکار و احراز هویت موفق است.", output)
+        self.assertIn("دستگاه‌های ثبت‌شده در Traccar: 2", output)
+        self.assertIn("موقعیت‌های فعلی برگشتی از API: 1", output)
+        popen.assert_not_called()
+
+    def test_traccar_api_test_reports_connection_failure(self):
+        from fleet.traccar_api import TraccarAPIError
+
+        self.client.force_authenticate(user=self.site_admin)
+        with patch(
+            "ops_monitoring.views.traccar_devices",
+            side_effect=TraccarAPIError("Traccar API request failed: URLError"),
+        ):
+            response = self.client.post(
+                "/api/gps-monitor/ports/",
+                {"action": "api-test"},
+                format="json",
+                HTTP_ACCEPT="text/event-stream",
+            )
+            output = "".join(response.streaming_content)
+        self.assertIn("آزمون API ناموفق بود", output)
+
     def test_non_admin_cannot_manage_traccar_ports(self):
         self.client.force_authenticate(user=self.regular_user)
         response = self.client.post(
@@ -63,6 +99,12 @@ class TraccarPortManagementPermissionsTests(GPSMonitoringPermissionsTests):
             format="json",
         )
         self.assertEqual(response.status_code, 403)
+        api_response = self.client.post(
+            "/api/gps-monitor/ports/",
+            {"action": "api-test"},
+            format="json",
+        )
+        self.assertEqual(api_response.status_code, 403)
 
     def test_invalid_port_is_rejected_before_privileged_helper(self):
         self.client.force_authenticate(user=self.site_admin)
