@@ -781,7 +781,16 @@ function TraccarPortManager() {
             variant="secondary"
             disabled={busy}
             onClick={() => {
-              if (window.confirm('آخرین نسخه پشتیبان traccar.xml بازیابی و سرویس Traccar مجدداً راه‌اندازی می‌شود. هیچ قانون فایروالی تغییر نمی‌کند. ادامه می‌دهید؟')) {
+              if (window.confirm('مالکیت و مجوز خواندن فایل تنظیمات فقط برای کاربر سرویس Traccar اصلاح و سرویس دوباره راه‌اندازی می‌شود. هیچ قانون فایروالی تغییر نمی‌کند. ادامه می‌دهید؟')) {
+                runOperation('repair-permissions');
+              }
+            }}
+          >ترمیم دسترسی فایل تنظیمات Traccar</Button>
+          <Button
+            variant="secondary"
+            disabled={busy}
+            onClick={() => {
+              if (window.confirm('آخرین نسخه پشتیبان traccar.xml بازیابی و مجوز دسترسی سرویس نیز اصلاح می‌شود؛ سپس Traccar راه‌اندازی مجدد می‌شود. هیچ قانون فایروالی تغییر نمی‌کند. ادامه می‌دهید؟')) {
                 runOperation('restore');
               }
             }}
