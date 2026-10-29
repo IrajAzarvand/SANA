@@ -29,10 +29,18 @@ def read_config():
         if key: entries[key]=(entry.text or "").strip()
     return tree,root,entries
 def listener_status(port):
+    def matching_lines(output):
+        matches=[]
+        for line in output.splitlines():
+            fields=line.split()
+            # ss -lnt/-lnu: local address is column 4. Match its port exactly;
+            # substring matching can confuse 5027 with another port such as 15027.
+            if len(fields) >= 4 and fields[3].rsplit(":", 1)[-1] == str(port):
+                matches.append(line.strip())
+        return matches
     tcp=subprocess.run(["ss","-lnt"],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,check=False).stdout
     udp=subprocess.run(["ss","-lnu"],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,check=False).stdout
-    needle=f":{port}"
-    return ([x.strip() for x in tcp.splitlines() if needle in x],[x.strip() for x in udp.splitlines() if needle in x])
+    return matching_lines(tcp),matching_lines(udp)
 def status(port):
     _,_,entries=read_config()
     configured=sorted([{"protocol":k[:-5],"port":int(v)} for k,v in entries.items() if k.endswith(".port") and v.isdigit()],key=lambda x:(x["port"],x["protocol"]))
@@ -61,12 +69,15 @@ def apply(port,protocol):
         finally:
             if os.path.exists(temp_name): os.unlink(temp_name)
         emit(f"تنظیم {target_key} روی پورت {port} ذخیره شد.")
-    run(["ufw","allow",f"{port}/tcp"],f"بازکردن TCP/{port} در UFW")
-    run(["ufw","allow",f"{port}/udp"],f"بازکردن UDP/{port} در UFW")
     run(["systemctl","restart","traccar"],"راه‌اندازی مجدد Traccar"); time.sleep(2)
     tcp,udp=listener_status(port)
-    if not tcp and not udp: raise RuntimeError(f"پس از راه‌اندازی مجدد، هیچ شنونده‌ای روی پورت {port} دیده نشد. لاگ Traccar را بررسی کنید.")
+    if not tcp and not udp:
+        raise RuntimeError(f"پس از راه‌اندازی مجدد، هیچ شنونده‌ای روی پورت {port} دیده نشد؛ برای جلوگیری از بازکردن بی‌مورد فایروال، قاعده جدیدی اضافه نشد. لاگ Traccar را بررسی کنید.")
+    # Expose only transports that Traccar is actually listening on.
+    if tcp: run(["ufw","allow",f"{port}/tcp"],f"بازکردن TCP/{port} در UFW")
+    if udp: run(["ufw","allow",f"{port}/udp"],f"بازکردن UDP/{port} در UFW")
     emit(f"تأیید شد: روی پورت {port} شنونده محلی فعال است.")
+    emit("فقط پروتکل‌های انتقالی که شنونده فعال دارند در UFW باز شدند.")
     emit("فعال‌بودن شنونده به‌تنهایی ثبت واقعی داده دستگاه را ثابت نمی‌کند؛ مرحله آزمون ترافیک جداگانه است.")
     return 0
 def test(port):
