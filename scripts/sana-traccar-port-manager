@@ -2,6 +2,8 @@
 """Root-owned, allowlisted Traccar listener/firewall manager for SANA."""
 import datetime
 import os
+import pwd
+import grp
 import re
 import shutil
 import subprocess
@@ -62,14 +64,51 @@ def write_tree(tree):
     fd, temp_name = tempfile.mkstemp(prefix="traccar.xml.", dir=str(CONFIG.parent))
     os.close(fd)
     try:
+        original_stat = CONFIG.stat()
         tree.write(temp_name, encoding="UTF-8", xml_declaration=True)
         ET.parse(temp_name)
         shutil.copystat(CONFIG, temp_name)
+        os.chown(temp_name, original_stat.st_uid, original_stat.st_gid)
         os.replace(temp_name, CONFIG)
     finally:
         if os.path.exists(temp_name):
             os.unlink(temp_name)
 
+
+def service_identity():
+    user_result = subprocess.run(["systemctl", "show", "traccar", "--property=User", "--value"], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+    group_result = subprocess.run(["systemctl", "show", "traccar", "--property=Group", "--value"], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+    if user_result.returncode or group_result.returncode:
+        raise RuntimeError("هویت کاربر سرویس Traccar از systemd خوانده نشد.")
+    user_name = user_result.stdout.strip() or "root"
+    try:
+        user_info = pwd.getpwnam(user_name)
+    except KeyError as exc:
+        raise RuntimeError(f"کاربر سرویس Traccar پیدا نشد: {user_name}") from exc
+    group_name = group_result.stdout.strip()
+    if group_name:
+        try:
+            gid = grp.getgrnam(group_name).gr_gid
+        except KeyError as exc:
+            raise RuntimeError(f"گروه سرویس Traccar پیدا نشد: {group_name}") from exc
+    else:
+        gid = user_info.pw_gid
+        group_name = grp.getgrgid(gid).gr_name
+    return user_name, user_info.pw_uid, group_name, gid
+
+
+def ensure_config_access():
+    if not CONFIG.is_file():
+        raise RuntimeError(f"فایل پیکربندی Traccar پیدا نشد: {CONFIG}")
+    user_name, uid, group_name, gid = service_identity()
+    mode = (CONFIG.stat().st_mode & 0o777) | 0o400
+    os.chown(CONFIG, uid, gid)
+    os.chmod(CONFIG, mode)
+    check = subprocess.run(["runuser", "-u", user_name, "--", "test", "-r", str(CONFIG)], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+    emit(f"مالک فایل تنظیمات: {user_name}:{group_name}؛ مجوز: {oct(mode)}")
+    if check.returncode:
+        raise RuntimeError(f"کاربر سرویس ({user_name}) هنوز نمی‌تواند فایل تنظیمات را بخواند؛ مجوز پیمایش پوشه‌های والد باید بررسی شود. هیچ مجوز عمومی باز نشد.")
+    emit("دسترسی خواندن فایل تنظیمات برای کاربر سرویس تأیید شد.")
 
 def make_backup():
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
@@ -165,6 +204,7 @@ def restore_latest_backup():
     # Validate the backup before touching the live configuration.
     ET.parse(backup)
     shutil.copy2(backup, CONFIG)
+    ensure_config_access()
     emit(f"تنظیمات از نسخه پشتیبان بازیابی شد: {backup}")
     run(["systemctl", "restart", "traccar"], "راه‌اندازی مجدد Traccar پس از بازیابی")
     time.sleep(1)
@@ -185,6 +225,31 @@ def restore_latest_backup():
     emit("بازیابی تنظیمات انجام شد. هیچ قانون فایروالی در این عملیات تغییر نکرد.")
     return 0
 
+
+def repair_permissions():
+    ensure_config_access()
+    run(["systemctl", "restart", "traccar"], "راه‌اندازی مجدد Traccar پس از ترمیم دسترسی")
+    _, _, entries = read_config()
+    ports = sorted({int(v) for k, v in entries.items() if k.endswith(".port") and v.isdigit()})
+    deadline = time.monotonic() + 45
+    active = ""
+    listener_results = {}
+    while time.monotonic() < deadline:
+        active = subprocess.run(["systemctl", "is-active", "traccar"], text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False).stdout.strip()
+        listener_results = {port: listener_status(port) for port in ports}
+        if active == "active" and any(tcp or udp for tcp, udp in listener_results.values()):
+            break
+        time.sleep(1)
+    emit(f"وضعیت سرویس پس از ترمیم: {active or 'نامشخص'}")
+    any_listener = False
+    for port, (tcp, udp) in listener_results.items():
+        any_listener = any_listener or bool(tcp or udp)
+        emit(f"پورت {port}: TCP={'فعال' if tcp else 'غیرفعال'}؛ UDP={'فعال' if udp else 'غیرفعال'}")
+    if active != "active" or not any_listener:
+        show_recent_logs()
+        raise RuntimeError("پس از ترمیم، سرویس یا شنونده‌های پیکربندی‌شده در مهلت ۴۵ ثانیه‌ای فعال نشدند.")
+    emit("ترمیم دسترسی و راه‌اندازی مجدد انجام شد؛ فایروال در این عملیات تغییر نکرد.")
+    return 0
 
 def apply(port, protocol):
     if not PROTOCOL_RE.fullmatch(protocol):
@@ -270,13 +335,15 @@ def main():
         emit("این ابزار باید فقط از طریق sudo و واسط مجاز اجرا شود.")
         return 2
     if len(sys.argv) < 3:
-        emit("استفاده: sana-traccar-port-manager status|diagnostics|restore|test PORT یا apply PORT PROTOCOL")
+        emit("استفاده: sana-traccar-port-manager status|diagnostics|restore|repair-permissions|test PORT یا apply PORT PROTOCOL")
         return 2
     action = sys.argv[1]
     try:
         port = parse_port(sys.argv[2])
         if action == "status" and len(sys.argv) == 3:
             return status(port)
+        if action == "repair-permissions" and len(sys.argv) == 3:
+            return repair_permissions()
         if action == "diagnostics" and len(sys.argv) == 3:
             return diagnostics(port)
         if action == "restore" and len(sys.argv) == 3:
