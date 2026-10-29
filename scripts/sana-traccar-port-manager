@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""Root-owned, allowlisted Traccar listener/firewall manager for SANA."""
+import datetime, os, re, shutil, subprocess, sys, tempfile, time
+import xml.etree.ElementTree as ET
+from pathlib import Path
+CONFIG=Path("/opt/traccar/conf/traccar.xml")
+BACKUP_DIR=Path("/var/backups/sana-traccar")
+PORT_RE=re.compile(r"^[0-9]{1,5}$")
+PROTOCOL_RE=re.compile(r"^[a-z][a-z0-9]{1,39}$")
+def emit(message): print(message,flush=True)
+def run(command,label):
+    emit(f"$ {label}")
+    result=subprocess.run(command,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,check=False,timeout=60)
+    output=(result.stdout or "").strip()
+    if output:
+        for line in output.splitlines(): emit(line)
+    if result.returncode: raise RuntimeError(f"{label} ناموفق بود (exit={result.returncode}).")
+    return output
+def parse_port(value):
+    if not PORT_RE.fullmatch(value): raise ValueError("شماره پورت معتبر نیست.")
+    port=int(value)
+    if not 1024<=port<=65535: raise ValueError("پورت باید بین 1024 و 65535 باشد.")
+    return port
+def read_config():
+    if not CONFIG.is_file(): raise RuntimeError(f"فایل پیکربندی Traccar پیدا نشد: {CONFIG}")
+    tree=ET.parse(CONFIG); root=tree.getroot(); entries={}
+    for entry in root.findall("entry"):
+        key=entry.get("key")
+        if key: entries[key]=(entry.text or "").strip()
+    return tree,root,entries
+def listener_status(port):
+    tcp=subprocess.run(["ss","-lnt"],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,check=False).stdout
+    udp=subprocess.run(["ss","-lnu"],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,check=False).stdout
+    needle=f":{port}"
+    return ([x.strip() for x in tcp.splitlines() if needle in x],[x.strip() for x in udp.splitlines() if needle in x])
+def status(port):
+    _,_,entries=read_config()
+    configured=sorted([{"protocol":k[:-5],"port":int(v)} for k,v in entries.items() if k.endswith(".port") and v.isdigit()],key=lambda x:(x["port"],x["protocol"]))
+    tcp,udp=listener_status(port)
+    emit(f"پورت {port}: تنظیم‌شده در Traccar: "+("بله" if any(x["port"]==port for x in configured) else "خیر"))
+    emit(f"TCP listener: {'فعال' if tcp else 'غیرفعال'}"); emit(f"UDP listener: {'فعال' if udp else 'غیرفعال'}")
+    for line in tcp+udp: emit(line)
+    return 0
+def apply(port,protocol):
+    if not PROTOCOL_RE.fullmatch(protocol): raise ValueError("شناسه داخلی مدل دستگاه نامعتبر است.")
+    tree,root,entries=read_config(); target_key=f"{protocol}.port"
+    current=entries.get(target_key, "")
+    if current.isdigit() and int(current)==port: emit(f"پیکربندی {target_key} از قبل روی پورت {port} است.")
+    elif current.isdigit() and int(current)!=port: raise RuntimeError(f"شنونده {protocol} هم‌اکنون روی پورت {current} است. برای جلوگیری از قطع سرویس موجود، پورت قبلی جایگزین نمی‌شود.")
+    else:
+        for key,value in entries.items():
+            if key.endswith(".port") and value.isdigit() and int(value)==port and key!=target_key: raise RuntimeError(f"پورت {port} هم‌اکنون به {key[:-5]} اختصاص دارد.")
+        BACKUP_DIR.mkdir(parents=True,exist_ok=True)
+        backup=BACKUP_DIR/f"traccar.xml.{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}.bak"
+        shutil.copy2(CONFIG,backup); emit(f"نسخه پشتیبان ساخته شد: {backup}")
+        node=next((x for x in root.findall("entry") if x.get("key")==target_key),None)
+        if node is None: node=ET.SubElement(root,"entry",{"key":target_key})
+        node.text=str(port); fd,temp_name=tempfile.mkstemp(prefix="traccar.xml.",dir=str(CONFIG.parent)); os.close(fd)
+        try:
+            tree.write(temp_name,encoding="UTF-8",xml_declaration=True); ET.parse(temp_name); shutil.copystat(CONFIG,temp_name); os.replace(temp_name,CONFIG)
+        finally:
+            if os.path.exists(temp_name): os.unlink(temp_name)
+        emit(f"تنظیم {target_key} روی پورت {port} ذخیره شد.")
+    run(["ufw","allow",f"{port}/tcp"],f"بازکردن TCP/{port} در UFW")
+    run(["ufw","allow",f"{port}/udp"],f"بازکردن UDP/{port} در UFW")
+    run(["systemctl","restart","traccar"],"راه‌اندازی مجدد Traccar"); time.sleep(2)
+    tcp,udp=listener_status(port)
+    if not tcp and not udp: raise RuntimeError(f"پس از راه‌اندازی مجدد، هیچ شنونده‌ای روی پورت {port} دیده نشد. لاگ Traccar را بررسی کنید.")
+    emit(f"تأیید شد: روی پورت {port} شنونده محلی فعال است.")
+    emit("فعال‌بودن شنونده به‌تنهایی ثبت واقعی داده دستگاه را ثابت نمی‌کند؛ مرحله آزمون ترافیک جداگانه است.")
+    return 0
+def test(port):
+    emit(f"بررسی ترافیک ورودی پورت {port} به مدت 20 ثانیه شروع شد.")
+    timeout=shutil.which("timeout"); tcpdump=shutil.which("tcpdump")
+    if not timeout or not tcpdump: raise RuntimeError("برای آزمون ترافیک، ابزارهای timeout و tcpdump باید نصب باشند.")
+    result=subprocess.run([timeout,"20s",tcpdump,"-ni","any","-c","1",f"port {port}"],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,check=False,timeout=25)
+    output=(result.stdout or "").strip()
+    for line in output.splitlines(): emit(line)
+    if result.returncode==0 and "IP " in output:
+        emit("ترافیک شبکه روی این پورت مشاهده شد."); emit("این آزمون رسیدن بسته به سرور را تأیید می‌کند، نه الزاماً decode و ثبت موقعیت در Traccar."); return 0
+    emit("در بازه آزمون بسته‌ای مشاهده نشد. تنظیم دستگاه، فوروارد ISP/روتر و زمان ارسال را بررسی کنید."); return 2
+def main():
+    if os.geteuid()!=0: emit("این ابزار باید فقط از طریق sudo و واسط مجاز اجرا شود."); return 2
+    if len(sys.argv)<3: emit("استفاده: sana-traccar-port-manager status|test PORT یا apply PORT PROTOCOL"); return 2
+    action=sys.argv[1]
+    try:
+        port=parse_port(sys.argv[2])
+        if action=="status" and len(sys.argv)==3: return status(port)
+        if action=="test" and len(sys.argv)==3: return test(port)
+        if action=="apply" and len(sys.argv)==4: return apply(port,sys.argv[3])
+        emit("عملیات یا تعداد آرگومان‌ها نامعتبر است."); return 2
+    except (ValueError,RuntimeError,OSError,ET.ParseError,subprocess.TimeoutExpired) as exc:
+        emit(f"خطا: {exc}"); return 1
+if __name__=="__main__": sys.exit(main())
