@@ -636,7 +636,7 @@ function TraccarPortManager() {
   const [modelsLoading, setModelsLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [logs, setLogs] = useState([
-    'آماده؛ ابتدا مدل دستگاه را انتخاب کنید، سپس پیکربندی یا آزمون را اجرا کنید.',
+    'آماده؛ آزمون API مستقل است؛ برای پیکربندی پورت، مدل دستگاه را انتخاب کنید.',
   ]);
   const [error, setError] = useState('');
 
@@ -659,8 +659,9 @@ function TraccarPortManager() {
   }).slice(0, 100);
 
   const runOperation = async (action) => {
+    const isApiTest = action === 'api-test';
     const parsedPort = Number(port);
-    if (!Number.isInteger(parsedPort) || parsedPort < 1024 || parsedPort > 65535) {
+    if (!isApiTest && (!Number.isInteger(parsedPort) || parsedPort < 1024 || parsedPort > 65535)) {
       setError('شماره پورت باید عدد صحیح بین ۱۰۲۴ و ۶۵۵۳۵ باشد.');
       return;
     }
@@ -670,7 +671,9 @@ function TraccarPortManager() {
     }
     setBusy(true);
     setError('');
-    setLogs((previous) => [...previous, `> شروع عملیات ${action} برای پورت ${parsedPort}…`]);
+    setLogs((previous) => [...previous, isApiTest
+      ? '> شروع آزمون اتصال API ترکار…'
+      : `> شروع عملیات ${action} برای پورت ${parsedPort}…`]);
     try {
       const token = localStorage.getItem('sana_access_token');
       const response = await fetch(`${apiClient.defaults.baseURL}/gps-monitor/ports/`, {
@@ -682,7 +685,7 @@ function TraccarPortManager() {
         },
         body: JSON.stringify({
           action,
-          port: parsedPort,
+          ...(!isApiTest ? { port: parsedPort } : {}),
           ...(action === 'apply' ? { device_model_id: Number(modelId) } : {}),
         }),
       });
@@ -772,6 +775,7 @@ function TraccarPortManager() {
         </div>
 
         <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" disabled={busy} onClick={() => runOperation('api-test')}>آزمون اتصال API ترکار</Button>
           <Button disabled={busy || modelsLoading || !modelId} onClick={() => runOperation('apply')}>
             {busy ? 'در حال اجرا…' : 'پیکربندی فایروال و Traccar'}
           </Button>
