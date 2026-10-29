@@ -145,6 +145,30 @@ class TraccarPortOperationView(APIView):
     def post(self, request):
         _require_admin(request)
         action = str(request.data.get("action", "")).strip().lower()
+
+        # API connectivity is independent of a listening-port selection. This is
+        # read-only and deliberately does not invoke the privileged port helper.
+        if action == "api-test":
+            def generate_api_test():
+                yield _event("شروع آزمون اتصال REST API ترکار…")
+                try:
+                    devices = traccar_devices()
+                    positions = traccar_current_positions()
+                    yield _event("اتصال API ترکار و احراز هویت موفق است.")
+                    yield _event(f"دستگاه‌های ثبت‌شده در Traccar: {len(devices)}")
+                    yield _event(f"موقعیت‌های فعلی برگشتی از API: {len(positions)}")
+                    yield _event("آزمون API با موفقیت پایان یافت.")
+                except TraccarAPIError as exc:
+                    logger.info("Traccar API connectivity test failed: %s", exc)
+                    yield _event(f"آزمون API ناموفق بود: {exc}")
+
+            response = StreamingHttpResponse(
+                generate_api_test(), content_type="text/event-stream"
+            )
+            response["Cache-Control"] = "no-cache, no-transform"
+            response["X-Accel-Buffering"] = "no"
+            return response
+
         raw_port = str(request.data.get("port", "")).strip()
         if not raw_port.isdigit():
             return JsonResponse({"detail": "شماره پورت باید عددی باشد."}, status=400)
