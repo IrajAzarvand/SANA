@@ -12,6 +12,7 @@ from rest_framework.views import APIView
 from rest_framework.exceptions import PermissionDenied
 
 from accounts.permissions import IsSiteAdmin
+from fleet.models import DeviceModel
 
 logger = logging.getLogger(__name__)
 
@@ -126,3 +127,71 @@ class GPSQueueView(APIView):
             "count": 0,
             "detail": "صف داده خام دستگاه‌های ناشناس حذف شده است؛ Traccar مرجع داده خام GPS است.",
         })
+
+
+class TraccarPortOperationView(APIView):
+    """Admin-only streamed operations for a validated Traccar listening port."""
+
+    permission_classes = [IsAuthenticated, IsSiteAdmin]
+    helper = "/usr/local/sbin/sana-traccar-port-manager"
+
+    def post(self, request):
+        _require_admin(request)
+        action = str(request.data.get("action", "")).strip().lower()
+        raw_port = str(request.data.get("port", "")).strip()
+        if not raw_port.isdigit():
+            return JsonResponse({"detail": "شماره پورت باید عددی باشد."}, status=400)
+        port = int(raw_port)
+        if not 1024 <= port <= 65535:
+            return JsonResponse({"detail": "پورت باید بین 1024 و 65535 باشد."}, status=400)
+
+        command = ["sudo", "-n", self.helper]
+        if action == "apply":
+            raw_model_id = str(request.data.get("device_model_id", "")).strip()
+            if not raw_model_id.isdigit():
+                return JsonResponse({"detail": "برای تعیین خودکار تنظیم Traccar، مدل دستگاه را انتخاب کنید."}, status=400)
+            model = DeviceModel.objects.filter(pk=int(raw_model_id), is_verified=True).first()
+            if model is None:
+                return JsonResponse({"detail": "مدل دستگاه معتبر و تأییدشده پیدا نشد."}, status=400)
+            protocol = str(model.protocol or "").strip()
+            if not protocol or not protocol.replace("_", "").replace("-", "").isalnum() or not protocol[0].isalpha():
+                return JsonResponse({"detail": "مدل انتخاب‌شده نگاشت داخلی معتبر برای Traccar ندارد."}, status=400)
+            command += ["apply", str(port), protocol]
+        elif action in {"test", "status"}:
+            command += [action, str(port)]
+        else:
+            return JsonResponse({"detail": "عملیات نامعتبر است."}, status=400)
+
+        def generate():
+            process = None
+            try:
+                executable = shutil.which(command[0])
+                if not executable:
+                    yield _event("خطا: sudo روی سرور نصب یا در PATH سرویس در دسترس نیست.")
+                    return
+                safe_command = [executable, *command[1:]]
+                yield _event(f"شروع عملیات «{action}» برای پورت {port}")
+                process = subprocess.Popen(
+                    safe_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, bufsize=1, close_fds=True,
+                )
+                assert process.stdout is not None
+                for line in process.stdout:
+                    yield _event(line)
+                return_code = process.wait()
+                yield _event("عملیات با موفقیت پایان یافت." if return_code == 0 else f"عملیات ناموفق بود (کد {return_code}).")
+            except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                logger.warning("Traccar port operation failed: %s", exc)
+                yield _event("اجرای عملیات ممکن نشد؛ نصب واسط مدیریتی و مجوز sudo را بررسی کنید.")
+            finally:
+                if process is not None and process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=2)
+                    except Exception:
+                        process.kill()
+
+        response = StreamingHttpResponse(generate(), content_type="text/event-stream")
+        response["Cache-Control"] = "no-cache, no-transform"
+        response["X-Accel-Buffering"] = "no"
+        return response
