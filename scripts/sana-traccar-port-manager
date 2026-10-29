@@ -44,8 +44,7 @@ def status(port):
 def apply(port,protocol):
     if not PROTOCOL_RE.fullmatch(protocol): raise ValueError("شناسه داخلی مدل دستگاه نامعتبر است.")
     tree,root,entries=read_config(); target_key=f"{protocol}.port"
-    if target_key not in entries: raise RuntimeError(f"کلید {target_key} در فایل Traccar وجود ندارد؛ مدل در نصب فعلی قابل پیکربندی نیست.")
-    current=entries[target_key]
+    current=entries.get(target_key, "")
     if current.isdigit() and int(current)==port: emit(f"پیکربندی {target_key} از قبل روی پورت {port} است.")
     elif current.isdigit() and int(current)!=port: raise RuntimeError(f"شنونده {protocol} هم‌اکنون روی پورت {current} است. برای جلوگیری از قطع سرویس موجود، پورت قبلی جایگزین نمی‌شود.")
     else:
