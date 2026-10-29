@@ -4,7 +4,9 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SOURCE="$REPO_ROOT/scripts/sana-traccar-port-manager"
 TARGET="/usr/local/sbin/sana-traccar-port-manager"
 SUDOERS="/etc/sudoers.d/sana-traccar-port-manager"
-DJANGO_USER="www-data"
+# This SANA server runs Django as iraj (see sana-backend.service).
+# Change this value if the service account differs on another deployment.
+DJANGO_USER="iraj"
 if [[ $EUID -ne 0 ]]; then echo "Run with sudo: sudo $0"; exit 1; fi
 if [[ ! -f "$SOURCE" ]]; then echo "Missing helper: $SOURCE" >&2; exit 1; fi
 if ! id "$DJANGO_USER" >/dev/null 2>&1; then echo "Django service user '$DJANGO_USER' does not exist; edit DJANGO_USER in this script." >&2; exit 1; fi
