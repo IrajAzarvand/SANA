@@ -52,3 +52,44 @@ class GPSMonitoringPermissionsTests(TestCase):
                     )
                     self.assertEqual(response.status_code, 200)
                     self.assertEqual(response["Content-Type"], "text/event-stream")
+
+
+class TraccarPortManagementPermissionsTests(GPSMonitoringPermissionsTests):
+    def test_non_admin_cannot_manage_traccar_ports(self):
+        self.client.force_authenticate(user=self.regular_user)
+        response = self.client.post(
+            "/api/gps-monitor/ports/",
+            {"action": "status", "port": 9026},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_invalid_port_is_rejected_before_privileged_helper(self):
+        self.client.force_authenticate(user=self.site_admin)
+        with patch("ops_monitoring.views.subprocess.Popen") as popen:
+            response = self.client.post(
+                "/api/gps-monitor/ports/",
+                {"action": "status", "port": 80},
+                format="json",
+            )
+        self.assertEqual(response.status_code, 400)
+        popen.assert_not_called()
+
+    def test_apply_requires_verified_device_model_selection_not_protocol_input(self):
+        self.client.force_authenticate(user=self.site_admin)
+        response = self.client.post(
+            "/api/gps-monitor/ports/",
+            {"action": "apply", "port": 9026},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("مدل دستگاه", response.json()["detail"])
+
+    def test_unknown_operation_is_rejected(self):
+        self.client.force_authenticate(user=self.site_admin)
+        response = self.client.post(
+            "/api/gps-monitor/ports/",
+            {"action": "run-shell", "port": 9026},
+            format="json",
+        )
+        self.assertEqual(response.status_code, 400)
