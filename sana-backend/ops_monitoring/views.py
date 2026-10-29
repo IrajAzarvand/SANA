@@ -164,7 +164,7 @@ class TraccarPortOperationView(APIView):
             if not protocol or not protocol.replace("_", "").replace("-", "").isalnum() or not protocol[0].isalpha():
                 return JsonResponse({"detail": "مدل انتخاب‌شده نگاشت داخلی معتبر برای Traccar ندارد."}, status=400)
             command += ["apply", str(port), protocol]
-        elif action in {"test", "status"}:
+        elif action in {"test", "status", "diagnostics", "restore"}:
             command += [action, str(port)]
         else:
             return JsonResponse({"detail": "عملیات نامعتبر است."}, status=400)
