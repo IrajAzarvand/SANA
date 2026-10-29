@@ -50,8 +50,13 @@ def parse_port(value):
 def read_config():
     if not CONFIG.is_file():
         raise RuntimeError(f"فایل پیکربندی Traccar پیدا نشد: {CONFIG}")
-    tree = ET.parse(CONFIG)
+    source = CONFIG.read_text(encoding="utf-8")
+    if not re.search(r'<!DOCTYPE\\s+properties\\s+SYSTEM\\s+["\\']http://java\\.sun\\.com/dtd/properties\\.dtd["\\']\\s*>', source, re.IGNORECASE):
+        raise RuntimeError("DOCTYPE استاندارد Java Properties در traccar.xml وجود ندارد؛ برای جلوگیری از خراب‌تر شدن فایل، تغییرات متوقف شد.")
+    tree = ET.ElementTree(ET.fromstring(source))
     root = tree.getroot()
+    if root.tag != "properties":
+        raise RuntimeError("ریشه فایل تنظیمات Traccar از نوع properties نیست.")
     entries = {}
     for entry in root.findall("entry"):
         key = entry.get("key")
@@ -61,12 +66,36 @@ def read_config():
 
 
 def write_tree(tree):
+    # Java's Properties.loadFromXML requires this DOCTYPE. ElementTree drops it
+    # when serializing, so preserve the original declaration explicitly.
+    source = CONFIG.read_text(encoding="utf-8")
+    match = re.search(
+        r'<!DOCTYPE\\s+properties\\s+SYSTEM\\s+["\\']http://java\\.sun\\.com/dtd/properties\\.dtd["\\']\\s*>',
+        source,
+        re.IGNORECASE,
+    )
+    if not match:
+        raise RuntimeError("DOCTYPE استاندارد Java Properties پیدا نشد؛ فایل تغییر نکرد.")
+    doctype = match.group(0)
     fd, temp_name = tempfile.mkstemp(prefix="traccar.xml.", dir=str(CONFIG.parent))
     os.close(fd)
     try:
         original_stat = CONFIG.stat()
         tree.write(temp_name, encoding="UTF-8", xml_declaration=True)
-        ET.parse(temp_name)
+        generated = Path(temp_name).read_text(encoding="utf-8")
+        # Place the preserved DOCTYPE immediately after the XML declaration.
+        declaration = re.match(r"(<\\?xml[^?]*\\?>)", generated)
+        if not declaration:
+            raise RuntimeError("اعلان XML در فایل موقت ساخته نشد؛ فایل اصلی تغییر نکرد.")
+        generated = generated[:declaration.end()] + "\\n" + doctype + generated[declaration.end():]
+        Path(temp_name).write_text(generated, encoding="utf-8")
+        # Validate both the XML structure and the required Java Properties DTD
+        # before atomically replacing the live file.
+        if not re.search(r'<!DOCTYPE\\s+properties\\s+SYSTEM\\s+["\\']http://java\\.sun\\.com/dtd/properties\\.dtd["\\']\\s*>', generated, re.IGNORECASE):
+            raise RuntimeError("اعتبارسنجی DOCTYPE ناموفق بود؛ فایل اصلی تغییر نکرد.")
+        parsed = ET.parse(temp_name)
+        if parsed.getroot().tag != "properties":
+            raise RuntimeError("اعتبارسنجی ساختار properties ناموفق بود؛ فایل اصلی تغییر نکرد.")
         shutil.copystat(CONFIG, temp_name)
         os.chown(temp_name, original_stat.st_uid, original_stat.st_gid)
         os.replace(temp_name, CONFIG)
