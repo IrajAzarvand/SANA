@@ -776,6 +776,16 @@ function TraccarPortManager() {
             {busy ? 'در حال اجرا…' : 'پیکربندی فایروال و Traccar'}
           </Button>
           <Button variant="secondary" disabled={busy} onClick={() => runOperation('status')}>بررسی شنونده پورت</Button>
+          <Button variant="secondary" disabled={busy} onClick={() => runOperation('diagnostics')}>گزارش وضعیت و خطاهای Traccar</Button>
+          <Button
+            variant="secondary"
+            disabled={busy}
+            onClick={() => {
+              if (window.confirm('آخرین نسخه پشتیبان traccar.xml بازیابی و سرویس Traccar مجدداً راه‌اندازی می‌شود. هیچ قانون فایروالی تغییر نمی‌کند. ادامه می‌دهید؟')) {
+                runOperation('restore');
+              }
+            }}
+          >بازیابی آخرین نسخه پشتیبان</Button>
           <Button variant="secondary" disabled={busy} onClick={() => runOperation('test')}>آزمون ترافیک ورودی (۲۰ ثانیه)</Button>
           <Button variant="secondary" disabled={busy} onClick={() => setLogs([])}>پاک‌کردن خروجی</Button>
         </div>
