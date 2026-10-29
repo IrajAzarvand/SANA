@@ -1,105 +1,296 @@
 #!/usr/bin/env python3
 """Root-owned, allowlisted Traccar listener/firewall manager for SANA."""
-import datetime, os, re, shutil, subprocess, sys, tempfile, time
+import datetime
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
-CONFIG=Path("/opt/traccar/conf/traccar.xml")
-BACKUP_DIR=Path("/var/backups/sana-traccar")
-PORT_RE=re.compile(r"^[0-9]{1,5}$")
-PROTOCOL_RE=re.compile(r"^[a-z][a-z0-9]{1,39}$")
-def emit(message): print(message,flush=True)
-def run(command,label):
+
+CONFIG = Path("/opt/traccar/conf/traccar.xml")
+BACKUP_DIR = Path("/var/backups/sana-traccar")
+PORT_RE = re.compile(r"^[0-9]{1,5}$")
+PROTOCOL_RE = re.compile(r"^[a-z][a-z0-9_]{1,39}$")
+
+
+def emit(message):
+    print(message, flush=True)
+
+
+def run(command, label, timeout=60):
     emit(f"$ {label}")
-    result=subprocess.run(command,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,check=False,timeout=60)
-    output=(result.stdout or "").strip()
+    result = subprocess.run(
+        command, text=True, stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT, check=False, timeout=timeout,
+    )
+    output = (result.stdout or "").strip()
     if output:
-        for line in output.splitlines(): emit(line)
-    if result.returncode: raise RuntimeError(f"{label} ناموفق بود (exit={result.returncode}).")
+        for line in output.splitlines():
+            emit(line)
+    if result.returncode:
+        raise RuntimeError(f"{label} ناموفق بود (exit={result.returncode}).")
     return output
+
+
 def parse_port(value):
-    if not PORT_RE.fullmatch(value): raise ValueError("شماره پورت معتبر نیست.")
-    port=int(value)
-    if not 1024<=port<=65535: raise ValueError("پورت باید بین 1024 و 65535 باشد.")
+    if not PORT_RE.fullmatch(value):
+        raise ValueError("شماره پورت معتبر نیست.")
+    port = int(value)
+    if not 1024 <= port <= 65535:
+        raise ValueError("پورت باید بین 1024 و 65535 باشد.")
     return port
+
+
 def read_config():
-    if not CONFIG.is_file(): raise RuntimeError(f"فایل پیکربندی Traccar پیدا نشد: {CONFIG}")
-    tree=ET.parse(CONFIG); root=tree.getroot(); entries={}
+    if not CONFIG.is_file():
+        raise RuntimeError(f"فایل پیکربندی Traccar پیدا نشد: {CONFIG}")
+    tree = ET.parse(CONFIG)
+    root = tree.getroot()
+    entries = {}
     for entry in root.findall("entry"):
-        key=entry.get("key")
-        if key: entries[key]=(entry.text or "").strip()
-    return tree,root,entries
+        key = entry.get("key")
+        if key:
+            entries[key] = (entry.text or "").strip()
+    return tree, root, entries
+
+
+def write_tree(tree):
+    fd, temp_name = tempfile.mkstemp(prefix="traccar.xml.", dir=str(CONFIG.parent))
+    os.close(fd)
+    try:
+        tree.write(temp_name, encoding="UTF-8", xml_declaration=True)
+        ET.parse(temp_name)
+        shutil.copystat(CONFIG, temp_name)
+        os.replace(temp_name, CONFIG)
+    finally:
+        if os.path.exists(temp_name):
+            os.unlink(temp_name)
+
+
+def make_backup():
+    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    backup = BACKUP_DIR / f"traccar.xml.{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}.bak"
+    shutil.copy2(CONFIG, backup)
+    emit(f"نسخه پشتیبان ساخته شد: {backup}")
+    return backup
+
+
 def listener_status(port):
     def matching_lines(output):
-        matches=[]
+        matches = []
         for line in output.splitlines():
-            fields=line.split()
-            # ss -lnt/-lnu: local address is column 4. Match its port exactly;
-            # substring matching can confuse 5027 with another port such as 15027.
+            fields = line.split()
             if len(fields) >= 4 and fields[3].rsplit(":", 1)[-1] == str(port):
                 matches.append(line.strip())
         return matches
-    tcp=subprocess.run(["ss","-lnt"],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,check=False).stdout
-    udp=subprocess.run(["ss","-lnu"],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,check=False).stdout
-    return matching_lines(tcp),matching_lines(udp)
-def status(port):
-    _,_,entries=read_config()
-    configured=sorted([{"protocol":k[:-5],"port":int(v)} for k,v in entries.items() if k.endswith(".port") and v.isdigit()],key=lambda x:(x["port"],x["protocol"]))
-    tcp,udp=listener_status(port)
-    emit(f"پورت {port}: تنظیم‌شده در Traccar: "+("بله" if any(x["port"]==port for x in configured) else "خیر"))
-    emit(f"TCP listener: {'فعال' if tcp else 'غیرفعال'}"); emit(f"UDP listener: {'فعال' if udp else 'غیرفعال'}")
-    for line in tcp+udp: emit(line)
-    return 0
-def apply(port,protocol):
-    if not PROTOCOL_RE.fullmatch(protocol): raise ValueError("شناسه داخلی مدل دستگاه نامعتبر است.")
-    tree,root,entries=read_config(); target_key=f"{protocol}.port"
-    current=entries.get(target_key, "")
-    if current.isdigit() and int(current)==port: emit(f"پیکربندی {target_key} از قبل روی پورت {port} است.")
-    elif current.isdigit() and int(current)!=port: raise RuntimeError(f"شنونده {protocol} هم‌اکنون روی پورت {current} است. برای جلوگیری از قطع سرویس موجود، پورت قبلی جایگزین نمی‌شود.")
+    tcp = subprocess.run(["ss", "-lnt"], text=True, stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT, check=False).stdout
+    udp = subprocess.run(["ss", "-lnu"], text=True, stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT, check=False).stdout
+    return matching_lines(tcp), matching_lines(udp)
+
+
+def wait_for_service_and_listener(port, seconds=45):
+    deadline = time.monotonic() + seconds
+    last_tcp, last_udp = [], []
+    while time.monotonic() < deadline:
+        active = subprocess.run(
+            ["systemctl", "is-active", "--quiet", "traccar"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+        ).returncode == 0
+        last_tcp, last_udp = listener_status(port)
+        if active and (last_tcp or last_udp):
+            return True, last_tcp, last_udp
+        time.sleep(1)
+    return False, last_tcp, last_udp
+
+
+def show_recent_logs():
+    emit("$ آخرین گزارش‌های سرویس Traccar")
+    result = subprocess.run(
+        ["journalctl", "-u", "traccar", "-n", "60", "--no-pager", "-o", "short-iso"],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False, timeout=30,
+    )
+    output = (result.stdout or "").strip()
+    if output:
+        for line in output.splitlines():
+            emit(line)
     else:
-        for key,value in entries.items():
-            if key.endswith(".port") and value.isdigit() and int(value)==port and key!=target_key: raise RuntimeError(f"پورت {port} هم‌اکنون به {key[:-5]} اختصاص دارد.")
-        BACKUP_DIR.mkdir(parents=True,exist_ok=True)
-        backup=BACKUP_DIR/f"traccar.xml.{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}.bak"
-        shutil.copy2(CONFIG,backup); emit(f"نسخه پشتیبان ساخته شد: {backup}")
-        node=next((x for x in root.findall("entry") if x.get("key")==target_key),None)
-        if node is None: node=ET.SubElement(root,"entry",{"key":target_key})
-        node.text=str(port); fd,temp_name=tempfile.mkstemp(prefix="traccar.xml.",dir=str(CONFIG.parent)); os.close(fd)
-        try:
-            tree.write(temp_name,encoding="UTF-8",xml_declaration=True); ET.parse(temp_name); shutil.copystat(CONFIG,temp_name); os.replace(temp_name,CONFIG)
-        finally:
-            if os.path.exists(temp_name): os.unlink(temp_name)
+        emit("گزارشی از journalctl دریافت نشد.")
+
+
+def status(port):
+    _, _, entries = read_config()
+    configured = sorted(
+        [{"protocol": k[:-5], "port": int(v)} for k, v in entries.items()
+         if k.endswith(".port") and v.isdigit()],
+        key=lambda x: (x["port"], x["protocol"]),
+    )
+    active = subprocess.run(
+        ["systemctl", "is-active", "traccar"], text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False,
+    ).stdout.strip()
+    tcp, udp = listener_status(port)
+    emit(f"وضعیت سرویس Traccar: {active or 'نامشخص'}")
+    emit(f"پورت {port}: تنظیم‌شده در Traccar: " +
+         ("بله" if any(x["port"] == port for x in configured) else "خیر"))
+    emit(f"TCP listener: {'فعال' if tcp else 'غیرفعال'}")
+    emit(f"UDP listener: {'فعال' if udp else 'غیرفعال'}")
+    for line in tcp + udp:
+        emit(line)
+    if active != "active" or (not tcp and not udp):
+        show_recent_logs()
+    return 0
+
+
+def diagnostics(port):
+    status(port)
+    show_recent_logs()
+    return 0
+
+
+def restore_latest_backup():
+    backups = sorted(
+        BACKUP_DIR.glob("traccar.xml.*.bak"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    ) if BACKUP_DIR.is_dir() else []
+    if not backups:
+        raise RuntimeError("هیچ نسخه پشتیبانی برای بازیابی پیدا نشد.")
+    backup = backups[0]
+    # Validate the backup before touching the live configuration.
+    ET.parse(backup)
+    shutil.copy2(backup, CONFIG)
+    emit(f"تنظیمات از نسخه پشتیبان بازیابی شد: {backup}")
+    run(["systemctl", "restart", "traccar"], "راه‌اندازی مجدد Traccar پس از بازیابی")
+    time.sleep(1)
+    active = subprocess.run(
+        ["systemctl", "is-active", "traccar"], text=True,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False,
+    ).stdout.strip()
+    emit(f"وضعیت سرویس پس از بازیابی: {active or 'نامشخص'}")
+    _, _, entries = read_config()
+    ports = sorted({int(v) for k, v in entries.items()
+                    if k.endswith(".port") and v.isdigit()})
+    for port in ports:
+        tcp, udp = listener_status(port)
+        emit(f"پورت {port}: TCP={'فعال' if tcp else 'غیرفعال'}؛ UDP={'فعال' if udp else 'غیرفعال'}")
+    if active != "active":
+        show_recent_logs()
+        raise RuntimeError("تنظیمات بازیابی شد، اما سرویس Traccar فعال نشد؛ گزارش سرویس در بالا آمده است.")
+    emit("بازیابی تنظیمات انجام شد. هیچ قانون فایروالی در این عملیات تغییر نکرد.")
+    return 0
+
+
+def apply(port, protocol):
+    if not PROTOCOL_RE.fullmatch(protocol):
+        raise ValueError("شناسه داخلی مدل دستگاه نامعتبر است.")
+    tree, root, entries = read_config()
+    target_key = f"{protocol}.port"
+    current = entries.get(target_key, "")
+    if current.isdigit() and int(current) != port:
+        raise RuntimeError(
+            f"شنونده {protocol} هم‌اکنون روی پورت {current} است. "
+            "برای جلوگیری از قطع سرویس موجود، پورت قبلی جایگزین نمی‌شود."
+        )
+    for key, value in entries.items():
+        if key.endswith(".port") and value.isdigit() and int(value) == port and key != target_key:
+            raise RuntimeError(f"پورت {port} هم‌اکنون به {key[:-5]} اختصاص دارد.")
+
+    enabled_value = entries.get("protocols.enable", "")
+    enabled = [item.strip() for item in enabled_value.split(",") if item.strip()]
+    needs_port_change = current != str(port)
+    needs_enable = protocol not in enabled
+    if not needs_port_change and not needs_enable:
+        emit(f"پیکربندی {target_key} از قبل روی پورت {port} است و پروتکل در protocols.enable فعال است.")
+    else:
+        backup = make_backup()
+        if needs_port_change:
+            node = next((x for x in root.findall("entry") if x.get("key") == target_key), None)
+            if node is None:
+                node = ET.SubElement(root, "entry", {"key": target_key})
+            node.text = str(port)
+        if needs_enable:
+            enabled.append(protocol)
+            node = next((x for x in root.findall("entry") if x.get("key") == "protocols.enable"), None)
+            if node is None:
+                node = ET.SubElement(root, "entry", {"key": "protocols.enable"})
+            node.text = ",".join(enabled)
+            emit(f"پروتکل {protocol} به protocols.enable افزوده شد.")
+        write_tree(tree)
         emit(f"تنظیم {target_key} روی پورت {port} ذخیره شد.")
-    run(["systemctl","restart","traccar"],"راه‌اندازی مجدد Traccar"); time.sleep(2)
-    tcp,udp=listener_status(port)
-    if not tcp and not udp:
-        raise RuntimeError(f"پس از راه‌اندازی مجدد، هیچ شنونده‌ای روی پورت {port} دیده نشد؛ برای جلوگیری از بازکردن بی‌مورد فایروال، قاعده جدیدی اضافه نشد. لاگ Traccar را بررسی کنید.")
-    # Expose only transports that Traccar is actually listening on.
-    if tcp: run(["ufw","allow",f"{port}/tcp"],f"بازکردن TCP/{port} در UFW")
-    if udp: run(["ufw","allow",f"{port}/udp"],f"بازکردن UDP/{port} در UFW")
+
+    run(["systemctl", "restart", "traccar"], "راه‌اندازی مجدد Traccar")
+    ready, tcp, udp = wait_for_service_and_listener(port, seconds=45)
+    if not ready:
+        show_recent_logs()
+        emit("شنونده موردنظر در مهلت ۴۵ ثانیه‌ای فعال نشد؛ فایروال تغییری نکرد.")
+        raise RuntimeError(
+            f"Traccar شنونده‌ای روی پورت {port} ایجاد نکرد. "
+            "برای جلوگیری از تغییر ناخواسته، از دکمه «بازیابی آخرین نسخه پشتیبان» استفاده کنید."
+        )
+    if tcp:
+        run(["ufw", "allow", f"{port}/tcp"], f"بازکردن TCP/{port} در UFW")
+    if udp:
+        run(["ufw", "allow", f"{port}/udp"], f"بازکردن UDP/{port} در UFW")
     emit(f"تأیید شد: روی پورت {port} شنونده محلی فعال است.")
     emit("فقط پروتکل‌های انتقالی که شنونده فعال دارند در UFW باز شدند.")
     emit("فعال‌بودن شنونده به‌تنهایی ثبت واقعی داده دستگاه را ثابت نمی‌کند؛ مرحله آزمون ترافیک جداگانه است.")
     return 0
+
+
 def test(port):
     emit(f"بررسی ترافیک ورودی پورت {port} به مدت 20 ثانیه شروع شد.")
-    timeout=shutil.which("timeout"); tcpdump=shutil.which("tcpdump")
-    if not timeout or not tcpdump: raise RuntimeError("برای آزمون ترافیک، ابزارهای timeout و tcpdump باید نصب باشند.")
-    result=subprocess.run([timeout,"20s",tcpdump,"-ni","any","-c","1",f"port {port}"],text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,check=False,timeout=25)
-    output=(result.stdout or "").strip()
-    for line in output.splitlines(): emit(line)
-    if result.returncode==0 and "IP " in output:
-        emit("ترافیک شبکه روی این پورت مشاهده شد."); emit("این آزمون رسیدن بسته به سرور را تأیید می‌کند، نه الزاماً decode و ثبت موقعیت در Traccar."); return 0
-    emit("در بازه آزمون بسته‌ای مشاهده نشد. تنظیم دستگاه، فوروارد ISP/روتر و زمان ارسال را بررسی کنید."); return 2
+    timeout = shutil.which("timeout")
+    tcpdump = shutil.which("tcpdump")
+    if not timeout or not tcpdump:
+        raise RuntimeError("برای آزمون ترافیک، ابزارهای timeout و tcpdump باید نصب باشند.")
+    result = subprocess.run(
+        [timeout, "20s", tcpdump, "-ni", "any", "-c", "1", f"port {port}"],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        check=False, timeout=25,
+    )
+    output = (result.stdout or "").strip()
+    for line in output.splitlines():
+        emit(line)
+    if result.returncode == 0 and "IP " in output:
+        emit("ترافیک شبکه روی این پورت مشاهده شد.")
+        emit("این آزمون رسیدن بسته به سرور را تأیید می‌کند، نه الزاماً decode و ثبت موقعیت در Traccar.")
+        return 0
+    emit("در بازه آزمون بسته‌ای مشاهده نشد. تنظیم دستگاه، فوروارد ISP/روتر و زمان ارسال را بررسی کنید.")
+    return 2
+
+
 def main():
-    if os.geteuid()!=0: emit("این ابزار باید فقط از طریق sudo و واسط مجاز اجرا شود."); return 2
-    if len(sys.argv)<3: emit("استفاده: sana-traccar-port-manager status|test PORT یا apply PORT PROTOCOL"); return 2
-    action=sys.argv[1]
+    if os.geteuid() != 0:
+        emit("این ابزار باید فقط از طریق sudo و واسط مجاز اجرا شود.")
+        return 2
+    if len(sys.argv) < 3:
+        emit("استفاده: sana-traccar-port-manager status|diagnostics|restore|test PORT یا apply PORT PROTOCOL")
+        return 2
+    action = sys.argv[1]
     try:
-        port=parse_port(sys.argv[2])
-        if action=="status" and len(sys.argv)==3: return status(port)
-        if action=="test" and len(sys.argv)==3: return test(port)
-        if action=="apply" and len(sys.argv)==4: return apply(port,sys.argv[3])
-        emit("عملیات یا تعداد آرگومان‌ها نامعتبر است."); return 2
-    except (ValueError,RuntimeError,OSError,ET.ParseError,subprocess.TimeoutExpired) as exc:
-        emit(f"خطا: {exc}"); return 1
-if __name__=="__main__": sys.exit(main())
+        port = parse_port(sys.argv[2])
+        if action == "status" and len(sys.argv) == 3:
+            return status(port)
+        if action == "diagnostics" and len(sys.argv) == 3:
+            return diagnostics(port)
+        if action == "restore" and len(sys.argv) == 3:
+            return restore_latest_backup()
+        if action == "test" and len(sys.argv) == 3:
+            return test(port)
+        if action == "apply" and len(sys.argv) == 4:
+            return apply(port, sys.argv[3])
+        emit("عملیات یا تعداد آرگومان‌ها نامعتبر است.")
+        return 2
+    except (ValueError, RuntimeError, OSError, ET.ParseError, subprocess.TimeoutExpired) as exc:
+        emit(f"خطا: {exc}")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
