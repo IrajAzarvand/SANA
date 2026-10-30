@@ -254,6 +254,12 @@ def capture_stop(port):
     return 0
 
 
+def capture_toggle(port):
+    if capture_status(port) == 0:
+        return capture_stop(port)
+    return capture_start(port)
+
+
 def capture_worker(port):
     log_path, pid_path = capture_paths(port)
     stopping = False
@@ -367,7 +373,7 @@ def main():
     if len(sys.argv) >= 3 and sys.argv[1] == "_capture-worker":
         return capture_worker(parse_port(sys.argv[2]))
     if len(sys.argv) < 3:
-        emit("استفاده: status|test|apply|capture-start|capture-stop|capture-status|capture-tail PORT [PROTOCOL]")
+        emit("استفاده: status|test|apply|capture-toggle|capture-start|capture-stop|capture-status|capture-tail PORT [PROTOCOL]")
         return 2
     action = sys.argv[1]
     try:
@@ -378,6 +384,8 @@ def main():
             return test(port)
         if action == "apply" and len(sys.argv) == 4:
             return apply(port, sys.argv[3])
+        if action == "capture-toggle" and len(sys.argv) == 3:
+            return capture_toggle(port)
         if action == "capture-start" and len(sys.argv) == 3:
             return capture_start(port)
         if action == "capture-stop" and len(sys.argv) == 3:
