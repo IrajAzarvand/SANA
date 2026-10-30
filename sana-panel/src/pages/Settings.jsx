@@ -750,10 +750,10 @@ function TraccarPortManager() {
       while (true) {
         const { value, done } = await reader.read();
         buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-        const events = buffer.split('\\n\\n');
+        const events = buffer.split('\n\n');
         buffer = events.pop() || '';
         for (const event of events) {
-          const dataLine = event.split('\\n').find((line) => line.startsWith('data: '));
+          const dataLine = event.split('\n').find((line) => line.startsWith('data: '));
           if (!dataLine) continue;
           try {
             const item = JSON.parse(dataLine.slice(6));
