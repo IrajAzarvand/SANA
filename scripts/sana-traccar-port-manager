@@ -350,7 +350,7 @@ def capture_tail(port):
     if not tail:
         raise RuntimeError("دستور tail روی سرور نصب نیست.")
     process = subprocess.Popen(
-        [tail, "-n", "0", "-F", str(log_path)],
+        [tail, "-n", "100", "-F", str(log_path)],
         stdout=sys.stdout, stderr=sys.stderr, text=True, close_fds=True
     )
     try:
