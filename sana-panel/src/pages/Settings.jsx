@@ -835,7 +835,7 @@ function TraccarPortManager() {
           <Button variant="secondary" disabled={busy || captureRunning} onClick={() => runOperation('status')}>بررسی شنونده پورت</Button>
           <Button variant="secondary" disabled={busy || captureRunning} onClick={() => runOperation('test')}>آزمون ترافیک ورودی (۲۰ ثانیه)</Button>
           <Button disabled={busy || captureRunning} onClick={startCapture}>دریافت دیتای تست پورت {port}</Button>
-          <Button variant="danger" disabled={busy && !captureRunning} onClick={stopCapture}>توقف رصد زنده</Button>
+          <Button variant="danger" disabled={busy} onClick={stopCapture}>توقف رصد زنده</Button>
           <Button variant="secondary" disabled={busy} onClick={() => setLogs([])}>پاک‌کردن خروجی</Button>
         </div>
 
