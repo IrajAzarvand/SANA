@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Plus, Pencil, Trash2, Camera, Mail, Phone,
   Shield, Smartphone, Building2, MapPin, Globe,
@@ -639,6 +639,9 @@ function TraccarPortManager() {
     'آماده؛ ابتدا مدل دستگاه را انتخاب کنید، سپس پیکربندی یا آزمون را اجرا کنید.',
   ]);
   const [error, setError] = useState('');
+  const [captureRunning, setCaptureRunning] = useState(false);
+  const [captureStreaming, setCaptureStreaming] = useState(false);
+  const captureAbortRef = useRef(null);
 
   useEffect(() => {
     let active = true;
@@ -671,6 +674,7 @@ function TraccarPortManager() {
     setBusy(true);
     setError('');
     setLogs((previous) => [...previous, `> شروع عملیات ${action} برای پورت ${parsedPort}…`]);
+    let operationSucceeded = true;
     try {
       const token = localStorage.getItem('sana_access_token');
       const response = await fetch(`${apiClient.defaults.baseURL}/gps-monitor/ports/`, {
@@ -708,6 +712,7 @@ function TraccarPortManager() {
           if (!dataLine) continue;
           try {
             const item = JSON.parse(dataLine.slice(6));
+            if (String(item.line || '').startsWith('خطا:') || String(item.line || '').includes('عملیات ناموفق بود')) operationSucceeded = false;
             setLogs((previous) => [...previous, item.line]);
           } catch {
             setLogs((previous) => [...previous, dataLine.slice(6)]);
@@ -716,11 +721,63 @@ function TraccarPortManager() {
         if (done) break;
       }
     } catch (requestError) {
+      operationSucceeded = false;
       setError(requestError.message || 'اجرای عملیات ناموفق بود.');
       setLogs((previous) => [...previous, `خطا: ${requestError.message || 'ارتباط با سرور برقرار نشد.'}`]);
     } finally {
       setBusy(false);
     }
+    return operationSucceeded;
+  };
+
+  const startCapture = async () => {
+    const started = await runOperation('capture-start');
+    if (!started) return;
+    setCaptureRunning(true);
+    setCaptureStreaming(true);
+    const controller = new AbortController();
+    captureAbortRef.current = controller;
+    try {
+      const token = localStorage.getItem('sana_access_token');
+      const response = await fetch(`${apiClient.defaults.baseURL}/gps-monitor/ports/capture/${Number(port)}/`, {
+        headers: { Accept: 'text/event-stream', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        signal: controller.signal,
+      });
+      if (!response.ok || !response.body) throw new Error(`دریافت لاگ زنده ناموفق بود (HTTP ${response.status}).`);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+        const events = buffer.split('\\n\\n');
+        buffer = events.pop() || '';
+        for (const event of events) {
+          const dataLine = event.split('\\n').find((line) => line.startsWith('data: '));
+          if (!dataLine) continue;
+          try {
+            const item = JSON.parse(dataLine.slice(6));
+            setLogs((previous) => [...previous, item.line]);
+          } catch {
+            setLogs((previous) => [...previous, dataLine.slice(6)]);
+          }
+        }
+        if (done) break;
+      }
+    } catch (streamError) {
+      if (streamError.name !== 'AbortError') setLogs((previous) => [...previous, `خطای دریافت لاگ: ${streamError.message}`]);
+    } finally {
+      setCaptureStreaming(false);
+      captureAbortRef.current = null;
+    }
+  };
+
+  const stopCapture = async () => {
+    await runOperation('capture-stop');
+    captureAbortRef.current?.abort();
+    captureAbortRef.current = null;
+    setCaptureRunning(false);
+    setCaptureStreaming(false);
   };
 
   return (
@@ -772,18 +829,20 @@ function TraccarPortManager() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <Button disabled={busy || modelsLoading || !modelId} onClick={() => runOperation('apply')}>
+          <Button disabled={busy || captureRunning || modelsLoading || !modelId} onClick={() => runOperation('apply')}>
             {busy ? 'در حال اجرا…' : 'پیکربندی فایروال و Traccar'}
           </Button>
-          <Button variant="secondary" disabled={busy} onClick={() => runOperation('status')}>بررسی شنونده پورت</Button>
-          <Button variant="secondary" disabled={busy} onClick={() => runOperation('test')}>آزمون ترافیک ورودی (۲۰ ثانیه)</Button>
+          <Button variant="secondary" disabled={busy || captureRunning} onClick={() => runOperation('status')}>بررسی شنونده پورت</Button>
+          <Button variant="secondary" disabled={busy || captureRunning} onClick={() => runOperation('test')}>آزمون ترافیک ورودی (۲۰ ثانیه)</Button>
+          <Button disabled={busy || captureRunning} onClick={startCapture}>دریافت دیتای تست پورت {port}</Button>
+          <Button variant="danger" disabled={busy && !captureRunning} onClick={stopCapture}>توقف رصد زنده</Button>
           <Button variant="secondary" disabled={busy} onClick={() => setLogs([])}>پاک‌کردن خروجی</Button>
         </div>
 
         <div className="overflow-hidden rounded-field border border-border-base bg-[#0b1220]">
           <div className="flex items-center justify-between border-b border-white/10 px-4 py-2">
             <span className="text-xs font-medium text-slate-200">گزارش اجرای عملیات</span>
-            <span className="text-[10px] text-slate-400">{busy ? 'در حال اجرا' : 'آماده'}</span>
+            <span className="text-[10px] text-slate-400">{captureStreaming ? 'رصد زنده فعال' : busy ? 'در حال اجرا' : captureRunning ? 'شنود فعال' : 'آماده'}</span>
           </div>
           <pre
             role="log"
@@ -792,7 +851,7 @@ function TraccarPortManager() {
           >{logs.length ? logs.join('\n') : 'خروجی خالی است.'}</pre>
         </div>
         <p className="text-xs leading-6 text-text-muted">
-          توجه: مشاهده شنونده یا بسته شبکه به‌تنهایی اثبات نمی‌کند که موقعیت GPS توسط Traccar رمزگشایی و در پایگاه داده ثبت شده است. برای تأیید نهایی، هنگام آزمون دستگاه باید ارسال داده فعال باشد و آخرین موقعیت دستگاه در Traccar بررسی شود.
+          برای شناسایی پروتکل ناشناخته، ابتدا یک پورت آزاد و فورواردشده انتخاب کنید؛ سپس دستگاه را موقتاً به همین پورت بفرستید و «دریافت دیتای تست» را بزنید. این شنونده TCP و UDP را مستقیم می‌گیرد، داده خام را به‌صورت HEX در لاگ محافظت‌شده ثبت می‌کند و هیچ telemetry در جداول سانا نمی‌نویسد. پس از دریافت نمونه کافی، «توقف رصد زنده» را بزنید. فقط بعد از توقف شنود می‌توان همان پورت را به Traccar اختصاص داد. سقف فایل ضبط ۴ مگابایت است و اگر پورت از قبل شنونده داشته باشد، شروع capture رد می‌شود.
         </p>
       </div>
     </Card>
