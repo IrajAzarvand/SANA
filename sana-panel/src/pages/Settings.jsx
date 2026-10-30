@@ -737,46 +737,54 @@ function TraccarPortManager() {
   const toggleCapture = async () => {
     const result = await runOperation('capture-toggle');
     if (!result?.success) return;
+
     const started = result.lines.some((line) => line.includes('شروع شد'));
     const stopped = result.lines.some((line) => line.includes('متوقف شد') || line.includes('فعال نیست'));
+
     if (started) {
       setCaptureRunning(true);
-    setCaptureStreaming(true);
-    const controller = new AbortController();
-    captureAbortRef.current = controller;
-    try {
-      const token = localStorage.getItem('sana_access_token');
-      const response = await fetch(`${apiClient.defaults.baseURL}/gps-monitor/ports/capture/${Number(port)}/`, {
-        headers: { Accept: 'text/event-stream', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        signal: controller.signal,
-      });
-      if (!response.ok || !response.body) throw new Error(`دریافت لاگ زنده ناموفق بود (HTTP ${response.status}).`);
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      while (true) {
-        const { value, done } = await reader.read();
-        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-        const events = buffer.split('\n\n');
-        buffer = events.pop() || '';
-        for (const event of events) {
-          const dataLine = event.split('\n').find((line) => line.startsWith('data: '));
-          if (!dataLine) continue;
-          try {
-            const item = JSON.parse(dataLine.slice(6));
-            setLogs((previous) => [...previous, item.line]);
-          } catch {
-            setLogs((previous) => [...previous, dataLine.slice(6)]);
-          }
+      setCaptureStreaming(true);
+      const controller = new AbortController();
+      captureAbortRef.current = controller;
+
+      try {
+        const token = localStorage.getItem('sana_access_token');
+        const response = await fetch(`${apiClient.defaults.baseURL}/gps-monitor/ports/capture/${Number(port)}/`, {
+          headers: { Accept: 'text/event-stream', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          signal: controller.signal,
+        });
+        if (!response.ok || !response.body) {
+          throw new Error(`دریافت لاگ زنده ناموفق بود (HTTP ${response.status}).`);
         }
-        if (done) break;
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+          const { value, done } = await reader.read();
+          buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+          const events = buffer.split('\\n\\n');
+          buffer = events.pop() || '';
+          for (const event of events) {
+            const dataLine = event.split('\\n').find((line) => line.startsWith('data: '));
+            if (!dataLine) continue;
+            try {
+              const item = JSON.parse(dataLine.slice(6));
+              setLogs((previous) => [...previous, item.line]);
+            } catch {
+              setLogs((previous) => [...previous, dataLine.slice(6)]);
+            }
+          }
+          if (done) break;
+        }
+      } catch (streamError) {
+        if (streamError.name !== 'AbortError') {
+          setLogs((previous) => [...previous, `خطای دریافت لاگ: ${streamError.message}`]);
+        }
+      } finally {
+        setCaptureStreaming(false);
+        captureAbortRef.current = null;
       }
-    } catch (streamError) {
-      if (streamError.name !== 'AbortError') setLogs((previous) => [...previous, `خطای دریافت لاگ: ${streamError.message}`]);
-    } finally {
-      setCaptureStreaming(false);
-      captureAbortRef.current = null;
-    }
     } else if (stopped) {
       captureAbortRef.current?.abort();
       captureAbortRef.current = null;
