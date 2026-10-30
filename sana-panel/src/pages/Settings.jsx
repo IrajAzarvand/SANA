@@ -799,7 +799,7 @@ function TraccarPortManager() {
               className="w-full rounded-field border border-border-base bg-bg-elevated px-4 py-3 text-sm text-text-primary outline-none focus:border-brand-500 disabled:opacity-60"
               placeholder="مثلاً 9026"
             />
-            <p className="mt-2 text-xs leading-6 text-text-muted">این شماره باید با پورت تنظیم‌شده روی دستگاه و فورواردشده توسط ISP مطابقت داشته باشد.</p>
+            <p className="mt-2 text-xs leading-6 text-text-muted">این شماره باید روی دستگاه تنظیم و از ISP/روتر به سرور فوروارد شده باشد؛ قانون ورودی TCP و UDP آن نیز باید در UFW مجاز باشد.</p>
           </div>
           <div>
             <label htmlFor="traccar-device-model-search" className="mb-2 block text-sm text-text-secondary">مدل دستگاه برای تنظیم خودکار Traccar</label>
@@ -851,7 +851,7 @@ function TraccarPortManager() {
           >{logs.length ? logs.join('\n') : 'خروجی خالی است.'}</pre>
         </div>
         <p className="text-xs leading-6 text-text-muted">
-          برای شناسایی پروتکل ناشناخته، ابتدا یک پورت آزاد و فورواردشده انتخاب کنید؛ سپس دستگاه را موقتاً به همین پورت بفرستید و «دریافت دیتای تست» را بزنید. این شنونده TCP و UDP را مستقیم می‌گیرد، داده خام را به‌صورت HEX در لاگ محافظت‌شده ثبت می‌کند و هیچ telemetry در جداول سانا نمی‌نویسد. پس از دریافت نمونه کافی، «توقف رصد زنده» را بزنید. فقط بعد از توقف شنود می‌توان همان پورت را به Traccar اختصاص داد. سقف فایل ضبط ۴ مگابایت است و اگر پورت از قبل شنونده داشته باشد، شروع capture رد می‌شود.
+          برای شناسایی پروتکل ناشناخته، ابتدا یک پورت آزاد انتخاب کنید، فوروارد شبکه و اجازه ورودی UFW را برقرار کنید؛ سپس دستگاه را موقتاً به همین پورت بفرستید و «دریافت دیتای تست» را بزنید. این شنونده TCP و UDP را مستقیم می‌گیرد، داده خام را به‌صورت HEX در لاگ محافظت‌شده ثبت می‌کند و هیچ telemetry در جداول سانا نمی‌نویسد. پس از دریافت نمونه کافی، «توقف رصد زنده» را بزنید. فقط بعد از توقف شنود می‌توان همان پورت را به Traccar اختصاص داد. سقف فایل ضبط ۴ مگابایت است و اگر پورت از قبل شنونده داشته باشد، شروع capture رد می‌شود.
         </p>
       </div>
     </Card>
