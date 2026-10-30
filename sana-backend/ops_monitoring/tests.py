@@ -62,7 +62,7 @@ class TraccarPortManagementPermissionsTests(GPSMonitoringPermissionsTests):
         self.client.force_authenticate(user=self.site_admin)
 
         class FakeProcess:
-            stdout = io.StringIO("شنود آزمایشی TCP و UDP شروع شد.\\n")
+            stdout = io.StringIO("شنود آزمایشی TCP و UDP شروع شد.\n")
             def wait(self, timeout=None):
                 return 0
             def poll(self):
@@ -100,7 +100,7 @@ class TraccarPortManagementPermissionsTests(GPSMonitoringPermissionsTests):
         self.client.force_authenticate(user=self.site_admin)
 
         class FakeProcess:
-            stdout = io.StringIO("RAW transport=UDP hex=010203\\n")
+            stdout = io.StringIO("RAW transport=UDP hex=010203\n")
             def terminate(self):
                 pass
             def wait(self, timeout=None):
