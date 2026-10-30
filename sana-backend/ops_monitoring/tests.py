@@ -58,7 +58,7 @@ class GPSMonitoringPermissionsTests(TestCase):
 
 class TraccarPortManagementPermissionsTests(GPSMonitoringPermissionsTests):
 
-    def test_capture_start_is_admin_only_and_invokes_the_fixed_helper(self):
+    def test_capture_toggle_is_admin_only_and_invokes_the_fixed_helper(self):
         self.client.force_authenticate(user=self.site_admin)
 
         class FakeProcess:
@@ -77,7 +77,7 @@ class TraccarPortManagementPermissionsTests(GPSMonitoringPermissionsTests):
         ) as popen:
             response = self.client.post(
                 "/api/gps-monitor/ports/",
-                {"action": "capture-start", "port": 9027},
+                {"action": "capture-toggle", "port": 9027},
                 format="json",
                 HTTP_ACCEPT="text/event-stream",
             )
@@ -85,7 +85,7 @@ class TraccarPortManagementPermissionsTests(GPSMonitoringPermissionsTests):
         self.assertEqual(response.status_code, 200)
         self.assertIn("شنود آزمایشی TCP و UDP شروع شد", output)
         command = popen.call_args.args[0]
-        self.assertEqual(command[-2:], ["capture-start", "9027"])
+        self.assertEqual(command[-2:], ["capture-toggle", "9027"])
         self.assertIn("/usr/local/sbin/sana-traccar-port-manager", command)
 
     def test_capture_log_stream_is_admin_only(self):
