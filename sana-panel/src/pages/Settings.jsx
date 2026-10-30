@@ -794,7 +794,7 @@ function TraccarPortManager() {
               max="65535"
               step="1"
               value={port}
-              disabled={busy}
+              disabled={busy || captureRunning}
               onChange={(event) => setPort(event.target.value)}
               className="w-full rounded-field border border-border-base bg-bg-elevated px-4 py-3 text-sm text-text-primary outline-none focus:border-brand-500 disabled:opacity-60"
               placeholder="مثلاً 9026"
@@ -807,7 +807,7 @@ function TraccarPortManager() {
               id="traccar-device-model-search"
               type="search"
               value={modelSearch}
-              disabled={busy || modelsLoading}
+              disabled={busy || captureRunning || modelsLoading}
               onChange={(event) => setModelSearch(event.target.value)}
               className="mb-2 w-full rounded-field border border-border-base bg-bg-elevated px-4 py-3 text-sm text-text-primary outline-none focus:border-brand-500 disabled:opacity-60"
               placeholder="جست‌وجوی سازنده یا مدل…"
@@ -815,7 +815,7 @@ function TraccarPortManager() {
             <select
               aria-label="مدل دستگاه"
               value={modelId}
-              disabled={busy || modelsLoading}
+              disabled={busy || captureRunning || modelsLoading}
               onChange={(event) => setModelId(event.target.value)}
               className="w-full rounded-field border border-border-base bg-bg-elevated px-4 py-3 text-sm text-text-primary outline-none focus:border-brand-500 disabled:opacity-60"
             >
