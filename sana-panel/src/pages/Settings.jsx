@@ -665,16 +665,17 @@ function TraccarPortManager() {
     const parsedPort = Number(port);
     if (!Number.isInteger(parsedPort) || parsedPort < 1024 || parsedPort > 65535) {
       setError('شماره پورت باید عدد صحیح بین ۱۰۲۴ و ۶۵۵۳۵ باشد.');
-      return;
+      return { success: false, lines: [] };
     }
     if (action === 'apply' && !modelId) {
       setError('برای پیکربندی خودکار Traccar، مدل دستگاه را انتخاب کنید.');
-      return;
+      return { success: false, lines: [] };
     }
     setBusy(true);
     setError('');
     setLogs((previous) => [...previous, `> شروع عملیات ${action} برای پورت ${parsedPort}…`]);
     let operationSucceeded = true;
+    const operationLines = [];
     try {
       const token = localStorage.getItem('sana_access_token');
       const response = await fetch(`${apiClient.defaults.baseURL}/gps-monitor/ports/`, {
@@ -712,9 +713,11 @@ function TraccarPortManager() {
           if (!dataLine) continue;
           try {
             const item = JSON.parse(dataLine.slice(6));
+            operationLines.push(String(item.line || ''));
             if (String(item.line || '').startsWith('خطا:') || String(item.line || '').includes('عملیات ناموفق بود')) operationSucceeded = false;
             setLogs((previous) => [...previous, item.line]);
           } catch {
+            operationLines.push(dataLine.slice(6));
             setLogs((previous) => [...previous, dataLine.slice(6)]);
           }
         }
@@ -722,18 +725,22 @@ function TraccarPortManager() {
       }
     } catch (requestError) {
       operationSucceeded = false;
+      operationLines.push(`خطا: ${requestError.message || 'ارتباط با سرور برقرار نشد.'}`);
       setError(requestError.message || 'اجرای عملیات ناموفق بود.');
       setLogs((previous) => [...previous, `خطا: ${requestError.message || 'ارتباط با سرور برقرار نشد.'}`]);
     } finally {
       setBusy(false);
     }
-    return operationSucceeded;
+    return { success: operationSucceeded, lines: operationLines };
   };
 
-  const startCapture = async () => {
-    const started = await runOperation('capture-start');
-    if (!started) return;
-    setCaptureRunning(true);
+  const toggleCapture = async () => {
+    const result = await runOperation('capture-toggle');
+    if (!result?.success) return;
+    const started = result.lines.some((line) => line.includes('شروع شد'));
+    const stopped = result.lines.some((line) => line.includes('متوقف شد') || line.includes('فعال نیست'));
+    if (started) {
+      setCaptureRunning(true);
     setCaptureStreaming(true);
     const controller = new AbortController();
     captureAbortRef.current = controller;
@@ -770,14 +777,12 @@ function TraccarPortManager() {
       setCaptureStreaming(false);
       captureAbortRef.current = null;
     }
-  };
-
-  const stopCapture = async () => {
-    await runOperation('capture-stop');
-    captureAbortRef.current?.abort();
-    captureAbortRef.current = null;
-    setCaptureRunning(false);
-    setCaptureStreaming(false);
+    } else if (stopped) {
+      captureAbortRef.current?.abort();
+      captureAbortRef.current = null;
+      setCaptureRunning(false);
+      setCaptureStreaming(false);
+    }
   };
 
   return (
@@ -834,8 +839,7 @@ function TraccarPortManager() {
           </Button>
           <Button variant="secondary" disabled={busy || captureRunning} onClick={() => runOperation('status')}>بررسی شنونده پورت</Button>
           <Button variant="secondary" disabled={busy || captureRunning} onClick={() => runOperation('test')}>آزمون ترافیک ورودی (۲۰ ثانیه)</Button>
-          <Button disabled={busy || captureRunning} onClick={startCapture}>دریافت دیتای تست پورت {port}</Button>
-          <Button variant="danger" disabled={busy} onClick={stopCapture}>توقف رصد زنده</Button>
+          <Button variant={captureRunning ? 'danger' : 'primary'} disabled={busy} onClick={toggleCapture}>{captureRunning ? 'توقف رصد زنده' : `دریافت دیتای تست پورت ${port}`}</Button>
           <Button variant="secondary" disabled={busy} onClick={() => setLogs([])}>پاک‌کردن خروجی</Button>
         </div>
 
