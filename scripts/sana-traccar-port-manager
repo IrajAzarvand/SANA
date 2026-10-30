@@ -101,6 +101,13 @@ def status(port):
 def apply(port, protocol):
     if not PROTOCOL_RE.fullmatch(protocol):
         raise ValueError("شناسه داخلی مدل دستگاه نامعتبر است.")
+    _, active_pid_path = capture_paths(port)
+    try:
+        active_pid = int(active_pid_path.read_text(encoding="ascii").strip())
+    except (OSError, ValueError):
+        active_pid = None
+    if active_pid is not None and process_is_capture(active_pid):
+        raise RuntimeError("شنود آزمایشی این پورت هنوز فعال است؛ ابتدا همان کلید را برای توقف رصد بزنید.")
     tree, root, entries = read_config()
     target_key = f"{protocol}.port"
     current = entries.get(target_key, "")
