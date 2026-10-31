@@ -1,1 +1,1 @@
-"""Traccar integration: API client, device reconciliation, and position webhook."""
+"""Traccar REST API integration, device reconciliation, and position access."""

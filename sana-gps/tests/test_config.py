@@ -6,141 +6,66 @@ from app.config import AppConfig, ConfigurationError
 
 
 class AppConfigTests(unittest.TestCase):
-    def test_loads_transport_configuration_from_environment(self):
-        env = {
-            "SANA_GPS_TCP_PORT": "9100",
-            "SANA_GPS_UDP_PORT": "9101",
-            "SANA_GPS_CAPTURE_FILE": "/tmp/sana-gps-capture.log",
-            "SANA_GPS_GT06_CAPTURE_FILE": "/tmp/gt06-capture.log",
-            "SANA_GPS_DB_NAME": "sana_db",
-            "SANA_GPS_DB_USER": "sana_user",
-            "SANA_GPS_DB_PASSWORD": "secret",
-        }
-
-        with patch.dict(os.environ, env, clear=False):
-            config = AppConfig.from_env()
-
-        self.assertEqual(config.tcp_port, 9100)
-        self.assertEqual(config.udp_port, 9101)
-        self.assertEqual(config.capture_file, "/tmp/sana-gps-capture.log")
-        self.assertEqual(config.gt06_capture_file, "/tmp/gt06-capture.log")
-
-    def test_loads_transport_limits_from_environment(self):
-        env = {
-            "SANA_GPS_TCP_IDLE_TIMEOUT": "12.5",
-            "SANA_GPS_UDP_SESSION_TIMEOUT": "20",
-            "SANA_GPS_MAX_TCP_CONNECTIONS": "3",
-            "SANA_GPS_MAX_UDP_SESSIONS": "50",
-            "SANA_GPS_MAX_DATAGRAM_SIZE": "4096",
-            "SANA_GPS_DB_NAME": "sana_db",
-            "SANA_GPS_DB_USER": "sana_user",
-            "SANA_GPS_DB_PASSWORD": "secret",
-        }
-        with patch.dict(os.environ, env, clear=False):
-            config = AppConfig.from_env()
-        self.assertEqual(config.tcp_idle_timeout, 12.5)
-        self.assertEqual(config.udp_session_timeout, 20.0)
-        self.assertEqual(config.max_tcp_connections, 3)
-        self.assertEqual(config.max_udp_sessions, 50)
-        self.assertEqual(config.max_datagram_size, 4096)
-
-    def test_loads_database_configuration_from_environment(self):
+    def test_loads_database_and_traccar_configuration(self):
         env = {
             "SANA_GPS_DB_NAME": "sana_db",
             "SANA_GPS_DB_USER": "sana_user",
             "SANA_GPS_DB_PASSWORD": "secret",
-            "SANA_GPS_DB_POOL_MIN": "2",
-            "SANA_GPS_DB_POOL_MAX": "7",
+            "SANA_GPS_TRACCAR_API_URL": "http://127.0.0.1:8082/api/",
+            "SANA_GPS_TRACCAR_API_USERNAME": "api-user",
+            "SANA_GPS_TRACCAR_API_PASSWORD": "api-password",
+            "SANA_GPS_TRACCAR_SYNC_INTERVAL": "75",
+            "NESHAN_MAP_MATCHING_API_KEY": "server-only-test-key",
         }
-
-        with patch.dict(os.environ, env, clear=False):
+        with patch.dict(os.environ, env, clear=True):
             config = AppConfig.from_env()
-
         self.assertEqual(config.database.name, "sana_db")
         self.assertEqual(config.database.user, "sana_user")
-        self.assertEqual(config.database.pool_min_size, 2)
-        self.assertEqual(config.database.pool_max_size, 7)
+        self.assertEqual(config.traccar_api_url, "http://127.0.0.1:8082/api")
+        self.assertEqual(config.traccar_api_username, "api-user")
+        self.assertEqual(config.traccar_sync_interval, 75.0)
+        self.assertEqual(config.neshan_map_matching_api_key, "server-only-test-key")
 
-    def test_defaults_to_the_single_sana_user_database_login(self):
+    def test_defaults_to_single_sana_user_database_login(self):
         with patch.dict(os.environ, {"SANA_GPS_DB_NAME": "sana_db"}, clear=True):
             config = AppConfig.from_env()
-
         self.assertEqual(config.database.user, "sana_user")
         self.assertEqual(config.database.password, "sana_password_123")
 
-    def test_loads_optional_neshan_map_matching_key(self):
-        env = {
-            "SANA_GPS_DB_NAME": "sana_db",
-            "SANA_GPS_DB_USER": "sana_user",
-            "SANA_GPS_DB_PASSWORD": "secret",
-            "NESHAN_MAP_MATCHING_API_KEY": "server-only-test-key",
-        }
-        with patch.dict(os.environ, env, clear=False):
-            config = AppConfig.from_env()
-        self.assertEqual(config.neshan_map_matching_api_key, "server-only-test-key")
-
-    def test_empty_neshan_map_matching_key_disables_matching(self):
-        env = {
-            "SANA_GPS_DB_NAME": "sana_db",
-            "SANA_GPS_DB_USER": "sana_user",
-            "SANA_GPS_DB_PASSWORD": "secret",
-            "NESHAN_MAP_MATCHING_API_KEY": "   ",
-        }
-        with patch.dict(os.environ, env, clear=False):
+    def test_empty_neshan_key_disables_matching(self):
+        env = {"SANA_GPS_DB_NAME": "sana_db", "NESHAN_MAP_MATCHING_API_KEY": "   "}
+        with patch.dict(os.environ, env, clear=True):
             config = AppConfig.from_env()
         self.assertIsNone(config.neshan_map_matching_api_key)
 
-    def test_rejects_non_integer_database_port(self):
-        env = {
-            "SANA_GPS_DB_NAME": "sana_db",
-            "SANA_GPS_DB_USER": "sana_user",
-            "SANA_GPS_DB_PASSWORD": "secret",
-            "SANA_GPS_DB_PORT": "abc",
-        }
-
-        with patch.dict(os.environ, env, clear=False):
-            with self.assertRaisesRegex(
-                ConfigurationError, "SANA_GPS_DB_PORT must be an integer"
-            ):
+    def test_rejects_unpaired_traccar_credentials(self):
+        env = {"SANA_GPS_DB_NAME": "sana_db", "SANA_GPS_TRACCAR_API_USERNAME": "api-user"}
+        with patch.dict(os.environ, env, clear=True):
+            with self.assertRaisesRegex(ConfigurationError, "must be set together"):
                 AppConfig.from_env()
 
-    def test_rejects_non_finite_timeout(self):
-        env = {
-            "SANA_GPS_DB_NAME": "sana_db",
-            "SANA_GPS_DB_USER": "sana_user",
-            "SANA_GPS_DB_PASSWORD": "secret",
-            "SANA_GPS_TCP_IDLE_TIMEOUT": "nan",
-        }
+    def test_rejects_invalid_database_port(self):
+        env = {"SANA_GPS_DB_NAME": "sana_db", "SANA_GPS_DB_PORT": "abc"}
+        with patch.dict(os.environ, env, clear=True):
+            with self.assertRaisesRegex(ConfigurationError, "SANA_GPS_DB_PORT must be an integer"):
+                AppConfig.from_env()
 
-        with patch.dict(os.environ, env, clear=False):
-            with self.assertRaisesRegex(
-                ConfigurationError, "SANA_GPS_TCP_IDLE_TIMEOUT must be a finite number"
-            ):
+    def test_rejects_non_finite_traccar_interval(self):
+        env = {"SANA_GPS_DB_NAME": "sana_db", "SANA_GPS_TRACCAR_SYNC_INTERVAL": "nan"}
+        with patch.dict(os.environ, env, clear=True):
+            with self.assertRaisesRegex(ConfigurationError, "must be a finite number"):
                 AppConfig.from_env()
 
     def test_rejects_invalid_pool_range(self):
-        env = {
-            "SANA_GPS_DB_NAME": "sana_db",
-            "SANA_GPS_DB_USER": "sana_user",
-            "SANA_GPS_DB_PASSWORD": "secret",
-            "SANA_GPS_DB_POOL_MIN": "8",
-            "SANA_GPS_DB_POOL_MAX": "5",
-        }
-
-        with patch.dict(os.environ, env, clear=False):
-            with self.assertRaisesRegex(
-                ConfigurationError, "SANA_GPS_DB_POOL_MIN must not exceed"
-            ):
+        env = {"SANA_GPS_DB_NAME": "sana_db", "SANA_GPS_DB_POOL_MIN": "8", "SANA_GPS_DB_POOL_MAX": "5"}
+        with patch.dict(os.environ, env, clear=True):
+            with self.assertRaisesRegex(ConfigurationError, "must not exceed"):
                 AppConfig.from_env()
 
-    def test_rejects_business_or_migration_role_for_runtime(self):
-        env = {
-            "SANA_GPS_DB_NAME": "sana_db",
-            "SANA_GPS_DB_USER": "sana_migrator",
-            "SANA_GPS_DB_PASSWORD": "secret",
-        }
-        with patch.dict(os.environ, env, clear=False):
-            with self.assertRaisesRegex(ConfigurationError, "SANA_GPS_DB_USER must be 'sana_user'"):
+    def test_rejects_non_application_database_role(self):
+        env = {"SANA_GPS_DB_NAME": "sana_db", "SANA_GPS_DB_USER": "sana_migrator", "SANA_GPS_DB_PASSWORD": "secret"}
+        with patch.dict(os.environ, env, clear=True):
+            with self.assertRaisesRegex(ConfigurationError, "must be 'sana_user'"):
                 AppConfig.from_env()
 
 

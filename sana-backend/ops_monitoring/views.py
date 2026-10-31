@@ -119,21 +119,6 @@ class LiveLogStreamView(APIView):
         return response
 
 
-class GPSQueueView(APIView):
-    """Compatibility endpoint for a retired queue of unknown-device raw packets."""
-
-    permission_classes = [IsAuthenticated, IsSiteAdmin]
-
-    def get(self, request):
-        _require_admin(request)
-        # Unknown Traccar-only devices are intentionally not staged or retained by SANA.
-        return JsonResponse({
-            "results": [],
-            "count": 0,
-            "detail": "صف داده خام دستگاه‌های ناشناس حذف شده است؛ Traccar مرجع داده خام GPS است.",
-        })
-
-
 class TraccarPortOperationView(APIView):
     """Admin-only streamed operations for a validated Traccar listening port."""
 

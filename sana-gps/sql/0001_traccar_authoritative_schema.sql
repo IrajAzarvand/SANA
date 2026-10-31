@@ -1,6 +1,8 @@
--- SANA GPS schema migration 0011: Traccar is the only raw telemetry store.
--- Run after Django migrations and sql/0000_roles.sql; apply sql/0009_on_demand_map_matching.sql first.
--- This migration intentionally removes SANA's duplicate raw GPS tables.
+-- Canonical SANA GPS schema: Traccar owns all raw telemetry, positions, events,
+-- trips, and geofences. SANA stores only Neshan match results linked to Traccar
+-- position IDs, plus short-lived map viewer heartbeats.
+-- Run after Django migrations and sql/0000_roles.sql.
+-- This is safe for fresh databases and intentionally drops legacy duplicate GPS objects.
 BEGIN;
 SET ROLE sana_user;
 
@@ -20,8 +22,8 @@ DROP FUNCTION IF EXISTS gps.purge_device_data(BIGINT) CASCADE;
 DROP FUNCTION IF EXISTS gps.prevent_trip_number_change() CASCADE;
 DROP SEQUENCE IF EXISTS gps.trip_number_seq CASCADE;
 
--- Rebuild this table with the Traccar-position key; legacy deployments may have
--- used a different schema. The reset workflow intentionally discards old GPS rows.
+-- Rebuild the Neshan match table using Traccar's immutable position ID.
+-- The reset workflow intentionally discards old GPS rows.
 DROP TABLE IF EXISTS gps.map_matched_position CASCADE;
 
 -- Only road-matched coordinates and identifiers needed to associate them with

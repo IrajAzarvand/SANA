@@ -108,7 +108,7 @@ def analyze_unknown_sessions(
     *,
     max_session_bytes: int = 8192,
 ) -> list[dict[str, Any]]:
-    """Analyze existing UnknownGPSData rows in memory; never copies or mutates them."""
+    """Analyze supplied sample rows in memory; never copies or mutates them."""
     identifiers = tuple(str(value).strip() for value in registered_identifiers if str(value).strip())
     grouped: dict[str, list[Any]] = defaultdict(list)
     for row in rows:

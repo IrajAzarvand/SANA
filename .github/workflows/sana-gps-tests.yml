@@ -82,52 +82,31 @@ jobs:
           psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -f sql/0000_roles.sql
           psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -c "ALTER ROLE sana_user PASSWORD 'sana-test';"
 
-      - name: Install protocol registration function
-        env:
-          PGPASSWORD: postgres
-        run: psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -f sql/0002_detected_protocol_registration.sql
-
       - name: Create only the current GPS schema
         env:
           PGPASSWORD: postgres
         run: |
-          psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -f sql/0009_on_demand_map_matching.sql
-          psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -f sql/0011_traccar_authoritative_telemetry.sql
+          psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 -f sql/0001_traccar_authoritative_schema.sql
 
-      - name: Verify protocol registration remains restricted
+      - name: Verify application role can mirror protocol metadata from Traccar
         env:
           PGPASSWORD: postgres
         run: |
           psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 <<'SQL'
           INSERT INTO public.fleet_device
             (id, imei, management_status, protocol, device_model_id)
-          VALUES (1, '352094082143253', 'active', 'teltonika', NULL);
-          INSERT INTO public.fleet_devicemodel (id, manufacturer, name, code, protocol)
-          VALUES (1, 'Test', 'Future model', 'future-model', 'future-protocol');
-          INSERT INTO public.fleet_device (id, imei, management_status, protocol, device_model_id)
-          VALUES
-            (2, '352094082143254', 'warehouse', '', 1),
-            (3, '352094082143255', 'warehouse', '', NULL);
-          SELECT setval(pg_get_serial_sequence('public.fleet_device', 'id'), (SELECT max(id) FROM public.fleet_device));
+          VALUES (1, '352094082143253', 'active', '', NULL);
           SQL
           PGPASSWORD=sana-test psql -h 127.0.0.1 -U sana_user -d sana_test -v ON_ERROR_STOP=1 <<'SQL'
-          SELECT gps.register_detected_device_protocol(1, 'teltonika');
-          SELECT gps.register_detected_device_protocol(1, 'gt06');
-          SELECT gps.register_detected_device_protocol(2, 'future-protocol');
-          SELECT gps.register_detected_device_protocol(2, 'teltonika');
-          SELECT gps.register_detected_device_protocol(3, 'new-protocol');
+          UPDATE public.fleet_device
+          SET protocol = 'teltonika'
+          WHERE imei = '352094082143253';
           SQL
           psql -h 127.0.0.1 -U postgres -d sana_test -v ON_ERROR_STOP=1 <<'SQL'
           DO $$
           BEGIN
-            IF (SELECT protocol FROM public.fleet_device WHERE id = 2) <> 'future-protocol' THEN
-              RAISE EXCEPTION 'Detected protocol was not persisted for the model-compatible device';
-            END IF;
-            IF (SELECT protocol FROM public.fleet_device WHERE id = 3) <> 'new-protocol' THEN
-              RAISE EXCEPTION 'Generic future protocol was not persisted';
-            END IF;
             IF (SELECT protocol FROM public.fleet_device WHERE id = 1) <> 'teltonika' THEN
-              RAISE EXCEPTION 'Existing device protocol was overwritten';
+              RAISE EXCEPTION 'Traccar protocol metadata was not persisted';
             END IF;
           END
           $$;

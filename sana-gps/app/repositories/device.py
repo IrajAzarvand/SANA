@@ -1,108 +1,37 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from app.database.pool import DatabaseConnectionPool
 
 
-@dataclass(frozen=True, slots=True)
-class DeviceRecord:
-    id: int
-    imei: str
-    management_status: str
-    protocol: str
-    data_active: bool
-    device_model_id: int | None = None
-    # Canonical fleet_device.protocol, distinct from the model-preferred
-    # effective protocol exposed through the protocol field.
-    device_protocol: str = ""
-
-
 class DeviceRepository:
-    """Registered-device lookup plus a narrowly-scoped protocol auto-detection write.
-
-    Registration by IMEI is the sole business eligibility gate for receiving
-    telemetry. Management status and subscription assignment are intentionally
-    not consulted here: warehouse, lost, faulty, disconnected, and other
-    registered devices may still need to report their locations.
-
-    The only business-field write allowed to the GPS runtime is the conditional
-    protocol registration below. It never overwrites a non-empty device/model
-    protocol and is safe against concurrent first connections.
-    """
-
-    _SQL = """
-        SELECT d.id, d.imei, d.management_status,
-               COALESCE(NULLIF(BTRIM(dm.protocol), ''), NULLIF(BTRIM(d.protocol), ''), '') AS protocol,
-               d.device_model_id,
-               TRUE AS data_active,
-               COALESCE(d.protocol, '') AS device_protocol
-        FROM public.fleet_device AS d
-        LEFT JOIN public.fleet_devicemodel AS dm ON dm.id = d.device_model_id
-        WHERE d.imei = %s
-        LIMIT 1
-    """
-
-    _SET_DETECTED_PROTOCOL_SQL = """
-        SELECT gps.register_detected_device_protocol(%s, %s)
-    """
+    """Read SANA device identifiers and mirror protocol metadata reported by Traccar."""
 
     def __init__(self, pool: DatabaseConnectionPool) -> None:
         self._pool = pool
 
-    def find_by_imei(self, imei: str) -> DeviceRecord | None:
-        normalized_imei = imei.strip()
-        if not normalized_imei:
-            return None
-        with self._pool.connection() as connection:
-            row = connection.execute(self._SQL, (normalized_imei,)).fetchone()
-        if row is None:
-            return None
-        return DeviceRecord(
-            id=row[0],
-            imei=row[1],
-            management_status=row[2],
-            protocol=row[3] or "",
-            device_model_id=row[4],
-            data_active=bool(row[5]),
-            device_protocol=row[6] or "",
-        )
-
-    def set_detected_protocol(self, device_id: int, protocol: str) -> bool:
-        """Set a blank device protocol, or confirm an existing compatible value.
-
-        The conditional UPDATE is the concurrency boundary: if a different
-        protocol was configured or registered by another session first, no row
-        is returned and the handshake must not be accepted.
-        """
-        normalized_protocol = protocol.strip().lower()
-        if not normalized_protocol:
-            return False
-        with self._pool.connection() as connection:
-            row = connection.execute(
-                self._SET_DETECTED_PROTOCOL_SQL,
-                (device_id, normalized_protocol),
-            ).fetchone()
-        return bool(row and row[0])
-
     def find_all_identifiers(self) -> tuple[str, ...]:
-        """Return registered IMEIs for diagnostics without reading business data."""
+        """Return registered IMEIs; Traccar-only devices are never imported into SANA."""
         with self._pool.connection() as connection:
             rows = connection.execute(
                 "SELECT imei FROM public.fleet_device WHERE imei IS NOT NULL"
             ).fetchall()
         return tuple(row[0] for row in rows if row[0])
 
-    def find_unknown_protocol_identifiers(self) -> tuple[str, ...]:
-        """Return identifiers for devices whose model and device protocol are blank."""
-        sql = """
-            SELECT d.imei
-            FROM public.fleet_device AS d
-            LEFT JOIN public.fleet_devicemodel AS dm ON dm.id = d.device_model_id
-            WHERE d.imei IS NOT NULL
-              AND COALESCE(NULLIF(BTRIM(dm.protocol), ''),
-                           NULLIF(BTRIM(d.protocol), ''), '') = ''
-        """
+    def set_traccar_protocol(self, imei: str, protocol: str) -> bool:
+        """Mirror the protocol reported by a Traccar Position for a registered IMEI."""
+        normalized_imei = str(imei or "").strip()
+        normalized_protocol = str(protocol or "").strip().lower()
+        if not normalized_imei or not normalized_protocol or len(normalized_protocol) > 50:
+            return False
         with self._pool.connection() as connection:
-            rows = connection.execute(sql).fetchall()
-        return tuple(row[0] for row in rows if row[0])
+            row = connection.execute(
+                """
+                UPDATE public.fleet_device
+                SET protocol = %s
+                WHERE imei = %s
+                  AND protocol IS DISTINCT FROM %s
+                RETURNING id
+                """,
+                (normalized_protocol, normalized_imei, normalized_protocol),
+            ).fetchone()
+        return row is not None

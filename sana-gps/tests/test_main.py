@@ -8,11 +8,8 @@ from app.main import configure_logging, run
 
 
 @pytest.mark.asyncio
-async def test_run_starts_traccar_worker_without_legacy_gps_listeners():
+async def test_run_starts_traccar_and_map_matching_workers_without_sana_listeners():
     config = AppConfig(
-        host="127.0.0.1",
-        tcp_port=9000,
-        udp_port=9001,
         log_level="INFO",
         database=DatabaseConfig(name="sana_db", user="sana_user", password="secret"),
     )
@@ -23,25 +20,17 @@ async def test_run_starts_traccar_worker_without_legacy_gps_listeners():
     with (
         patch("app.main.DatabaseConnectionPool", return_value=database_pool),
         patch("app.main.run_map_matching_worker", new_callable=AsyncMock),
-        patch("app.main.TransportServer", create=True) as transport_server,
     ):
         result = await run(config, shutdown_event)
 
     assert result == 0
     database_pool.open.assert_called_once()
     database_pool.close.assert_called_once()
-    transport_server.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_run_rejects_missing_database_configuration():
-    config = AppConfig(
-        host="127.0.0.1",
-        tcp_port=9000,
-        udp_port=9001,
-        log_level="INFO",
-        database=None,
-    )
+    config = AppConfig(database=None)
     assert await run(config, asyncio.Event()) == 2
 
 
