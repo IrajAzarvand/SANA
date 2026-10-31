@@ -19,7 +19,6 @@ DROP TABLE IF EXISTS gps.raw_packet CASCADE;
 DROP TABLE IF EXISTS gps.traccar_unknown_device CASCADE;
 
 DROP FUNCTION IF EXISTS gps.purge_device_data(BIGINT) CASCADE;
-DROP FUNCTION IF EXISTS gps.register_detected_device_protocol(BIGINT, TEXT) CASCADE;
 DROP FUNCTION IF EXISTS gps.prevent_trip_number_change() CASCADE;
 DROP SEQUENCE IF EXISTS gps.trip_number_seq CASCADE;
 
