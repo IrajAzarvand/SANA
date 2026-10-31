@@ -35,7 +35,7 @@ DO $grants$
 BEGIN
     IF to_regclass('public.fleet_device') IS NOT NULL THEN
         EXECUTE 'GRANT REFERENCES (id) ON public.fleet_device TO sana_user';
-        EXECUTE 'GRANT SELECT (id, protocol, device_model_id) ON public.fleet_device TO sana_user';
+        EXECUTE 'GRANT SELECT (id, imei, protocol, device_model_id) ON public.fleet_device TO sana_user';
         EXECUTE 'GRANT UPDATE (protocol) ON public.fleet_device TO sana_user';
     END IF;
     IF to_regclass('public.fleet_devicemodel') IS NOT NULL THEN
