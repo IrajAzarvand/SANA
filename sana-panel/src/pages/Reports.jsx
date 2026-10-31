@@ -9,6 +9,7 @@ import Modal from '../components/Modal';
 import Badge from '../components/Badge';
 import EmptyState from '../components/EmptyState';
 import ReportCard from '../components/ReportCard';
+import apiClient from '../api/client';
 import {
   reportTypes,
   reportCategories,
