@@ -52,9 +52,12 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: |
-          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE sana_upgrade;"
-          psql -h 127.0.0.1 -U postgres -d sana_fresh -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis;"
-          psql -h 127.0.0.1 -U postgres -d sana_upgrade -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          for database in sana_upgrade sana_partial_0005 sana_partial_0008 sana_partial_0012; do
+            psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${database};"
+          done
+          for database in sana_fresh sana_upgrade sana_partial_0005 sana_partial_0008 sana_partial_0012; do
+            psql -h 127.0.0.1 -U postgres -d "${database}" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          done
       - name: Install Django backend dependencies
         run: |
           python -m pip install --upgrade pip
@@ -134,3 +137,80 @@ jobs:
                   assert cursor.fetchone()[0] is None, f"Retired table unexpectedly exists: {table}"
           print("Existing-install upgrade preserved device data and schema.")
           '
+
+      - name: Verify upgrades from partially applied historical migrations
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -Eeuo pipefail
+          squash="fleet/migrations/0003_squashed_0015_traccar_authoritative.py"
+          hidden="/tmp/0003_squashed_0015_traccar_authoritative.py"
+          restore_squash() {
+            if [[ -f "$hidden" && ! -f "$squash" ]]; then
+              mv "$hidden" "$squash"
+            fi
+          }
+          trap restore_squash EXIT
+          mv "$squash" "$hidden"
+
+          for target in 0005 0008 0012; do
+            case "$target" in
+              0005) database="sana_partial_0005" ;;
+              0008) database="sana_partial_0008" ;;
+              0012) database="sana_partial_0012" ;;
+            esac
+            echo "Preparing historical partial state: fleet $target on $database"
+            export DB_NAME="$database"
+            python manage.py migrate fleet "$target" --noinput
+
+            # Insert representative business data using only columns that exist
+            # at each historical checkpoint. This deliberately avoids current
+            # Django models, whose schema is newer than the partial database.
+            python - <<'PY'
+          import os
+          from django.db import connection
+          from django import setup
+          setup()
+          suffix = os.environ["DB_NAME"].rsplit("_", 1)[-1]
+          imei = f"352094082143{suffix}"
+          with connection.cursor() as cursor:
+              cursor.execute("""
+                  INSERT INTO fleet_devicemodel
+                      (manufacturer, name, code, protocol, created_at)
+                  VALUES ('CI', %s, %s, 'teltonika', NOW())
+                  RETURNING id
+              """, [f"Partial upgrade {suffix}", f"ci-partial-{suffix}"])
+              model_id = cursor.fetchone()[0]
+              cursor.execute("""
+                  INSERT INTO fleet_device
+                      (imei, sim_number, management_status, installed_at,
+                       created_at, updated_at, device_model_id)
+                  VALUES (%s, '', 'warehouse', NULL, NOW(), NOW(), %s)
+              """, [imei, model_id])
+          print(f"Created pre-upgrade device fixture {imei}")
+          PY
+          done
+
+          # Put the squash migration back before completing each upgrade. Django
+          # must recognize the partially applied replacement set and safely
+          # finish via the historical chain without losing existing rows.
+          restore_squash
+          for database in sana_partial_0005 sana_partial_0008 sana_partial_0012; do
+            export DB_NAME="$database"
+            python manage.py migrate --noinput
+            python manage.py makemigrations --check --dry-run
+            python manage.py shell -c '
+          import os
+          from django.db import connection
+          from fleet.models import Device
+          suffix = os.environ["DB_NAME"].rsplit("_", 1)[-1]
+          imei = f"352094082143{suffix}"
+          assert Device.objects.filter(imei=imei).count() == 1, f"Device data lost: {imei}"
+          with connection.cursor() as cursor:
+              for table in ("public.fleet_gpstelemetry", "public.fleet_unknowngpsdata"):
+                  cursor.execute("SELECT to_regclass(%s)", [table])
+                  assert cursor.fetchone()[0] is None, f"Retired table unexpectedly exists: {table}"
+          print(f"Partial upgrade preserved {imei}; retired GPS tables absent.")
+          '
+          done
+          unset DB_NAME
