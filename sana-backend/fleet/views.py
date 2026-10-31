@@ -415,7 +415,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
         for item in positions:
             try:
                 point_id = int(item['id'])
-                point_time = parse_datetime(item.get('fixTime') or item.get('deviceTime') or item.get('serverTime') or '')
+                # Device clocks may drift or reset when the internal battery fails; use Traccar receipt time as the canonical playback timeline.
+                point_time = parse_datetime(item.get('serverTime') or item.get('fixTime') or item.get('deviceTime') or '')
                 latitude = float(item['latitude'])
                 longitude = float(item['longitude'])
             except (KeyError, TypeError, ValueError):
