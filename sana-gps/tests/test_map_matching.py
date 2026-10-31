@@ -7,10 +7,30 @@ from app.processing.map_matching import (
     _valid_coordinate,
     has_active_map_matching_viewers,
     process_pending_map_matches,
+    _parse_position_time,
 )
 
 
 class MapMatchingTests(unittest.TestCase):
+    def test_map_matching_prefers_traccar_server_time(self):
+        from datetime import datetime, timezone
+
+        parsed = _parse_position_time({
+            "serverTime": "2026-10-21T07:05:00.000Z",
+            "fixTime": "2026-10-21T06:00:00.000Z",
+            "deviceTime": "2026-10-21T05:00:00.000Z",
+        })
+        self.assertEqual(parsed, datetime(2026, 10, 21, 7, 5, tzinfo=timezone.utc))
+
+    def test_map_matching_falls_back_when_server_time_is_missing(self):
+        from datetime import datetime, timezone
+
+        parsed = _parse_position_time({
+            "fixTime": "2026-10-21T06:00:00.000Z",
+            "deviceTime": "2026-10-21T05:00:00.000Z",
+        })
+        self.assertEqual(parsed, datetime(2026, 10, 21, 6, 0, tzinfo=timezone.utc))
+
     def test_rejects_invalid_coordinates(self):
         self.assertIsNone(_valid_coordinate(None, 51.4))
         self.assertIsNone(_valid_coordinate(91, 51.4))

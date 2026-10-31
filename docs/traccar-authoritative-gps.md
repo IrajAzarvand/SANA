@@ -3,11 +3,12 @@
 ## Runtime flow
 
 1. GPS devices send their supported protocol directly to Traccar.
-2. SANA registers/authorizes devices in its own fleet domain and periodically ensures each SANA-registered IMEI exists in Traccar.
-3. The SANA live-map API reads the latest positions from Traccar and filters them to devices the authenticated user is allowed to see.
-4. When at least one authenticated map session has a valid heartbeat in `gps.map_matching_watchers`, the GPS worker fetches recent Traccar positions and requests road matching from Neshan.
-5. SANA stores only the snapped coordinates and the identifiers required to associate a match with its Traccar position: `gps.map_matched_position`. It does not copy raw coordinates, speed, payloads, or position history into SANA.
-6. Watcher rows expire after missed heartbeats; when no unexpired watcher remains, the worker skips Traccar history polling and Neshan requests.
+2. SANA registers/authorizes devices in its own fleet domain and periodically reconciles registered IMEIs with Traccar devices.
+3. SANA's live-map and history APIs read positions from Traccar REST API and apply SANA's own authorization rules.
+4. When an authenticated map session has a valid heartbeat in `gps.map_matching_watchers`, the GPS worker polls recent Traccar positions and requests road matching from Neshan.
+5. SANA stores only Neshan's snapped coordinates and the identifiers needed to associate a match with a Traccar position in `gps.map_matched_position`; it does not copy raw coordinates, speed, payloads, or raw position history.
+6. Watcher rows expire after missed heartbeats; without an active watcher, the worker skips Traccar polling and Neshan requests.
+7. Traccar position Webhook delivery to SANA is not part of the active architecture; no SANA position-webhook receiver is deployed in the current code.
 
 ## Deliberately removed from the fresh SANA schema
 
