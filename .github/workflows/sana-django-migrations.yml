@@ -107,6 +107,7 @@ jobs:
       - name: Verify upgrade from the complete historical migration chain
         env:
           DB_NAME: sana_upgrade
+          PGPASSWORD: postgres
         run: |
           psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE sana_upgrade;"
           mv fleet/migrations/0003_squashed_0015_traccar_authoritative.py /tmp/0003_squashed_0015_traccar_authoritative.py
