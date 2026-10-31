@@ -5,6 +5,9 @@ import os
 import pwd
 import grp
 import re
+import select
+import signal
+import socket
 import shutil
 import subprocess
 import sys
@@ -17,6 +20,9 @@ CONFIG = Path("/opt/traccar/conf/traccar.xml")
 BACKUP_DIR = Path("/var/backups/sana-traccar")
 PORT_RE = re.compile(r"^[0-9]{1,5}$")
 PROTOCOL_RE = re.compile(r"^[a-z][a-z0-9_]{1,39}$")
+CAPTURE_DIR = Path("/var/log/sana-traccar-capture")
+PID_DIR = Path("/run/sana-traccar-capture")
+MAX_CAPTURE_BYTES = 4 * 1024 * 1024
 
 
 def emit(message):
@@ -356,18 +362,228 @@ def test(port):
     return 2
 
 
+
+def capture_paths(port):
+    return CAPTURE_DIR / f"{port}.log", PID_DIR / f"{port}.pid"
+
+
+def process_is_capture(pid):
+    try:
+        command = Path(f"/proc/{pid}/cmdline").read_bytes()
+        return b"_capture-worker" in command and b"sana-traccar-port-manager" in command
+    except (OSError, ProcessLookupError):
+        return False
+
+
+def capture_status(port):
+    _, pid_path = capture_paths(port)
+    try:
+        pid = int(pid_path.read_text(encoding="ascii").strip())
+    except (OSError, ValueError):
+        emit(f"شنود آزمایشی پورت {port} فعال نیست.")
+        return 1
+    if process_is_capture(pid):
+        emit(f"شنود آزمایشی پورت {port} فعال است (PID={pid}).")
+        return 0
+    emit("فایل وضعیت قدیمی است؛ پردازش شنود فعال پیدا نشد.")
+    try:
+        pid_path.unlink()
+    except OSError:
+        pass
+    return 1
+
+
+def capture_start(port):
+    log_path, pid_path = capture_paths(port)
+    CAPTURE_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    PID_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(CAPTURE_DIR, 0o700)
+    os.chmod(PID_DIR, 0o700)
+    if capture_status(port) == 0:
+        raise RuntimeError("شنود این پورت از قبل فعال است.")
+    tcp, udp = listener_status(port)
+    if tcp or udp:
+        raise RuntimeError(
+            "این پورت هم‌اکنون شنونده دارد؛ برای جلوگیری از تداخل، "
+            "یک پورت آزمایشی آزاد انتخاب کنید."
+        )
+    with open(log_path, "w", encoding="utf-8") as log_file:
+        os.chmod(log_path, 0o600)
+        process = subprocess.Popen(
+            [sys.executable, str(Path(__file__).resolve()), "_capture-worker", str(port)],
+            stdin=subprocess.DEVNULL, stdout=log_file, stderr=subprocess.STDOUT,
+            start_new_session=True, close_fds=True,
+        )
+    time.sleep(0.35)
+    if process.poll() is not None:
+        raise RuntimeError(f"شنود آزمایشی شروع نشد؛ لاگ را بررسی کنید: {log_path}")
+    pid_path.write_text(str(process.pid), encoding="ascii")
+    os.chmod(pid_path, 0o600)
+    emit(f"شنود آزمایشی TCP و UDP روی پورت {port} شروع شد.")
+    emit("داده خام فقط در فایل محدود و محافظت‌شده ثبت می‌شود؛ هیچ داده‌ای وارد جداول GPS سانا نمی‌شود.")
+    emit(f"مسیر لاگ روی سرور: {log_path}")
+    emit("برای پایان شنود، کلید «توقف رصد زنده» را بزنید.")
+    return 0
+
+
+def capture_stop(port):
+    _, pid_path = capture_paths(port)
+    try:
+        pid = int(pid_path.read_text(encoding="ascii").strip())
+    except (OSError, ValueError):
+        emit(f"شنود آزمایشی پورت {port} فعال نیست.")
+        return 0
+    if not process_is_capture(pid):
+        emit("پردازش شنود فعال نیست؛ فایل وضعیت پاک شد.")
+        pid_path.unlink(missing_ok=True)
+        return 0
+    os.kill(pid, signal.SIGTERM)
+    for _ in range(30):
+        if not process_is_capture(pid):
+            break
+        time.sleep(0.1)
+    if process_is_capture(pid):
+        os.kill(pid, signal.SIGKILL)
+    pid_path.unlink(missing_ok=True)
+    emit(f"شنود آزمایشی پورت {port} متوقف شد.")
+    return 0
+
+
+def capture_toggle(port):
+    if capture_status(port) == 0:
+        return capture_stop(port)
+    return capture_start(port)
+
+
+def capture_worker(port):
+    log_path, pid_path = capture_paths(port)
+    stopping = False
+    tcp_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    udp_server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    clients = {}
+    sockets = [tcp_server, udp_server]
+
+    def stop_handler(_signum, _frame):
+        nonlocal stopping
+        stopping = True
+
+    signal.signal(signal.SIGTERM, stop_handler)
+    signal.signal(signal.SIGINT, stop_handler)
+
+    def log(message):
+        print(f"{datetime.datetime.now().astimezone().isoformat(timespec='milliseconds')} {message}", flush=True)
+
+    def record(transport, remote, data):
+        if log_path.exists() and log_path.stat().st_size >= MAX_CAPTURE_BYTES:
+            log("LIMIT reached: سقف 4 MiB ثبت شد؛ شنود برای جلوگیری از رشد نامحدود متوقف می‌شود.")
+            return False
+        sample = data[:2048]
+        suffix = " [TRUNCATED]" if len(data) > len(sample) else ""
+        log(f"RAW transport={transport} remote={remote} length={len(data)} hex={sample.hex()}{suffix}")
+        return True
+
+    try:
+        tcp_server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        udp_server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        tcp_server.bind(("0.0.0.0", port))
+        udp_server.bind(("0.0.0.0", port))
+        tcp_server.listen(16)
+        tcp_server.setblocking(False)
+        udp_server.setblocking(False)
+        log(f"READY TCP+UDP 0.0.0.0:{port}")
+        log("منتظر اتصال TCP یا دیتاگرام UDP هستیم.")
+        while not stopping:
+            readable, _, exceptional = select.select(sockets, [], sockets, 1.0)
+            for current in exceptional:
+                if current in clients:
+                    clients.pop(current, None)
+                    sockets.remove(current)
+                    current.close()
+            for current in readable:
+                if current is tcp_server:
+                    connection, address = tcp_server.accept()
+                    connection.setblocking(False)
+                    clients[connection] = address
+                    sockets.append(connection)
+                    log(f"TCP CONNECT remote={address[0]}:{address[1]}")
+                elif current is udp_server:
+                    data, address = udp_server.recvfrom(65535)
+                    if not record("UDP", f"{address[0]}:{address[1]}", data):
+                        stopping = True
+                        break
+                else:
+                    data = current.recv(65535)
+                    address = clients.get(current, ("unknown", 0))
+                    if not data:
+                        log(f"TCP DISCONNECT remote={address[0]}:{address[1]}")
+                        sockets.remove(current)
+                        clients.pop(current, None)
+                        current.close()
+                    elif not record("TCP", f"{address[0]}:{address[1]}", data):
+                        stopping = True
+                        break
+    except Exception as exc:
+        log(f"CAPTURE ERROR {type(exc).__name__}: {exc}")
+        raise
+    finally:
+        for current in list(clients):
+            try:
+                current.close()
+            except OSError:
+                pass
+        tcp_server.close()
+        udp_server.close()
+        log("CAPTURE STOPPED")
+        try:
+            if pid_path.exists() and pid_path.read_text(encoding="ascii").strip() == str(os.getpid()):
+                pid_path.unlink()
+        except OSError:
+            pass
+    return 0
+
+
+def capture_tail(port):
+    log_path, _ = capture_paths(port)
+    CAPTURE_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if not log_path.exists():
+        log_path.touch(mode=0o600)
+    tail = shutil.which("tail")
+    if not tail:
+        raise RuntimeError("دستور tail روی سرور نصب نیست.")
+    process = subprocess.Popen(
+        [tail, "-n", "100", "-F", str(log_path)],
+        stdout=sys.stdout, stderr=sys.stderr, text=True, close_fds=True
+    )
+    try:
+        return process.wait()
+    finally:
+        if process.poll() is None:
+            process.terminate()
+
 def main():
     if os.geteuid() != 0:
         emit("این ابزار باید فقط از طریق sudo و واسط مجاز اجرا شود.")
         return 2
+    if len(sys.argv) >= 3 and sys.argv[1] == "_capture-worker":
+        return capture_worker(parse_port(sys.argv[2]))
     if len(sys.argv) < 3:
-        emit("استفاده: sana-traccar-port-manager status|diagnostics|restore|repair-permissions|test PORT یا apply PORT PROTOCOL")
+        emit("استفاده: sana-traccar-port-manager status|diagnostics|restore|repair-permissions|test|capture-toggle|capture-start|capture-stop|capture-status|capture-tail PORT یا apply PORT PROTOCOL")
         return 2
     action = sys.argv[1]
     try:
         port = parse_port(sys.argv[2])
         if action == "status" and len(sys.argv) == 3:
             return status(port)
+        if action == "capture-toggle" and len(sys.argv) == 3:
+            return capture_toggle(port)
+        if action == "capture-start" and len(sys.argv) == 3:
+            return capture_start(port)
+        if action == "capture-stop" and len(sys.argv) == 3:
+            return capture_stop(port)
+        if action == "capture-status" and len(sys.argv) == 3:
+            return capture_status(port)
+        if action == "capture-tail" and len(sys.argv) == 3:
+            return capture_tail(port)
         if action == "repair-permissions" and len(sys.argv) == 3:
             return repair_permissions()
         if action == "diagnostics" and len(sys.argv) == 3:
