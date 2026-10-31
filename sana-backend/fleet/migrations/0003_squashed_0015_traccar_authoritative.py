@@ -1,0 +1,336 @@
+# Squashed fleet migrations 0003 through 0015.
+#
+# Fresh installations get the final fleet schema directly. Historical GPS
+# telemetry tables and temporary free-text device fields are intentionally
+# absent. Existing databases that have applied the replaced migrations are
+# recognized by Django and do not rerun this migration.
+#
+# Keep the replaced migration files until every deployed database has crossed
+# this migration boundary; Django uses them for partially migrated databases.
+
+import django.db.models.deletion
+from django.db import migrations, models
+
+SOURCE_URL = "https://www.traccar.org/devices/"
+TRACCAR_VERSION = "6.16.0"
+
+# Models are taken from Traccar's published supported-device list.
+# Each protocol below was checked for a decoder in the Traccar v6.16.0 source.
+# Port is Traccar's documented default listener port, not a guarantee that the
+# live server uses that port (server configuration can override it).
+CATALOG = [
+    # Teltonika — teltonika / 5027
+    ("Teltonika", "FMB965", "teltonika", 5027),
+    ("Teltonika", "FMC920", "teltonika", 5027),
+    ("Teltonika", "FMM920", "teltonika", 5027),
+    ("Teltonika", "FMC003", "teltonika", 5027),
+    ("Teltonika", "FMM003", "teltonika", 5027),
+    ("Teltonika", "FMB150", "teltonika", 5027),
+    ("Teltonika", "FMC150", "teltonika", 5027),
+    ("Teltonika", "FMM150", "teltonika", 5027),
+    ("Teltonika", "FM1100", "teltonika", 5027),
+    ("Teltonika", "FM1110", "teltonika", 5027),
+    ("Teltonika", "FM1010", "teltonika", 5027),
+    ("Teltonika", "FM1120", "teltonika", 5027),
+    ("Teltonika", "FM1202", "teltonika", 5027),
+    ("Teltonika", "FM2100", "teltonika", 5027),
+    ("Teltonika", "FM2200", "teltonika", 5027),
+    ("Teltonika", "FM3001", "teltonika", 5027),
+    ("Teltonika", "FM3200", "teltonika", 5027),
+    ("Teltonika", "FM3612", "teltonika", 5027),
+    ("Teltonika", "FM36M1", "teltonika", 5027),
+    ("Teltonika", "FM4100", "teltonika", 5027),
+    ("Teltonika", "FM4200", "teltonika", 5027),
+    ("Teltonika", "FM5300", "teltonika", 5027),
+    ("Teltonika", "FM6320", "teltonika", 5027),
+    ("Teltonika", "GH3000", "teltonika", 5027),
+    ("Teltonika", "FM3300", "teltonika", 5027),
+    ("Teltonika", "CT2000E", "teltonika", 5027),
+    ("Teltonika", "FM1204", "teltonika", 5027),
+    ("Teltonika", "FM3622", "teltonika", 5027),
+    ("Teltonika", "FMB900", "teltonika", 5027),
+    ("Teltonika", "FMB920", "teltonika", 5027),
+    ("Teltonika", "FMT100", "teltonika", 5027),
+    ("Teltonika", "FMB001", "teltonika", 5027),
+    ("Teltonika", "FMB002", "teltonika", 5027),
+    ("Teltonika", "FMB010", "teltonika", 5027),
+    ("Teltonika", "FMB020", "teltonika", 5027),
+    ("Teltonika", "FMB110", "teltonika", 5027),
+    ("Teltonika", "FMB120", "teltonika", 5027),
+    ("Teltonika", "FMB122", "teltonika", 5027),
+    ("Teltonika", "FMB125", "teltonika", 5027),
+    ("Teltonika", "FMA110", "teltonika", 5027),
+    ("Teltonika", "FMA120", "teltonika", 5027),
+    ("Teltonika", "FMB202", "teltonika", 5027),
+    ("Teltonika", "FMB204", "teltonika", 5027),
+    ("Teltonika", "FMA202", "teltonika", 5027),
+    ("Teltonika", "FMA204", "teltonika", 5027),
+    ("Teltonika", "FMB630", "teltonika", 5027),
+    ("Teltonika", "FMB640", "teltonika", 5027),
+    ("Teltonika", "FMB962", "teltonika", 5027),
+    ("Teltonika", "FMB964", "teltonika", 5027),
+    ("Teltonika", "TMT250", "teltonika", 5027),
+    ("Teltonika", "FMC001", "teltonika", 5027),
+    ("Teltonika", "FMM001", "teltonika", 5027),
+    ("Teltonika", "FMC125", "teltonika", 5027),
+    ("Teltonika", "FMC130", "teltonika", 5027),
+    ("Teltonika", "FMC640", "teltonika", 5027),
+    ("Teltonika", "FMM125", "teltonika", 5027),
+    ("Teltonika", "FMM130", "teltonika", 5027),
+    ("Teltonika", "FMM640", "teltonika", 5027),
+    ("Teltonika", "FM6300", "teltonika", 5027),
+    ("Teltonika", "FMU125", "teltonika", 5027),
+    ("Teltonika", "FMU126", "teltonika", 5027),
+    ("Teltonika", "FMU130", "teltonika", 5027),
+    ("Teltonika", "FMB130", "teltonika", 5027),
+    ("Teltonika", "FMB140", "teltonika", 5027),
+    ("Teltonika", "MSP500", "teltonika", 5027),
+    ("Teltonika", "FMB003", "teltonika", 5027),
+    ("Teltonika", "MTB100", "teltonika", 5027),
+    ("Teltonika", "FMB208", "teltonika", 5027),
+    ("Teltonika", "TRB245", "teltonika", 5027),
+    ("Teltonika", "TRB255", "teltonika", 5027),
+    ("Teltonika", "RUT955", "teltonika", 5027),
+    ("Teltonika", "RUT956", "teltonika", 5027),
+    ("Teltonika", "RUTX09", "teltonika", 5027),
+    ("Teltonika", "RUTX11", "teltonika", 5027),
+    ("Teltonika", "RUTX12", "teltonika", 5027),
+    ("Teltonika", "RUTX14", "teltonika", 5027),
+    ("Teltonika", "RUTX50", "teltonika", 5027),
+    ("Teltonika", "TAT100", "teltonika", 5027),
+    ("Teltonika", "TAT140", "teltonika", 5027),
+    ("Teltonika", "FCM650", "teltonika", 5027),
+
+    # Concox / Jimi IoT — gt06 / 5023
+    ("Concox", "GT06N", "gt06", 5023),
+    ("Concox", "GT07", "gt06", 5023),
+    ("Concox", "GT09", "gt06", 5023),
+    ("Concox", "GT03", "gt06", 5023),
+    ("Concox", "GT03A", "gt06", 5023),
+    ("Concox", "GT03B", "gt06", 5023),
+    ("Concox", "GS503", "gt06", 5023),
+    ("Concox", "GT100", "gt06", 5023),
+    ("Concox", "GT06D", "gt06", 5023),
+    ("Concox", "GK301", "gt06", 5023),
+    ("Concox", "GK503", "gt06", 5023),
+    ("Concox", "GT02D", "gt06", 5023),
+    ("Concox", "CRX1", "gt06", 5023),
+    ("Concox", "CRX3", "gt06", 5023),
+    ("Concox", "JV200", "gt06", 5023),
+    ("Concox", "TR06", "gt06", 5023),
+    ("Concox", "JI09", "gt06", 5023),
+    ("Concox", "GT300", "gt06", 5023),
+    ("Concox", "GT230", "gt06", 5023),
+    ("Jimi IoT", "JM01", "gt06", 5023),
+    ("Jimi IoT", "JM08", "gt06", 5023),
+    ("Jimi IoT", "LL302", "gt06", 5023),
+    ("Jimi IoT", "LL303", "gt06", 5023),
+    ("Jimi IoT", "LL303PRO", "gt06", 5023),
+    ("Jimi IoT", "LL305", "gt06", 5023),
+    ("Jimi IoT", "LL305M", "gt06", 5023),
+    ("Jimi IoT", "LL701", "gt06", 5023),
+    ("Jimi IoT", "LL702", "gt06", 5023),
+    ("Jimi IoT", "LL704", "gt06", 5023),
+    ("Jimi IoT", "LL705", "gt06", 5023),
+    ("Jimi IoT", "LL309", "gt06", 5023),
+    ("Jimi IoT", "LL706", "gt06", 5023),
+    ("Jimi IoT", "LL708", "gt06", 5023),
+    ("Jimi IoT", "VL103M", "gt06", 5023),
+
+    # Other clearly identified manufacturers/models from the official list
+    ("Queclink", "GL100", "gl100", 5003),
+    ("Queclink", "GL100M", "gl200", 5004),
+    ("Queclink", "GL200", "gl200", 5004),
+    ("Queclink", "GV300", "gl200", 5004),
+    ("Queclink", "GV300N", "gl200", 5004),
+    ("Queclink", "GV300VC", "gl200", 5004),
+    ("Queclink", "GV500", "gl200", 5004),
+    ("Queclink", "GV55", "gl200", 5004),
+    ("Queclink", "GV65", "gl200", 5004),
+    ("Queclink", "GV75", "gl200", 5004),
+    ("Suntech", "ST200", "suntech", 5011),
+    ("Suntech", "ST210", "suntech", 5011),
+    ("Suntech", "ST215", "suntech", 5011),
+    ("Suntech", "ST215I", "suntech", 5011),
+    ("Suntech", "ST215E", "suntech", 5011),
+    ("Suntech", "ST240", "suntech", 5011),
+    ("Suntech", "ST230", "suntech", 5011),
+    ("Suntech", "ST410", "suntech", 5011),
+    ("Suntech", "ST900", "suntech", 5011),
+    ("Suntech", "ST910", "suntech", 5011),
+    ("Meitrack", "MT80", "meitrack", 5020),
+    ("Meitrack", "MT80i", "meitrack", 5020),
+    ("Meitrack", "MT88", "meitrack", 5020),
+    ("Meitrack", "MT90", "meitrack", 5020),
+    ("Meitrack", "KT90", "meitrack", 5020),
+    ("Meitrack", "MVT100", "meitrack", 5020),
+    ("Meitrack", "MVT340", "meitrack", 5020),
+    ("Meitrack", "MVT380", "meitrack", 5020),
+    ("Meitrack", "MVT600", "meitrack", 5020),
+    ("Meitrack", "MVT800", "meitrack", 5020),
+    ("Ruptela", "FM-Pro3-R", "ruptela", 5046),
+    ("Ruptela", "FM-Tco3", "ruptela", 5046),
+    ("Ruptela", "FM-Pro3", "ruptela", 5046),
+    ("Ruptela", "FM-Eco3", "ruptela", 5046),
+    ("Ruptela", "Trailer Tracker", "ruptela", 5046),
+    ("Ruptela", "FM-ECO 4", "ruptela", 5046),
+    ("TopFlyTech", "T8803", "topflytech", 5047),
+    ("TopFlyTech", "T8801", "topflytech", 5047),
+    ("TopFlyTech", "T8901", "topflytech", 5047),
+    ("ATrack", "AT1Pro", "atrack", 5044),
+    ("ATrack", "AT5i", "atrack", 5044),
+    ("ATrack", "AU5i", "atrack", 5044),
+    ("ATrack", "AX5", "atrack", 5044),
+    ("ATrack", "AY5i", "atrack", 5044),
+    ("ATrack", "AT3", "atrack", 5044),
+    ("ATrack", "AT5", "atrack", 5044),
+    ("ATrack", "AU5", "atrack", 5044),
+    ("ATrack", "AY5", "atrack", 5044),
+    ("ATrack", "AX5C", "atrack", 5044),
+    ("ATrack", "AK7V", "atrack", 5044),
+    ("ATrack", "AS1", "atrack", 5044),
+    ("ATrack", "AS11", "atrack", 5044),
+    ("ATrack", "AK1", "atrack", 5044),
+    ("ATrack", "AK11", "atrack", 5044),
+    ("ATrack", "AK7S", "atrack", 5044),
+    ("ATrack", "AL1", "atrack", 5044),
+    ("ATrack", "AL11", "atrack", 5044),
+    ("ATrack", "AL7", "atrack", 5044),
+    ("ATrack", "AP1", "atrack", 5044),
+    ("ATrack", "AS3", "atrack", 5044),
+    ("ATrack", "AU7", "atrack", 5044),
+    ("ATrack", "AX7", "atrack", 5044),
+    ("ATrack", "AX7P", "atrack", 5044),
+    ("ATrack", "AX9", "atrack", 5044),
+    ("ATrack", "AX11", "atrack", 5044),
+]
+
+
+def seed_catalog(apps, schema_editor):
+    DeviceModel = apps.get_model("fleet", "DeviceModel")
+    for manufacturer, name, protocol, port in CATALOG:
+        DeviceModel.objects.update_or_create(
+            manufacturer=manufacturer,
+            name=name,
+            traccar_version=TRACCAR_VERSION,
+            defaults={
+                "code": f"{manufacturer.lower().replace(' ', '-')}-{name.lower().replace(' ', '-')}",
+                "protocol": protocol,
+                "port": port,
+                "source_url": SOURCE_URL,
+                "is_verified": True,
+            },
+        )
+
+
+def unseed_catalog(apps, schema_editor):
+    DeviceModel = apps.get_model("fleet", "DeviceModel")
+    pairs = [(manufacturer, name) for manufacturer, name, _, _ in CATALOG]
+    for manufacturer, name in pairs:
+        DeviceModel.objects.filter(
+            manufacturer=manufacturer,
+            name=name,
+            traccar_version=TRACCAR_VERSION,
+        ).delete()
+
+
+
+class Migration(migrations.Migration):
+    replaces = [
+        ("fleet", "0003_drivervehicleassignment"),
+        ("fleet", "0004_device_protocol_optional_model"),
+        ("fleet", "0005_gpstelemetry"),
+        ("fleet", "0006_gpstelemetry_normalized"),
+        ("fleet", "0007_rename_fleet_drive_driver_i_7a0d2f_idx_fleet_drive_driver__66f323_idx_and_more"),
+        ("fleet", "0008_gpstelemetry_fleet_gps_device_received_idx_and_more"),
+        ("fleet", "0009_unknowngpsdata"),
+        ("fleet", "0010_device_brand_model_name"),
+        ("fleet", "0011_remove_device_brand_model_name"),
+        ("fleet", "0012_device_model_traccar_catalog"),
+        ("fleet", "0013_alter_devicemodel_protocol"),
+        ("fleet", "0014_remove_duplicate_gps_storage"),
+        ("fleet", "0015_device_protocol_from_traccar"),
+    ]
+
+    dependencies = [
+        ("fleet", "0002_initial"),
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name="DriverVehicleAssignment",
+            fields=[
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("started_at", models.DateTimeField(verbose_name="شروع تخصیص")),
+                ("ended_at", models.DateTimeField(blank=True, null=True, verbose_name="پایان تخصیص")),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("driver", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="vehicle_assignments", to="fleet.driver", verbose_name="راننده")),
+                ("vehicle", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="driver_assignments", to="fleet.vehicle", verbose_name="خودرو")),
+            ],
+            options={
+                "verbose_name": "تخصیص راننده به خودرو",
+                "verbose_name_plural": "تخصیص‌های راننده به خودرو",
+                "ordering": ["-started_at", "-id"],
+                "indexes": [
+                    models.Index(fields=["driver", "started_at", "ended_at"], name="fleet_drive_driver__66f323_idx"),
+                    models.Index(fields=["vehicle", "started_at", "ended_at"], name="fleet_drive_vehicle_1a6d4e_idx"),
+                ],
+            },
+        ),
+        migrations.AlterField(
+            model_name="device",
+            name="device_model",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="devices",
+                to="fleet.devicemodel",
+                verbose_name="مدل دستگاه",
+            ),
+        ),
+        migrations.AddField(
+            model_name="device",
+            name="protocol",
+            field=models.CharField(blank=True, default="", max_length=50, verbose_name="پروتکل گزارش‌شده توسط Traccar",
+                help_text="از فیلد protocol آخرین موقعیت دریافت‌شده از Traccar به‌روزرسانی می‌شود."),
+        ),
+        migrations.AlterField(
+            model_name='devicelifecycleevent',
+            name='event_type',
+            field=models.CharField(choices=[('received', 'دریافت در سانا'), ('sold', 'فروش'), ('assigned_to_contract', 'اتصال به قرارداد'), ('removed_from_contract', 'خروج از قرارداد'), ('returned', 'بازگشت به سانا'), ('sent_to_repair', 'ارسال برای تعمیر'), ('repaired', 'اتمام تعمیر'), ('replaced', 'تعویض'), ('transferred', 'انتقال'), ('lost', 'گم\u200cشدن'), ('found', 'پیدا شدن'), ('disposition', 'تعیین تکلیف'), ('stolen', 'سرقت'), ('retired', 'بازنشستگی'), ('disposed', 'امحاء')], max_length=30, verbose_name='نوع رویداد'),
+        ),
+        migrations.AddField(
+            model_name="devicemodel",
+            name="port",
+            field=models.PositiveIntegerField(blank=True, null=True, verbose_name="پورت پیش‌فرض Traccar"),
+        ),
+        migrations.AddField(
+            model_name="devicemodel",
+            name="traccar_version",
+            field=models.CharField(default="6.16.0", max_length=20, verbose_name="نسخه Traccar"),
+        ),
+        migrations.AddField(
+            model_name="devicemodel",
+            name="source_url",
+            field=models.URLField(blank=True, default="", max_length=300, verbose_name="منبع"),
+        ),
+        migrations.AddField(
+            model_name="devicemodel",
+            name="is_verified",
+            field=models.BooleanField(default=False, verbose_name="پشتیبانی نسخه تأیید شده"),
+        ),
+        migrations.AddConstraint(
+            model_name="devicemodel",
+            constraint=models.UniqueConstraint(
+                fields=("manufacturer", "name", "traccar_version"),
+                name="fleet_dmodel_brand_ver_uniq",
+            ),
+        ),
+        migrations.AlterField(
+            model_name="devicemodel",
+            name="protocol",
+            field=models.CharField(max_length=50, verbose_name="پروتکل Traccar"),
+        ),
+        migrations.RunPython(seed_catalog, unseed_catalog),
+    ]
