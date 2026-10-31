@@ -52,6 +52,7 @@ jobs:
         env:
           PGPASSWORD: postgres
         run: |
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE sana_upgrade;"
           psql -h 127.0.0.1 -U postgres -d sana_fresh -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis;"
           psql -h 127.0.0.1 -U postgres -d sana_upgrade -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis;"
       - name: Install Django backend dependencies
