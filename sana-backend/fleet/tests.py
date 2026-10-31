@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from urllib.error import HTTPError, URLError
 from unittest.mock import MagicMock, patch
 
 from django.test import SimpleTestCase, override_settings
@@ -126,3 +127,31 @@ class TraccarPositionTimestampTests(SimpleTestCase):
         result = traccar_position_timestamp(position)
 
         self.assertEqual(result.isoformat(), "2026-10-31T07:58:00+00:00")
+
+
+class TraccarAPIClientFailureTests(SimpleTestCase):
+    @patch("fleet.traccar_api.urlopen")
+    def test_http_error_is_converted_to_safe_api_error(self, urlopen):
+        urlopen.side_effect = HTTPError(
+            "http://127.0.0.1:8082/api/devices", 401, "Unauthorized", {}, None
+        )
+
+        with self.assertRaisesRegex(TraccarAPIError, "HTTP 401"):
+            traccar_devices()
+
+    @patch("fleet.traccar_api.urlopen")
+    def test_invalid_json_is_converted_to_api_error(self, urlopen):
+        response = MagicMock()
+        response.read.return_value = b"{not-json"
+        response.__enter__.return_value = response
+        urlopen.return_value = response
+
+        with self.assertRaisesRegex(TraccarAPIError, "JSONDecodeError"):
+            traccar_devices()
+
+    @patch("fleet.traccar_api.urlopen")
+    def test_network_error_is_converted_to_api_error(self, urlopen):
+        urlopen.side_effect = URLError("connection refused")
+
+        with self.assertRaisesRegex(TraccarAPIError, "URLError"):
+            traccar_devices()
