@@ -91,7 +91,7 @@ def has_active_map_matching_viewers(pool: DatabaseConnectionPool) -> bool:
 
 
 def _parse_position_time(position: dict) -> datetime | None:
-    for key in ("fixTime", "deviceTime", "serverTime"):
+    for key in ("serverTime", "fixTime", "deviceTime"):
         value = position.get(key)
         if not isinstance(value, str) or not value:
             continue
