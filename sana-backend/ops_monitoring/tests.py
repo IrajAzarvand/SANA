@@ -1,3 +1,4 @@
+import io
 from django.contrib.auth import get_user_model
 from unittest.mock import patch
 
@@ -149,3 +150,76 @@ class TraccarPortManagementPermissionsTests(GPSMonitoringPermissionsTests):
             self.assertEqual(response["Content-Type"], "text/event-stream")
             output = "".join(response.streaming_content)
         self.assertIn("sudo", output)
+
+
+class TraccarRawCapturePermissionsTests(GPSMonitoringPermissionsTests):
+
+    def test_capture_toggle_is_admin_only_and_invokes_the_fixed_helper(self):
+        self.client.force_authenticate(user=self.site_admin)
+
+        class FakeProcess:
+            stdout = io.StringIO("شنود آزمایشی TCP و UDP شروع شد.\n")
+            def wait(self, timeout=None):
+                return 0
+            def poll(self):
+                return 0
+            def terminate(self):
+                pass
+            def kill(self):
+                pass
+
+        with patch("ops_monitoring.views.shutil.which", return_value="/usr/bin/sudo"), patch(
+            "ops_monitoring.views.subprocess.Popen", return_value=FakeProcess()
+        ) as popen:
+            response = self.client.post(
+                "/api/gps-monitor/ports/",
+                {"action": "capture-toggle", "port": 9027},
+                format="json",
+                HTTP_ACCEPT="text/event-stream",
+            )
+            output = "".join(response.streaming_content)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("شنود آزمایشی TCP و UDP شروع شد", output)
+        command = popen.call_args.args[0]
+        self.assertEqual(command[-2:], ["capture-toggle", "9027"])
+        self.assertIn("/usr/local/sbin/sana-traccar-port-manager", command)
+
+    def test_capture_log_stream_is_admin_only(self):
+        self.client.force_authenticate(user=self.regular_user)
+        response = self.client.get(
+            "/api/gps-monitor/ports/capture/9027/",
+            HTTP_ACCEPT="text/event-stream",
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_capture_log_streams_from_the_fixed_helper(self):
+        self.client.force_authenticate(user=self.site_admin)
+
+        class FakeProcess:
+            stdout = io.StringIO("RAW transport=UDP hex=010203\n")
+            def terminate(self):
+                pass
+            def wait(self, timeout=None):
+                return 0
+            def kill(self):
+                pass
+
+        with patch("ops_monitoring.views.shutil.which", return_value="/usr/bin/sudo"), patch(
+            "ops_monitoring.views.subprocess.Popen", return_value=FakeProcess()
+        ) as popen:
+            response = self.client.get(
+                "/api/gps-monitor/ports/capture/9027/",
+                HTTP_ACCEPT="text/event-stream",
+            )
+            output = "".join(response.streaming_content)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("RAW transport=UDP", output)
+        self.assertIn("capture-tail", popen.call_args.args[0])
+
+    def test_capture_rejects_invalid_port(self):
+        self.client.force_authenticate(user=self.site_admin)
+        response = self.client.get(
+            "/api/gps-monitor/ports/capture/80/",
+            HTTP_ACCEPT="text/event-stream",
+        )
+        self.assertEqual(response.status_code, 400)
