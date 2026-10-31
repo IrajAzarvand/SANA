@@ -1,0 +1,130 @@
+name: SANA Django migrations
+
+on:
+  pull_request:
+    paths:
+      - "sana-backend/**"
+      - "scripts/reset_sana_db.sh"
+      - ".github/workflows/sana-django-migrations.yml"
+
+jobs:
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sana_fresh
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sana_fresh"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: sana-backend
+    env:
+      SECRET_KEY: ci-only-not-a-secret
+      DEBUG: "True"
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      DB_NAME: sana_fresh
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      TRACCAR_API_URL: http://127.0.0.1:8082/api
+      TRACCAR_API_USERNAME: ci
+      TRACCAR_API_PASSWORD: ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install system GIS dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils gdal-bin libgdal-dev libgeos-dev libproj-dev
+      - name: Install Django backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install \
+            "Django==6.1.1" \
+            psycopg2-binary \
+            djangorestframework \
+            djangorestframework-simplejwt \
+            django-cors-headers \
+            django-filter \
+            drf-spectacular \
+            python-decouple \
+            django-jalali \
+            Pillow \
+            requests
+      - name: Apply migrations to a clean PostGIS database
+        run: python manage.py migrate --noinput
+      - name: Verify migration state matches current models
+        run: python manage.py makemigrations --check --dry-run
+      - name: Run complete Django backend test suite
+        run: python manage.py test --verbosity 2
+      - name: Verify fresh schema excludes retired GPS tables
+        run: |
+          python manage.py shell -c '
+          from django.db import connection
+          required = [
+              "public.fleet_device",
+              "public.fleet_devicemodel",
+              "public.fleet_drivervehicleassignment",
+              "public.organizations_organization",
+              "public.organizations_branch",
+              "public.organizations_subscription",
+              "public.accounts_user",
+          ]
+          forbidden = [
+              "public.fleet_gpstelemetry",
+              "public.fleet_unknowngpsdata",
+          ]
+          with connection.cursor() as cursor:
+              for table in required:
+                  cursor.execute("SELECT to_regclass(%s)", [table])
+                  assert cursor.fetchone()[0], f"Missing required table: {table}"
+              for table in forbidden:
+                  cursor.execute("SELECT to_regclass(%s)", [table])
+                  assert cursor.fetchone()[0] is None, f"Retired table unexpectedly exists: {table}"
+              cursor.execute("SELECT COUNT(*) FROM public.fleet_devicemodel")
+              assert cursor.fetchone()[0] > 0, "Traccar device-model catalog was not seeded"
+          print("Fresh schema and Traccar catalog verified.")
+          '
+      - name: Verify upgrade from the complete historical migration chain
+        env:
+          DB_NAME: sana_upgrade
+        run: |
+          psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE sana_upgrade;"
+          mv fleet/migrations/0003_squashed_0015_traccar_authoritative.py /tmp/0003_squashed_0015_traccar_authoritative.py
+          python manage.py migrate --noinput
+          python manage.py shell -c '
+          from fleet.models import Device, DeviceModel
+          model = DeviceModel.objects.create(
+              manufacturer="CI",
+              name="Upgrade fixture",
+              code="ci-upgrade-fixture",
+              protocol="teltonika",
+          )
+          Device.objects.create(imei="352094082143253", device_model=model)
+          '
+          mv /tmp/0003_squashed_0015_traccar_authoritative.py fleet/migrations/0003_squashed_0015_traccar_authoritative.py
+          python manage.py migrate --noinput
+          python manage.py makemigrations --check --dry-run
+          python manage.py shell -c '
+          from django.db import connection
+          from fleet.models import Device
+          assert Device.objects.filter(imei="352094082143253").count() == 1
+          with connection.cursor() as cursor:
+              for table in ("public.fleet_gpstelemetry", "public.fleet_unknowngpsdata"):
+                  cursor.execute("SELECT to_regclass(%s)", [table])
+                  assert cursor.fetchone()[0] is None, f"Retired table unexpectedly exists: {table}"
+          print("Existing-install upgrade preserved device data and schema.")
+          '
