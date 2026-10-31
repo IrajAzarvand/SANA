@@ -127,12 +127,14 @@ class Device(models.Model):
         related_name='devices',
         verbose_name='مدل دستگاه'
     )
-    # پروتکل واقعی از روی ارتباط اولیه دستگاه تشخیص داده و توسط سرویس GPS ثبت می‌شود.
+    # Actual protocol is mirrored from Traccar Position.protocol; the selected
+    # DeviceModel catalog protocol is only a fallback before the first position.
     protocol = models.CharField(
         max_length=50,
         blank=True,
         default='',
-        verbose_name='پروتکل شناسایی‌شده'
+        verbose_name='پروتکل گزارش‌شده توسط Traccar',
+        help_text='از فیلد protocol آخرین موقعیت دریافت‌شده از Traccar به‌روزرسانی می‌شود.',
     )
 
     # مالکیت — یکی از این دو

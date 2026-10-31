@@ -171,15 +171,13 @@ command -v sudo >/dev/null || die "sudo نصب نیست."
 command -v psql >/dev/null || die "psql پیدا نشد."
 command -v systemctl >/dev/null || die "systemctl پیدا نشد."
 
-# 0000_roles.sql پیش از migrationهای Django اجرا می‌شود. پس از migrationها،
-# فقط SQLهای watcher و جدول نتیجه تطبیق Traccar اجرا می‌شوند؛ schema قدیمی GPS
-# و جدول‌های کپی تله‌متری عمداً ساخته نمی‌شوند.
-# Fresh databases create only the watcher registry and the Traccar-linked
-# Neshan match table. Legacy SQL files remain for historical reference but are
-# deliberately not applied by this reset script.
+# 0000_roles.sql پیش از migrationهای Django اجرا می‌شود. پس از آن فقط یک
+# schema SQL رسمی اجرا می‌شود که جدول‌های Neshan Map Matching را می‌سازد و
+# ساختارهای خام/تاریخچه GPS قدیمی را باقی نمی‌گذارد.
+# زنجیره Migrationهای تاریخی Django در مرحله مستقل بازبینی Migrationها پاک‌سازی
+# می‌شود؛ تا آن زمان graph موجود بدون fake کردن اجرا خواهد شد.
 SQL_FILES=(
-    "0009_on_demand_map_matching.sql"
-    "0011_traccar_authoritative_telemetry.sql"
+    "0001_traccar_authoritative_schema.sql"
 )
 
 for file in "${SQL_FILES[@]}"; do
@@ -191,7 +189,7 @@ echo
 echo "⚠️ هشدار: این عملیات دیتابیس '$DB_NAME' را کامل حذف می‌کند."
 echo "تمام کاربران، داده‌های GPS و اطلاعات داخل آن پاک خواهند شد."
 echo "تمام جدول‌های دیتابیس همراه خود دیتابیس حذف و بر اساس migrationهای فعلی و SQLهای GPS بازسازی می‌شوند."
-echo "معماری GPS: Traccar منبع داده خام است؛ سانا فقط نتیجه تطبیق Neshan و نشست‌های فعال نقشه را نگه می‌دارد."
+echo "معماری GPS: Traccar تنها مرجع داده خام است؛ سانا فقط نتایج Neshan و نشست‌های فعال نقشه را نگه می‌دارد. دریافت آزمایشی پورت صرفاً ابزار موقت ادمین است."
 echo "تنظیم مجوز پایش زنده شبکه در لینوکس مستقل است و در این عملیات دست‌کاری نمی‌شود."
 echo
 

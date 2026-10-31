@@ -1,6 +1,6 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FileBarChart, Calendar, Terminal, Radio, Activity, RefreshCw, Pause, Play, Trash2, ShieldCheck, Wifi, AlertCircle } from 'lucide-react';
+import { FileBarChart, Calendar, Terminal, Radio, Pause, Play, Trash2, ShieldCheck } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -9,6 +9,7 @@ import Modal from '../components/Modal';
 import Badge from '../components/Badge';
 import EmptyState from '../components/EmptyState';
 import ReportCard from '../components/ReportCard';
+import apiClient from '../api/client';
 import {
   reportTypes,
   reportCategories,
@@ -16,7 +17,6 @@ import {
   sampleTripsReport,
 } from '../data/reportsData';
 import { useAuth } from '../context/AuthContext';
-import apiClient from '../api/client';
 
 // گزارش‌های مخصوص ادمین
 const adminReports = [
@@ -188,7 +188,7 @@ function LiveTerminal({ streamName, title, description, icon: Icon, accent }) {
         {lines.length === 0 && !error && (
           <div className="text-slate-500">
             <p>{running ? 'در انتظار دریافت لاگ...' : 'نمایش متوقف شده است.'}</p>
-            <p className="mt-1 text-slate-600">$ {streamName === 'service' ? 'journalctl -u sana-gps -f' : 'tcpdump -i any (tcp port 9000) or (udp port 9001)'}</p>
+            <p className="mt-1 text-slate-600">$ {streamName === 'service' ? 'journalctl -u sana-gps -f' : 'sudo /usr/local/sbin/sana-gps-network-capture'}</p>
           </div>
         )}
         {error && <p className="mb-2 whitespace-pre-wrap text-rose-300">خطا: {error}</p>}
@@ -208,103 +208,6 @@ function LiveTerminal({ streamName, title, description, icon: Icon, accent }) {
   );
 }
 
-function GPSQueueMonitor() {
-  const [items, setItems] = useState([]);
-  const [filter, setFilter] = useState('all');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [updatedAt, setUpdatedAt] = useState(null);
-
-  const refresh = useCallback(async () => {
-    try {
-      const response = await apiClient.get('/gps-monitor/queue/', { params: { status: filter }, timeout: 10000 });
-      setItems(response.data.results || []);
-      setUpdatedAt(new Date());
-      setError('');
-    } catch (err) {
-      setError(err.response?.data?.detail || 'دریافت صف موقت GPS ناموفق بود.');
-    } finally {
-      setLoading(false);
-    }
-  }, [filter]);
-
-  useEffect(() => {
-    const initialRefresh = window.setTimeout(() => {
-      refresh();
-    }, 0);
-    const timer = window.setInterval(refresh, 3000);
-    return () => {
-      window.clearTimeout(initialRefresh);
-      window.clearInterval(timer);
-    };
-  }, [refresh]);
-
-  return (
-    <section className="overflow-hidden rounded-2xl border border-border-base bg-bg-elevated shadow-sm">
-      <div className="flex flex-col gap-3 border-b border-border-base p-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-500"><Activity size={19} /></div>
-          <div>
-            <h3 className="font-semibold text-text-primary">بسته‌های ورودی GPS شناسایی‌شده</h3>
-            <p className="mt-1 text-xs leading-5 text-text-muted">صف داده‌های خام موقت؛ به‌روزرسانی خودکار هر ۳ ثانیه</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <select aria-label="فیلتر وضعیت بسته‌ها" value={filter} onChange={(event) => setFilter(event.target.value)} className="rounded-lg border border-border-base bg-bg-base px-3 py-2 text-xs text-text-primary outline-none focus:border-brand-500">
-            <option value="all">همه وضعیت‌ها</option>
-            <option value="pending">در انتظار تطبیق</option>
-            <option value="matched">تطبیق‌یافته</option>
-          </select>
-          <button type="button" onClick={refresh} className="inline-flex items-center gap-2 rounded-lg border border-border-base px-3 py-2 text-xs text-text-secondary hover:bg-bg-hover"><RefreshCw size={14} /> بروزرسانی</button>
-        </div>
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-2 bg-bg-base/60 px-4 py-3 text-xs text-text-muted">
-        <span>تعداد رکوردهای نمایش‌داده‌شده: <strong className="text-text-primary">{items.length}</strong></span>
-        <span>{updatedAt ? `آخرین بررسی: ${updatedAt.toLocaleTimeString('fa-IR')}` : 'در انتظار اولین دریافت...'}</span>
-      </div>
-      {error && <div role="alert" className="m-4 flex items-start gap-2 rounded-xl border border-danger/20 bg-danger/5 p-3 text-sm text-danger"><AlertCircle size={17} className="mt-0.5 shrink-0" />{error}</div>}
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[850px] text-right text-xs">
-          <thead className="bg-bg-base text-text-muted">
-            <tr>
-              <th className="px-4 py-3 font-medium">زمان دریافت</th>
-              <th className="px-4 py-3 font-medium">مبدأ اتصال</th>
-              <th className="px-4 py-3 font-medium">انتقال</th>
-              <th className="px-4 py-3 font-medium">شناسه تطبیق‌یافته</th>
-              <th className="px-4 py-3 font-medium">وضعیت</th>
-              <th className="px-4 py-3 font-medium">داده خام (Hex)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((item) => (
-              <tr key={item.id} className="border-t border-border-base align-top hover:bg-bg-hover/60">
-                <td className="whitespace-nowrap px-4 py-3 font-mono text-text-secondary">{item.received_at ? new Date(item.received_at).toLocaleString('fa-IR') : '—'}</td>
-                <td className="whitespace-nowrap px-4 py-3 font-mono text-text-secondary">{item.remote_address || '—'}</td>
-                <td className="px-4 py-3 text-text-secondary">{String(item.transport || '—').toUpperCase()}</td>
-                <td className="px-4 py-3 font-mono text-text-primary">{item.identifier_candidate || '—'}</td>
-                <td className="px-4 py-3"><span className={`inline-flex rounded-full px-2 py-1 ${item.status === 'matched' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-amber-500/10 text-amber-600'}`}>{item.status === 'matched' ? 'تطبیق‌یافته' : 'در انتظار'}</span></td>
-                <td className="max-w-sm px-4 py-3">
-                  <code className="block break-all font-mono leading-5 text-text-muted">{item.payload_hex || '—'}{item.payload_truncated ? ' …' : ''}</code>
-                  <span className="mt-1 block text-[10px] text-text-muted">{item.payload_bytes} بایت</span>
-                </td>
-              </tr>
-            ))}
-            {!loading && items.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-12 text-center text-text-muted">در این وضعیت هنوز بسته‌ای ثبت نشده است.</td></tr>
-            )}
-            {loading && items.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-12 text-center text-text-muted">در حال دریافت اطلاعات صف GPS...</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-      <div className="border-t border-border-base px-4 py-3 text-[11px] leading-5 text-text-muted">
-        برای حفظ امنیت و سرعت، فقط ۶۴ بایت اول هر بسته در پنل نمایش داده می‌شود؛ جدول اصلی تغییر داده نمی‌شود.
-      </div>
-    </section>
-  );
-}
-
 function AdminGPSMonitor() {
   return (
     <section className="space-y-5 border-t border-border-base pt-7">
@@ -314,17 +217,14 @@ function AdminGPSMonitor() {
             <ShieldCheck size={14} /> ویژه ادمین کل سایت
           </div>
           <h2 className="text-xl font-bold text-text-primary sm:text-2xl">مانیتورینگ زنده GPS</h2>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-text-muted">لاگ سرویس، ترافیک شبکه و صف بسته‌های ورودی را از یک صفحه بررسی کن. این بخش فقط خواندنی است و هیچ دستوری برای تغییر تنظیمات یا وضعیت دستگاه اجرا نمی‌کند.</p>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-text-muted">لاگ سرویس و ترافیک شبکه را از یک صفحه بررسی کن. این بخش فقط خواندنی است و هیچ دستوری برای تغییر تنظیمات یا وضعیت دستگاه اجرا نمی‌کند.</p>
         </div>
-        <div className="inline-flex items-center gap-2 self-start rounded-xl border border-border-base bg-bg-elevated px-3 py-2 text-xs text-text-muted sm:self-auto">
-          <Wifi size={15} /> TCP 9000 <span className="text-border-strong">·</span> UDP 9001
-        </div>
+        
       </div>
       <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
-        <LiveTerminal streamName="service" title="لاگ زنده سرویس sana-gps" description="رویدادهای systemd، تشخیص پروتکل و خطاهای پردازش" icon={Terminal} accent="bg-sky-500/10 text-sky-500" />
-        <LiveTerminal streamName="network" title="بسته‌های زنده شبکه" description="نمایش ترافیک TCP/9000 و UDP/9001 در صورت داشتن مجوز tcpdump" icon={Radio} accent="bg-emerald-500/10 text-emerald-500" />
+        <LiveTerminal streamName="service" title="لاگ زنده سرویس sana-gps" description="رویدادهای systemd، همگام‌سازی Traccar و خطاهای سرویس" icon={Terminal} accent="bg-sky-500/10 text-sky-500" />
+        <LiveTerminal streamName="network" title="ترافیک زنده شبکه" description="نمایش ترافیک شبکه از طریق ابزار تشخیصی محدودشده سرور" icon={Radio} accent="bg-emerald-500/10 text-emerald-500" />
       </div>
-      <GPSQueueMonitor />
     </section>
   );
 }

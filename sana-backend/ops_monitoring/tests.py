@@ -31,10 +31,9 @@ class GPSMonitoringPermissionsTests(TestCase):
         response = self.client.get("/api/gps-monitor/logs/service/")
         self.assertIn(response.status_code, (401, 403))
 
-    def test_non_admin_cannot_access_live_logs_or_queue(self):
+    def test_non_admin_cannot_access_live_logs(self):
         self.client.force_authenticate(user=self.regular_user)
         self.assertEqual(self.client.get("/api/gps-monitor/logs/service/").status_code, 403)
-        self.assertEqual(self.client.get("/api/gps-monitor/queue/").status_code, 403)
 
     def test_network_capture_uses_only_the_privileged_fixed_wrapper(self):
         self.assertEqual(
