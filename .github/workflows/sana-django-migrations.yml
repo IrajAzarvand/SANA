@@ -172,22 +172,61 @@ jobs:
           from django import setup
           setup()
           from django.db import connection
+
           suffix = os.environ["DB_NAME"].rsplit("_", 1)[-1]
           imei = f"352094082143{suffix}"
+
+          def existing_columns(table):
+              with connection.cursor() as cursor:
+                  return {
+                      column.name
+                      for column in connection.introspection.get_table_description(cursor, table)
+                  }
+
+          model_columns = existing_columns("fleet_devicemodel")
+          model_values = {
+              "manufacturer": "CI",
+              "name": f"Partial upgrade {suffix}",
+              "code": f"ci-partial-{suffix}",
+              "protocol": "teltonika",
+              "created_at": None,
+              "traccar_version": "6.16.0",
+          }
+          model_fields = [name for name in model_values if name in model_columns]
+          quoted_fields = ", ".join(connection.ops.quote_name(name) for name in model_fields)
+          placeholders = ", ".join(["%s"] * len(model_fields))
+          values = [
+              __import__("django.utils.timezone", fromlist=["now"]).now()
+              if model_values[name] is None and name == "created_at"
+              else model_values[name]
+              for name in model_fields
+          ]
           with connection.cursor() as cursor:
-              cursor.execute("""
-                  INSERT INTO fleet_devicemodel
-                      (manufacturer, name, code, protocol, created_at)
-                  VALUES ('CI', %s, %s, 'teltonika', NOW())
-                  RETURNING id
-              """, [f"Partial upgrade {suffix}", f"ci-partial-{suffix}"])
+              cursor.execute(
+                  f"INSERT INTO fleet_devicemodel ({quoted_fields}) VALUES ({placeholders}) RETURNING id",
+                  values,
+              )
               model_id = cursor.fetchone()[0]
-              cursor.execute("""
-                  INSERT INTO fleet_device
-                      (imei, sim_number, management_status, protocol, installed_at,
-                       created_at, updated_at, device_model_id)
-                  VALUES (%s, '', 'warehouse', 'teltonika', NULL, NOW(), NOW(), %s)
-              """, [imei, model_id])
+
+          device_columns = existing_columns("fleet_device")
+          device_values = {
+              "imei": imei,
+              "sim_number": "",
+              "management_status": "warehouse",
+              "protocol": "teltonika",
+              "installed_at": None,
+              "created_at": __import__("django.utils.timezone", fromlist=["now"]).now(),
+              "updated_at": __import__("django.utils.timezone", fromlist=["now"]).now(),
+              "device_model_id": model_id,
+          }
+          device_fields = [name for name in device_values if name in device_columns]
+          quoted_fields = ", ".join(connection.ops.quote_name(name) for name in device_fields)
+          placeholders = ", ".join(["%s"] * len(device_fields))
+          with connection.cursor() as cursor:
+              cursor.execute(
+                  f"INSERT INTO fleet_device ({quoted_fields}) VALUES ({placeholders})",
+                  [device_values[name] for name in device_fields],
+              )
           print(f"Created pre-upgrade device fixture {imei}")
           PY
           done
