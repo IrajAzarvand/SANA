@@ -174,8 +174,10 @@ command -v systemctl >/dev/null || die "systemctl پیدا نشد."
 # 0000_roles.sql پیش از migrationهای Django اجرا می‌شود. پس از آن فقط یک
 # schema SQL رسمی اجرا می‌شود که جدول‌های Neshan Map Matching را می‌سازد و
 # ساختارهای خام/تاریخچه GPS قدیمی را باقی نمی‌گذارد.
-# زنجیره Migrationهای تاریخی Django در مرحله مستقل بازبینی Migrationها پاک‌سازی
-# می‌شود؛ تا آن زمان graph موجود بدون fake کردن اجرا خواهد شد.
+# Migration تجمیعی fleet (0003_squashed_0015_traccar_authoritative) مسیر نصب تازه را
+# مستقیماً به schema نهایی می‌رساند و جدول‌های telemetry قدیمی را ایجاد نمی‌کند.
+# Migrationهای جایگزین‌شده برای تشخیص دیتابیس‌های قدیمی/نیمه‌ارتقایافته حفظ می‌شوند؛
+# Django فقط در صورت نیاز از زنجیره تاریخی آن‌ها استفاده خواهد کرد.
 SQL_FILES=(
     "0001_traccar_authoritative_schema.sql"
 )
@@ -389,7 +391,7 @@ with connection.cursor() as cursor:
     # Validate columns that were added by the latest SQL schema changes, not just
     # table names. This catches a partially applied or outdated GPS schema.
     required_columns = {
-        # Final Django schema after fleet migrations through 0014.
+        # Final Django schema after fleet migrations through 0015.
         "public.fleet_device": {
             "imei", "device_model_id", "protocol", "organization_id", "owner_user_id",
             "branch_id", "current_holder_organization_id", "current_holder_user_id",

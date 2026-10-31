@@ -1,0 +1,282 @@
+name: SANA Django migrations
+
+on:
+  pull_request:
+    paths:
+      - "sana-backend/**"
+      - "scripts/reset_sana_db.sh"
+      - ".github/workflows/sana-django-migrations.yml"
+
+jobs:
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sana_fresh
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d sana_fresh"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        working-directory: sana-backend
+    env:
+      SECRET_KEY: ci-only-not-a-secret
+      DEBUG: "True"
+      ALLOWED_HOSTS: localhost,127.0.0.1
+      DB_NAME: sana_fresh
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      TRACCAR_API_URL: http://127.0.0.1:8082/api
+      TRACCAR_API_USERNAME: ci
+      TRACCAR_API_PASSWORD: ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install system GIS and PostgreSQL dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils gdal-bin libgdal-dev libgeos-dev libproj-dev postgresql-client
+      - name: Prepare PostGIS databases
+        env:
+          PGPASSWORD: postgres
+        run: |
+          for database in sana_upgrade sana_partial_0005 sana_partial_0008 sana_partial_0012; do
+            psql -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 -c "CREATE DATABASE ${database};"
+          done
+          for database in sana_fresh sana_upgrade sana_partial_0005 sana_partial_0008 sana_partial_0012; do
+            psql -h 127.0.0.1 -U postgres -d "${database}" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          done
+      - name: Install Django backend dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install \
+            "Django==6.1.1" \
+            psycopg2-binary \
+            djangorestframework \
+            djangorestframework-simplejwt \
+            django-cors-headers \
+            django-filter \
+            drf-spectacular \
+            python-decouple \
+            django-jalali \
+            Pillow \
+            requests
+      - name: Apply migrations to a clean PostGIS database
+        run: python manage.py migrate --noinput
+      - name: Verify migration state matches current models
+        run: python manage.py makemigrations --check --dry-run
+      - name: Run complete Django backend test suite
+        run: python manage.py test --verbosity 2
+      - name: Verify fresh schema excludes retired GPS tables
+        run: |
+          python manage.py shell -c '
+          from django.db import connection
+          required = [
+              "public.fleet_device",
+              "public.fleet_devicemodel",
+              "public.fleet_drivervehicleassignment",
+              "public.organizations_organization",
+              "public.organizations_branch",
+              "public.organizations_subscription",
+              "public.accounts_user",
+          ]
+          forbidden = [
+              "public.fleet_gpstelemetry",
+              "public.fleet_unknowngpsdata",
+          ]
+          with connection.cursor() as cursor:
+              for table in required:
+                  cursor.execute("SELECT to_regclass(%s)", [table])
+                  assert cursor.fetchone()[0], f"Missing required table: {table}"
+              for table in forbidden:
+                  cursor.execute("SELECT to_regclass(%s)", [table])
+                  assert cursor.fetchone()[0] is None, f"Retired table unexpectedly exists: {table}"
+              cursor.execute("SELECT COUNT(*) FROM public.fleet_devicemodel")
+              assert cursor.fetchone()[0] > 0, "Traccar device-model catalog was not seeded"
+          print("Fresh schema and Traccar catalog verified.")
+          '
+      - name: Verify upgrade from the complete historical migration chain
+        env:
+          DB_NAME: sana_upgrade
+          PGPASSWORD: postgres
+        run: |
+          mv fleet/migrations/0003_squashed_0015_traccar_authoritative.py /tmp/0003_squashed_0015_traccar_authoritative.py
+          python manage.py migrate --noinput
+          python manage.py shell -c '
+          from fleet.models import Device, DeviceModel
+          model = DeviceModel.objects.create(
+              manufacturer="CI",
+              name="Upgrade fixture",
+              code="ci-upgrade-fixture",
+              protocol="teltonika",
+          )
+          Device.objects.create(imei="352094082143253", device_model=model)
+          '
+          mv /tmp/0003_squashed_0015_traccar_authoritative.py fleet/migrations/0003_squashed_0015_traccar_authoritative.py
+          python manage.py migrate --noinput
+          python manage.py makemigrations --check --dry-run
+          python manage.py shell -c '
+          from django.db import connection
+          from fleet.models import Device
+          assert Device.objects.filter(imei="352094082143253").count() == 1
+          with connection.cursor() as cursor:
+              for table in ("public.fleet_gpstelemetry", "public.fleet_unknowngpsdata"):
+                  cursor.execute("SELECT to_regclass(%s)", [table])
+                  assert cursor.fetchone()[0] is None, f"Retired table unexpectedly exists: {table}"
+          print("Existing-install upgrade preserved device data and schema.")
+          '
+
+      - name: Verify upgrades from partially applied historical migrations
+        env:
+          PGPASSWORD: postgres
+        run: |
+          set -Eeuo pipefail
+          squash="fleet/migrations/0003_squashed_0015_traccar_authoritative.py"
+          hidden="/tmp/0003_squashed_0015_traccar_authoritative.py"
+          restore_squash() {
+            if [[ -f "$hidden" && ! -f "$squash" ]]; then
+              mv "$hidden" "$squash"
+            fi
+          }
+          trap restore_squash EXIT
+          mv "$squash" "$hidden"
+
+          for target in 0005 0008 0012; do
+            case "$target" in
+              0005) database="sana_partial_0005" ;;
+              0008) database="sana_partial_0008" ;;
+              0012) database="sana_partial_0012" ;;
+            esac
+            echo "Preparing historical partial state: fleet $target on $database"
+            export DB_NAME="$database"
+            python manage.py migrate fleet "$target" --noinput
+
+            # Insert representative business data using only columns that exist
+            # at each historical checkpoint. This deliberately avoids current
+            # Django models, whose schema is newer than the partial database.
+            python - <<'PY'
+          import os
+          from django.utils import timezone
+
+          os.environ.setdefault("DJANGO_SETTINGS_MODULE", "sana_core.settings")
+          from django import setup
+          setup()
+          from django.db import connection
+
+          suffix = os.environ["DB_NAME"].rsplit("_", 1)[-1]
+          imei = f"352094082143{suffix}"
+
+          def insert_schema_aware_fixture(table, candidate_values, *, returning_id=False):
+              # Raw SQL intentionally targets each historical checkpoint, not
+              # today's Django model. Inspect PostgreSQL metadata so every
+              # NOT NULL column without a database default is explicitly set.
+              with connection.cursor() as cursor:
+                  cursor.execute(
+                      """
+                      SELECT column_name, is_nullable, column_default,
+                             is_identity, is_generated
+                      FROM information_schema.columns
+                      WHERE table_schema = current_schema() AND table_name = %s
+                      ORDER BY ordinal_position
+                      """,
+                      [table],
+                  )
+                  metadata = cursor.fetchall()
+
+              columns = {row[0] for row in metadata}
+              values = {name: value for name, value in candidate_values.items() if name in columns}
+              required = {
+                  name for name, nullable, default, identity, generated in metadata
+                  if nullable == "NO"
+                  and default is None
+                  and identity != "YES"
+                  and generated == "NEVER"
+              }
+              missing = sorted(required - values.keys())
+              null_required = sorted(name for name in required if values.get(name) is None)
+              if missing or null_required:
+                  raise AssertionError(
+                      f"Incomplete {table} fixture for schema {suffix}: "
+                      f"missing required columns={missing}; NULL required columns={null_required}"
+                  )
+
+              fields = list(values)
+              quoted_fields = ", ".join(connection.ops.quote_name(name) for name in fields)
+              placeholders = ", ".join(["%s"] * len(fields))
+              returning = " RETURNING id" if returning_id else ""
+              with connection.cursor() as cursor:
+                  cursor.execute(
+                      f"INSERT INTO {connection.ops.quote_name(table)} "
+                      f"({quoted_fields}) VALUES ({placeholders}){returning}",
+                      [values[name] for name in fields],
+                  )
+                  return cursor.fetchone()[0] if returning_id else None
+
+          model_id = insert_schema_aware_fixture(
+              "fleet_devicemodel",
+              {
+                  "manufacturer": "CI",
+                  "name": f"Partial upgrade {suffix}",
+                  "code": f"ci-partial-{suffix}",
+                  "protocol": "teltonika",
+                  "created_at": timezone.now(),
+                  "port": None,
+                  "traccar_version": "6.16.0",
+                  "source_url": "",
+                  "is_verified": False,
+              },
+              returning_id=True,
+          )
+
+          insert_schema_aware_fixture(
+              "fleet_device",
+              {
+                  "imei": imei,
+                  "sim_number": "",
+                  "management_status": "warehouse",
+                  "protocol": "teltonika",
+                  "installed_at": None,
+                  "created_at": timezone.now(),
+                  "updated_at": timezone.now(),
+                  "device_model_id": model_id,
+              },
+          )
+          print(f"Created pre-upgrade device fixture {imei}")
+          PY
+          done
+
+          # Put the squash migration back before completing each upgrade. Django
+          # must recognize the partially applied replacement set and safely
+          # finish via the historical chain without losing existing rows.
+          restore_squash
+          for database in sana_partial_0005 sana_partial_0008 sana_partial_0012; do
+            export DB_NAME="$database"
+            python manage.py migrate --noinput
+            python manage.py makemigrations --check --dry-run
+            python manage.py shell -c '
+          import os
+          from django.db import connection
+          from fleet.models import Device
+          suffix = os.environ["DB_NAME"].rsplit("_", 1)[-1]
+          imei = f"352094082143{suffix}"
+          assert Device.objects.filter(imei=imei).count() == 1, f"Device data lost: {imei}"
+          with connection.cursor() as cursor:
+              for table in ("public.fleet_gpstelemetry", "public.fleet_unknowngpsdata"):
+                  cursor.execute("SELECT to_regclass(%s)", [table])
+                  assert cursor.fetchone()[0] is None, f"Retired table unexpectedly exists: {table}"
+          print(f"Partial upgrade preserved {imei}; retired GPS tables absent.")
+          '
+          done
+          unset DB_NAME

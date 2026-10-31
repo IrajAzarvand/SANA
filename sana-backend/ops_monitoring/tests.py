@@ -8,6 +8,14 @@ from rest_framework.test import APIClient
 from ops_monitoring.views import STREAM_COMMANDS
 
 
+def stream_response_text(response):
+    """Decode Django StreamingHttpResponse chunks for readable assertions."""
+    chunks = []
+    for chunk in response.streaming_content:
+        chunks.append(chunk.decode("utf-8") if isinstance(chunk, bytes) else chunk)
+    return "".join(chunks)
+
+
 class GPSMonitoringPermissionsTests(TestCase):
     def setUp(self):
         self.client = APIClient()
@@ -68,7 +76,7 @@ class TraccarPortManagementPermissionsTests(GPSMonitoringPermissionsTests):
                 HTTP_ACCEPT="text/event-stream",
             )
             self.assertEqual(response.status_code, 200)
-            output = "".join(response.streaming_content)
+            output = stream_response_text(response)
         self.assertIn("اتصال API ترکار و احراز هویت موفق است.", output)
         self.assertIn("دستگاه‌های ثبت‌شده در Traccar: 2", output)
         self.assertIn("موقعیت‌های فعلی برگشتی از API: 1", output)
@@ -88,7 +96,7 @@ class TraccarPortManagementPermissionsTests(GPSMonitoringPermissionsTests):
                 format="json",
                 HTTP_ACCEPT="text/event-stream",
             )
-            output = "".join(response.streaming_content)
+            output = stream_response_text(response)
         self.assertIn("آزمون API ناموفق بود", output)
 
     def test_non_admin_cannot_manage_traccar_ports(self):
@@ -147,7 +155,7 @@ class TraccarPortManagementPermissionsTests(GPSMonitoringPermissionsTests):
             )
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response["Content-Type"], "text/event-stream")
-            output = "".join(response.streaming_content)
+            output = stream_response_text(response)
         self.assertIn("sudo", output)
 
 
@@ -176,7 +184,7 @@ class TraccarRawCapturePermissionsTests(GPSMonitoringPermissionsTests):
                 format="json",
                 HTTP_ACCEPT="text/event-stream",
             )
-            output = "".join(response.streaming_content)
+            output = stream_response_text(response)
         self.assertEqual(response.status_code, 200)
         self.assertIn("شنود آزمایشی TCP و UDP شروع شد", output)
         command = popen.call_args.args[0]
@@ -210,7 +218,7 @@ class TraccarRawCapturePermissionsTests(GPSMonitoringPermissionsTests):
                 "/api/gps-monitor/ports/capture/9027/",
                 HTTP_ACCEPT="text/event-stream",
             )
-            output = "".join(response.streaming_content)
+            output = stream_response_text(response)
         self.assertEqual(response.status_code, 200)
         self.assertIn("RAW transport=UDP", output)
         self.assertIn("capture-tail", popen.call_args.args[0])
