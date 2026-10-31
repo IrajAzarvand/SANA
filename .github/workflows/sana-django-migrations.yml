@@ -168,6 +168,8 @@ jobs:
             # Django models, whose schema is newer than the partial database.
             python - <<'PY'
           import os
+          from django.utils import timezone
+
           os.environ.setdefault("DJANGO_SETTINGS_MODULE", "sana_core.settings")
           from django import setup
           setup()
@@ -176,57 +178,81 @@ jobs:
           suffix = os.environ["DB_NAME"].rsplit("_", 1)[-1]
           imei = f"352094082143{suffix}"
 
-          def existing_columns(table):
+          def insert_schema_aware_fixture(table, candidate_values, *, returning_id=False):
+              # Raw SQL intentionally targets each historical checkpoint, not
+              # today's Django model. Inspect PostgreSQL metadata so every
+              # NOT NULL column without a database default is explicitly set.
               with connection.cursor() as cursor:
-                  return {
-                      column.name
-                      for column in connection.introspection.get_table_description(cursor, table)
-                  }
+                  cursor.execute(
+                      """
+                      SELECT column_name, is_nullable, column_default,
+                             is_identity, is_generated
+                      FROM information_schema.columns
+                      WHERE table_schema = current_schema() AND table_name = %s
+                      ORDER BY ordinal_position
+                      """,
+                      [table],
+                  )
+                  metadata = cursor.fetchall()
 
-          model_columns = existing_columns("fleet_devicemodel")
-          model_values = {
-              "manufacturer": "CI",
-              "name": f"Partial upgrade {suffix}",
-              "code": f"ci-partial-{suffix}",
-              "protocol": "teltonika",
-              "created_at": None,
-              "traccar_version": "6.16.0",
-          }
-          model_fields = [name for name in model_values if name in model_columns]
-          quoted_fields = ", ".join(connection.ops.quote_name(name) for name in model_fields)
-          placeholders = ", ".join(["%s"] * len(model_fields))
-          values = [
-              __import__("django.utils.timezone", fromlist=["now"]).now()
-              if model_values[name] is None and name == "created_at"
-              else model_values[name]
-              for name in model_fields
-          ]
-          with connection.cursor() as cursor:
-              cursor.execute(
-                  f"INSERT INTO fleet_devicemodel ({quoted_fields}) VALUES ({placeholders}) RETURNING id",
-                  values,
-              )
-              model_id = cursor.fetchone()[0]
+              columns = {row[0] for row in metadata}
+              values = {name: value for name, value in candidate_values.items() if name in columns}
+              required = {
+                  name for name, nullable, default, identity, generated in metadata
+                  if nullable == "NO"
+                  and default is None
+                  and identity != "YES"
+                  and generated == "NEVER"
+              }
+              missing = sorted(required - values.keys())
+              null_required = sorted(name for name in required if values.get(name) is None)
+              if missing or null_required:
+                  raise AssertionError(
+                      f"Incomplete {table} fixture for schema {suffix}: "
+                      f"missing required columns={missing}; NULL required columns={null_required}"
+                  )
 
-          device_columns = existing_columns("fleet_device")
-          device_values = {
-              "imei": imei,
-              "sim_number": "",
-              "management_status": "warehouse",
-              "protocol": "teltonika",
-              "installed_at": None,
-              "created_at": __import__("django.utils.timezone", fromlist=["now"]).now(),
-              "updated_at": __import__("django.utils.timezone", fromlist=["now"]).now(),
-              "device_model_id": model_id,
-          }
-          device_fields = [name for name in device_values if name in device_columns]
-          quoted_fields = ", ".join(connection.ops.quote_name(name) for name in device_fields)
-          placeholders = ", ".join(["%s"] * len(device_fields))
-          with connection.cursor() as cursor:
-              cursor.execute(
-                  f"INSERT INTO fleet_device ({quoted_fields}) VALUES ({placeholders})",
-                  [device_values[name] for name in device_fields],
-              )
+              fields = list(values)
+              quoted_fields = ", ".join(connection.ops.quote_name(name) for name in fields)
+              placeholders = ", ".join(["%s"] * len(fields))
+              returning = " RETURNING id" if returning_id else ""
+              with connection.cursor() as cursor:
+                  cursor.execute(
+                      f"INSERT INTO {connection.ops.quote_name(table)} "
+                      f"({quoted_fields}) VALUES ({placeholders}){returning}",
+                      [values[name] for name in fields],
+                  )
+                  return cursor.fetchone()[0] if returning_id else None
+
+          model_id = insert_schema_aware_fixture(
+              "fleet_devicemodel",
+              {
+                  "manufacturer": "CI",
+                  "name": f"Partial upgrade {suffix}",
+                  "code": f"ci-partial-{suffix}",
+                  "protocol": "teltonika",
+                  "created_at": timezone.now(),
+                  "port": None,
+                  "traccar_version": "6.16.0",
+                  "source_url": "",
+                  "is_verified": False,
+              },
+              returning_id=True,
+          )
+
+          insert_schema_aware_fixture(
+              "fleet_device",
+              {
+                  "imei": imei,
+                  "sim_number": "",
+                  "management_status": "warehouse",
+                  "protocol": "teltonika",
+                  "installed_at": None,
+                  "created_at": timezone.now(),
+                  "updated_at": timezone.now(),
+                  "device_model_id": model_id,
+              },
+          )
           print(f"Created pre-upgrade device fixture {imei}")
           PY
           done
