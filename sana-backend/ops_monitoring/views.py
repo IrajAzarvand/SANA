@@ -195,7 +195,7 @@ class TraccarPortOperationView(APIView):
             if not protocol or not protocol.replace("_", "").replace("-", "").isalnum() or not protocol[0].isalpha():
                 return JsonResponse({"detail": "مدل انتخاب‌شده نگاشت داخلی معتبر برای Traccar ندارد."}, status=400)
             command += ["apply", str(port), protocol]
-        elif action in {"test", "status", "diagnostics", "restore", "repair-permissions"}:
+        elif action in {"test", "status", "diagnostics", "restore", "repair-permissions", "capture-toggle", "capture-start", "capture-stop", "capture-status"}:
             command += [action, str(port)]
         else:
             return JsonResponse({"detail": "عملیات نامعتبر است."}, status=400)
@@ -262,4 +262,58 @@ class TraccarPortOperationView(APIView):
         response = StreamingHttpResponse(generate(), content_type="text/event-stream")
         response["Cache-Control"] = "no-cache, no-transform"
         response["X-Accel-Buffering"] = "no"
+        return response
+
+class TraccarCaptureLogView(APIView):
+    """Admin-only live tail of the bounded raw-packet capture log."""
+
+    permission_classes = [IsAuthenticated, IsSiteAdmin]
+    helper = "/usr/local/sbin/sana-traccar-port-manager"
+
+    def perform_content_negotiation(self, request, force=False):
+        from rest_framework.renderers import JSONRenderer
+        if "text/event-stream" in request.META.get("HTTP_ACCEPT", ""):
+            return JSONRenderer(), "application/json"
+        return super().perform_content_negotiation(request, force)
+
+    def get(self, request, port: int):
+        _require_admin(request)
+        if not 1024 <= int(port) <= 65535:
+            return JsonResponse({"detail": "پورت باید بین 1024 و 65535 باشد."}, status=400)
+        sudo = shutil.which("sudo")
+        if not sudo:
+            return StreamingHttpResponse(
+                iter([_event("خطا: sudo روی سرور در دسترس نیست.")]),
+                content_type="text/event-stream",
+            )
+
+        def generate():
+            process = None
+            try:
+                process = subprocess.Popen(
+                    [sudo, "-n", self.helper, "capture-tail", str(port)],
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, bufsize=1, close_fds=True,
+                )
+                assert process.stdout is not None
+                for line in process.stdout:
+                    yield _event(line)
+            except (OSError, ValueError) as exc:
+                logger.warning("Could not stream raw GPS capture for port %s: %s", port, exc)
+                yield _event("خواندن لاگ زنده ممکن نشد؛ نصب helper و مجوز sudo را بررسی کنید.")
+            finally:
+                if process is not None:
+                    try:
+                        process.terminate()
+                        process.wait(timeout=2)
+                    except Exception:
+                        try:
+                            process.kill()
+                        except Exception:
+                            pass
+
+        response = StreamingHttpResponse(generate(), content_type="text/event-stream")
+        response["Cache-Control"] = "no-cache, no-transform"
+        response["X-Accel-Buffering"] = "no"
+        response["Content-Disposition"] = f'inline; filename="sana-gps-capture-{port}.log"'
         return response
