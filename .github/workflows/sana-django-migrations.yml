@@ -168,9 +168,10 @@ jobs:
             # Django models, whose schema is newer than the partial database.
             python - <<'PY'
           import os
-          from django.db import connection
+          os.environ.setdefault("DJANGO_SETTINGS_MODULE", "sana_core.settings")
           from django import setup
           setup()
+          from django.db import connection
           suffix = os.environ["DB_NAME"].rsplit("_", 1)[-1]
           imei = f"352094082143{suffix}"
           with connection.cursor() as cursor:
