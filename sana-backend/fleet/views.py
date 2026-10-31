@@ -27,6 +27,13 @@ from accounts.permissions import IsSiteAdmin, IsOrganizationMember
 from .traccar_api import TraccarAPIError, traccar_current_positions, traccar_device_positions, traccar_devices
 
 
+def traccar_position_timestamp(position):
+    """Use Traccar receipt time; device clocks are not a reliable timeline."""
+    return parse_datetime(
+        position.get('serverTime') or position.get('fixTime') or position.get('deviceTime') or ''
+    )
+
+
 class VehicleTypeViewSet(viewsets.ModelViewSet):
     queryset = VehicleType.objects.all()
     serializer_class = VehicleTypeSerializer
@@ -415,7 +422,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
         for item in positions:
             try:
                 point_id = int(item['id'])
-                point_time = parse_datetime(item.get('fixTime') or item.get('deviceTime') or item.get('serverTime') or '')
+                point_time = traccar_position_timestamp(item)
                 latitude = float(item['latitude'])
                 longitude = float(item['longitude'])
             except (KeyError, TypeError, ValueError):

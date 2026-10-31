@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 from django.test import SimpleTestCase, override_settings
 
 from .traccar_api import TraccarAPIError, traccar_device_positions, traccar_devices
-from .views import DeviceViewSet
+from .views import DeviceViewSet, traccar_position_timestamp
 
 
 @override_settings(
@@ -103,3 +103,26 @@ class TraccarDeviceModelSyncTests(SimpleTestCase):
 
         self.assertEqual(device.device_model_id, 99)
         device.save.assert_not_called()
+
+
+class TraccarPositionTimestampTests(SimpleTestCase):
+    def test_server_time_is_preferred_over_unreliable_device_clock(self):
+        position = {
+            "serverTime": "2026-10-31T08:00:00Z",
+            "fixTime": "2026-10-31T07:58:00Z",
+            "deviceTime": "2026-10-31T07:57:00Z",
+        }
+
+        result = traccar_position_timestamp(position)
+
+        self.assertEqual(result.isoformat(), "2026-10-31T08:00:00+00:00")
+
+    def test_device_timestamps_are_fallbacks_when_server_time_is_missing(self):
+        position = {
+            "fixTime": "2026-10-31T07:58:00Z",
+            "deviceTime": "2026-10-31T07:57:00Z",
+        }
+
+        result = traccar_position_timestamp(position)
+
+        self.assertEqual(result.isoformat(), "2026-10-31T07:58:00+00:00")
