@@ -184,9 +184,9 @@ jobs:
               model_id = cursor.fetchone()[0]
               cursor.execute("""
                   INSERT INTO fleet_device
-                      (imei, sim_number, management_status, installed_at,
+                      (imei, sim_number, management_status, protocol, installed_at,
                        created_at, updated_at, device_model_id)
-                  VALUES (%s, '', 'warehouse', NULL, NOW(), NOW(), %s)
+                  VALUES (%s, '', 'warehouse', 'teltonika', NULL, NOW(), NOW(), %s)
               """, [imei, model_id])
           print(f"Created pre-upgrade device fixture {imei}")
           PY
