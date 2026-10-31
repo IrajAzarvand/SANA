@@ -44,11 +44,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
-      - name: Install system GIS dependencies
+      - name: Install system GIS and PostgreSQL dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y binutils gdal-bin libgdal-dev libgeos-dev libproj-dev
+          sudo apt-get install -y binutils gdal-bin libgdal-dev libgeos-dev libproj-dev postgresql-client
+      - name: Prepare PostGIS databases
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h 127.0.0.1 -U postgres -d sana_fresh -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          psql -h 127.0.0.1 -U postgres -d sana_upgrade -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis;"
       - name: Install Django backend dependencies
         run: |
           python -m pip install --upgrade pip
