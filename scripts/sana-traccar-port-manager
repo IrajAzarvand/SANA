@@ -384,7 +384,7 @@ def capture_firewall_open(port):
     )
     existing = set()
     for line in (result.stdout or "").splitlines():
-        match = re.match(r"^\\s*1256/(tcp|udp)\\s+ALLOW\\b", line, re.IGNORECASE)
+        match = re.match(r"^\s*1256/(tcp|udp)\s+ALLOW\b", line, re.IGNORECASE)
         if match:
             existing.add(match.group(1).lower())
     added = []
@@ -394,7 +394,7 @@ def capture_firewall_open(port):
                 run(["ufw", "allow", f"{port}/{transport}"],
                     f"بازکردن موقت {transport.upper()}/{port} برای شنود خام")
                 added.append(transport)
-        marker.write_text("\\n".join(added), encoding="ascii")
+        marker.write_text("\n".join(added), encoding="ascii")
         os.chmod(marker, 0o600)
     except Exception:
         for transport in added:
