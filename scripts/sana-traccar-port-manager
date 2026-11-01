@@ -23,6 +23,7 @@ PROTOCOL_RE = re.compile(r"^[a-z][a-z0-9_]{1,39}$")
 CAPTURE_DIR = Path("/var/log/sana-traccar-capture")
 PID_DIR = Path("/run/sana-traccar-capture")
 MAX_CAPTURE_BYTES = 4 * 1024 * 1024
+CAPTURE_TEST_PORT = 1256
 
 
 def emit(message):
@@ -394,6 +395,8 @@ def capture_status(port):
 
 
 def capture_start(port):
+    if port != CAPTURE_TEST_PORT:
+        raise RuntimeError(f"شنود خام فقط روی پورت ثابت {CAPTURE_TEST_PORT} مجاز است.")
     log_path, pid_path = capture_paths(port)
     CAPTURE_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
     PID_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -407,6 +410,10 @@ def capture_start(port):
             "این پورت هم‌اکنون شنونده دارد؛ برای جلوگیری از تداخل، "
             "یک پورت آزمایشی آزاد انتخاب کنید."
         )
+    # The router must separately forward TCP/UDP 1256 to this server.
+    # Traccar must NOT listen on this port while the raw capture worker is active.
+    run(["ufw", "allow", f"{port}/tcp"], f"بازکردن TCP/{port} در UFW برای شنود خام")
+    run(["ufw", "allow", f"{port}/udp"], f"بازکردن UDP/{port} در UFW برای شنود خام")
     with open(log_path, "w", encoding="utf-8") as log_file:
         os.chmod(log_path, 0o600)
         process = subprocess.Popen(
@@ -565,13 +572,18 @@ def main():
         emit("این ابزار باید فقط از طریق sudo و واسط مجاز اجرا شود.")
         return 2
     if len(sys.argv) >= 3 and sys.argv[1] == "_capture-worker":
-        return capture_worker(parse_port(sys.argv[2]))
+        worker_port = parse_port(sys.argv[2])
+        if worker_port != CAPTURE_TEST_PORT:
+            raise ValueError(f"شنود خام فقط روی پورت ثابت {CAPTURE_TEST_PORT} مجاز است.")
+        return capture_worker(worker_port)
     if len(sys.argv) < 3:
         emit("استفاده: sana-traccar-port-manager status|diagnostics|restore|repair-permissions|test|capture-toggle|capture-start|capture-stop|capture-status|capture-tail PORT یا apply PORT PROTOCOL")
         return 2
     action = sys.argv[1]
     try:
         port = parse_port(sys.argv[2])
+        if action in {"capture-toggle", "capture-start", "capture-stop", "capture-status", "capture-tail"} and port != CAPTURE_TEST_PORT:
+            raise ValueError(f"عملیات شنود خام فقط روی پورت ثابت {CAPTURE_TEST_PORT} مجاز است.")
         if action == "status" and len(sys.argv) == 3:
             return status(port)
         if action == "capture-toggle" and len(sys.argv) == 3:
