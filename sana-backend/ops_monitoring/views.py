@@ -21,6 +21,9 @@ from fleet.traccar_api import (
 
 logger = logging.getLogger(__name__)
 
+# Dedicated raw-capture port, independent of the selected Traccar port.
+CAPTURE_TEST_PORT = 1256
+
 # Commands and filters are deliberately fixed: request data is never passed to a shell.
 # Network capture runs through a root-owned, argument-free wrapper with a narrowly
 # scoped sudoers rule; the Django service itself must never run as root.
@@ -161,12 +164,17 @@ class TraccarPortOperationView(APIView):
             response["X-Accel-Buffering"] = "no"
             return response
 
-        raw_port = str(request.data.get("port", "")).strip()
-        if not raw_port.isdigit():
-            return JsonResponse({"detail": "شماره پورت باید عددی باشد."}, status=400)
-        port = int(raw_port)
-        if not 1024 <= port <= 65535:
-            return JsonResponse({"detail": "پورت باید بین 1024 و 65535 باشد."}, status=400)
+        capture_actions = {"capture-toggle", "capture-start", "capture-stop", "capture-status"}
+        if action in capture_actions:
+            # Never trust the client-supplied port for raw capture.
+            port = CAPTURE_TEST_PORT
+        else:
+            raw_port = str(request.data.get("port", "")).strip()
+            if not raw_port.isdigit():
+                return JsonResponse({"detail": "شماره پورت باید عددی باشد."}, status=400)
+            port = int(raw_port)
+            if not 1024 <= port <= 65535:
+                return JsonResponse({"detail": "پورت باید بین 1024 و 65535 باشد."}, status=400)
 
         command = ["sudo", "-n", self.helper]
         if action == "apply":
@@ -263,8 +271,9 @@ class TraccarCaptureLogView(APIView):
 
     def get(self, request, port: int):
         _require_admin(request)
-        if not 1024 <= int(port) <= 65535:
-            return JsonResponse({"detail": "پورت باید بین 1024 و 65535 باشد."}, status=400)
+        if int(port) != CAPTURE_TEST_PORT:
+            return JsonResponse({"detail": "شنود خام فقط روی پورت ثابت ۱۲۵۶ مجاز است."}, status=400)
+        port = CAPTURE_TEST_PORT
         sudo = shutil.which("sudo")
         if not sudo:
             return StreamingHttpResponse(
