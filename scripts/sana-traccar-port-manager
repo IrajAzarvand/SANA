@@ -404,6 +404,16 @@ def capture_start(port):
     os.chmod(PID_DIR, 0o700)
     if capture_status(port) == 0:
         raise RuntimeError("شنود این پورت از قبل فعال است.")
+    _, _, configured_entries = read_config()
+    assigned_protocols = [
+        key[:-5] for key, value in configured_entries.items()
+        if key.endswith(".port") and value.isdigit() and int(value) == port
+    ]
+    if assigned_protocols:
+        raise RuntimeError(
+            f"پورت {port} در فایل تنظیمات Traccar به پروتکل‌های "
+            f"{', '.join(sorted(assigned_protocols))} اختصاص دارد؛ ابتدا تنظیم موجود را بررسی کنید."
+        )
     tcp, udp = listener_status(port)
     if tcp or udp:
         raise RuntimeError(
