@@ -476,16 +476,20 @@ def capture_start(port):
     # This port belongs exclusively to the raw capture helper, never to Traccar.
     # The router/NAT forward is configured separately and must be removed after testing.
     capture_firewall_open(port)
-    with open(log_path, "w", encoding="utf-8") as log_file:
-        os.chmod(log_path, 0o600)
-        process = subprocess.Popen(
-            [sys.executable, str(Path(__file__).resolve()), "_capture-worker", str(port)],
-            stdin=subprocess.DEVNULL, stdout=log_file, stderr=subprocess.STDOUT,
-            start_new_session=True, close_fds=True,
-        )
-    time.sleep(0.35)
-    if process.poll() is not None:
-        raise RuntimeError(f"شنود آزمایشی شروع نشد؛ لاگ را بررسی کنید: {log_path}")
+    try:
+        with open(log_path, "w", encoding="utf-8") as log_file:
+            os.chmod(log_path, 0o600)
+            process = subprocess.Popen(
+                [sys.executable, str(Path(__file__).resolve()), "_capture-worker", str(port)],
+                stdin=subprocess.DEVNULL, stdout=log_file, stderr=subprocess.STDOUT,
+                start_new_session=True, close_fds=True,
+            )
+        time.sleep(0.35)
+        if process.poll() is not None:
+            raise RuntimeError(f"شنود آزمایشی شروع نشد؛ لاگ را بررسی کنید: {log_path}")
+    except Exception:
+        capture_firewall_cleanup(port)
+        raise
     pid_path.write_text(str(process.pid), encoding="ascii")
     os.chmod(pid_path, 0o600)
     emit(f"شنود آزمایشی TCP و UDP روی پورت {port} شروع شد.")
@@ -501,6 +505,7 @@ def capture_stop(port):
         pid = int(pid_path.read_text(encoding="ascii").strip())
     except (OSError, ValueError):
         emit(f"شنود آزمایشی پورت {port} فعال نیست.")
+        capture_firewall_cleanup(port)
         return 0
     if not process_is_capture(pid):
         emit("پردازش شنود فعال نیست؛ فایل وضعیت پاک شد.")
