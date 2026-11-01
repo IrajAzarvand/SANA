@@ -444,6 +444,7 @@ def capture_status(port):
         pid = int(pid_path.read_text(encoding="ascii").strip())
     except (OSError, ValueError):
         emit(f"شنود آزمایشی پورت {port} فعال نیست.")
+        capture_firewall_cleanup(port)
         return 1
     if process_is_capture(pid):
         emit(f"شنود آزمایشی پورت {port} فعال است (PID={pid}).")
