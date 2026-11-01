@@ -368,6 +368,68 @@ def capture_paths(port):
     return CAPTURE_DIR / f"{port}.log", PID_DIR / f"{port}.pid"
 
 
+def capture_firewall_marker(port):
+    return PID_DIR / f"{port}.ufw-managed"
+
+
+def capture_firewall_open(port):
+    """Open only missing UFW rules and remember exactly which rules we own."""
+    PID_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    marker = capture_firewall_marker(port)
+    if marker.exists():
+        return
+    result = subprocess.run(
+        ["ufw", "status"], text=True, stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT, check=False, timeout=20,
+    )
+    existing = set()
+    for line in (result.stdout or "").splitlines():
+        match = re.match(r"^\\s*1256/(tcp|udp)\\s+ALLOW\\b", line, re.IGNORECASE)
+        if match:
+            existing.add(match.group(1).lower())
+    added = []
+    try:
+        for transport in ("tcp", "udp"):
+            if transport not in existing:
+                run(["ufw", "allow", f"{port}/{transport}"],
+                    f"بازکردن موقت {transport.upper()}/{port} برای شنود خام")
+                added.append(transport)
+        marker.write_text("\\n".join(added), encoding="ascii")
+        os.chmod(marker, 0o600)
+    except Exception:
+        for transport in added:
+            subprocess.run(
+                ["ufw", "--force", "delete", "allow", f"{port}/{transport}"],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, check=False, timeout=20,
+            )
+        raise
+
+
+def capture_firewall_cleanup(port):
+    """Remove only UFW rules created by this capture helper."""
+    marker = capture_firewall_marker(port)
+    try:
+        owned = [item.strip() for item in marker.read_text(encoding="ascii").splitlines()
+                 if item.strip() in {"tcp", "udp"}]
+    except OSError:
+        return
+    errors = []
+    for transport in owned:
+        result = subprocess.run(
+            ["ufw", "--force", "delete", "allow", f"{port}/{transport}"],
+            text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            check=False, timeout=20,
+        )
+        if result.returncode:
+            errors.append(transport)
+        else:
+            emit(f"قانون موقت UFW برای {transport.upper()}/{port} حذف شد.")
+    if errors:
+        raise RuntimeError("حذف قانون‌های موقت UFW ناموفق بود: " + ", ".join(errors))
+    marker.unlink(missing_ok=True)
+
+
 def process_is_capture(pid):
     try:
         command = Path(f"/proc/{pid}/cmdline").read_bytes()
@@ -391,6 +453,7 @@ def capture_status(port):
         pid_path.unlink()
     except OSError:
         pass
+    capture_firewall_cleanup(port)
     return 1
 
 
@@ -404,26 +467,15 @@ def capture_start(port):
     os.chmod(PID_DIR, 0o700)
     if capture_status(port) == 0:
         raise RuntimeError("شنود این پورت از قبل فعال است.")
-    _, _, configured_entries = read_config()
-    assigned_protocols = [
-        key[:-5] for key, value in configured_entries.items()
-        if key.endswith(".port") and value.isdigit() and int(value) == port
-    ]
-    if assigned_protocols:
-        raise RuntimeError(
-            f"پورت {port} در فایل تنظیمات Traccar به پروتکل‌های "
-            f"{', '.join(sorted(assigned_protocols))} اختصاص دارد؛ ابتدا تنظیم موجود را بررسی کنید."
-        )
     tcp, udp = listener_status(port)
     if tcp or udp:
         raise RuntimeError(
             "این پورت هم‌اکنون شنونده دارد؛ برای جلوگیری از تداخل، "
             "یک پورت آزمایشی آزاد انتخاب کنید."
         )
-    # The router must separately forward TCP/UDP 1256 to this server.
-    # Traccar must NOT listen on this port while the raw capture worker is active.
-    run(["ufw", "allow", f"{port}/tcp"], f"بازکردن TCP/{port} در UFW برای شنود خام")
-    run(["ufw", "allow", f"{port}/udp"], f"بازکردن UDP/{port} در UFW برای شنود خام")
+    # This port belongs exclusively to the raw capture helper, never to Traccar.
+    # The router/NAT forward is configured separately and must be removed after testing.
+    capture_firewall_open(port)
     with open(log_path, "w", encoding="utf-8") as log_file:
         os.chmod(log_path, 0o600)
         process = subprocess.Popen(
@@ -453,6 +505,7 @@ def capture_stop(port):
     if not process_is_capture(pid):
         emit("پردازش شنود فعال نیست؛ فایل وضعیت پاک شد.")
         pid_path.unlink(missing_ok=True)
+        capture_firewall_cleanup(port)
         return 0
     os.kill(pid, signal.SIGTERM)
     for _ in range(30):
@@ -462,6 +515,7 @@ def capture_stop(port):
     if process_is_capture(pid):
         os.kill(pid, signal.SIGKILL)
     pid_path.unlink(missing_ok=True)
+    capture_firewall_cleanup(port)
     emit(f"شنود آزمایشی پورت {port} متوقف شد.")
     return 0
 
@@ -556,6 +610,10 @@ def capture_worker(port):
                 pid_path.unlink()
         except OSError:
             pass
+        try:
+            capture_firewall_cleanup(port)
+        except Exception as exc:
+            log(f"UFW CLEANUP ERROR: {type(exc).__name__}: {exc}")
     return 0
 
 
