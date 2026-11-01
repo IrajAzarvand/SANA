@@ -180,7 +180,7 @@ class TraccarRawCapturePermissionsTests(GPSMonitoringPermissionsTests):
         ) as popen:
             response = self.client.post(
                 "/api/gps-monitor/ports/",
-                {"action": "capture-toggle", "port": 9027},
+                {"action": "capture-toggle", "port": 5015},
                 format="json",
                 HTTP_ACCEPT="text/event-stream",
             )
@@ -188,7 +188,7 @@ class TraccarRawCapturePermissionsTests(GPSMonitoringPermissionsTests):
         self.assertEqual(response.status_code, 200)
         self.assertIn("شنود آزمایشی TCP و UDP شروع شد", output)
         command = popen.call_args.args[0]
-        self.assertEqual(command[-2:], ["capture-toggle", "9027"])
+        self.assertEqual(command[-2:], ["capture-toggle", "1256"])
         self.assertIn("/usr/local/sbin/sana-traccar-port-manager", command)
 
     def test_capture_log_stream_is_admin_only(self):
@@ -215,13 +215,21 @@ class TraccarRawCapturePermissionsTests(GPSMonitoringPermissionsTests):
             "ops_monitoring.views.subprocess.Popen", return_value=FakeProcess()
         ) as popen:
             response = self.client.get(
-                "/api/gps-monitor/ports/capture/9027/",
+                "/api/gps-monitor/ports/capture/1256/",
                 HTTP_ACCEPT="text/event-stream",
             )
             output = stream_response_text(response)
         self.assertEqual(response.status_code, 200)
         self.assertIn("RAW transport=UDP", output)
         self.assertIn("capture-tail", popen.call_args.args[0])
+
+    def test_capture_log_stream_rejects_non_dedicated_port(self):
+        self.client.force_authenticate(user=self.site_admin)
+        response = self.client.get(
+            "/api/gps-monitor/ports/capture/5015/",
+            HTTP_ACCEPT="text/event-stream",
+        )
+        self.assertEqual(response.status_code, 400)
 
     def test_capture_rejects_invalid_port(self):
         self.client.force_authenticate(user=self.site_admin)
