@@ -629,6 +629,7 @@ function ActivityIcon() {
 /* ============ مدیریت پورت‌های ورودی Traccar (ادمین) ============ */
 
 function TraccarPortManager() {
+  const CAPTURE_TEST_PORT = 1256;
   const [port, setPort] = useState('9026');
   const [models, setModels] = useState([]);
   const [modelSearch, setModelSearch] = useState('');
@@ -661,9 +662,9 @@ function TraccarPortManager() {
     return label.includes(modelSearch.trim().toLowerCase());
   }).slice(0, 100);
 
-  const runOperation = async (action) => {
+  const runOperation = async (action, requestedPort = port) => {
     const isApiTest = action === 'api-test';
-    const parsedPort = Number(port);
+    const parsedPort = Number(requestedPort);
     if (!isApiTest && (!Number.isInteger(parsedPort) || parsedPort < 1024 || parsedPort > 65535)) {
       setError('شماره پورت باید عدد صحیح بین ۱۰۲۴ و ۶۵۵۳۵ باشد.');
       return { success: false, lines: [] };
@@ -724,7 +725,7 @@ function TraccarPortManager() {
   };
 
   const toggleCapture = async () => {
-    const result = await runOperation('capture-toggle');
+    const result = await runOperation('capture-toggle', CAPTURE_TEST_PORT);
     if (!result || !result.success) return;
     const started = result.lines.some((line) => line.includes('شروع شد'));
     const stopped = result.lines.some((line) => line.includes('متوقف شد') || line.includes('فعال نیست'));
@@ -735,7 +736,7 @@ function TraccarPortManager() {
       captureAbortRef.current = controller;
       try {
         const token = localStorage.getItem('sana_access_token');
-        const response = await fetch(apiClient.defaults.baseURL + '/gps-monitor/ports/capture/' + Number(port) + '/', {
+        const response = await fetch(apiClient.defaults.baseURL + '/gps-monitor/ports/capture/' + CAPTURE_TEST_PORT + '/', {
           headers: { Accept: 'text/event-stream', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
           signal: controller.signal,
         });
@@ -817,7 +818,7 @@ function TraccarPortManager() {
 
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary" disabled={busy || captureRunning} onClick={() => runOperation('api-test')}>آزمون اتصال API ترکار</Button>
-          <Button variant={captureRunning ? 'danger' : 'primary'} disabled={busy} onClick={toggleCapture}>{captureRunning ? 'توقف رصد زنده' : 'دریافت دیتای تست پورت ' + port}</Button>
+          <Button variant={captureRunning ? 'danger' : 'primary'} disabled={busy} onClick={toggleCapture}>{captureRunning ? 'توقف رصد زنده پورت ۱۲۵۶' : 'دریافت دیتای تست پورت ۱۲۵۶ (ثابت)'}</Button>
           <Button disabled={busy || captureRunning || modelsLoading || !modelId} onClick={() => runOperation('apply')}>
             {busy ? 'در حال اجرا…' : 'پیکربندی فایروال و Traccar'}
           </Button>
@@ -857,7 +858,7 @@ function TraccarPortManager() {
           >{logs.length ? logs.join('\n') : 'خروجی خالی است.'}</pre>
         </div>
         <p className="text-xs leading-6 text-text-muted">
-          برای شناسایی پروتکل ناشناخته، ابتدا یک پورت آزاد انتخاب کنید، فوروارد شبکه و اجازه ورودی UFW را برقرار کنید؛ سپس دستگاه را موقتاً به همین پورت بفرستید و «دریافت دیتای تست» را بزنید. این شنونده TCP و UDP را مستقیم می‌گیرد، داده خام را به‌صورت HEX در لاگ محافظت‌شده ثبت می‌کند و هیچ telemetry در جداول سانا نمی‌نویسد. پس از دریافت نمونه کافی، «توقف رصد زنده» را بزنید. فقط بعد از توقف شنود می‌توان همان پورت را به Traccar اختصاص داد. سقف فایل ضبط ۴ مگابایت است و اگر پورت از قبل شنونده داشته باشد، شروع capture رد می‌شود.
+          برای شناسایی پروتکل ناشناخته، پورت ثابت ۱۲۵۶ مخصوص شنود آزمایشی است و از شماره پورت بالای این بخش مستقل عمل می‌کند. ابتدا فوروارد ورودی TCP و UDP پورت ۱۲۵۶ را در روتر/رادیو برقرار کنید؛ UFW سرور هنگام شروع شنود باز می‌شود. سپس دستگاه را موقتاً به پورت ۱۲۵۶ بفرستید و «دریافت دیتای تست پورت ۱۲۵۶» را بزنید. داده خام به‌صورت HEX ثبت می‌شود و وارد جداول GPS سانا نمی‌شود. هنگام ضبط، Traccar نباید روی ۱۲۵۶ شنونده داشته باشد. پس از دریافت نمونه، شنود را متوقف کنید؛ سپس می‌توانید با انتخاب مدل دستگاه و وارد کردن ۱۲۵۶ در فیلد شماره پورت، همان پورت را به پروتکل شناسایی‌شده در Traccar اختصاص دهید. سقف فایل ضبط ۴ مگابایت است.
         </p>
       </div>
     </Card>
