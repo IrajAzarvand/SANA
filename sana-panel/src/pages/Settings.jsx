@@ -642,6 +642,8 @@ function TraccarPortManager() {
   const [error, setError] = useState('');
   const [captureRunning, setCaptureRunning] = useState(false);
   const [captureStreaming, setCaptureStreaming] = useState(false);
+  const [captureRemainingSeconds, setCaptureRemainingSeconds] = useState(0);
+  const [copyFeedback, setCopyFeedback] = useState('');
   const captureAbortRef = useRef(null);
 
   useEffect(() => {
@@ -738,7 +740,9 @@ function TraccarPortManager() {
         if (!statusResponse.ok || !statusResponse.body) return;
         const statusText = await statusResponse.text();
         const isRunning = statusText.includes('فعال است');
+        const remainingMatch = statusText.match(/زمان باقی‌مانده:\\s*(\\d+)\\s*ثانیه/);
         if (!active || !isRunning) return;
+        setCaptureRemainingSeconds(remainingMatch ? Number(remainingMatch[1]) : 0);
         setCaptureRunning(true); setCaptureStreaming(true);
         setLogs((previous) => [...previous, 'شنود قبلی روی سرور فعال است؛ در حال بازیابی لاگ ذخیره‌شده و زنده…']);
         statusPoll = window.setInterval(async () => {
@@ -748,10 +752,14 @@ function TraccarPortManager() {
               body: JSON.stringify({ action: 'capture-status', port: CAPTURE_TEST_PORT }),
             });
             const status = await check.text();
+            const remaining = status.match(/زمان باقی‌مانده:\\s*(\\d+)\\s*ثانیه/);
             if (!status.includes('فعال است')) {
               controller?.abort(); setCaptureRunning(false); setCaptureStreaming(false);
+              setCaptureRemainingSeconds(0);
               setLogs((previous) => [...previous, 'مهلت شنود پایان یافته یا دریافت متوقف شده است.']);
               window.clearInterval(statusPoll);
+            } else if (remaining) {
+              setCaptureRemainingSeconds(Number(remaining[1]));
             }
           } catch { /* retry on the next poll */ }
         }, 10000);
@@ -803,6 +811,34 @@ function TraccarPortManager() {
     return () => { active = false; controller?.abort(); if (statusPoll) window.clearInterval(statusPoll); };
   }, []);
 
+  useEffect(() => {
+    if (!captureRunning || captureRemainingSeconds <= 0) return undefined;
+    const timer = window.setInterval(() => {
+      setCaptureRemainingSeconds((value) => Math.max(0, value - 1));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [captureRunning, captureRemainingSeconds > 0]);
+
+  const formatCaptureTime = (seconds) => {
+    const safeSeconds = Math.max(0, Number(seconds) || 0);
+    const hours = Math.floor(safeSeconds / 3600);
+    const minutes = Math.floor((safeSeconds % 3600) / 60);
+    const remainder = safeSeconds % 60;
+    return [hours, minutes, remainder].map((value) => String(value).padStart(2, '0')).join(':');
+  };
+
+  const copyLogs = async () => {
+    const content = logs.join('\\n');
+    if (!content) return;
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopyFeedback('متن لاگ کپی شد');
+    } catch {
+      setCopyFeedback('کپی خودکار در این مرورگر مجاز نیست؛ از انتخاب و کپی متن استفاده کنید.');
+    }
+    window.setTimeout(() => setCopyFeedback(''), 3000);
+  };
+
   const toggleCapture = async () => {
     const result = await runOperation('capture-toggle', CAPTURE_TEST_PORT);
     if (!result || !result.success) return;
@@ -810,6 +846,7 @@ function TraccarPortManager() {
     const stopped = result.lines.some((line) => line.includes('متوقف شد') || line.includes('فعال نیست'));
     if (started) {
       setCaptureRunning(true);
+      setCaptureRemainingSeconds(6 * 60 * 60);
       setCaptureStreaming(true);
       const controller = new AbortController();
       captureAbortRef.current = controller;
@@ -843,6 +880,7 @@ function TraccarPortManager() {
       captureAbortRef.current?.abort();
       captureAbortRef.current = null;
       setCaptureRunning(false);
+      setCaptureRemainingSeconds(0);
       setCaptureStreaming(false);
     }
   };
@@ -927,9 +965,16 @@ function TraccarPortManager() {
 
         <div className="overflow-hidden rounded-field border border-border-base bg-[#0b1220]">
           <div className="flex items-center justify-between border-b border-white/10 px-4 py-2">
-            <span className="text-xs font-medium text-slate-200">گزارش اجرای عملیات</span>
-            <span className="text-[10px] text-slate-400">{captureStreaming ? 'رصد زنده فعال' : busy ? 'در حال اجرا' : captureRunning ? 'شنود فعال' : 'آماده'}</span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-medium text-slate-200">گزارش اجرای عملیات</span>
+              <Button variant="secondary" disabled={!logs.length} onClick={copyLogs}>کپی کل لاگ</Button>
+            </div>
+            <div className="flex items-center gap-3 text-[10px] text-slate-400">
+              {captureRunning && <span dir="ltr" className="font-mono">{formatCaptureTime(captureRemainingSeconds)}</span>}
+              <span>{captureStreaming ? 'رصد زنده فعال' : busy ? 'در حال اجرا' : captureRunning ? 'شنود فعال' : 'آماده'}</span>
+            </div>
           </div>
+          {copyFeedback && <div role="status" className="border-b border-white/10 px-4 py-1 text-[10px] text-slate-300">{copyFeedback}</div>}
           <pre
             role="log"
             aria-live="polite"
@@ -937,7 +982,7 @@ function TraccarPortManager() {
           >{logs.length ? logs.join('\n') : 'خروجی خالی است.'}</pre>
         </div>
         <p className="text-xs leading-6 text-text-muted">
-          برای شناسایی پروتکل ناشناخته، پورت ثابت ۱۲۵۶ مخصوص شنود آزمایشی است و از شماره پورت بالای این بخش مستقل عمل می‌کند. ابتدا فوروارد ورودی TCP و UDP پورت ۱۲۵۶ را در روتر/رادیو برقرار کنید؛ UFW سرور هنگام شروع شنود باز می‌شود. سپس دستگاه را موقتاً به پورت ۱۲۵۶ بفرستید و «دریافت دیتای تست پورت ۱۲۵۶» را بزنید. داده خام به‌صورت HEX ثبت می‌شود و وارد جداول GPS سانا نمی‌شود. هنگام ضبط، Traccar نباید روی ۱۲۵۶ شنونده داشته باشد. پس از دریافت نمونه، شنود را متوقف کنید. با توقف شنود، قانون‌های موقت UFW که این ابزار ایجاد کرده است حذف می‌شوند؛ فوروارد TCP/UDP پورت ۱۲۵۶ در رادیو/روتر را نیز دستی حذف کنید. سپس پروتکل را از روی داده خام شناسایی کنید و دستگاه را به پورت واقعی و فعال همان پروتکل در Traccar تنظیم کنید؛ پورت ۱۲۵۶ هرگز نباید در تنظیمات Traccar وارد یا به آن اختصاص داده شود. سقف فایل ضبط ۴ مگابایت است.
+          برای شناسایی پروتکل ناشناخته، پورت ثابت ۱۲۵۶ مخصوص شنود آزمایشی است و از شماره پورت بالای این بخش مستقل عمل می‌کند. ابتدا فوروارد ورودی TCP و UDP پورت ۱۲۵۶ را در روتر/رادیو برقرار کنید؛ UFW سرور هنگام شروع شنود باز می‌شود. سپس دستگاه را موقتاً به پورت ۱۲۵۶ بفرستید و «دریافت دیتای تست پورت ۱۲۵۶» را بزنید. داده خام به‌صورت HEX ثبت می‌شود و وارد جداول GPS سانا نمی‌شود. هنگام ضبط، Traccar نباید روی ۱۲۵۶ شنونده داشته باشد. پس از دریافت نمونه، شنود را متوقف کنید. با توقف شنود، فقط قانون‌های موقت UFW که این ابزار ایجاد کرده است حذف می‌شوند؛ فوروارد TCP/UDP پورت ۱۲۵۶ در روتر باید دائماً فعال بماند تا برای آزمایش دستگاه‌های بعدی نیز آماده باشد. سپس پروتکل را از روی داده خام شناسایی کنید و دستگاه را به پورت واقعی و فعال همان پروتکل در Traccar تنظیم کنید؛ پورت ۱۲۵۶ هرگز نباید در تنظیمات Traccar وارد یا به آن اختصاص داده شود. سقف فایل ضبط ۴ مگابایت است.
         </p>
       </div>
     </Card>
