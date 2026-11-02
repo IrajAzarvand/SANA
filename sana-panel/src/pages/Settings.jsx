@@ -724,6 +724,44 @@ function TraccarPortManager() {
     return { success: operationSucceeded, lines: operationLines };
   };
 
+  useEffect(() => {
+    let active = true;
+    let controller;
+    (async () => {
+      try {
+        const token = localStorage.getItem('sana_access_token');
+        const statusResponse = await fetch(apiClient.defaults.baseURL + '/gps-monitor/ports/', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+          body: JSON.stringify({ action: 'capture-status', port: CAPTURE_TEST_PORT }),
+        });
+        if (!statusResponse.ok || !statusResponse.body) return;
+        const statusText = await statusResponse.text();
+        const isRunning = statusText.includes('فعال است');
+        if (!active || !isRunning) return;
+        setCaptureRunning(true); setCaptureStreaming(true);
+        setLogs((previous) => [...previous, 'شنود قبلی روی سرور فعال است؛ در حال بازیابی لاگ ذخیره‌شده و زنده…']);
+        controller = new AbortController();
+        const logResponse = await fetch(apiClient.defaults.baseURL + '/gps-monitor/ports/capture/' + CAPTURE_TEST_PORT + '/', {
+          headers: { Accept: 'text/event-stream', ...(token ? { Authorization: 'Bearer ' + token } : {}) }, signal: controller.signal,
+        });
+        if (!logResponse.ok || !logResponse.body) throw new Error('خواندن لاگ شنود ناموفق بود.');
+        const reader = logResponse.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
+        while (active) {
+          const { value, done } = await reader.read();
+          buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+          const events = buffer.split('\\n\\n'); buffer = events.pop() || '';
+          for (const event of events) {
+            const line = event.split('\\n').find((item) => item.startsWith('data: '));
+            if (line) { try { const item = JSON.parse(line.slice(6)); setLogs((previous) => [...previous, item.line]); } catch { /* ignore malformed event */ } }
+          }
+          if (done) break;
+        }
+      } catch (err) { if (active && err.name !== 'AbortError') setLogs((previous) => [...previous, 'بازیابی لاگ: ' + err.message]); }
+      finally { if (active) setCaptureStreaming(false); }
+    })();
+    return () => { active = false; controller?.abort(); };
+  }, []);
+
   const toggleCapture = async () => {
     const result = await runOperation('capture-toggle', CAPTURE_TEST_PORT);
     if (!result || !result.success) return;
