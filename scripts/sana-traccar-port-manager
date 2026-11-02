@@ -485,7 +485,7 @@ def capture_start(port):
             "یک پورت آزمایشی آزاد انتخاب کنید."
         )
     # This port belongs exclusively to the raw capture helper, never to Traccar.
-    # The router/NAT forward is configured separately and must be removed after testing.
+    # The router/NAT forward is permanent and is managed separately; never remove it here.
     capture_firewall_open(port)
     deadline_path = capture_deadline_path(port)
     deadline_path.write_text(str(time.time() + 6 * 60 * 60), encoding="ascii")
