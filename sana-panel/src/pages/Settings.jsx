@@ -727,6 +727,7 @@ function TraccarPortManager() {
   useEffect(() => {
     let active = true;
     let controller;
+    let statusPoll;
     (async () => {
       try {
         const token = localStorage.getItem('sana_access_token');
@@ -740,6 +741,20 @@ function TraccarPortManager() {
         if (!active || !isRunning) return;
         setCaptureRunning(true); setCaptureStreaming(true);
         setLogs((previous) => [...previous, 'شنود قبلی روی سرور فعال است؛ در حال بازیابی لاگ ذخیره‌شده و زنده…']);
+        statusPoll = window.setInterval(async () => {
+          try {
+            const check = await fetch(apiClient.defaults.baseURL + '/gps-monitor/ports/', {
+              method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
+              body: JSON.stringify({ action: 'capture-status', port: CAPTURE_TEST_PORT }),
+            });
+            const status = await check.text();
+            if (!status.includes('فعال است')) {
+              controller?.abort(); setCaptureRunning(false); setCaptureStreaming(false);
+              setLogs((previous) => [...previous, 'مهلت شنود پایان یافته یا دریافت متوقف شده است.']);
+              window.clearInterval(statusPoll);
+            }
+          } catch { /* retry on the next poll */ }
+        }, 10000);
         controller = new AbortController();
         const logResponse = await fetch(apiClient.defaults.baseURL + '/gps-monitor/ports/capture/' + CAPTURE_TEST_PORT + '/', {
           headers: { Accept: 'text/event-stream', ...(token ? { Authorization: 'Bearer ' + token } : {}) }, signal: controller.signal,
@@ -759,7 +774,7 @@ function TraccarPortManager() {
       } catch (err) { if (active && err.name !== 'AbortError') setLogs((previous) => [...previous, 'بازیابی لاگ: ' + err.message]); }
       finally { if (active) setCaptureStreaming(false); }
     })();
-    return () => { active = false; controller?.abort(); };
+    return () => { active = false; controller?.abort(); if (statusPoll) window.clearInterval(statusPoll); };
   }, []);
 
   const toggleCapture = async () => {
