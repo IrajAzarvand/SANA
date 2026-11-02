@@ -1,4 +1,5 @@
 import io
+from unittest.mock import MagicMock, patch
 from django.contrib.auth import get_user_model
 from unittest.mock import patch
 
@@ -238,3 +239,46 @@ class TraccarRawCapturePermissionsTests(GPSMonitoringPermissionsTests):
             HTTP_ACCEPT="text/event-stream",
         )
         self.assertEqual(response.status_code, 400)
+
+    @patch("ops_monitoring.views.subprocess.Popen")
+    @patch("ops_monitoring.views.shutil.which", return_value="/usr/bin/sudo")
+    def test_capture_log_uses_fixed_tail_command(
+        self,
+        mock_which,
+        mock_popen,
+    ):
+        from unittest.mock import MagicMock
+
+        fake_process = MagicMock()
+        fake_process.stdout = [
+            "TCP CONNECT remote=127.0.0.1:12345\n",
+            "RAW transport=TCP length=30\n",
+        ]
+        fake_process.poll.return_value = 0
+
+        mock_popen.return_value = fake_process
+
+        response = self.client.get(
+            "/api/gps-monitor/ports/capture/1256/",
+            HTTP_ACCEPT="text/event-stream",
+        )
+
+        self.assertEqual(response.status_code, 200)
+
+        content = b"".join(response.streaming_content).decode("utf-8")
+
+        self.assertIn("TCP CONNECT", content)
+        self.assertIn("RAW transport=TCP", content)
+
+        command = mock_popen.call_args.args[0]
+
+        self.assertEqual(
+            command,
+            [
+                "/usr/bin/sudo",
+                "-n",
+                "/usr/local/sbin/sana-traccar-port-manager",
+                "capture-tail",
+                "1256",
+            ],
+        )

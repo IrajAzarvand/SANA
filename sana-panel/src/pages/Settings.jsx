@@ -760,15 +760,41 @@ function TraccarPortManager() {
           headers: { Accept: 'text/event-stream', ...(token ? { Authorization: 'Bearer ' + token } : {}) }, signal: controller.signal,
         });
         if (!logResponse.ok || !logResponse.body) throw new Error('خواندن لاگ شنود ناموفق بود.');
-        const reader = logResponse.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
+        const reader = logResponse.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
         while (active) {
           const { value, done } = await reader.read();
-          buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-          const events = buffer.split('\\n\\n'); buffer = events.pop() || '';
+
+          buffer += decoder.decode(value || new Uint8Array(), {
+            stream: !done,
+          });
+
+          const events = buffer.split('\n\n');
+          buffer = events.pop() || '';
+
           for (const event of events) {
-            const line = event.split('\\n').find((item) => item.startsWith('data: '));
-            if (line) { try { const item = JSON.parse(line.slice(6)); setLogs((previous) => [...previous, item.line]); } catch { /* ignore malformed event */ } }
+            const dataLine = event
+              .split('\n')
+              .find((item) => item.startsWith('data: '));
+
+            if (!dataLine) continue;
+
+            try {
+              const item = JSON.parse(dataLine.slice(6));
+
+              if (typeof item.line === 'string') {
+                setLogs((previous) => [...previous, item.line]);
+              }
+            } catch {
+              setLogs((previous) => [
+                ...previous,
+                dataLine.slice(6),
+              ]);
+            }
           }
+
           if (done) break;
         }
       } catch (err) { if (active && err.name !== 'AbortError') setLogs((previous) => [...previous, 'بازیابی لاگ: ' + err.message]); }

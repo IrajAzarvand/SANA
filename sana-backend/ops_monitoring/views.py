@@ -296,16 +296,18 @@ class TraccarCaptureLogView(APIView):
                 logger.warning("Could not stream raw GPS capture for port %s: %s", port, exc)
                 yield _event("خواندن لاگ زنده ممکن نشد؛ نصب helper و مجوز sudo را بررسی کنید.")
             finally:
-                if process is not None:
+                if process is not None and process.poll() is None:
                     try:
                         process.terminate()
+                        process.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
                         process.wait(timeout=2)
-                    except Exception:
-                        try:
-                            process.kill()
-                        except Exception:
-                            pass
-
+                    except OSError:
+                        logger.warning(
+                            "Could not terminate capture-tail process for port %s",
+                            port,
+                        )
         response = StreamingHttpResponse(generate(), content_type="text/event-stream")
         response["Cache-Control"] = "no-cache, no-transform"
         response["X-Accel-Buffering"] = "no"
