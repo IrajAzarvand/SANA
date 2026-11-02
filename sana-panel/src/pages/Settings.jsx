@@ -740,7 +740,7 @@ function TraccarPortManager() {
         if (!statusResponse.ok || !statusResponse.body) return;
         const statusText = await statusResponse.text();
         const isRunning = statusText.includes('فعال است');
-        const remainingMatch = statusText.match(/زمان باقی‌مانده:\\s*(\\d+)\\s*ثانیه/);
+        const remainingMatch = statusText.match(/زمان باقی‌مانده:\s*(\d+)\s*ثانیه/);
         if (!active || !isRunning) return;
         setCaptureRemainingSeconds(remainingMatch ? Number(remainingMatch[1]) : 0);
         setCaptureRunning(true); setCaptureStreaming(true);
@@ -752,7 +752,7 @@ function TraccarPortManager() {
               body: JSON.stringify({ action: 'capture-status', port: CAPTURE_TEST_PORT }),
             });
             const status = await check.text();
-            const remaining = status.match(/زمان باقی‌مانده:\\s*(\\d+)\\s*ثانیه/);
+            const remaining = status.match(/زمان باقی‌مانده:\s*(\d+)\s*ثانیه/);
             if (!status.includes('فعال است')) {
               controller?.abort(); setCaptureRunning(false); setCaptureStreaming(false);
               setCaptureRemainingSeconds(0);
