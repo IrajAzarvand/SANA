@@ -372,6 +372,10 @@ def capture_firewall_marker(port):
     return PID_DIR / f"{port}.ufw-managed"
 
 
+def capture_deadline_path(port):
+    return PID_DIR / f"{port}.deadline"
+
+
 def capture_firewall_open(port):
     """Open only missing UFW rules and remember exactly which rules we own."""
     PID_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -447,7 +451,13 @@ def capture_status(port):
         capture_firewall_cleanup(port)
         return 1
     if process_is_capture(pid):
+        deadline_path = capture_deadline_path(port)
+        try:
+            remaining = max(0, int(float(deadline_path.read_text(encoding="ascii").strip()) - time.time()))
+        except (OSError, ValueError):
+            remaining = 0
         emit(f"شنود آزمایشی پورت {port} فعال است (PID={pid}).")
+        emit(f"زمان باقی‌مانده: {remaining} ثانیه")
         return 0
     emit("فایل وضعیت قدیمی است؛ پردازش شنود فعال پیدا نشد.")
     try:
@@ -475,8 +485,11 @@ def capture_start(port):
             "یک پورت آزمایشی آزاد انتخاب کنید."
         )
     # This port belongs exclusively to the raw capture helper, never to Traccar.
-    # The router/NAT forward is configured separately and must be removed after testing.
+    # The router/NAT forward is permanent and is managed separately; never remove it here.
     capture_firewall_open(port)
+    deadline_path = capture_deadline_path(port)
+    deadline_path.write_text(str(time.time() + 6 * 60 * 60), encoding="ascii")
+    os.chmod(deadline_path, 0o600)
     try:
         with open(log_path, "w", encoding="utf-8") as log_file:
             os.chmod(log_path, 0o600)
@@ -489,6 +502,7 @@ def capture_start(port):
         if process.poll() is not None:
             raise RuntimeError(f"شنود آزمایشی شروع نشد؛ لاگ را بررسی کنید: {log_path}")
     except Exception:
+        deadline_path.unlink(missing_ok=True)
         capture_firewall_cleanup(port)
         raise
     pid_path.write_text(str(process.pid), encoding="ascii")
@@ -534,6 +548,7 @@ def capture_toggle(port):
 
 def capture_worker(port):
     log_path, pid_path = capture_paths(port)
+    deadline_path = capture_deadline_path(port)
     stopping = False
     tcp_server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     udp_server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -570,7 +585,15 @@ def capture_worker(port):
         log(f"READY TCP+UDP 0.0.0.0:{port}")
         log("منتظر اتصال TCP یا دیتاگرام UDP هستیم.")
         while not stopping:
-            readable, _, exceptional = select.select(sockets, [], sockets, 1.0)
+            try:
+                deadline = float(deadline_path.read_text(encoding="ascii").strip())
+            except (OSError, ValueError):
+                deadline = 0
+            if not deadline or time.time() >= deadline:
+                log("مدت مجاز ۶ ساعته به پایان رسید؛ شنود به‌صورت خودکار متوقف می‌شود.")
+                stopping = True
+                break
+            readable, _, exceptional = select.select(sockets, [], sockets, min(1.0, max(0.1, deadline - time.time())))
             for current in exceptional:
                 if current in clients:
                     clients.pop(current, None)
@@ -620,6 +643,7 @@ def capture_worker(port):
             capture_firewall_cleanup(port)
         except Exception as exc:
             log(f"UFW CLEANUP ERROR: {type(exc).__name__}: {exc}")
+        deadline_path.unlink(missing_ok=True)
     return 0
 
 
@@ -632,7 +656,7 @@ def capture_tail(port):
     if not tail:
         raise RuntimeError("دستور tail روی سرور نصب نیست.")
     process = subprocess.Popen(
-        [tail, "-n", "100", "-F", str(log_path)],
+        [tail, "-n", "+1", "-F", str(log_path)],
         stdout=sys.stdout, stderr=sys.stderr, text=True, close_fds=True
     )
     try:
