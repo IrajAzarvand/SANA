@@ -3,8 +3,8 @@
 export const reportTypes = [
   {
     id: 'trips',
-    title: 'گزارش سفرها',
-    description: 'لیست کامل سفرهای انجام‌شده به تفکیک خودرو و راننده',
+    title: 'گزارش جامع دستگاه',
+    description: 'مسیر GPS، بازپخش حرکت، سرعت، توقف‌ها و جزئیات کامل داده‌های دستگاه',
     icon: 'route',
     color: 'brand',
     format: ['PDF', 'Excel', 'CSV'],
