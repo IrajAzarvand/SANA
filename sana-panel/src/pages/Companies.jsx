@@ -151,6 +151,7 @@ export default function Companies() {
             <p className="text-sm text-text-muted">شرکتی یافت نشد</p>
           </div>
         ) : (
+          <>
           <div className="grid grid-cols-1 gap-3 sm:hidden">
             {filtered.map((c) => (
               <article key={c.id} className="rounded-card border border-border-base bg-bg-base p-3">
@@ -214,6 +215,7 @@ export default function Companies() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </Card>
 
