@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { Calendar, ChevronRight, ChevronLeft } from 'lucide-react';
 import {
@@ -42,8 +42,11 @@ export default function JalaliDatePicker({
   showTime = false,
   timeValue = '00:00',
   onTimeChange,
+  minTime = null,
+  maxTime = null,
 }) {
   const [open, setOpen] = useState(false);
+  const timeInputId = useId();
   const [displayValue, setDisplayValue] = useState('');
   const [popupPos, setPopupPos] = useState({ top: 0, left: 0 });
 
@@ -308,11 +311,13 @@ export default function JalaliDatePicker({
 
       {showTime && (
         <div className="mt-3 flex items-center justify-between gap-3 border-t border-border-base pt-3">
-          <label htmlFor="jalali-date-time-value" className="text-xs font-medium text-text-secondary">ساعت و دقیقه</label>
+          <label htmlFor={timeInputId} className="text-xs font-medium text-text-secondary">ساعت و دقیقه</label>
           <input
-            id="jalali-date-time-value"
+            id={timeInputId}
             type="time"
             value={timeValue || '00:00'}
+            min={minTime || undefined}
+            max={maxTime || undefined}
             onChange={(event) => onTimeChange?.(event.target.value)}
             className="w-32 rounded-lg border border-border-base bg-bg-base px-2.5 py-1.5 text-sm text-text-primary outline-none focus:border-brand-400"
           />
