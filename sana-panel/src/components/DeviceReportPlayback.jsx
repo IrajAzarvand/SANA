@@ -406,6 +406,8 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
               showTime
               timeValue={timePart(from) || '00:00'}
               onTimeChange={(value) => setFrom(withTimePart(from, value, '00:00'))}
+              minTime={!isSiteAdmin && metadata?.range_start && datePart(from) === datePart(dateTimeLocal(metadata.range_start)) ? timePart(dateTimeLocal(metadata.range_start)) : null}
+              maxTime={!isSiteAdmin && metadata?.range_end && datePart(from) === datePart(dateTimeLocal(metadata.range_end)) ? timePart(dateTimeLocal(metadata.range_end)) : null}
               minDate={!isSiteAdmin && metadata?.range_start ? datePart(dateTimeLocal(metadata.range_start)) : null}
               maxDate={!isSiteAdmin && metadata?.range_end ? datePart(dateTimeLocal(metadata.range_end)) : null}
               placeholder="تاریخ و ساعت شروع"
@@ -420,6 +422,8 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
               showTime
               timeValue={timePart(to) || '23:59'}
               onTimeChange={(value) => setTo(withTimePart(to, value, '23:59'))}
+              minTime={!isSiteAdmin && metadata?.range_start && datePart(to) === datePart(dateTimeLocal(metadata.range_start)) ? timePart(dateTimeLocal(metadata.range_start)) : null}
+              maxTime={!isSiteAdmin && metadata?.range_end && datePart(to) === datePart(dateTimeLocal(metadata.range_end)) ? timePart(dateTimeLocal(metadata.range_end)) : null}
               minDate={!isSiteAdmin && metadata?.range_start ? datePart(dateTimeLocal(metadata.range_start)) : null}
               maxDate={!isSiteAdmin && metadata?.range_end ? datePart(dateTimeLocal(metadata.range_end)) : null}
               placeholder="تاریخ و ساعت پایان"
