@@ -18,7 +18,32 @@ const timePart = (value) => value ? value.slice(11, 16) : '';
 const withDatePart = (current, date, fallbackTime) => date ? `${date}T${timePart(current) || fallbackTime}` : '';
 const withTimePart = (current, time, fallbackTime) => datePart(current) ? `${datePart(current)}T${time || fallbackTime}` : '';
 const formatDate = (value) => value ? new Date(value).toLocaleString('fa-IR') : '—';
-const showValue = (value, suffix = '') => value === null || value === undefined || value === '' ? '—' : `${value}${suffix}`;
+const formatNumeric = (value, maximumFractionDigits = 2) => {
+  if (value === null || value === undefined || value === '') return '—';
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return String(value);
+  return new Intl.NumberFormat('fa-IR', {
+    useGrouping: false,
+    maximumFractionDigits,
+  }).format(numeric);
+};
+const showValue = (value, suffix = '', maximumFractionDigits = 2) =>
+  value === null || value === undefined || value === '' ? '—' : `${formatNumeric(value, maximumFractionDigits)}${suffix}`;
+const attributeLabels = {
+  ignition: 'سوئیچ', motion: 'حرکت', satellites: 'ماهواره‌ها', sat: 'ماهواره‌ها',
+  rssi: 'قدرت سیگنال', gsm: 'قدرت GSM', battery: 'باتری', batteryVoltage: 'ولتاژ باتری',
+  power: 'ولتاژ خارجی', voltage: 'ولتاژ', odometer: 'کیلومترشمار', totalDistance: 'مسافت کل',
+  hours: 'ساعت کارکرد', engineHours: 'ساعت موتور', fuel: 'سوخت', fuelLevel: 'سطح سوخت',
+  alarm: 'هشدار', status: 'وضعیت', event: 'رویداد', hdop: 'دقت افقی',
+};
+const formatAttributeValue = (value) => {
+  if (value === null || value === undefined || value === '') return '—';
+  if (typeof value === 'boolean') return value ? 'بله' : 'خیر';
+  if (typeof value === 'number') return formatNumeric(value, 2);
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+};
+const formatAttributeLabel = (key) => attributeLabels[key] || key.replace(/([A-Z])/g, ' $1').replace(/[_-]+/g, ' ').trim();
 const pointCoordinates = (point) => [
   Number(point.matched_latitude ?? point.latitude),
   Number(point.matched_longitude ?? point.longitude),
@@ -378,14 +403,12 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
             <JalaliDatePicker
               value={from ? `${datePart(from)}T12:00:00` : ''}
               onChange={(value) => setFrom(withDatePart(from, value, '00:00'))}
+              showTime
+              timeValue={timePart(from) || '00:00'}
+              onTimeChange={(value) => setFrom(withTimePart(from, value, '00:00'))}
               minDate={!isSiteAdmin && metadata?.range_start ? datePart(dateTimeLocal(metadata.range_start)) : null}
               maxDate={!isSiteAdmin && metadata?.range_end ? datePart(dateTimeLocal(metadata.range_end)) : null}
-              placeholder="تاریخ شروع (شمسی)"
-            />
-            <input id="device-report-from-time" type="time" aria-label="ساعت شروع" value={timePart(from)} onChange={(event) => setFrom(withTimePart(from, event.target.value, '00:00'))}
-              min={!isSiteAdmin && metadata?.range_start && datePart(from) === datePart(dateTimeLocal(metadata.range_start)) ? timePart(dateTimeLocal(metadata.range_start)) : undefined}
-              max={!isSiteAdmin && metadata?.range_end && datePart(from) === datePart(dateTimeLocal(metadata.range_end)) ? timePart(dateTimeLocal(metadata.range_end)) : undefined}
-              className="w-full rounded-xl border border-border-base bg-bg-base px-3 py-2.5 text-sm text-text-primary outline-none focus:border-brand-400"
+              placeholder="تاریخ و ساعت شروع"
             />
             <p className="text-xs text-text-muted">{isSiteAdmin ? 'ادمین: بدون محدودیت قراردادی' : metadata?.range_start ? `محدوده قرارداد: ${formatDate(metadata.range_start)} تا ${formatDate(metadata.range_end)}` : 'ابتدا دستگاه مجاز را انتخاب کنید.'}</p>
           </div>
@@ -394,14 +417,12 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
             <JalaliDatePicker
               value={to ? `${datePart(to)}T12:00:00` : ''}
               onChange={(value) => setTo(withDatePart(to, value, '23:59'))}
+              showTime
+              timeValue={timePart(to) || '23:59'}
+              onTimeChange={(value) => setTo(withTimePart(to, value, '23:59'))}
               minDate={!isSiteAdmin && metadata?.range_start ? datePart(dateTimeLocal(metadata.range_start)) : null}
               maxDate={!isSiteAdmin && metadata?.range_end ? datePart(dateTimeLocal(metadata.range_end)) : null}
-              placeholder="تاریخ پایان (شمسی)"
-            />
-            <input id="device-report-to-time" type="time" aria-label="ساعت پایان" value={timePart(to)} onChange={(event) => setTo(withTimePart(to, event.target.value, '23:59'))}
-              min={!isSiteAdmin && metadata?.range_start && datePart(to) === datePart(dateTimeLocal(metadata.range_start)) ? timePart(dateTimeLocal(metadata.range_start)) : undefined}
-              max={!isSiteAdmin && metadata?.range_end && datePart(to) === datePart(dateTimeLocal(metadata.range_end)) ? timePart(dateTimeLocal(metadata.range_end)) : undefined}
-              className="w-full rounded-xl border border-border-base bg-bg-base px-3 py-2.5 text-sm text-text-primary outline-none focus:border-brand-400"
+              placeholder="تاریخ و ساعت پایان"
             />
             <button type="button" onClick={loadHistory} disabled={loadingHistory || !deviceId} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60">
               {loadingHistory ? <LoaderCircle size={16} className="animate-spin" /> : <CalendarClock size={16} />}
@@ -476,13 +497,13 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
 
       <section className="rounded-2xl border border-border-base bg-bg-elevated p-4 shadow-sm">
         <div className="mb-4 flex items-center justify-between gap-2"><h3 className="font-semibold text-text-primary">ویژگی‌های دستگاه در نقطه انتخاب‌شده</h3><span className="text-xs text-text-muted">{currentPoint ? formatDate(currentPoint.device_time) : '—'}</span></div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
           {[
-            ['سرعت', showValue(currentPoint?.speed, ' km/h')],
-            ['مختصات عرض خام', showValue(currentPoint?.latitude)],
-            ['مختصات طول خام', showValue(currentPoint?.longitude)],
-            ['عرض تطبیق‌یافته', showValue(currentPoint?.matched_latitude)],
-            ['طول تطبیق‌یافته', showValue(currentPoint?.matched_longitude)],
+            ['سرعت', showValue(currentPoint?.speed, ' km/h', 1)],
+            ['مختصات عرض خام', showValue(currentPoint?.latitude, '', 6)],
+            ['مختصات طول خام', showValue(currentPoint?.longitude, '', 6)],
+            ['عرض تطبیق‌یافته', showValue(currentPoint?.matched_latitude, '', 6)],
+            ['طول تطبیق‌یافته', showValue(currentPoint?.matched_longitude, '', 6)],
             ['دقت GPS', showValue(currentPoint?.accuracy, ' m')],
             ['جهت حرکت', showValue(currentPoint?.heading, '°')],
             ['ارتفاع', showValue(currentPoint?.altitude, ' m')],
@@ -499,9 +520,29 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
             ['زمان دریافت سرور', formatDate(currentPoint?.server_received_at)],
             ['منبع تطبیق', currentPoint?.match_provider || '—'],
             ['زمان تطبیق', formatDate(currentPoint?.matched_at)],
-          ].map(([label, value]) => <div key={label} className="rounded-xl border border-border-base bg-bg-base p-3"><div className="text-xs text-text-muted">{label}</div><div className="mt-1 break-words text-sm font-medium text-text-primary">{value}</div></div>)}
+          ].map(([label, value]) => (
+            <div key={label} className="min-w-0 rounded-lg border border-border-base bg-bg-base px-2.5 py-2">
+              <div className="text-[11px] leading-4 text-text-muted">{label}</div>
+              <div className="mt-1 break-words text-xs font-semibold leading-5 text-text-primary">{value}</div>
+            </div>
+          ))}
         </div>
-        {Object.keys(attributes).length > 0 && <div className="mt-4"><h4 className="mb-2 text-sm font-semibold text-text-primary">ویژگی‌های اضافی ثبت‌شده</h4><pre dir="ltr" className="max-h-64 overflow-auto rounded-xl bg-bg-base p-3 text-xs leading-5 text-text-secondary">{JSON.stringify(attributes, null, 2)}</pre></div>}
+        {Object.keys(attributes).length > 0 && (
+          <div className="mt-4">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <h4 className="text-sm font-semibold text-text-primary">سایر ویژگی‌های دریافتی از دستگاه</h4>
+              <span className="text-[11px] text-text-muted">{Object.keys(attributes).length.toLocaleString('fa-IR')} مورد</span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+              {Object.entries(attributes).map(([key, value]) => (
+                <div key={key} className="min-w-0 rounded-lg border border-border-base bg-bg-base px-2.5 py-2">
+                  <div className="text-[11px] leading-4 text-text-muted">{formatAttributeLabel(key)}</div>
+                  <div className="mt-1 break-words text-xs font-medium leading-5 text-text-primary">{formatAttributeValue(value)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
     </section>
   );
