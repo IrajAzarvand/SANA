@@ -21,7 +21,10 @@ export default function ProtectedRoute({ children, allowRoles = null }) {
     return <Navigate to="/login" replace />;
   }
 
-  if (allowRoles && !allowRoles.includes(user.role)) {
+  // ادمین کل سایت از تمام مسیرهای پنل عبور می‌کند؛
+  // allowRoles فقط محدودیت نقش‌های غیرادمین را اعمال می‌کند.
+  const isSiteAdmin = user.role === 'site_admin';
+  if (allowRoles && !isSiteAdmin && !allowRoles.includes(user.role)) {
     return <Navigate to="/panel/dashboard" replace />;
   }
 
