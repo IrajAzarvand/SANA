@@ -157,7 +157,34 @@ export default function Subscriptions() {
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto -m-5">
+          <div className="grid grid-cols-1 gap-3 sm:hidden">
+            {filtered.map((s) => {
+              const st = statusMap[s.status] || statusMap.expired;
+              const daysLeft = s.days_until_expiry;
+              return (
+                <article key={s.id} className="rounded-card border border-border-base bg-bg-base p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <button onClick={() => navigate(`/panel/subscriptions/${s.id}`)} className="font-mono text-sm font-semibold text-brand-400">{s.contract_number}</button>
+                      <div className="mt-1 break-words text-sm text-text-primary">{s.customer_name}</div>
+                    </div>
+                    <ActionMenu items={getMenuItems(s)} />
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-3 border-t border-border-base pt-3 text-xs">
+                    <div><div className="text-text-muted">نوع مشتری</div><div className="mt-1"><Badge variant={s.customer_type === 'organization' ? 'brand' : 'info'}>{s.customer_type === 'organization' ? 'سازمانی' : 'شخصی'}</Badge></div></div>
+                    <div><div className="text-text-muted">وضعیت قرارداد</div><div className="mt-1"><Badge variant={st.variant}>{st.label}</Badge></div></div>
+                    <div><div className="text-text-muted">شروع</div><div className="mt-1 font-mono text-text-primary">{toJalali(s.start_date)}</div></div>
+                    <div><div className="text-text-muted">پایان</div><div className="mt-1 font-mono text-text-primary">{toJalali(s.end_date)}</div></div>
+                    <div><div className="text-text-muted">روز مانده</div><div className={`mt-1 font-mono ${daysLeft < 0 ? 'text-danger' : daysLeft <= 30 ? 'text-warning' : 'text-text-primary'}`}>{daysLeft < 0 ? `منقضی (${Math.abs(daysLeft)} روز پیش)` : `${daysLeft} روز`}</div></div>
+                    <div><div className="text-text-muted">دستگاه‌های فعال</div><div className="mt-1 font-mono text-text-primary">{s.active_device_count ?? 0}</div></div>
+                    <div><div className="text-text-muted">پرداخت‌شده</div><div className="mt-1 font-mono text-text-primary">{Number(s.paid_payment_amount || 0).toLocaleString('fa-IR')} ریال</div></div>
+                    <div><div className="text-text-muted">پرداخت آینده</div><div className="mt-1 font-mono text-text-primary">{Number(s.future_payment_amount || 0).toLocaleString('fa-IR')} ریال</div></div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+          <div className="hidden overflow-x-auto -m-5 sm:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border-base">
