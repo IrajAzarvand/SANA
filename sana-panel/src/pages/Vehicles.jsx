@@ -271,6 +271,7 @@ export default function Vehicles() {
             description="هنوز خودرویی ثبت نشده یا با فیلترهای فعلی مطابقت ندارد."
           />
         ) : (
+          <>
           <div className="grid grid-cols-1 gap-3 sm:hidden">
             {filtered.map((v) => {
               const devStatus = deviceStatusMap[v.device_status] || deviceStatusMap.none;
@@ -331,6 +332,7 @@ export default function Vehicles() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </Card>
 
