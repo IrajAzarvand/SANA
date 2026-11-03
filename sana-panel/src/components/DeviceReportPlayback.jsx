@@ -257,7 +257,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
       return `"${raw.replace(/"/g, '""')}"`;
     };
     const rows = [columns.join(','), ...points.map((point) => columns.map((key) => escapeCsv(point[key])).join(','))];
-    const blob = new Blob(['\\uFEFF', rows.join('\\r\\n')], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob(['\uFEFF', rows.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
