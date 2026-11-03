@@ -233,9 +233,14 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
     if (!points.length) return null;
     let distanceKm = 0;
     for (let index = 1; index < points.length; index += 1) {
-      distanceKm += distanceBetween(points[index - 1], points[index]);
+      const previousTime = new Date(points[index - 1].device_time).getTime();
+      const currentTime = new Date(points[index].device_time).getTime();
+      const elapsedHours = (currentTime - previousTime) / 3600000;
+      if (elapsedHours <= 0 || elapsedHours > (10 / 60)) continue;
+      const segmentKm = distanceBetween(points[index - 1], points[index]);
+      if (segmentKm / elapsedHours <= 180) distanceKm += segmentKm;
     }
-    const speeds = points.map((point) => Number(point.speed)).filter(Number.isFinite);
+    const speeds = points.filter((point) => point.speed != null && point.speed !== '').map((point) => Number(point.speed)).filter(Number.isFinite);
     const movingPoints = points.filter((point) => point.motion === true || Number(point.speed) >= 3).length;
     const start = new Date(points[0].device_time).getTime();
     const end = new Date(points[points.length - 1].device_time).getTime();
@@ -261,7 +266,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
     let wasMoving = false;
     const stops = [];
     let activeStop = null;
-    const speedSamples = points.filter((point) => Number.isFinite(Number(point.speed)));
+    const speedSamples = points.filter((point) => point.speed != null && point.speed !== '' && Number.isFinite(Number(point.speed)));
     for (let index = 0; index < points.length; index += 1) {
       const point = points[index];
       const moving = isMoving(point);
@@ -304,7 +309,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
       ignitionOnMs,
       ignitionOffMs,
       unknownIgnitionMs,
-      stops: stops.sort((a, b) => new Date(b.duration) - new Date(a.duration)),
+      stops: stops.sort((a, b) => b.duration - a.duration),
       sampledSpeeds,
       maxSample,
       minSpeed: speedSamples.length ? Math.min(...speedSamples.map((point) => Number(point.speed))) : 0,
