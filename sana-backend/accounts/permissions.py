@@ -39,11 +39,11 @@ class IsMainUserOrSiteAdmin(permissions.BasePermission):
 
 
 class IsOrganizationMember(permissions.BasePermission):
-    """فقط کاربران سازمانی (Main User یا Branch Manager)"""
+    """کاربر سازمانی یا ادمین کل سایت"""
 
     def has_permission(self, request, view):
         return (
             request.user and
             request.user.is_authenticated and
-            request.user.account_type == 'organization'
+            (request.user.is_site_admin or request.user.account_type == 'organization')
         )
