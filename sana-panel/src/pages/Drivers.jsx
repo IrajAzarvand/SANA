@@ -345,7 +345,30 @@ export default function Drivers() {
             description="هنوز راننده‌ای ثبت نشده یا با فیلترهای فعلی مطابقت ندارد."
           />
         ) : (
-          <div className="overflow-x-auto -m-5">
+          <>
+          <div className="grid grid-cols-1 gap-3 sm:hidden">
+            {filtered.map((d) => {
+              const positionLabel = positions.find((p) => p.value === d.position)?.label || d.position;
+              return (
+                <article key={d.id} className="rounded-card border border-border-base bg-bg-base p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-medium text-text-primary">{d.full_name || `${d.first_name} ${d.last_name}`}</div>
+                      <div className="mt-1 font-mono text-xs text-text-muted">{d.personnel_code || '—'}</div>
+                    </div>
+                    <ActionMenu items={getMenuItems(d)} />
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-3 border-t border-border-base pt-3 text-xs">
+                    <div><div className="text-text-muted">تماس</div><div className="mt-1 font-mono text-text-primary">{d.mobile || '—'}</div></div>
+                    <div><div className="text-text-muted">سمت</div><div className="mt-1 text-text-primary">{positionLabel}</div></div>
+                    <div><div className="text-text-muted">گواهینامه</div><div className="mt-1 font-mono text-text-primary">{d.license_number || '—'}</div>{d.license_expiry && <div className="mt-1 text-[10px] text-text-muted">انقضا: {toJalali(d.license_expiry)}</div>}</div>
+                    {showBranchColumn && <div><div className="text-text-muted">شعبه</div><div className="mt-1 text-text-primary">{d.branch_name || '—'}</div></div>}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+          <div className="hidden overflow-x-auto -m-5 sm:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border-base">
@@ -421,6 +444,7 @@ export default function Drivers() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </Card>
 
