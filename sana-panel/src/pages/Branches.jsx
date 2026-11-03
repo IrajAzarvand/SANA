@@ -220,6 +220,7 @@ export default function Branches() {
             <p className="text-sm text-text-muted">شعبه‌ای یافت نشد</p>
           </div>
         ) : (
+          <>
           <div className="grid grid-cols-1 gap-3 sm:hidden">
             {filtered.map((b) => (
               <article key={b.id} className="rounded-card border border-border-base bg-bg-base p-3">
@@ -290,6 +291,7 @@ export default function Branches() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </Card>
 
