@@ -392,7 +392,34 @@ function DevicesTab() {
             description="هنوز دستگاهی ثبت نشده یا با فیلترهای فعلی مطابقت ندارد."
           />
         ) : (
-          <div className="overflow-x-auto -m-5">
+          <div className="grid grid-cols-1 gap-3 sm:hidden">
+            {filtered.map((d) => {
+              const mgmt = managementStatusMap[d.management_status] || managementStatusMap.warehouse;
+              return (
+                <article id={`device-card-${d.id}`} key={d.id} className="rounded-card border border-border-base bg-bg-base p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 font-mono text-sm font-semibold text-text-primary"><Hash size={13} className="text-text-muted" />{d.imei}</div>
+                      <div className="mt-2"><Badge variant={d.protocol ? 'brand' : 'muted'}>{[d.device_model_manufacturer,d.device_model_name].filter(Boolean).join(' - ') || protocolLabelMap[(d.protocol || '').toLowerCase()] || d.protocol || 'در انتظار شناسایی'}</Badge></div>
+                    </div>
+                    <ActionMenu items={getMenuItems(d)} />
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-3 border-t border-border-base pt-3 text-xs">
+                    <div><div className="text-text-muted">SIM</div><div className="mt-1 font-mono text-text-primary">{d.sim_number || '—'}</div></div>
+                    {isSiteAdmin && <div><div className="text-text-muted">مشتری</div><div className="mt-1 text-text-primary">{d.customer_name || 'در انبار'}</div></div>}
+                    <div><div className="text-text-muted">قرارداد</div><div className="mt-1 font-mono text-text-primary">{d.subscription_number || '—'}</div></div>
+                    <div><div className="text-text-muted">نوع ارتباط</div><div className="mt-1 text-text-primary">{d.subscription_device_type_display || '—'}</div></div>
+                    <div><div className="text-text-muted">خودرو</div><div className="mt-1 font-mono text-text-primary">{d.vehicle_plate || '—'}</div></div>
+                    <div><div className="text-text-muted">وضعیت مدیریتی</div><div className="mt-1"><Badge variant={mgmt.variant}>{mgmt.label}</Badge></div></div>
+                    <div><div className="text-text-muted">آخرین دریافت GPS</div><div className="mt-1 text-text-primary">{formatReceivedAt(d.last_data_received_at)}</div></div>
+                    <div><div className="text-text-muted">وضعیت قرارداد داده</div><div className="mt-1"><Badge variant={d.data_active ? 'success' : 'muted'}>{d.data_active ? 'دریافت داده فعال' : 'دریافت داده غیرفعال'}</Badge></div></div>
+                    {d.replacement_device_imei && <div className="col-span-2"><div className="text-text-muted">دستگاه مرتبط</div><button type="button" onClick={() => focusRelatedDevice(d.replacement_device_imei)} className="mt-1 text-brand-400">{d.replacement_device_imei}</button></div>}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+          <div className="hidden overflow-x-auto -m-5 sm:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border-base">
