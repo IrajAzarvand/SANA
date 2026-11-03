@@ -241,7 +241,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
       if (segmentKm / elapsedHours <= 180) distanceKm += segmentKm;
     }
     const speeds = points.filter((point) => point.speed != null && point.speed !== '').map((point) => Number(point.speed)).filter(Number.isFinite);
-    const movingPoints = points.filter((point) => point.motion === true || Number(point.speed) >= 3).length;
+    const movingPoints = points.filter((point) => point.motion === true || (point.motion == null && Number(point.speed) >= 3)).length;
     const start = new Date(points[0].device_time).getTime();
     const end = new Date(points[points.length - 1].device_time).getTime();
     return {
