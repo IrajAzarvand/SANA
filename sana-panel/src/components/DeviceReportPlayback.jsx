@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, CalendarClock, ChevronLeft, ChevronRight, CircleAlert, Download, Gauge, LoaderCircle, Pause, Play, Route, Search, SkipBack, SkipForward } from 'lucide-react';
+import { Activity, CalendarClock, ChevronLeft, ChevronRight, CircleAlert, Download, Gauge, LoaderCircle, Play, Route, Search, SkipBack, SkipForward } from 'lucide-react';
 import apiClient from '../api/client';
 import JalaliDatePicker from './JalaliDatePicker';
 import LiveDeviceMap from '../../../sana-map/src/LiveDeviceMap';
@@ -482,7 +482,17 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
               <button type="button" onClick={() => { setPointIndex(0); setPlaying(false); }} disabled={!points.length} title="ابتدای مسیر" aria-label="ابتدای مسیر" className="rounded-lg border border-border-base p-2 text-text-secondary disabled:opacity-40"><SkipBack size={17} /></button>
               <button type="button" onClick={() => moveBy(-1)} disabled={!points.length || pointIndex === 0} title="فریم قبلی" aria-label="فریم قبلی" className="rounded-lg border border-border-base p-2 text-text-secondary disabled:opacity-40"><ChevronLeft size={17} /></button>
             </div>
-            <button type="button" onClick={() => setPlaying((value) => !value)} disabled={points.length < 2} className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">{playing ? <Pause size={16} /> : <Play size={16} />}{playing ? 'توقف' : 'پخش'}</button>
+            <button
+              type="button"
+              onClick={() => setPlaying((value) => !value)}
+              disabled={points.length < 2}
+              aria-label={playing ? 'توقف بازپخش' : 'شروع بازپخش'}
+              title={playing ? 'توقف بازپخش' : 'شروع بازپخش'}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
+            >
+              <Play size={16} aria-hidden="true" />
+              {playing ? 'توقف' : 'پخش'}
+            </button>
             <div className="flex items-center justify-end gap-2">
               <button type="button" onClick={() => moveBy(1)} disabled={!points.length || pointIndex >= points.length - 1} title="فریم بعدی" aria-label="فریم بعدی" className="rounded-lg border border-border-base p-2 text-text-secondary disabled:opacity-40"><ChevronRight size={17} /></button>
               <button type="button" onClick={() => { setPointIndex(Math.max(0, points.length - 1)); setPlaying(false); }} disabled={!points.length} title="انتهای مسیر" aria-label="انتهای مسیر" className="rounded-lg border border-border-base p-2 text-text-secondary disabled:opacity-40"><SkipForward size={17} /></button>
