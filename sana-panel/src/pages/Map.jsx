@@ -110,7 +110,7 @@ export default function Map() {
       {error && <div role="alert" className="rounded-card border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-text-primary">{error}{positions.length > 0 && <span className="mr-2 text-text-muted">موقعیت‌های قبلی تا دریافت داده جدید نمایش داده می‌شوند.</span>}</div>}
       <section className="overflow-hidden rounded-card border border-border-base bg-bg-elevated">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-base px-4 py-3">
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2 text-sm font-medium text-text-primary"><Activity size={17} className="text-brand-400" />موقعیت دستگاه‌ها</div>
             <label className="flex items-center gap-2 text-sm text-text-secondary">
               <span>نقشه:</span>
@@ -133,7 +133,7 @@ export default function Map() {
             <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-brand-500" />به‌روزرسانی خودکار هر {refreshIntervalSeconds.toLocaleString('fa-IR')} ثانیه</span>
           </div>
         </div>
-        <div className="h-[min(72vh,760px)] min-h-[420px]">
+        <div className="h-[min(62dvh,760px)] min-h-[320px] sm:h-[min(72vh,760px)] sm:min-h-[420px]">
           <LiveDeviceMap
             positions={positions}
             provider={mapProvider}
