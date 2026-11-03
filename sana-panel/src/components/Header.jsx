@@ -8,7 +8,7 @@ export default function Header({ onMenuClick }) {
   const { user, logout } = useAuth();
 
   return (
-    <header className="h-16 bg-bg-elevated border-b border-border-base flex items-center justify-between px-4 gap-4 sticky top-0 z-30">
+    <header className="h-16 min-h-16 shrink-0 bg-bg-elevated border-b border-border-base flex items-center justify-between px-2 sm:px-4 gap-2 sm:gap-4 sticky top-0 z-30">
 
       {/* سمت راست: منو + لوگو */}
       <div className="flex items-center gap-3">
@@ -40,7 +40,7 @@ export default function Header({ onMenuClick }) {
       </div>
 
       {/* سمت چپ: اعلان + پروفایل */}
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 items-center gap-1 sm:gap-2">
 
         {/* زنگ اعلان */}
         <button className="relative p-2 rounded-field text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors">
