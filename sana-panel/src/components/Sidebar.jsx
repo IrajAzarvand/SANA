@@ -9,14 +9,19 @@ import { useAuth } from '../context/AuthContext';
 export default function Sidebar({ isOpen, onClose }) {
   const { user, isSiteAdmin, isOrganization, isBranchManager, isMainUser, isPersonal } = useAuth();
 
-  // منوی ادمین — بدون «خودروها» و «رانندگان»
+  // ادمین کل سایت باید به تمام بخش‌های پنل دسترسی مستقیم داشته باشد.
   const adminMenu = [
     { path: '/panel/dashboard',      icon: LayoutDashboard, label: 'داشبورد' },
     { path: '/panel/map',            icon: MapIcon,          label: 'نقشه زنده' },
-    { path: '/panel/subscriptions',  icon: FileText,         label: 'قراردادها' },
+    { path: '/panel/vehicles',       icon: Truck,            label: 'خودروها' },
+    { path: '/panel/drivers',        icon: Users,            label: 'رانندگان' },
     { path: '/panel/devices',        icon: Cpu,              label: 'همه دستگاه‌ها' },
+    { path: '/panel/branches',       icon: Building2,        label: 'شعبه‌ها' },
+    { path: '/panel/users',          icon: Shield,           label: 'کاربران' },
+    { path: '/panel/companies',      icon: Building2,        label: 'شرکت‌ها' },
+    { path: '/panel/subscriptions',  icon: FileText,         label: 'قراردادها' },
     { path: '/panel/ai',             icon: BrainCircuit,     label: 'هوش مصنوعی' },
-    { path: '/panel/reports',        icon: BarChart3,        label: 'گزارش‌ها' },
+    { path: '/panel/reports',        icon: BarChart3,         label: 'گزارش‌ها' },
     { path: '/panel/alerts',         icon: AlertTriangle,    label: 'هشدارها', badge: 8 },
     { path: '/panel/settings',       icon: Settings,         label: 'تنظیمات سایت' },
   ];
@@ -38,7 +43,7 @@ export default function Sidebar({ isOpen, onClose }) {
     { path: '/panel/dashboard',  icon: LayoutDashboard, label: 'داشبورد' },
     { path: '/panel/map',        icon: MapIcon,          label: 'نقشه' },
     { path: '/panel/vehicles',   icon: Car,              label: 'خودروهای من' },
-    { path: '/panel/devices',    icon: Cpu,              label: 'دستگاه‌های من' },
+    { path: '/panel/devices',    icon: Cpu,               label: 'دستگاه‌های من' },
     { path: '/panel/reports',    icon: BarChart3,        label: 'گزارش‌ها' },
     { path: '/panel/alerts',     icon: AlertTriangle,    label: 'هشدارها', badge: 3 },
     { path: '/panel/settings',   icon: Settings,         label: 'تنظیمات' },
