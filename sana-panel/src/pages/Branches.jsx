@@ -220,7 +220,26 @@ export default function Branches() {
             <p className="text-sm text-text-muted">شعبه‌ای یافت نشد</p>
           </div>
         ) : (
-          <div className="overflow-x-auto -m-5">
+          <div className="grid grid-cols-1 gap-3 sm:hidden">
+            {filtered.map((b) => (
+              <article key={b.id} className="rounded-card border border-border-base bg-bg-base p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-field bg-brand-900/40"><Building2 size={16} className="text-brand-400" /></div>
+                    <div className="min-w-0"><div className="font-medium text-text-primary break-words">{b.name}</div><div className="mt-1 font-mono text-xs text-text-muted">{b.code}</div></div>
+                  </div>
+                  <ActionMenu items={getMenuItems(b)} />
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border-base pt-3 text-xs">
+                  {isSiteAdmin && <div className="col-span-2"><div className="text-text-muted">شرکت</div><div className="mt-1 text-text-primary">{b.organization_name || '—'}</div></div>}
+                  <div><div className="text-text-muted">تلفن</div><div className="mt-1 font-mono text-text-primary">{b.phone || '—'}</div></div>
+                  <div><div className="text-text-muted">وضعیت</div><div className="mt-1"><Badge variant={b.status === 'active' ? 'success' : 'muted'}>{b.status === 'active' ? 'فعال' : 'غیرفعال'}</Badge></div></div>
+                  <div className="col-span-2"><div className="text-text-muted">منابع</div><div className="mt-1 flex flex-wrap gap-3 text-text-secondary"><span>🚗 {b.vehicles_count || 0} خودرو</span><span>📡 {b.devices_count || 0} دستگاه</span><span>👤 {b.drivers_count || 0} راننده</span></div></div>
+                </div>
+              </article>
+            ))}
+          </div>
+          <div className="hidden overflow-x-auto -m-5 sm:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border-base">
