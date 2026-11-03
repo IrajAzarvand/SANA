@@ -157,6 +157,7 @@ export default function Subscriptions() {
             )}
           </div>
         ) : (
+          <>
           <div className="grid grid-cols-1 gap-3 sm:hidden">
             {filtered.map((s) => {
               const st = statusMap[s.status] || statusMap.expired;
@@ -245,6 +246,7 @@ export default function Subscriptions() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </Card>
 
