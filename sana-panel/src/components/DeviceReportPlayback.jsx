@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, CalendarClock, ChevronLeft, ChevronRight, CircleAlert, Download, Gauge, LoaderCircle, Pause, Play, Route, Search, SkipBack, SkipForward } from 'lucide-react';
 import apiClient from '../api/client';
+import JalaliDatePicker from './JalaliDatePicker';
 import LiveDeviceMap from '../../../sana-map/src/LiveDeviceMap';
 import { MAP_PROVIDER, MAP_PROVIDERS } from '../../../sana-map/src/config';
 
@@ -12,6 +13,10 @@ const dateTimeLocal = (value) => {
   return local.toISOString().slice(0, 16);
 };
 const toApiDate = (value) => value ? new Date(value).toISOString() : '';
+const datePart = (value) => value ? value.slice(0, 10) : '';
+const timePart = (value) => value ? value.slice(11, 16) : '';
+const withDatePart = (current, date, fallbackTime) => date ? `${date}T${timePart(current) || fallbackTime}` : '';
+const withTimePart = (current, time, fallbackTime) => datePart(current) ? `${datePart(current)}T${time || fallbackTime}` : '';
 const formatDate = (value) => value ? new Date(value).toLocaleString('fa-IR') : '—';
 const showValue = (value, suffix = '') => value === null || value === undefined || value === '' ? '—' : `${value}${suffix}`;
 const pointCoordinates = (point) => [
@@ -368,14 +373,36 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
             </div>
             {selectedDevice && !devicePickerOpen && <p className="mt-2 text-xs text-text-muted">دستگاه انتخاب‌شده: {deviceLabel(selectedDevice)}</p>}
           </div>
-                    <div>
-            <label htmlFor="device-report-from" className="mb-2 block text-sm font-medium text-text-primary">از تاریخ و ساعت</label>
-            <input id="device-report-from" type="datetime-local" value={from} min={!isSiteAdmin && metadata?.range_start ? dateTimeLocal(metadata.range_start) : undefined} max={!isSiteAdmin && metadata?.range_end ? dateTimeLocal(metadata.range_end) : undefined} onChange={(event) => setFrom(event.target.value)} className="w-full rounded-xl border border-border-base bg-bg-base px-3 py-2.5 text-sm text-text-primary outline-none focus:border-brand-400" />
-            <p className="mt-2 text-xs text-text-muted">{isSiteAdmin ? 'ادمین: بدون محدودیت قراردادی' : metadata?.range_start ? `محدوده قرارداد: ${formatDate(metadata.range_start)} تا ${formatDate(metadata.range_end)}` : 'ابتدا دستگاه مجاز را انتخاب کنید.'}</p>
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-text-primary">از تاریخ و ساعت</label>
+            <JalaliDatePicker
+              value={from ? `${datePart(from)}T12:00:00` : ''}
+              onChange={(value) => setFrom(withDatePart(from, value, '00:00'))}
+              minDate={!isSiteAdmin && metadata?.range_start ? datePart(dateTimeLocal(metadata.range_start)) : null}
+              maxDate={!isSiteAdmin && metadata?.range_end ? datePart(dateTimeLocal(metadata.range_end)) : null}
+              placeholder="تاریخ شروع (شمسی)"
+            />
+            <input id="device-report-from-time" type="time" aria-label="ساعت شروع" value={timePart(from)} onChange={(event) => setFrom(withTimePart(from, event.target.value, '00:00'))}
+              min={!isSiteAdmin && metadata?.range_start && datePart(from) === datePart(dateTimeLocal(metadata.range_start)) ? timePart(dateTimeLocal(metadata.range_start)) : undefined}
+              max={!isSiteAdmin && metadata?.range_end && datePart(from) === datePart(dateTimeLocal(metadata.range_end)) ? timePart(dateTimeLocal(metadata.range_end)) : undefined}
+              className="w-full rounded-xl border border-border-base bg-bg-base px-3 py-2.5 text-sm text-text-primary outline-none focus:border-brand-400"
+            />
+            <p className="text-xs text-text-muted">{isSiteAdmin ? 'ادمین: بدون محدودیت قراردادی' : metadata?.range_start ? `محدوده قرارداد: ${formatDate(metadata.range_start)} تا ${formatDate(metadata.range_end)}` : 'ابتدا دستگاه مجاز را انتخاب کنید.'}</p>
           </div>
-          <div>
-            <label htmlFor="device-report-to" className="mb-2 block text-sm font-medium text-text-primary">تا تاریخ و ساعت</label>
-            <input id="device-report-to" type="datetime-local" value={to} min={!isSiteAdmin && metadata?.range_start ? dateTimeLocal(metadata.range_start) : undefined} max={!isSiteAdmin && metadata?.range_end ? dateTimeLocal(metadata.range_end) : undefined} onChange={(event) => setTo(event.target.value)} className="w-full rounded-xl border border-border-base bg-bg-base px-3 py-2.5 text-sm text-text-primary outline-none focus:border-brand-400" />
+          <div className="space-y-2">
+            <label className="block text-sm font-medium text-text-primary">تا تاریخ و ساعت</label>
+            <JalaliDatePicker
+              value={to ? `${datePart(to)}T12:00:00` : ''}
+              onChange={(value) => setTo(withDatePart(to, value, '23:59'))}
+              minDate={!isSiteAdmin && metadata?.range_start ? datePart(dateTimeLocal(metadata.range_start)) : null}
+              maxDate={!isSiteAdmin && metadata?.range_end ? datePart(dateTimeLocal(metadata.range_end)) : null}
+              placeholder="تاریخ پایان (شمسی)"
+            />
+            <input id="device-report-to-time" type="time" aria-label="ساعت پایان" value={timePart(to)} onChange={(event) => setTo(withTimePart(to, event.target.value, '23:59'))}
+              min={!isSiteAdmin && metadata?.range_start && datePart(to) === datePart(dateTimeLocal(metadata.range_start)) ? timePart(dateTimeLocal(metadata.range_start)) : undefined}
+              max={!isSiteAdmin && metadata?.range_end && datePart(to) === datePart(dateTimeLocal(metadata.range_end)) ? timePart(dateTimeLocal(metadata.range_end)) : undefined}
+              className="w-full rounded-xl border border-border-base bg-bg-base px-3 py-2.5 text-sm text-text-primary outline-none focus:border-brand-400"
+            />
             <button type="button" onClick={loadHistory} disabled={loadingHistory || !deviceId} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60">
               {loadingHistory ? <LoaderCircle size={16} className="animate-spin" /> : <CalendarClock size={16} />}
               {loadingHistory ? 'در حال دریافت مسیر…' : 'نمایش مسیر و گزارش'}
