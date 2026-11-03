@@ -149,3 +149,40 @@ body {
 .card-overflow-visible {
   overflow: visible !important;
 }
+
+/* Responsive layout foundations */
+html {
+  min-width: 320px;
+  overflow-x: clip;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body, #root {
+  min-width: 320px;
+  min-height: 100%;
+  overflow-x: clip;
+}
+
+button, input, select, textarea {
+  font: inherit;
+}
+
+img, svg, video, canvas {
+  max-width: 100%;
+}
+
+/* Keep wide data grids scrollable without expanding the whole page. */
+.table-scroll,
+.overflow-x-auto {
+  max-width: 100%;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+@media (max-width: 639px) {
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+}
