@@ -392,6 +392,7 @@ function DevicesTab() {
             description="هنوز دستگاهی ثبت نشده یا با فیلترهای فعلی مطابقت ندارد."
           />
         ) : (
+          <>
           <div className="grid grid-cols-1 gap-3 sm:hidden">
             {filtered.map((d) => {
               const mgmt = managementStatusMap[d.management_status] || managementStatusMap.warehouse;
@@ -522,6 +523,7 @@ function DevicesTab() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </Card>
 
