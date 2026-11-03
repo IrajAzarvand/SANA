@@ -39,6 +39,9 @@ export default function JalaliDatePicker({
   className = '',
   minDate = null,       // حداقل تاریخ (میلادی YYYY-MM-DD)
   maxDate = null,       // حداکثر تاریخ (میلادی YYYY-MM-DD)
+  showTime = false,
+  timeValue = '00:00',
+  onTimeChange,
 }) {
   const [open, setOpen] = useState(false);
   const [displayValue, setDisplayValue] = useState('');
@@ -87,7 +90,7 @@ export default function JalaliDatePicker({
     const updatePosition = () => {
       const rect = inputRef.current.getBoundingClientRect();
       const popupWidth = 300;
-      const popupHeight = 380;
+      const popupHeight = showTime ? 440 : 380;
 
       // موقعیت افقی: راست‌چین
       let left = rect.right - popupWidth;
@@ -116,7 +119,7 @@ export default function JalaliDatePicker({
       window.removeEventListener('scroll', updatePosition, true);
       window.removeEventListener('resize', updatePosition);
     };
-  }, [open]);
+  }, [open, showTime]);
 
   // بستن با کلیک بیرون
   useEffect(() => {
@@ -162,7 +165,7 @@ export default function JalaliDatePicker({
       if (minDate && !jalaliCompare(g, minDate)) return;
       if (maxDate && g > maxDate) return;
       onChange(g);
-      setOpen(false);
+      if (!showTime) setOpen(false);
     }
   };
 
@@ -172,7 +175,7 @@ export default function JalaliDatePicker({
       if (minDate && !jalaliCompare(g, minDate)) return;
       if (maxDate && g > maxDate) return;
       onChange(g);
-      setOpen(false);
+      if (!showTime) setOpen(false);
     }
   };
 
@@ -303,6 +306,19 @@ export default function JalaliDatePicker({
         })}
       </div>
 
+      {showTime && (
+        <div className="mt-3 flex items-center justify-between gap-3 border-t border-border-base pt-3">
+          <label htmlFor="jalali-date-time-value" className="text-xs font-medium text-text-secondary">ساعت و دقیقه</label>
+          <input
+            id="jalali-date-time-value"
+            type="time"
+            value={timeValue || '00:00'}
+            onChange={(event) => onTimeChange?.(event.target.value)}
+            className="w-32 rounded-lg border border-border-base bg-bg-base px-2.5 py-1.5 text-sm text-text-primary outline-none focus:border-brand-400"
+          />
+        </div>
+      )}
+
       {/* فوتر */}
       <div className="flex items-center justify-between mt-3 pt-3 border-t border-border-base">
         <button
@@ -317,7 +333,7 @@ export default function JalaliDatePicker({
           onClick={() => setOpen(false)}
           className="text-xs text-text-muted hover:text-text-primary transition-colors px-2 py-1"
         >
-          بستن
+          {showTime ? 'تأیید' : 'بستن'}
         </button>
       </div>
     </div>,
@@ -344,11 +360,12 @@ export default function JalaliDatePicker({
         <input
           ref={inputRef}
           type="text"
-          value={displayValue}
+          value={showTime ? `${displayValue}${timeValue ? ` · ${timeValue}` : ''}` : displayValue}
           onChange={handleInputChange}
           onFocus={() => setOpen(true)}
+          readOnly={showTime}
           placeholder={placeholder}
-          maxLength={10}
+          maxLength={showTime ? 18 : 10}
           dir="ltr"
           className="w-full bg-bg-base border border-border-base rounded-field
                      pr-11 pl-4 py-2.5 text-sm text-text-primary
