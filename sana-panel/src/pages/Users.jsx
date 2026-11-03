@@ -221,7 +221,29 @@ export default function Users() {
 
                   {isExpanded && (
                     <div className="mt-4 pt-4 border-t border-border-base">
-                      <div className="overflow-x-auto">
+                      <div className="grid grid-cols-1 gap-3 sm:hidden">
+                        {company.users.map((u) => {
+                          const role = roleMap[u.role] || roleMap.personal_user;
+                          return (
+                            <article key={u.id} className="rounded-card border border-border-base bg-bg-base p-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="font-medium text-text-primary">{u.full_name || u.username}</div>
+                                  <div className="mt-1 font-mono text-xs text-text-muted">{u.username}</div>
+                                </div>
+                                <ActionMenu items={getUserMenu(u)} />
+                              </div>
+                              <div className="mt-3 grid grid-cols-2 gap-3 border-t border-border-base pt-3 text-xs">
+                                <div><div className="text-text-muted">تماس</div><div className="mt-1 font-mono text-text-primary">{u.mobile || '—'}</div></div>
+                                <div><div className="text-text-muted">نقش</div><div className="mt-1"><Badge variant={role.variant}>{role.label}</Badge></div></div>
+                                <div><div className="text-text-muted">شعبه</div><div className="mt-1 text-text-primary">{u.branch_name || '—'}</div></div>
+                                <div><div className="text-text-muted">وضعیت</div><div className="mt-1"><Badge variant={u.is_active ? 'success' : 'muted'}>{u.is_active ? 'فعال' : 'غیرفعال'}</Badge></div></div>
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </div>
+                      <div className="hidden overflow-x-auto sm:block">
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="border-b border-border-base">
@@ -305,7 +327,28 @@ export default function Users() {
 
               {showPersonal && (
                 <div className="mt-4 pt-4 border-t border-border-base">
-                  <div className="overflow-x-auto">
+                  <div className="grid grid-cols-1 gap-3 sm:hidden">
+                    {filteredPersonal.map((u) => {
+                      const role = roleMap[u.role] || roleMap.personal_user;
+                      return (
+                        <article key={u.id} className="rounded-card border border-border-base bg-bg-base p-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="font-medium text-text-primary">{u.full_name || u.username}</div>
+                              <div className="mt-1 font-mono text-xs text-text-muted">{u.username}</div>
+                            </div>
+                            <ActionMenu items={getUserMenu(u)} />
+                          </div>
+                          <div className="mt-3 grid grid-cols-2 gap-3 border-t border-border-base pt-3 text-xs">
+                            <div><div className="text-text-muted">تماس</div><div className="mt-1 font-mono text-text-primary">{u.mobile || '—'}</div></div>
+                            <div><div className="text-text-muted">نقش</div><div className="mt-1"><Badge variant={role.variant}>{role.label}</Badge></div></div>
+                            <div><div className="text-text-muted">وضعیت</div><div className="mt-1"><Badge variant={u.is_active ? 'success' : 'muted'}>{u.is_active ? 'فعال' : 'غیرفعال'}</Badge></div></div>
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                  <div className="hidden overflow-x-auto sm:block">
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="border-b border-border-base">
