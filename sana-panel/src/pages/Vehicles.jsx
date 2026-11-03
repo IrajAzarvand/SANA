@@ -271,7 +271,27 @@ export default function Vehicles() {
             description="هنوز خودرویی ثبت نشده یا با فیلترهای فعلی مطابقت ندارد."
           />
         ) : (
-          <div className="overflow-x-auto -m-5">
+          <div className="grid grid-cols-1 gap-3 sm:hidden">
+            {filtered.map((v) => {
+              const devStatus = deviceStatusMap[v.device_status] || deviceStatusMap.none;
+              return (
+                <article key={v.id} className="rounded-card border border-border-base bg-bg-base p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-mono text-base font-semibold text-text-primary">{v.plate}</div>
+                      <div className="mt-1 text-xs text-text-muted">{v.vehicle_type_name || 'نوع خودرو ثبت نشده'}</div>
+                    </div>
+                    <ActionMenu items={getMenuItems(v)} />
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border-base pt-3 text-xs">
+                    {showBranchColumn && <div><div className="text-text-muted">شعبه</div><div className="mt-1 text-text-primary">{v.branch_name || '—'}</div></div>}
+                    <div><div className="text-text-muted">وضعیت دستگاه</div><div className="mt-1"><Badge variant={devStatus.variant}>{devStatus.label}</Badge></div></div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+          <div className="hidden overflow-x-auto -m-5 sm:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border-base">
