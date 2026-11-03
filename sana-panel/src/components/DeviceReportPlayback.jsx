@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, CalendarClock, ChevronLeft, ChevronRight, CircleAlert, LoaderCircle, Pause, Play, Search, SkipBack, SkipForward } from 'lucide-react';
+import { Activity, CalendarClock, ChevronLeft, ChevronRight, CircleAlert, Download, Gauge, LoaderCircle, Pause, Play, Route, Search, SkipBack, SkipForward } from 'lucide-react';
 import apiClient from '../api/client';
 import LiveDeviceMap from '../../../sana-map/src/LiveDeviceMap';
 import { MAP_PROVIDER, MAP_PROVIDERS } from '../../../sana-map/src/config';
@@ -14,6 +14,27 @@ const dateTimeLocal = (value) => {
 const toApiDate = (value) => value ? new Date(value).toISOString() : '';
 const formatDate = (value) => value ? new Date(value).toLocaleString('fa-IR') : '—';
 const showValue = (value, suffix = '') => value === null || value === undefined || value === '' ? '—' : `${value}${suffix}`;
+const pointCoordinates = (point) => [
+  Number(point.matched_latitude ?? point.latitude),
+  Number(point.matched_longitude ?? point.longitude),
+];
+const distanceBetween = (a, b) => {
+  const [lat1, lon1] = pointCoordinates(a).map((value) => value * Math.PI / 180);
+  const [lat2, lon2] = pointCoordinates(b).map((value) => value * Math.PI / 180);
+  if (![lat1, lon1, lat2, lon2].every(Number.isFinite)) return 0;
+  const dLat = lat2 - lat1;
+  const dLon = lon2 - lon1;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return 6371 * 2 * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+};
+const formatDuration = (milliseconds) => {
+  if (!Number.isFinite(milliseconds) || milliseconds < 0) return '—';
+  const totalMinutes = Math.floor(milliseconds / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  return [days ? `${days} روز` : '', hours ? `${hours} ساعت` : '', `${minutes} دقیقه`].filter(Boolean).join(' و ');
+};
 
 function normalizeList(payload) {
   return Array.isArray(payload) ? payload : Array.isArray(payload?.results) ? payload.results : [];
@@ -208,6 +229,43 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
     return segments;
   }, [points]);
 
+  const reportStats = useMemo(() => {
+    if (!points.length) return null;
+    let distanceKm = 0;
+    for (let index = 1; index < points.length; index += 1) {
+      distanceKm += distanceBetween(points[index - 1], points[index]);
+    }
+    const speeds = points.map((point) => Number(point.speed)).filter(Number.isFinite);
+    const movingPoints = points.filter((point) => point.motion === true || Number(point.speed) >= 3).length;
+    const start = new Date(points[0].device_time).getTime();
+    const end = new Date(points[points.length - 1].device_time).getTime();
+    return {
+      distanceKm,
+      maxSpeed: speeds.length ? Math.max(...speeds) : 0,
+      averageSpeed: speeds.length ? speeds.reduce((sum, value) => sum + value, 0) / speeds.length : 0,
+      duration: end - start,
+      movingPoints,
+      stoppedPoints: points.length - movingPoints,
+    };
+  }, [points]);
+
+  const exportCsv = () => {
+    if (!points.length) return;
+    const columns = ['device_time', 'server_received_at', 'latitude', 'longitude', 'matched_latitude', 'matched_longitude', 'speed', 'heading', 'altitude', 'accuracy', 'gps_valid', 'motion', 'ignition', 'satellites', 'battery_voltage', 'external_voltage', 'gsm_signal', 'odometer', 'engine_hours', 'fuel_level', 'attributes'];
+    const escapeCsv = (value) => {
+      const raw = value && typeof value === 'object' ? JSON.stringify(value) : String(value ?? '');
+      return `"${raw.replace(/"/g, '""')}"`;
+    };
+    const rows = [columns.join(','), ...points.map((point) => columns.map((key) => escapeCsv(point[key])).join(','))];
+    const blob = new Blob(['\\uFEFF', rows.join('\\r\\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `sana-device-${deviceId}-report.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
   const currentPoint = points[pointIndex] || null;
   const mapPosition = useMemo(() => {
     if (!currentPoint) return [];
@@ -328,6 +386,32 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
 
       {error && <div role="alert" className="flex items-start gap-2 rounded-xl border border-danger/20 bg-danger/5 p-3 text-sm text-danger"><CircleAlert size={17} className="mt-0.5 shrink-0" />{error}</div>}
       {notice && <div className="rounded-xl border border-warning/30 bg-warning/10 p-3 text-sm text-text-primary">{notice}</div>}
+
+      {reportStats && (
+        <section className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="font-semibold text-text-primary">خلاصه عملکرد در بازه انتخابی</h3>
+              <p className="mt-1 text-xs text-text-muted">محاسبات بر اساس نقاط دریافت‌شده از Traccar انجام شده‌اند.</p>
+            </div>
+            <button type="button" onClick={exportCsv} className="inline-flex items-center gap-2 rounded-lg border border-border-base px-3 py-2 text-sm font-medium text-text-secondary transition hover:bg-bg-hover">
+              <Download size={16} /> خروجی CSV
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+            {[
+              { label: 'مسافت تقریبی', value: `${reportStats.distanceKm.toFixed(2)} km`, icon: Route },
+              { label: 'حداکثر سرعت', value: `${reportStats.maxSpeed.toFixed(1)} km/h`, icon: Gauge },
+              { label: 'میانگین سرعت نقاط', value: `${reportStats.averageSpeed.toFixed(1)} km/h`, icon: Activity },
+              { label: 'مدت بازه ثبت‌شده', value: formatDuration(reportStats.duration), icon: CalendarClock },
+              { label: 'نقاط حرکت / توقف', value: `${reportStats.movingPoints.toLocaleString('fa-IR')} / ${reportStats.stoppedPoints.toLocaleString('fa-IR')}`, icon: Activity },
+            ].map((item) => {
+              const Icon = item.icon;
+              return <div key={item.label} className="rounded-xl border border-border-base bg-bg-elevated p-3"><div className="flex items-center gap-2 text-xs text-text-muted"><Icon size={15} />{item.label}</div><div className="mt-2 text-base font-semibold text-text-primary">{item.value}</div></div>;
+            })}
+          </div>
+        </section>
+      )}
 
       <div className="overflow-hidden rounded-2xl border border-border-base bg-bg-elevated shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-base px-4 py-3">
