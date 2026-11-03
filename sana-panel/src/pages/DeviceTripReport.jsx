@@ -12,8 +12,8 @@ export default function DeviceTripReport() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="گزارش سفرها"
-        subtitle="تاریخچه مسیر دستگاه‌ها را در بازه زمانی دلخواه بررسی و بازپخش کنید."
+        title="گزارش جامع دستگاه"
+        subtitle="مسیر، عملکرد، وضعیت GPS و داده‌های دریافتی دستگاه را در بازه زمانی دلخواه بررسی کنید."
         actions={(
           <Button variant="secondary" onClick={() => navigate('/panel/reports')}>
             <ArrowRight size={16} />
@@ -27,7 +27,7 @@ export default function DeviceTripReport() {
             <Route size={21} />
           </div>
           <div>
-            <h2 className="font-semibold text-text-primary">مسیر و تاریخچه موقعیت GPS</h2>
+            <h2 className="font-semibold text-text-primary">گزارش عملکرد و تاریخچه موقعیت GPS</h2>
             <p className="mt-1 text-sm leading-6 text-text-muted">
               دستگاه، سیم‌کارت یا راننده را جست‌وجو کنید، بازه زمانی را انتخاب کنید و مسیر ذخیره‌شده را روی نقشه بازپخش کنید.
             </p>
