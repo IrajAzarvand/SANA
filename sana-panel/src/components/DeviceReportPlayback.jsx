@@ -352,7 +352,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
       attributes: currentPoint.attributes && typeof currentPoint.attributes === 'object' ? currentPoint.attributes : {},
       position_is_current: Boolean(currentPoint.gps_valid),
       position_is_matched: currentPoint.matched_latitude != null && currentPoint.matched_longitude != null,
-      status: currentPoint.motion || Number(currentPoint.speed || 0) >= 3 ? 'moving' : 'stopped',
+      status: currentPoint.motion === true || (currentPoint.motion == null && Number(currentPoint.speed || 0) >= 3) ? 'moving' : 'stopped',
     }];
   }, [currentPoint, deviceId, selectedDevice, metadata]);
 
