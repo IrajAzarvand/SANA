@@ -21,7 +21,7 @@ export default function Modal({ open, onClose, title, children, footer, size = '
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-2 sm:p-4">
       {/* backdrop */}
       <div
         className="absolute inset-0 bg-black/60 backdrop-blur-sm"
@@ -29,9 +29,9 @@ export default function Modal({ open, onClose, title, children, footer, size = '
       />
 
       {/* modal */}
-      <div className={`relative w-full ${sizes[size]} bg-bg-elevated border border-border-base rounded-card shadow-2xl max-h-[90vh] flex flex-col`}>
+      <div className={`relative w-full ${sizes[size]} bg-bg-elevated border border-border-base rounded-card shadow-2xl max-h-[calc(100dvh-1rem)] sm:max-h-[90vh] flex min-h-0 flex-col`}>
         {/* header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border-base">
+        <div className="flex items-center justify-between px-3 sm:px-5 py-3 sm:py-4 border-b border-border-base">
           <h3 className="text-base font-semibold text-text-primary">{title}</h3>
           <button
             onClick={onClose}
@@ -42,13 +42,13 @@ export default function Modal({ open, onClose, title, children, footer, size = '
         </div>
 
         {/* body */}
-        <div className="flex-1 overflow-y-auto p-5">
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
           {children}
         </div>
 
         {/* footer */}
         {footer && (
-          <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-border-base">
+          <div className="flex items-center justify-end gap-2 px-3 sm:px-5 py-3 sm:py-4 border-t border-border-base">
             {footer}
           </div>
         )}
