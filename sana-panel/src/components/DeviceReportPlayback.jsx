@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, CalendarClock, ChevronLeft, ChevronRight, CircleAlert, Download, Gauge, LoaderCircle, Pause, Play, Route, Search, SkipBack, SkipForward } from 'lucide-react';
+import { Activity, CalendarClock, ChevronLeft, ChevronRight, CircleAlert, Download, Gauge, LoaderCircle, Pause, Play, Route, Search, SkipBack, SkipForward, Clock3, Zap, Fuel, Signal } from 'lucide-react';
 import apiClient from '../api/client';
 import LiveDeviceMap from '../../../sana-map/src/LiveDeviceMap';
 import { MAP_PROVIDER, MAP_PROVIDERS } from '../../../sana-map/src/config';
@@ -13,7 +13,7 @@ const dateTimeLocal = (value) => {
 };
 const toApiDate = (value) => value ? new Date(value).toISOString() : '';
 const formatDate = (value) => value ? new Date(value).toLocaleString('fa-IR') : '—';
-const showValue = (value, suffix = '') => value === null || value === undefined || value === '' ? '—' : `${value}${suffix}`;
+const showValue = (value, suffix = '') => value === null || value === undefined || value === '' ? 'در این نقطه دریافت نشده' : `${value}${suffix}`;
 const pointCoordinates = (point) => [
   Number(point.matched_latitude ?? point.latitude),
   Number(point.matched_longitude ?? point.longitude),
@@ -233,10 +233,15 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
     if (!points.length) return null;
     let distanceKm = 0;
     for (let index = 1; index < points.length; index += 1) {
-      distanceKm += distanceBetween(points[index - 1], points[index]);
+      const previousTime = new Date(points[index - 1].device_time).getTime();
+      const currentTime = new Date(points[index].device_time).getTime();
+      const elapsedHours = (currentTime - previousTime) / 3600000;
+      if (elapsedHours <= 0 || elapsedHours > (10 / 60)) continue;
+      const segmentKm = distanceBetween(points[index - 1], points[index]);
+      if (segmentKm / elapsedHours <= 180) distanceKm += segmentKm;
     }
-    const speeds = points.map((point) => Number(point.speed)).filter(Number.isFinite);
-    const movingPoints = points.filter((point) => point.motion === true || Number(point.speed) >= 3).length;
+    const speeds = points.filter((point) => point.speed != null && point.speed !== '').map((point) => Number(point.speed)).filter(Number.isFinite);
+    const movingPoints = points.filter((point) => point.motion === true || (point.motion == null && Number(point.speed) >= 3)).length;
     const start = new Date(points[0].device_time).getTime();
     const end = new Date(points[points.length - 1].device_time).getTime();
     return {
@@ -246,6 +251,68 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
       duration: end - start,
       movingPoints,
       stoppedPoints: points.length - movingPoints,
+    };
+  }, [points]);
+
+  const advancedStats = useMemo(() => {
+    if (!points.length) return null;
+    const isMoving = (point) => point.motion === true || (point.motion == null && Number(point.speed || 0) >= 3);
+    const ignitionState = (point) => typeof point.ignition === 'boolean' ? point.ignition : null;
+    let movingMs = 0;
+    let ignitionOnMs = 0;
+    let ignitionOffMs = 0;
+    let unknownIgnitionMs = 0;
+    let trips = 0;
+    let wasMoving = false;
+    const stops = [];
+    let activeStop = null;
+    const speedSamples = points.filter((point) => point.speed != null && point.speed !== '' && Number.isFinite(Number(point.speed)));
+    for (let index = 0; index < points.length; index += 1) {
+      const point = points[index];
+      const moving = isMoving(point);
+      if (moving && !wasMoving) trips += 1;
+      wasMoving = moving;
+      if (!moving) {
+        if (!activeStop) activeStop = { start: point.device_time, end: point.device_time, points: 0 };
+        activeStop.end = point.device_time;
+        activeStop.points += 1;
+      } else if (activeStop) {
+        const duration = new Date(activeStop.end).getTime() - new Date(activeStop.start).getTime();
+        if (duration >= 180000) stops.push({ ...activeStop, duration });
+        activeStop = null;
+      }
+      if (index === points.length - 1) continue;
+      const currentTime = new Date(point.device_time).getTime();
+      const next = points[index + 1];
+      const nextTime = new Date(next.device_time).getTime();
+      const delta = nextTime - currentTime;
+      // فاصله‌های طولانی بین دو پیام را به‌عنوان حرکت/روشن بودن قطعی حساب نمی‌کنیم.
+      const trustedDelta = Number.isFinite(delta) && delta > 0 ? Math.min(delta, 600000) : 0;
+      if (moving) movingMs += trustedDelta;
+      const ignition = ignitionState(point);
+      if (ignition === true) ignitionOnMs += trustedDelta;
+      else if (ignition === false) ignitionOffMs += trustedDelta;
+      else unknownIgnitionMs += trustedDelta;
+    }
+    if (activeStop) {
+      const duration = new Date(activeStop.end).getTime() - new Date(activeStop.start).getTime();
+      if (duration >= 180000) stops.push({ ...activeStop, duration });
+    }
+    const sampleCount = 36;
+    const sampledSpeeds = speedSamples.length <= sampleCount
+      ? speedSamples.map((point) => Number(point.speed))
+      : Array.from({ length: sampleCount }, (_, index) => Number(speedSamples[Math.round(index * (speedSamples.length - 1) / (sampleCount - 1))].speed));
+    const maxSample = Math.max(1, ...sampledSpeeds);
+    return {
+      tripCount: trips,
+      movingMs,
+      ignitionOnMs,
+      ignitionOffMs,
+      unknownIgnitionMs,
+      stops: stops.sort((a, b) => b.duration - a.duration),
+      sampledSpeeds,
+      maxSample,
+      minSpeed: speedSamples.length ? Math.min(...speedSamples.map((point) => Number(point.speed))) : 0,
     };
   }, [points]);
 
@@ -281,9 +348,11 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
       speed: Number(currentPoint.speed || 0),
       heading: currentPoint.heading === null ? null : Number(currentPoint.heading),
       device_time: currentPoint.device_time,
+      last_seen: currentPoint.server_received_at,
+      attributes: currentPoint.attributes && typeof currentPoint.attributes === 'object' ? currentPoint.attributes : {},
       position_is_current: Boolean(currentPoint.gps_valid),
       position_is_matched: currentPoint.matched_latitude != null && currentPoint.matched_longitude != null,
-      status: currentPoint.motion || Number(currentPoint.speed || 0) >= 3 ? 'moving' : 'stopped',
+      status: currentPoint.motion === true || (currentPoint.motion == null && Number(currentPoint.speed || 0) >= 3) ? 'moving' : 'stopped',
     }];
   }, [currentPoint, deviceId, selectedDevice, metadata]);
 
@@ -413,6 +482,33 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
         </section>
       )}
 
+      {advancedStats && (
+        <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+          <div className="rounded-2xl border border-border-base bg-bg-elevated p-4 shadow-sm">
+            <div className="mb-3 flex items-center gap-2"><Gauge size={17} className="text-brand-500" /><h3 className="font-semibold text-text-primary">نمودار سرعت در طول زمان</h3></div>
+            <div className="flex h-32 items-end gap-1 rounded-xl bg-bg-base px-3 pb-3 pt-4" role="img" aria-label="نمودار نمونه‌برداری‌شده سرعت">
+              {advancedStats.sampledSpeeds.map((value, index) => <div key={index} title={`سرعت: ${value.toFixed(1)} کیلومتر بر ساعت`} className="min-w-0 flex-1 rounded-t-sm bg-brand-500/80 hover:bg-brand-500" style={{ height: `${Math.max(3, (value / advancedStats.maxSample) * 100)}%` }} />)}
+            </div>
+            <div className="mt-2 flex justify-between text-xs text-text-muted"><span>کمینه: {advancedStats.minSpeed.toFixed(1)} km/h</span><span>بیشینه: {reportStats.maxSpeed.toFixed(1)} km/h</span></div>
+            <p className="mt-2 text-[11px] text-text-muted">برای خوانایی، حداکثر ۳۶ نقطه از داده‌های سرعت نمونه‌برداری شده است.</p>
+          </div>
+          <div className="rounded-2xl border border-border-base bg-bg-elevated p-4 shadow-sm">
+            <div className="mb-3 flex items-center gap-2"><Zap size={17} className="text-brand-500" /><h3 className="font-semibold text-text-primary">تحلیل وضعیت سوئیچ و حرکت</h3></div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-xl bg-bg-base p-3"><div className="flex items-center gap-2 text-xs text-text-muted"><Activity size={14} /> تعداد سفرهای تشخیص‌داده‌شده</div><div className="mt-2 text-xl font-bold text-text-primary">{advancedStats.tripCount.toLocaleString('fa-IR')}</div></div>
+              <div className="rounded-xl bg-bg-base p-3"><div className="flex items-center gap-2 text-xs text-text-muted"><Clock3 size={14} /> زمان حرکت تخمینی</div><div className="mt-2 text-base font-bold text-text-primary">{formatDuration(advancedStats.movingMs)}</div></div>
+              <div className="rounded-xl bg-bg-base p-3"><div className="flex items-center gap-2 text-xs text-text-muted"><Zap size={14} /> سوئیچ روشن</div><div className="mt-2 text-base font-bold text-text-primary">{formatDuration(advancedStats.ignitionOnMs)}</div></div>
+              <div className="rounded-xl bg-bg-base p-3"><div className="flex items-center gap-2 text-xs text-text-muted"><Fuel size={14} /> سوئیچ خاموش</div><div className="mt-2 text-base font-bold text-text-primary">{formatDuration(advancedStats.ignitionOffMs)}</div></div>
+            </div>
+            <p className="mt-3 text-[11px] leading-5 text-text-muted">مدت‌ها از فاصله زمانی بین پیام‌های متوالی برآورد شده‌اند؛ فاصله‌های بیش از ۱۰ دقیقه برای جلوگیری از محاسبه اشتباه محدود شده‌اند. زمان با وضعیت سوئیچ نامشخص: {formatDuration(advancedStats.unknownIgnitionMs)}.</p>
+          </div>
+          <div className="rounded-2xl border border-border-base bg-bg-elevated p-4 shadow-sm xl:col-span-2">
+            <div className="mb-3 flex items-center justify-between gap-2"><h3 className="font-semibold text-text-primary">توقف‌های مهم (حداقل ۳ دقیقه)</h3><span className="text-xs text-text-muted">{advancedStats.stops.length.toLocaleString('fa-IR')} توقف</span></div>
+            {advancedStats.stops.length ? <div className="overflow-x-auto"><table className="w-full min-w-[520px] text-sm"><thead><tr className="border-b border-border-base text-right text-xs text-text-muted"><th className="px-3 py-2 font-medium">شروع توقف</th><th className="px-3 py-2 font-medium">پایان توقف</th><th className="px-3 py-2 font-medium">مدت</th><th className="px-3 py-2 font-medium">تعداد نقاط</th></tr></thead><tbody>{advancedStats.stops.map((stop, index) => <tr key={`${stop.start}-${index}`} className="border-b border-border-base/60 last:border-0"><td className="px-3 py-2 text-text-primary">{formatDate(stop.start)}</td><td className="px-3 py-2 text-text-primary">{formatDate(stop.end)}</td><td className="px-3 py-2 font-medium text-text-primary">{formatDuration(stop.duration)}</td><td className="px-3 py-2 text-text-secondary">{stop.points.toLocaleString('fa-IR')}</td></tr>)}</tbody></table></div> : <p className="py-5 text-center text-sm text-text-muted">توقف طولانی در این بازه تشخیص داده نشد.</p>}
+          </div>
+        </section>
+      )}
+
       <div className="overflow-hidden rounded-2xl border border-border-base bg-bg-elevated shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-base px-4 py-3">
           <div className="text-sm font-semibold text-text-primary">{metadata?.device?.imei || selectedDevice?.imei || 'دستگاه انتخاب نشده'}</div>
@@ -461,8 +557,8 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
             ['ارتفاع', showValue(currentPoint?.altitude, ' m')],
             ['ماهواره‌ها', showValue(currentPoint?.satellites)],
             ['وضعیت GPS', currentPoint ? (currentPoint.gps_valid ? 'معتبر' : 'نامعتبر') : '—'],
-            ['حرکت', currentPoint?.motion === true ? 'در حرکت' : currentPoint?.motion === false ? 'متوقف' : '—'],
-            ['سوئیچ', currentPoint?.ignition === true ? 'روشن' : currentPoint?.ignition === false ? 'خاموش' : '—'],
+            ['حرکت', currentPoint?.motion === true ? 'در حرکت' : currentPoint?.motion === false ? 'متوقف' : 'در این نقطه دریافت نشده'],
+            ['سوئیچ', currentPoint?.ignition === true ? 'روشن' : currentPoint?.ignition === false ? 'خاموش' : 'در این نقطه دریافت نشده'],
             ['ولتاژ باتری', showValue(currentPoint?.battery_voltage, ' V')],
             ['ولتاژ خارجی', showValue(currentPoint?.external_voltage, ' V')],
             ['قدرت GSM', showValue(currentPoint?.gsm_signal)],
@@ -474,7 +570,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
             ['زمان تطبیق', formatDate(currentPoint?.matched_at)],
           ].map(([label, value]) => <div key={label} className="rounded-xl border border-border-base bg-bg-base p-3"><div className="text-xs text-text-muted">{label}</div><div className="mt-1 break-words text-sm font-medium text-text-primary">{value}</div></div>)}
         </div>
-        {Object.keys(attributes).length > 0 && <div className="mt-4"><h4 className="mb-2 text-sm font-semibold text-text-primary">ویژگی‌های اضافی ثبت‌شده</h4><pre dir="ltr" className="max-h-64 overflow-auto rounded-xl bg-bg-base p-3 text-xs leading-5 text-text-secondary">{JSON.stringify(attributes, null, 2)}</pre></div>}
+        <div className="mt-4"><h4 className="mb-2 text-sm font-semibold text-text-primary">تمام Attributeهای خام دریافت‌شده از Traccar ({Object.keys(attributes).length})</h4><pre dir="ltr" className="max-h-64 overflow-auto rounded-xl bg-bg-base p-3 text-xs leading-5 text-text-secondary">{JSON.stringify(attributes, null, 2)}</pre></div>
       </section>
     </section>
   );
