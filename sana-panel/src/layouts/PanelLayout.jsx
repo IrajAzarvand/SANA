@@ -7,14 +7,14 @@ export default function PanelLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="h-screen flex flex-col bg-bg-base">
+    <div className="flex h-dvh min-h-dvh flex-col overflow-hidden bg-bg-base">
 
       <Header onMenuClick={() => setSidebarOpen(true)} />
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-        <main className="flex-1 overflow-y-auto p-6">
+        <main className="min-w-0 min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain p-3 sm:p-4 lg:p-6">
           <Outlet />
         </main>
       </div>
