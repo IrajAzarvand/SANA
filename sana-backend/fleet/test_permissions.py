@@ -1,7 +1,9 @@
+from types import SimpleNamespace
+
 from django.test import SimpleTestCase
 from rest_framework.permissions import IsAuthenticated
 
-from accounts.permissions import IsSiteAdmin
+from accounts.permissions import IsOrganizationMember, IsSiteAdmin
 from fleet.views import (
     DeviceLifecycleEventViewSet,
     DeviceOperationViewSet,
@@ -47,3 +49,13 @@ class DeviceManagementPermissionTests(SimpleTestCase):
         view = DeviceViewSet()
         view.action = "map_positions"
         self.assertIsInstance(view.get_permissions()[0], IsAuthenticated)
+
+    def test_site_admin_is_allowed_through_organization_member_permission(self):
+        admin = SimpleNamespace(is_authenticated=True, is_site_admin=True, account_type='admin')
+        request = SimpleNamespace(user=admin, method='POST')
+        self.assertTrue(IsOrganizationMember().has_permission(request, None))
+
+    def test_personal_user_is_not_allowed_through_organization_member_permission(self):
+        personal = SimpleNamespace(is_authenticated=True, is_site_admin=False, account_type='personal')
+        request = SimpleNamespace(user=personal, method='POST')
+        self.assertFalse(IsOrganizationMember().has_permission(request, None))
