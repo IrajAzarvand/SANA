@@ -13,7 +13,7 @@ const dateTimeLocal = (value) => {
 };
 const toApiDate = (value) => value ? new Date(value).toISOString() : '';
 const formatDate = (value) => value ? new Date(value).toLocaleString('fa-IR') : '—';
-const showValue = (value, suffix = '') => value === null || value === undefined || value === '' ? '—' : `${value}${suffix}`;
+const showValue = (value, suffix = '') => value === null || value === undefined || value === '' ? 'در این نقطه دریافت نشده' : `${value}${suffix}`;
 const pointCoordinates = (point) => [
   Number(point.matched_latitude ?? point.latitude),
   Number(point.matched_longitude ?? point.longitude),
@@ -348,6 +348,8 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
       speed: Number(currentPoint.speed || 0),
       heading: currentPoint.heading === null ? null : Number(currentPoint.heading),
       device_time: currentPoint.device_time,
+      last_seen: currentPoint.server_received_at,
+      attributes: currentPoint.attributes && typeof currentPoint.attributes === 'object' ? currentPoint.attributes : {},
       position_is_current: Boolean(currentPoint.gps_valid),
       position_is_matched: currentPoint.matched_latitude != null && currentPoint.matched_longitude != null,
       status: currentPoint.motion || Number(currentPoint.speed || 0) >= 3 ? 'moving' : 'stopped',
@@ -555,8 +557,8 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
             ['ارتفاع', showValue(currentPoint?.altitude, ' m')],
             ['ماهواره‌ها', showValue(currentPoint?.satellites)],
             ['وضعیت GPS', currentPoint ? (currentPoint.gps_valid ? 'معتبر' : 'نامعتبر') : '—'],
-            ['حرکت', currentPoint?.motion === true ? 'در حرکت' : currentPoint?.motion === false ? 'متوقف' : '—'],
-            ['سوئیچ', currentPoint?.ignition === true ? 'روشن' : currentPoint?.ignition === false ? 'خاموش' : '—'],
+            ['حرکت', currentPoint?.motion === true ? 'در حرکت' : currentPoint?.motion === false ? 'متوقف' : 'در این نقطه دریافت نشده'],
+            ['سوئیچ', currentPoint?.ignition === true ? 'روشن' : currentPoint?.ignition === false ? 'خاموش' : 'در این نقطه دریافت نشده'],
             ['ولتاژ باتری', showValue(currentPoint?.battery_voltage, ' V')],
             ['ولتاژ خارجی', showValue(currentPoint?.external_voltage, ' V')],
             ['قدرت GSM', showValue(currentPoint?.gsm_signal)],
@@ -568,7 +570,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
             ['زمان تطبیق', formatDate(currentPoint?.matched_at)],
           ].map(([label, value]) => <div key={label} className="rounded-xl border border-border-base bg-bg-base p-3"><div className="text-xs text-text-muted">{label}</div><div className="mt-1 break-words text-sm font-medium text-text-primary">{value}</div></div>)}
         </div>
-        {Object.keys(attributes).length > 0 && <div className="mt-4"><h4 className="mb-2 text-sm font-semibold text-text-primary">ویژگی‌های اضافی ثبت‌شده</h4><pre dir="ltr" className="max-h-64 overflow-auto rounded-xl bg-bg-base p-3 text-xs leading-5 text-text-secondary">{JSON.stringify(attributes, null, 2)}</pre></div>}
+        <div className="mt-4"><h4 className="mb-2 text-sm font-semibold text-text-primary">تمام Attributeهای خام دریافت‌شده از Traccar ({Object.keys(attributes).length})</h4><pre dir="ltr" className="max-h-64 overflow-auto rounded-xl bg-bg-base p-3 text-xs leading-5 text-text-secondary">{JSON.stringify(attributes, null, 2)}</pre></div>
       </section>
     </section>
   );
