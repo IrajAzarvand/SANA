@@ -241,7 +241,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
     const end = new Date(points[points.length - 1].device_time).getTime();
     return {
       distanceKm,
-      maxSpeed: speeds.length ? Math.max(...speeds) : 0,
+      maxSpeed: speeds.reduce((maximum, value) => Math.max(maximum, value), 0),
       averageSpeed: speeds.length ? speeds.reduce((sum, value) => sum + value, 0) / speeds.length : 0,
       duration: end - start,
       movingPoints,
