@@ -1,44 +1,88 @@
-#!/bin/sh
-# Root-owned, read-only live packet summary for a selected Traccar listener.
-# Accepts only a numeric port and an explicit transport selector.
-set -eu
+#!/usr/bin/python3
+"""Read-only, on-demand packet summary for an enabled Traccar listener."""
+from __future__ import annotations
 
-if [ "$#" -ne 2 ]; then
-    echo "Usage: sana-traccar-live-capture PORT tcp|udp|both" >&2
-    exit 64
-fi
+import os
+import re
+import sys
+import xml.etree.ElementTree as ET
+from pathlib import Path
 
-port="$1"
-protocol="$2"
+CONFIG = Path("/opt/traccar/conf/traccar.xml")
+TCPDUMP_CANDIDATES = ("/usr/sbin/tcpdump", "/usr/bin/tcpdump")
 
-case "$port" in
-    ''|*[!0-9]*)
-        echo "Port must be numeric." >&2
-        exit 64
-        ;;
-esac
 
-if [ "${#port}" -gt 5 ] || [ "$port" -lt 1024 ] || [ "$port" -gt 65535 ]; then
-    echo "Port must be between 1024 and 65535." >&2
-    exit 64
-fi
+def fail(message: str, code: int = 64) -> int:
+    print(message, file=sys.stderr, flush=True)
+    return code
 
-case "$protocol" in
-    tcp) filter="tcp port $port" ;;
-    udp) filter="udp port $port" ;;
-    both) filter="(tcp port $port) or (udp port $port)" ;;
-    *)
-        echo "Protocol must be tcp, udp, or both." >&2
-        exit 64
-        ;;
-esac
 
-for tcpdump in /usr/sbin/tcpdump /usr/bin/tcpdump; do
-    if [ -x "$tcpdump" ]; then
-        # Summary only: do not print packet payload or write a capture file.
-        exec "$tcpdump" -l -nn -tttt -q -i any "$filter"
-    fi
-done
+def main() -> int:
+    if os.geteuid() != 0:
+        return fail("This helper must be invoked through its restricted sudo rule.", 77)
+    if len(sys.argv) != 3:
+        return fail("Usage: sana-traccar-live-capture PORT tcp|udp|both")
 
-echo "tcpdump is not installed in /usr/sbin or /usr/bin." >&2
-exit 127
+    raw_port, protocol = sys.argv[1], sys.argv[2].lower()
+    if not re.fullmatch(r"[0-9]{1,5}", raw_port):
+        return fail("Port must be numeric.")
+    port = int(raw_port)
+    if not 1024 <= port <= 65535:
+        return fail("Port must be between 1024 and 65535.")
+    if protocol not in {"tcp", "udp", "both"}:
+        return fail("Protocol must be tcp, udp, or both.")
+
+    try:
+        root = ET.parse(CONFIG).getroot()
+        if root.tag != "properties":
+            return fail("Traccar configuration has an unexpected format.", 1)
+        entries = {
+            entry.get("key"): (entry.text or "").strip()
+            for entry in root.findall("entry")
+            if entry.get("key")
+        }
+        enabled = {
+            item.strip()
+            for item in entries.get("protocols.enable", "").split(",")
+            if item.strip()
+        }
+        configured_ports = {
+            int(value)
+            for name in enabled
+            if (value := entries.get(f"{name}.port", "")).isdigit()
+        }
+    except (OSError, ET.ParseError, ValueError) as exc:
+        return fail(f"Could not read Traccar listener configuration: {exc}", 1)
+
+    if port not in configured_ports:
+        return fail(
+            f"Port {port} is not configured for an enabled Traccar protocol.",
+            1,
+        )
+
+    tcpdump = next((path for path in TCPDUMP_CANDIDATES if os.access(path, os.X_OK)), None)
+    if not tcpdump:
+        return fail("tcpdump is not installed in /usr/sbin or /usr/bin.", 127)
+
+    if protocol == "tcp":
+        capture_filter = f"tcp port {port}"
+    elif protocol == "udp":
+        capture_filter = f"udp port {port}"
+    else:
+        capture_filter = f"(tcp port {port}) or (udp port {port})"
+
+    print(
+        f"Live packet summary started for enabled Traccar port {port} ({protocol.upper()}); "
+        "payload is not printed and no capture file is created.",
+        flush=True,
+    )
+    # Summary only: no -w, -X, or -A options, so packet payload is never written/displayed.
+    os.execv(
+        tcpdump,
+        [tcpdump, "-l", "-nn", "-tttt", "-q", "-i", "any", capture_filter],
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
