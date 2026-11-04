@@ -12,11 +12,24 @@ const dateTimeLocal = (value) => {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
   return local.toISOString().slice(0, 16);
 };
-const toApiDate = (value) => value ? new Date(value).toISOString() : '';
 const datePart = (value) => value ? value.slice(0, 10) : '';
 const timePart = (value) => value ? value.slice(11, 16) : '';
-const withDatePart = (current, date, fallbackTime) => date ? `${date}T${timePart(current) || fallbackTime}` : '';
-const withTimePart = (current, time, fallbackTime) => datePart(current) ? `${datePart(current)}T${time || fallbackTime}` : '';
+const composeDateTime = (date, time) => date && time ? `${date}T${time}` : '';
+const parseLocalDateTime = (value) => {
+  const match = /^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2})$/.exec(value || '');
+  if (!match) return null;
+  const [, year, month, day, hour, minute] = match.map((part, index) => index ? Number(part) : part);
+  const date = new Date(year, month - 1, day, hour, minute, 0, 0);
+  if (
+    date.getFullYear() !== year || date.getMonth() !== month - 1 ||
+    date.getDate() !== day || date.getHours() !== hour || date.getMinutes() !== minute
+  ) return null;
+  return date;
+};
+const toApiDate = (value) => {
+  const date = parseLocalDateTime(value);
+  return date ? date.toISOString() : ''; 
+};
 const formatDate = (value) => value ? new Date(value).toLocaleString('fa-IR') : '—';
 const formatNumeric = (value, maximumFractionDigits = 2) => {
   if (value === null || value === undefined || value === '') return '—';
@@ -90,6 +103,9 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
   const [metadata, setMetadata] = useState(null);
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  // Keep time drafts independently so choosing a time before its date does not discard it.
+  const [fromTime, setFromTime] = useState('00:00');
+  const [toTime, setToTime] = useState('23:59');
   const [provider, setProvider] = useState(MAP_PROVIDER);
   const [points, setPoints] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -140,6 +156,10 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
 
   useEffect(() => {
     setMetadata(null);
+    setFrom('');
+    setTo('');
+    setFromTime('00:00');
+    setToTime('23:59');
     setPoints([]);
     setPointIndex(0);
     setProgress(0);
@@ -153,8 +173,12 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
         if (!active) return;
         setMetadata(data);
         if (!isSiteAdmin && data.range_start && data.range_end) {
-          setFrom(dateTimeLocal(data.range_start));
-          setTo(dateTimeLocal(data.range_end));
+          const rangeStart = dateTimeLocal(data.range_start);
+          const rangeEnd = dateTimeLocal(data.range_end);
+          setFrom(rangeStart);
+          setTo(rangeEnd);
+          setFromTime(timePart(rangeStart) || '00:00');
+          setToTime(timePart(rangeEnd) || '23:59');
         }
       })
       .catch((err) => { if (active) setError(err.response?.data?.detail || 'دریافت محدوده مجاز دستگاه ناموفق بود.'); });
@@ -162,11 +186,17 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
   }, [deviceId, isSiteAdmin]);
 
   const loadHistory = useCallback(async () => {
-    if (!deviceId || !from || !to) {
-      setError('دستگاه، زمان شروع و زمان پایان را انتخاب کنید.');
+    if (!deviceId) {
+      setError('ابتدا یک دستگاه را از فهرست انتخاب کنید.');
       return;
     }
-    if (new Date(from) > new Date(to)) {
+    const startDate = parseLocalDateTime(from);
+    const endDate = parseLocalDateTime(to);
+    if (!startDate || !endDate) {
+      setError('تاریخ و ساعت شروع و پایان را کامل انتخاب کنید.');
+      return;
+    }
+    if (startDate.getTime() > endDate.getTime()) {
       setError('زمان شروع باید قبل از زمان پایان باشد.');
       return;
     }
@@ -406,10 +436,13 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
             <label className="block text-xs font-medium text-text-secondary">از تاریخ و ساعت</label>
             <JalaliDatePicker
               value={from ? `${datePart(from)}T12:00:00` : ''}
-              onChange={(value) => setFrom(withDatePart(from, value, '00:00'))}
+                  onChange={(value) => setFrom(composeDateTime(value, fromTime))}
               showTime
-              timeValue={timePart(from) || '00:00'}
-              onTimeChange={(value) => setFrom(withTimePart(from, value, '00:00'))}
+              timeValue={fromTime}
+              onTimeChange={(value) => {
+                setFromTime(value);
+                setFrom((current) => datePart(current) ? composeDateTime(datePart(current), value) : current);
+              }}
               minTime={!isSiteAdmin && metadata?.range_start && datePart(from) === datePart(dateTimeLocal(metadata.range_start)) ? timePart(dateTimeLocal(metadata.range_start)) : null}
               maxTime={!isSiteAdmin && metadata?.range_end && datePart(from) === datePart(dateTimeLocal(metadata.range_end)) ? timePart(dateTimeLocal(metadata.range_end)) : null}
               minDate={!isSiteAdmin && metadata?.range_start ? datePart(dateTimeLocal(metadata.range_start)) : null}
@@ -422,10 +455,13 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
             <label className="block text-xs font-medium text-text-secondary">تا تاریخ و ساعت</label>
             <JalaliDatePicker
               value={to ? `${datePart(to)}T12:00:00` : ''}
-              onChange={(value) => setTo(withDatePart(to, value, '23:59'))}
+              onChange={(value) => setTo(composeDateTime(value, toTime))}
               showTime
-              timeValue={timePart(to) || '23:59'}
-              onTimeChange={(value) => setTo(withTimePart(to, value, '23:59'))}
+              timeValue={toTime}
+              onTimeChange={(value) => {
+                setToTime(value);
+                setTo((current) => datePart(current) ? composeDateTime(datePart(current), value) : current);
+              }}
               minTime={!isSiteAdmin && metadata?.range_start && datePart(to) === datePart(dateTimeLocal(metadata.range_start)) ? timePart(dateTimeLocal(metadata.range_start)) : null}
               maxTime={!isSiteAdmin && metadata?.range_end && datePart(to) === datePart(dateTimeLocal(metadata.range_end)) ? timePart(dateTimeLocal(metadata.range_end)) : null}
               minDate={!isSiteAdmin && metadata?.range_start ? datePart(dateTimeLocal(metadata.range_start)) : null}
