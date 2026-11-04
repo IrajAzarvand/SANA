@@ -16,7 +16,7 @@ export default function DeviceTripReport() {
             <Route size={19} />
           </div>
           <div className="min-w-0">
-            <h1 className="text-base font-semibold text-text-primary sm:text-lg">گزارش جامع دستگاه</h1>
+            <h1 className="text-sm font-semibold text-text-primary sm:text-base">گزارش جامع دستگاه</h1>
             <p className="mt-0.5 text-[11px] leading-5 text-text-muted sm:text-xs">
               بررسی مسیر، عملکرد، وضعیت GPS و داده‌های دریافتی دستگاه
             </p>
