@@ -62,11 +62,11 @@ def _require_admin(request) -> None:
 
 
 def _event(line: str) -> str:
-    return "data: " + json.dumps({"line": line.rstrip("\\n")}, ensure_ascii=False) + "\\n\\n"
+    return "data: " + json.dumps({"line": line.rstrip("\n")}, ensure_ascii=False) + "\n\n"
 
 
 def _live_event(payload: dict) -> str:
-    return "data: " + json.dumps(payload, ensure_ascii=False) + "\\n\\n"
+    return "data: " + json.dumps(payload, ensure_ascii=False) + "\n\n"
 
 
 def _validated_capture(port_value: str, protocol_value: str) -> tuple[int, str]:
@@ -167,7 +167,7 @@ class LiveLogStreamView(APIView):
                         publish({
                             "kind": "line",
                             "source": source,
-                            "line": line.rstrip("\\r\\n"),
+                            "line": line.rstrip("\r\n"),
                         })
                     return_code = process.wait()
                     if not stop_event.is_set() and return_code:
@@ -204,7 +204,7 @@ class LiveLogStreamView(APIView):
                         payload = events.get(timeout=15)
                         yield _live_event(payload)
                     except queue.Empty:
-                        yield ": keep-alive\\n\\n"
+                        yield ": keep-alive\n\n"
             finally:
                 stop_event.set()
                 with process_lock:
