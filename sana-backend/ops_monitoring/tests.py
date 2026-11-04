@@ -234,6 +234,8 @@ class TraccarRawCapturePermissionsTests(GPSMonitoringPermissionsTests):
 
         class FakeProcess:
             stdout = io.StringIO("RAW transport=UDP hex=010203\n")
+            def poll(self):
+                return 0
             def terminate(self):
                 pass
             def wait(self, timeout=None):
@@ -287,6 +289,7 @@ class TraccarRawCapturePermissionsTests(GPSMonitoringPermissionsTests):
 
         mock_popen.return_value = fake_process
 
+        self.client.force_authenticate(user=self.site_admin)
         response = self.client.get(
             "/api/gps-monitor/ports/capture/1256/",
             HTTP_ACCEPT="text/event-stream",
