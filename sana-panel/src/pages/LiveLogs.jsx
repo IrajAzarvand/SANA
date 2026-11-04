@@ -33,8 +33,8 @@ const LOG_SOURCES = {
     icon: Terminal,
   },
   network: {
-    label: 'بسته‌های ورودی Traccar',
-    description: 'مشاهده خلاصه بسته‌های TCP/UDP روی پورت انتخابی؛ بدون ذخیره در فایل',
+    label: 'ترافیک پورت Traccar',
+    description: 'مشاهده خلاصه بسته‌های ورودی و خروجی TCP/UDP روی پورت انتخابی؛ بدون ذخیره در فایل',
     icon: Wifi,
   },
 };
@@ -259,7 +259,7 @@ function LiveTerminal() {
             <div className="mb-3 flex items-start gap-2">
               <Wifi size={17} className="mt-0.5 shrink-0 text-text-secondary" />
               <div className="min-w-0">
-                <p className="text-sm font-medium text-text-primary">پایش بسته‌های ورودی Traccar</p>
+                <p className="text-sm font-medium text-text-primary">پایش ترافیک پورت Traccar</p>
                 <p className="mt-1 text-xs leading-5 text-text-muted">
                   فقط هنگام شروع پایش اجرا می‌شود. خروجی خلاصه بسته‌ها را نشان می‌دهد و در فایل ذخیره نمی‌شود.
                 </p>
@@ -306,7 +306,7 @@ function LiveTerminal() {
             </div>
             {activeCapture && (
               <p className="mt-2 text-xs text-emerald-600">
-                پایش پورت {activeCapture.port} ({activeCapture.protocol.toUpperCase()}) فعال است.
+                پایش پورت {activeCapture.port} ({activeCapture.protocol.toUpperCase()}) · وضعیت: {statusText(statuses.network || 'connecting')}
               </p>
             )}
           </div>
