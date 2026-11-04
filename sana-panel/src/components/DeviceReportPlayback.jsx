@@ -129,6 +129,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [hasUnmatchedCoordinates, setHasUnmatchedCoordinates] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [pointIndex, setPointIndex] = useState(0);
@@ -185,6 +186,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
     setProgress(0);
     setPlaying(false);
     setNotice('');
+    setHasUnmatchedCoordinates(false);
     setError('');
     if (!deviceId) return undefined;
     let active = true;
@@ -224,6 +226,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
     setPlaying(false);
     setError('');
     setNotice('');
+    setHasUnmatchedCoordinates(false);
     setPoints([]);
     setPointIndex(0);
     setProgress(0);
@@ -250,9 +253,9 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
       );
       setPoints(validPoints);
       if (validPoints.length === 0) setNotice('در این بازه نقطه مکانی معتبر ثبت نشده است.');
-      else if (validPoints.some((point) => point.matched_latitude == null || point.matched_longitude == null)) {
-        setNotice('برخی نقاط هنوز مختصات تطبیق‌یافته ندارند؛ برای آن نقاط از مختصات خام GPS استفاده می‌شود.');
-      }
+      setHasUnmatchedCoordinates(validPoints.some((point) =>
+        point.matched_latitude == null || point.matched_longitude == null
+      ));
     } catch (err) {
       setError(err.response?.data?.detail || err.message || 'دریافت تاریخچه دستگاه ناموفق بود.');
     } finally {
@@ -550,10 +553,8 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
             <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-text-primary">
               <span>سرعت: <b>{showValue(currentPoint.speed, ' km/h', 1)}</b></span>
               <span>زمان: <b>{formatDate(currentPoint.device_time)}</b></span>
-              <span>سوئیچ: <b>{currentPoint.ignition === true ? 'روشن' : currentPoint.ignition === false ? 'خاموش' : '—'}</b></span>
               <span>GPS: <b>{currentPoint.gps_valid ? 'معتبر' : 'نامعتبر'}</b></span>
               <span>ماهواره: <b>{showValue(currentPoint.satellites, '', 0)}</b></span>
-              <span>باتری: <b>{showValue(currentPoint.battery_voltage, ' V')}</b></span>
             </div>
           </div>
         )}
@@ -593,8 +594,15 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
       {currentPoint && (
         <details className="group rounded-xl border border-border-base bg-bg-elevated">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-xs">
-            <span className="font-semibold text-text-primary">جزئیات نقطه و تمام Attributes دریافتی</span>
-            <span className="text-[10px] text-text-muted">{(21 + Object.keys(attributes).length).toLocaleString('fa-IR')} مقدار · مشاهده / بستن</span>
+            <span className="flex min-w-0 flex-wrap items-center gap-2">
+              <span className="font-semibold text-text-primary">جزئیات نقطه و تمام Attributes دریافتی</span>
+              {hasUnmatchedCoordinates && (
+                <span className="rounded-md bg-warning/10 px-2 py-0.5 text-[10px] font-normal text-text-primary">
+                  برخی نقاط مختصات تطبیق‌یافته ندارند؛ مختصات خام GPS نمایش داده می‌شود
+                </span>
+              )}
+            </span>
+            <span className="shrink-0 text-[10px] text-text-muted">{(21 + Object.keys(attributes).length).toLocaleString('fa-IR')} مقدار · مشاهده / بستن</span>
           </summary>
           <div className="border-t border-border-base px-3 py-3">
             <div className="grid grid-cols-2 gap-x-5 gap-y-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
