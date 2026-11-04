@@ -49,11 +49,29 @@ const attributeLabels = {
   hours: 'ساعت کارکرد', engineHours: 'ساعت موتور', fuel: 'سوخت', fuelLevel: 'سطح سوخت',
   alarm: 'هشدار', status: 'وضعیت', event: 'رویداد', hdop: 'دقت افقی',
 };
-const formatAttributeValue = (value) => {
+const attributePrecision = (key = '') => {
+  const normalized = String(key).replace(/([A-Z])/g, '_$1').toLowerCase();
+  if (/(^|_)(latitude|longitude|lat|lon|lng)(_|$)/.test(normalized)) return 6;
+  if (/(^|_)(speed|velocity)(_|$)/.test(normalized)) return 1;
+  if (/(^|_)(heading|course|satellites|sat|rssi|gsm|signal|event|status|count|index)(_|$)/.test(normalized)) return 0;
+  if (/(voltage|battery|power|fuel|hdop|accuracy|altitude|odometer|distance|hours|temperature|rpm|frequency)/.test(normalized)) return 2;
+  return 2;
+};
+const formatAttributeValue = (value, key = '') => {
   if (value === null || value === undefined || value === '') return '—';
   if (typeof value === 'boolean') return value ? 'بله' : 'خیر';
-  if (typeof value === 'number') return formatNumeric(value, 2);
-  if (typeof value === 'object') return JSON.stringify(value);
+  if (typeof value === 'number') return formatNumeric(value, attributePrecision(key));
+  if (Array.isArray(value)) return JSON.stringify(value.map((item) => (
+    typeof item === 'number' ? formatNumeric(item, attributePrecision(key)) :
+      item && typeof item === 'object' ? JSON.parse(formatAttributeValue(item, key)) : item
+  )));
+  if (typeof value === 'object') {
+    return JSON.stringify(Object.fromEntries(Object.entries(value).map(([childKey, childValue]) => [
+      childKey,
+      typeof childValue === 'number' ? formatNumeric(childValue, attributePrecision(childKey)) :
+        childValue && typeof childValue === 'object' ? JSON.parse(formatAttributeValue(childValue, childKey)) : childValue,
+    ])));
+  }
   return String(value);
 };
 const formatAttributeLabel = (key) => attributeLabels[key] || key.replace(/([A-Z])/g, ' $1').replace(/[_-]+/g, ' ').trim();
@@ -512,9 +530,9 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
         {reportStats && (
           <div className="pointer-events-none absolute right-2 top-[4.6rem] z-[1001] flex max-w-[calc(100%-1rem)] flex-wrap gap-1.5 sm:right-3 sm:top-[4.8rem]">
             {[
-              ['مسافت', `${reportStats.distanceKm.toFixed(2)} km`],
-              ['بیشترین سرعت', `${reportStats.maxSpeed.toFixed(1)} km/h`],
-              ['میانگین', `${reportStats.averageSpeed.toFixed(1)} km/h`],
+              ['مسافت', `${formatNumeric(reportStats.distanceKm, 2)} km`],
+              ['بیشترین سرعت', `${formatNumeric(reportStats.maxSpeed, 1)} km/h`],
+              ['میانگین', `${formatNumeric(reportStats.averageSpeed, 1)} km/h`],
               ['مدت', formatDuration(reportStats.duration)],
               ['حرکت / توقف', `${reportStats.movingPoints.toLocaleString('fa-IR')} / ${reportStats.stoppedPoints.toLocaleString('fa-IR')}`],
             ].map(([label, value]) => (
@@ -612,7 +630,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
               {Object.entries(attributes).map(([key, value]) => (
                 <div key={`attribute-${key}`} className="min-w-0 border-b border-border-base/70 pb-1.5">
                   <div className="text-[10px] text-text-muted">{formatAttributeLabel(key)}</div>
-                  <div className="mt-0.5 break-words text-xs font-medium text-text-primary">{formatAttributeValue(value)}</div>
+                  <div className="mt-0.5 break-words text-xs font-medium text-text-primary">{formatAttributeValue(value, key)}</div>
                 </div>
               ))}
             </div>
