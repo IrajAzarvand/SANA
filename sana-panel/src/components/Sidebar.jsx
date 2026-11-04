@@ -21,7 +21,7 @@ export default function Sidebar({ isOpen, onClose }) {
     { path: '/panel/companies',      icon: Building2,        label: 'شرکت‌ها' },
     { path: '/panel/subscriptions',  icon: FileText,         label: 'قراردادها' },
     { path: '/panel/ai',             icon: BrainCircuit,     label: 'هوش مصنوعی' },
-    { path: '/panel/reports',        icon: BarChart3,         label: 'گزارش‌ها' },
+    { path: '/panel/reports',        icon: BarChart3,         label: 'گزارش‌ها', children: [{ path: '/panel/reports/trips', label: 'گزارش مسیرها' }] },
     { path: '/panel/alerts',         icon: AlertTriangle,    label: 'هشدارها', badge: 8 },
     { path: '/panel/settings',       icon: Settings,         label: 'تنظیمات سایت' },
   ];
@@ -34,7 +34,7 @@ export default function Sidebar({ isOpen, onClose }) {
     { path: '/panel/devices',    icon: Cpu,               label: 'دستگاه‌ها' },
     ...(isMainUser ? [{ path: '/panel/branches', icon: Building2, label: 'شعبه‌ها' }] : []),
     ...(isMainUser ? [{ path: '/panel/users', icon: Shield, label: 'کاربران' }] : []),
-    { path: '/panel/reports',    icon: BarChart3,        label: 'گزارش‌ها' },
+    { path: '/panel/reports',    icon: BarChart3,        label: 'گزارش‌ها', children: [{ path: '/panel/reports/trips', label: 'گزارش مسیرها' }] },
     { path: '/panel/alerts',     icon: AlertTriangle,    label: 'هشدارها', badge: 3 },
     { path: '/panel/settings',   icon: Settings,         label: 'تنظیمات' },
   ];
@@ -101,6 +101,27 @@ export default function Sidebar({ isOpen, onClose }) {
                       </>
                     )}
                   </NavLink>
+                  {item.children && (
+                    <ul className="mb-1 mt-1 space-y-1 pr-8">
+                      {item.children.map((child) => (
+                        <li key={child.path}>
+                          <NavLink
+                            to={child.path}
+                            onClick={onClose}
+                            className={({ isActive }) =>
+                              `block rounded-field px-3 py-2 text-xs transition-colors
+                               ${isActive
+                                 ? 'bg-bg-hover text-brand-500 font-medium'
+                                 : 'text-text-muted hover:bg-bg-hover hover:text-text-primary'
+                               }`
+                            }
+                          >
+                            {child.label}
+                          </NavLink>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </li>
               );
             })}
