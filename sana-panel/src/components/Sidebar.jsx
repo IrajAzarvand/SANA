@@ -44,7 +44,7 @@ export default function Sidebar({ isOpen, onClose }) {
     { path: '/panel/map',        icon: MapIcon,          label: 'نقشه' },
     { path: '/panel/vehicles',   icon: Car,              label: 'خودروهای من' },
     { path: '/panel/devices',    icon: Cpu,               label: 'دستگاه‌های من' },
-    { path: '/panel/reports',    icon: BarChart3,        label: 'گزارش‌ها' },
+    { path: '/panel/reports',    icon: BarChart3,        label: 'گزارش‌ها', children: [{ path: '/panel/reports/trips', label: 'گزارش مسیرها' }] },
     { path: '/panel/alerts',     icon: AlertTriangle,    label: 'هشدارها', badge: 3 },
     { path: '/panel/settings',   icon: Settings,         label: 'تنظیمات' },
   ];
