@@ -18,8 +18,8 @@ case "$port" in
         ;;
 esac
 
-if [ "${#port}" -gt 5 ] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
-    echo "Port must be between 1 and 65535." >&2
+if [ "${#port}" -gt 5 ] || [ "$port" -lt 1024 ] || [ "$port" -gt 65535 ]; then
+    echo "Port must be between 1024 and 65535." >&2
     exit 64
 fi
 
