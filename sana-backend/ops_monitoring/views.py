@@ -73,8 +73,8 @@ def _validated_capture(port_value: str, protocol_value: str) -> tuple[int, str]:
     if not port_value.isdigit():
         raise ValueError("شماره پورت باید عددی باشد.")
     port = int(port_value)
-    if not 1 <= port <= 65535:
-        raise ValueError("پورت باید بین 1 و 65535 باشد.")
+    if not 1024 <= port <= 65535:
+        raise ValueError("پورت باید بین 1024 و 65535 باشد.")
     protocol = protocol_value.strip().lower()
     if protocol not in {"tcp", "udp", "both"}:
         raise ValueError("پروتکل باید TCP، UDP یا هر دو باشد.")
