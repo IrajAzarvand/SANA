@@ -70,9 +70,9 @@ def main() -> int:
                 check=False,
                 timeout=5,
             )
-            port_pattern = re.compile(rf":{port}(?:\\s|$)")
+            port_pattern = re.compile(rf":{port}(?:\s|$)")
             is_configured = any(
-                "users:((\\"java\\"" in line and port_pattern.search(line)
+                '"java"' in line and "users:((" in line and port_pattern.search(line)
                 for line in (result.stdout or "").splitlines()
             )
     if not is_configured:
