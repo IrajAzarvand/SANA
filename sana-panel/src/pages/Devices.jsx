@@ -378,7 +378,7 @@ function DevicesTab() {
           <div className="flex min-w-0 gap-2">
             <div className="min-w-0 flex-1">
               <Select
-                placeholder="همه دستگاه‌ها"
+                label="محل استقرار دستگاه"
                 value={filterWarehouse}
                 onChange={(e) => setFilterWarehouse(e.target.value)}
                 options={[
