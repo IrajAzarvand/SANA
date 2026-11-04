@@ -356,35 +356,15 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
 
   const attributes = currentPoint?.attributes && typeof currentPoint.attributes === 'object' ? currentPoint.attributes : {};
 
-  return (
-    <section className="min-w-0 space-y-4">
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 rounded-xl border border-border-base bg-bg-elevated px-3 py-3 sm:px-4">
-        <div className="min-w-0">
-          <div className="mb-1 inline-flex items-center gap-1.5 text-xs font-medium text-brand-500">
-            <Activity size={14} /> گزارش مسیر و بازپخش دستگاه
-          </div>
-          <h2 className="text-base font-semibold text-text-primary sm:text-lg">تاریخچه موقعیت GPS</h2>
-          <p className="mt-1 text-xs leading-5 text-text-muted">تاریخچه واقعی دریافت‌شده از Traccar؛ مختصات تطبیق‌یافته با جاده در اولویت نمایش است.</p>
-        </div>
-        <label className="flex shrink-0 items-center gap-2 text-xs text-text-secondary">
-          <span>نقشه</span>
-          <select aria-label="انتخاب ارائه‌دهنده نقشه" value={provider} onChange={(event) => setProvider(event.target.value)} className="max-w-[170px] rounded-lg border border-border-base bg-bg-base px-2.5 py-2 text-xs text-text-primary outline-none focus:border-brand-400">
-            <option value={MAP_PROVIDERS.LEAFLET_OSM}>OpenStreetMap</option>
-            <option value={MAP_PROVIDERS.NESHAN_LEAFLET}>نشان</option>
-          </select>
-        </label>
-      </div>
 
-      <div className="rounded-2xl border border-border-base bg-bg-elevated p-3 shadow-sm sm:p-4">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-text-primary">تنظیم گزارش</h3>
-          <span className="text-[11px] text-text-muted">۱. دستگاه را انتخاب کنید · ۲. بازه زمانی را مشخص کنید</span>
-        </div>
-        <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-12">
-          <div className="relative min-w-0 md:col-span-2 xl:col-span-4">
-            <label htmlFor="device-report-search" className="mb-1.5 block text-xs font-medium text-text-secondary">جست‌وجو و انتخاب دستگاه</label>
+  return (
+    <section className="min-w-0 space-y-3">
+      <div className="rounded-xl border border-border-base bg-bg-elevated p-3">
+        <div className="grid min-w-0 grid-cols-1 gap-2 lg:grid-cols-[minmax(220px,1.15fr)_minmax(180px,1fr)_minmax(180px,1fr)_auto] lg:items-end">
+          <div className="relative min-w-0">
+            <label htmlFor="device-report-search" className="mb-1 block text-[11px] font-medium text-text-muted">دستگاه</label>
             <div className="relative">
-              <Search size={17} className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted" />
+              <Search size={15} className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted" />
               <input
                 ref={searchInputRef}
                 id="device-report-search"
@@ -401,9 +381,9 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
                   setDeviceId('');
                   setDevicePickerOpen(true);
                 }}
-                placeholder={loadingDevices ? 'در حال دریافت دستگاه‌ها…' : 'شناسه، سیم‌کارت، پلاک یا نام راننده را بنویسید'}
+                placeholder={loadingDevices ? 'در حال دریافت دستگاه‌ها…' : 'جست‌وجوی شناسه، پلاک یا راننده'}
                 disabled={loadingDevices}
-                className="w-full rounded-lg border border-border-base bg-bg-base py-2.5 pr-10 pl-3 text-sm text-text-primary outline-none focus:border-brand-400 disabled:opacity-60"
+                className="w-full rounded-lg border border-border-base bg-bg-base py-2.5 pr-9 pl-3 text-sm text-text-primary outline-none focus:border-brand-400 disabled:opacity-60"
               />
               {devicePickerOpen && (
                 <div id="device-report-options" role="listbox" className="absolute inset-x-0 top-full z-[1200] mt-1 max-h-64 overflow-y-auto rounded-xl border border-border-base bg-bg-elevated p-1 shadow-xl">
@@ -426,16 +406,14 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
                         {[device.sim_number ? `سیم‌کارت: ${device.sim_number}` : '', device.vehicle_plate ? `پلاک: ${device.vehicle_plate}` : '', ...(device.driverNames || [])].filter(Boolean).join(' · ') || 'اطلاعات تکمیلی ثبت نشده'}
                       </span>
                     </button>
-                  )) : (
-                    <p className="px-3 py-3 text-sm text-text-muted">{loadingDevices ? 'در حال دریافت دستگاه‌ها…' : 'دستگاهی با این عبارت پیدا نشد.'}</p>
-                  )}
+                  )) : <p className="px-3 py-3 text-sm text-text-muted">دستگاهی با این عبارت پیدا نشد.</p>}
                 </div>
               )}
             </div>
-            {selectedDevice && !devicePickerOpen && <p className="mt-2 text-xs text-text-muted">دستگاه انتخاب‌شده: {deviceLabel(selectedDevice)}</p>}
           </div>
-          <div className="min-w-0 space-y-1.5 xl:col-span-4">
-            <label className="block text-xs font-medium text-text-secondary">از تاریخ و ساعت</label>
+
+          <div className="min-w-0">
+            <label className="mb-1 block text-[11px] font-medium text-text-muted">شروع بازه</label>
             <JalaliDatePicker
               value={from ? `${datePart(from)}T12:00:00` : ''}
               onChange={(value) => {
@@ -455,12 +433,13 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
               maxTime={!isSiteAdmin && metadata?.range_end && datePart(from) === datePart(dateTimeLocal(metadata.range_end)) ? timePart(dateTimeLocal(metadata.range_end)) : null}
               minDate={!isSiteAdmin && metadata?.range_start ? datePart(dateTimeLocal(metadata.range_start)) : null}
               maxDate={!isSiteAdmin && metadata?.range_end ? datePart(dateTimeLocal(metadata.range_end)) : null}
-              placeholder="تاریخ و ساعت شروع"
+              placeholder="انتخاب تاریخ و ساعت شروع"
+              className="[&>div>input]:!py-2"
             />
-            <p className="text-xs text-text-muted">{isSiteAdmin ? 'ادمین: بدون محدودیت قراردادی' : metadata?.range_start ? `محدوده قرارداد: ${formatDate(metadata.range_start)} تا ${formatDate(metadata.range_end)}` : 'ابتدا دستگاه مجاز را انتخاب کنید.'}</p>
           </div>
-          <div className="min-w-0 space-y-1.5 xl:col-span-4">
-            <label className="block text-xs font-medium text-text-secondary">تا تاریخ و ساعت</label>
+
+          <div className="min-w-0">
+            <label className="mb-1 block text-[11px] font-medium text-text-muted">پایان بازه</label>
             <JalaliDatePicker
               value={to ? `${datePart(to)}T12:00:00` : ''}
               onChange={(value) => {
@@ -480,147 +459,166 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
               maxTime={!isSiteAdmin && metadata?.range_end && datePart(to) === datePart(dateTimeLocal(metadata.range_end)) ? timePart(dateTimeLocal(metadata.range_end)) : null}
               minDate={!isSiteAdmin && metadata?.range_start ? datePart(dateTimeLocal(metadata.range_start)) : null}
               maxDate={!isSiteAdmin && metadata?.range_end ? datePart(dateTimeLocal(metadata.range_end)) : null}
-              placeholder="تاریخ و ساعت پایان"
+              placeholder="انتخاب تاریخ و ساعت پایان"
+              className="[&>div>input]:!py-2"
             />
-            <div className="mt-2 text-[11px] leading-5 text-text-muted">{isSiteAdmin ? 'دسترسی ادمین: انتخاب هر بازه زمانی' : 'بازه زمانی بر اساس محدوده مجاز دستگاه کنترل می‌شود.'}</div>
           </div>
-          <div className="flex flex-col justify-end gap-2 md:col-span-2 xl:col-span-12 xl:flex-row xl:items-center">
-            <button type="button" onClick={loadHistory} disabled={loadingHistory || !deviceId} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60 xl:ml-auto xl:w-auto xl:min-w-56">
-              <span className={loadingHistory ? 'hidden' : 'inline-flex'} aria-hidden="true"><CalendarClock size={16} /></span>
-              <span className={loadingHistory ? 'inline-flex' : 'hidden'} aria-hidden="true"><LoaderCircle size={16} className="animate-spin" /></span>
-              {loadingHistory ? 'در حال دریافت مسیر…' : 'نمایش مسیر و گزارش'}
-            </button>
-          </div>
-        </div>
-      </div>
 
-      {error && <div role="alert" className="flex items-start gap-2 rounded-xl border border-danger/20 bg-danger/5 p-3 text-sm text-danger"><CircleAlert size={17} className="mt-0.5 shrink-0" />{error}</div>}
-      {notice && <div className="rounded-xl border border-warning/30 bg-warning/10 p-3 text-sm text-text-primary">{notice}</div>}
-
-      {reportStats && (
-        <section className="min-w-0 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="font-semibold text-text-primary">خلاصه عملکرد در بازه انتخابی</h3>
-              <p className="mt-1 text-xs text-text-muted">محاسبات بر اساس نقاط دریافت‌شده از Traccar انجام شده‌اند.</p>
-            </div>
-            <button type="button" onClick={exportCsv} className="inline-flex items-center gap-2 rounded-lg border border-border-base px-3 py-2 text-sm font-medium text-text-secondary transition hover:bg-bg-hover">
-              <Download size={16} /> خروجی CSV
+          <div className="flex min-w-0 gap-2">
+            <button type="button" onClick={loadHistory} disabled={loadingHistory || !deviceId} className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60 lg:flex-none">
+              {loadingHistory ? <LoaderCircle size={16} className="animate-spin" /> : <CalendarClock size={16} />}
+              {loadingHistory ? 'در حال دریافت…' : 'نمایش گزارش'}
             </button>
-          </div>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
-            {[
-              { label: 'مسافت تقریبی', value: `${reportStats.distanceKm.toFixed(2)} km`, icon: Route },
-              { label: 'حداکثر سرعت', value: `${reportStats.maxSpeed.toFixed(1)} km/h`, icon: Gauge },
-              { label: 'میانگین سرعت نقاط', value: `${reportStats.averageSpeed.toFixed(1)} km/h`, icon: Activity },
-              { label: 'مدت بازه ثبت‌شده', value: formatDuration(reportStats.duration), icon: CalendarClock },
-              { label: 'نقاط حرکت / توقف', value: `${reportStats.movingPoints.toLocaleString('fa-IR')} / ${reportStats.stoppedPoints.toLocaleString('fa-IR')}`, icon: Activity },
-            ].map((item) => {
-              const Icon = item.icon;
-              return <div key={item.label} className="rounded-xl border border-border-base bg-bg-elevated p-3"><div className="flex items-center gap-2 text-xs text-text-muted"><Icon size={15} />{item.label}</div><div className="mt-2 text-base font-semibold text-text-primary">{item.value}</div></div>;
-            })}
-          </div>
-        </section>
-      )}
-
-      <div className="min-w-0 overflow-hidden rounded-2xl border border-border-base bg-bg-elevated shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-base px-4 py-3">
-          <div className="text-sm font-semibold text-text-primary">{metadata?.device?.imei || selectedDevice?.imei || 'دستگاه انتخاب نشده'}</div>
-          <div className="text-xs text-text-muted">{points.length.toLocaleString('fa-IR')} نقطه {loadingHistory ? '· در حال بارگذاری' : ''}</div>
-        </div>
-        <div className="relative h-[clamp(320px,55vh,680px)] min-h-[320px]">
-          <LiveDeviceMap positions={mapPosition} provider={provider} followPosition animationDuration={Math.max(150, 900 / speed)} routeSegments={routeSegments} />
-          {!mapPosition.length && (
-            <div className="pointer-events-none absolute inset-0 z-[1000] flex items-center justify-center bg-bg-elevated/90 px-4 text-center text-sm text-text-muted">
-              پس از انتخاب دستگاه و بازه زمانی، مسیر در این نقشه نمایش داده می‌شود.
-            </div>
-          )}
-        </div>
-        <div className="min-w-0 space-y-3 border-t border-border-base p-3 sm:p-4">
-          <div className="flex flex-wrap gap-3 text-xs text-text-secondary" aria-label="راهنمای رنگ مسیر بر اساس سرعت">
-            {[['#2563EB','۰ تا ۲۰'],['#16A34A','۲۰ تا ۴۰'],['#EAB308','۴۰ تا ۶۰'],['#F97316','۶۰ تا ۸۰'],['#DC2626','۸۰ به بالا']].map(([color,label]) => <span key={label} className="inline-flex items-center gap-1.5"><span className="inline-block h-1 w-5 rounded-full" style={{ backgroundColor: color }} />{label} km/h</span>)}
-          </div>
-          <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-3" dir="ltr">
-            <div className="flex items-center justify-start gap-2">
-              <button type="button" onClick={() => { setPointIndex(0); setPlaying(false); }} disabled={!points.length} title="ابتدای مسیر" aria-label="ابتدای مسیر" className="rounded-lg border border-border-base p-2 text-text-secondary disabled:opacity-40"><SkipBack size={17} /></button>
-              <button type="button" onClick={() => moveBy(-1)} disabled={!points.length || pointIndex === 0} title="فریم قبلی" aria-label="فریم قبلی" className="rounded-lg border border-border-base p-2 text-text-secondary disabled:opacity-40"><ChevronLeft size={17} /></button>
-            </div>
-            <button
-              type="button"
-              onClick={() => setPlaying((value) => !value)}
-              disabled={points.length < 2}
-              aria-label={playing ? 'توقف بازپخش' : 'شروع بازپخش'}
-              title={playing ? 'توقف بازپخش' : 'شروع بازپخش'}
-              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40"
-            >
-              <Play size={16} aria-hidden="true" />
-              {playing ? 'توقف' : 'پخش'}
-            </button>
-            <div className="flex items-center justify-end gap-2">
-              <button type="button" onClick={() => moveBy(1)} disabled={!points.length || pointIndex >= points.length - 1} title="فریم بعدی" aria-label="فریم بعدی" className="rounded-lg border border-border-base p-2 text-text-secondary disabled:opacity-40"><ChevronRight size={17} /></button>
-              <button type="button" onClick={() => { setPointIndex(Math.max(0, points.length - 1)); setPlaying(false); }} disabled={!points.length} title="انتهای مسیر" aria-label="انتهای مسیر" className="rounded-lg border border-border-base p-2 text-text-secondary disabled:opacity-40"><SkipForward size={17} /></button>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <label className="flex items-center gap-2 text-xs text-text-muted">سرعت
-              <select value={speed} onChange={(event) => setSpeed(Number(event.target.value))} className="rounded-lg border border-border-base bg-bg-base px-2 py-1.5 text-text-primary"><option value={0.5}>۰٫۵×</option><option value={1}>۱×</option><option value={2}>۲×</option><option value={4}>۴×</option></select>
+            <label className="flex items-center gap-1.5 rounded-lg border border-border-base bg-bg-base px-2 text-xs text-text-secondary">
+              <span className="sr-only">نقشه</span>
+              <select aria-label="انتخاب ارائه‌دهنده نقشه" value={provider} onChange={(event) => setProvider(event.target.value)} className="max-w-[112px] bg-transparent py-2 text-xs text-text-primary outline-none">
+                <option value={MAP_PROVIDERS.LEAFLET_OSM}>OpenStreetMap</option>
+                <option value={MAP_PROVIDERS.NESHAN_LEAFLET}>نشان</option>
+              </select>
             </label>
-            <span className="text-xs text-text-muted" dir="rtl">{points.length ? `${(pointIndex + 1).toLocaleString('fa-IR')} از ${points.length.toLocaleString('fa-IR')}` : 'بدون نقطه'}</span>
           </div>
-          <input aria-label="موقعیت در مسیر" type="range" min="0" max={Math.max(0, points.length - 1)} value={pointIndex} onChange={(event) => { setPlaying(false); setPointIndex(Number(event.target.value)); }} disabled={!points.length} className="w-full accent-brand-500" style={{ backgroundSize: `${progress}% 100%` }} />
-          <div className="flex flex-wrap justify-between gap-2 text-xs text-text-muted"><span>زمان نقطه: {formatDate(currentPoint?.device_time)}</span><span>{currentPoint && currentPoint.matched_latitude != null && currentPoint.matched_longitude != null ? 'مختصات تطبیق‌یافته با جاده' : currentPoint ? 'مختصات خام GPS' : '—'}</span></div>
+        </div>
+        {!isSiteAdmin && metadata?.range_start && (
+          <p className="mt-2 text-[10px] text-text-muted">محدوده مجاز دستگاه: {formatDate(metadata.range_start)} تا {formatDate(metadata.range_end)}</p>
+        )}
+      </div>
+
+      {error && <div role="alert" className="flex items-center gap-2 rounded-lg border border-danger/20 bg-danger/5 px-3 py-2 text-xs text-danger"><CircleAlert size={15} className="shrink-0" />{error}</div>}
+      {notice && <div className="flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-text-primary"><CircleAlert size={15} className="shrink-0" />{notice}</div>}
+
+      <div className="relative isolate h-[min(76vh,820px)] min-h-[520px] overflow-hidden rounded-2xl border border-border-base bg-bg-base shadow-sm">
+        <LiveDeviceMap positions={mapPosition} provider={provider} followPosition animationDuration={Math.max(150, 900 / speed)} routeSegments={routeSegments} />
+
+        {!mapPosition.length && (
+          <div className="pointer-events-none absolute inset-0 z-[900] flex items-center justify-center bg-bg-elevated/75 px-4 text-center text-sm text-text-muted">
+            {loadingHistory ? 'در حال آماده‌سازی مسیر دستگاه…' : 'برای مشاهده مسیر، دستگاه و بازه زمانی را انتخاب و گزارش را اجرا کنید.'}
+          </div>
+        )}
+
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-[1001] flex items-start justify-between gap-2 p-2 sm:p-3">
+          <div className="pointer-events-auto min-w-0 max-w-[70%] rounded-xl border border-white/30 bg-bg-elevated/95 px-3 py-2 shadow-lg backdrop-blur-md">
+            <div className="truncate text-xs font-bold text-text-primary">{selectedDevice?.vehicle_plate || selectedDevice?.imei || metadata?.device?.imei || 'گزارش مسیر دستگاه'}</div>
+            <div className="mt-0.5 truncate text-[10px] text-text-muted">{selectedDevice ? deviceLabel(selectedDevice) : 'دستگاهی انتخاب نشده'}{points.length ? ` · ${points.length.toLocaleString('fa-IR')} نقطه` : ''}</div>
+          </div>
+          <div className="pointer-events-auto flex shrink-0 gap-1.5">
+            {points.length > 0 && (
+              <button type="button" onClick={exportCsv} title="دریافت فایل CSV" aria-label="دریافت فایل CSV" className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/30 bg-bg-elevated/95 text-text-secondary shadow-lg backdrop-blur-md hover:text-brand-500">
+                <Download size={16} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {reportStats && (
+          <div className="pointer-events-none absolute right-2 top-[4.6rem] z-[1001] flex max-w-[calc(100%-1rem)] flex-wrap gap-1.5 sm:right-3 sm:top-[4.8rem]">
+            {[
+              ['مسافت', `${reportStats.distanceKm.toFixed(2)} km`],
+              ['بیشترین سرعت', `${reportStats.maxSpeed.toFixed(1)} km/h`],
+              ['میانگین', `${reportStats.averageSpeed.toFixed(1)} km/h`],
+              ['مدت', formatDuration(reportStats.duration)],
+              ['حرکت / توقف', `${reportStats.movingPoints.toLocaleString('fa-IR')} / ${reportStats.stoppedPoints.toLocaleString('fa-IR')}`],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-lg border border-white/30 bg-bg-elevated/95 px-2.5 py-1.5 shadow-md backdrop-blur-md">
+                <div className="text-[9px] text-text-muted">{label}</div>
+                <div className="whitespace-nowrap text-[11px] font-bold tabular-nums text-text-primary">{value}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {currentPoint && (
+          <div className="pointer-events-none absolute bottom-[6.7rem] left-2 z-[1001] max-w-[calc(100%-1rem)] rounded-xl border border-white/30 bg-bg-elevated/95 px-3 py-2 shadow-lg backdrop-blur-md sm:bottom-[6.4rem] sm:left-3">
+            <div className="mb-1 text-[10px] font-semibold text-text-muted">اطلاعات نقطه انتخاب‌شده</div>
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-text-primary">
+              <span>سرعت: <b>{showValue(currentPoint.speed, ' km/h', 1)}</b></span>
+              <span>زمان: <b>{formatDate(currentPoint.device_time)}</b></span>
+              <span>سوئیچ: <b>{currentPoint.ignition === true ? 'روشن' : currentPoint.ignition === false ? 'خاموش' : '—'}</b></span>
+              <span>GPS: <b>{currentPoint.gps_valid ? 'معتبر' : 'نامعتبر'}</b></span>
+              <span>ماهواره: <b>{showValue(currentPoint.satellites)}</b></span>
+              <span>باتری: <b>{showValue(currentPoint.battery_voltage, ' V')}</b></span>
+            </div>
+          </div>
+        )}
+
+        <div className="absolute inset-x-2 bottom-2 z-[1002] rounded-xl border border-white/30 bg-bg-elevated/95 p-2.5 shadow-xl backdrop-blur-md sm:inset-x-3 sm:bottom-3 sm:p-3">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2 text-[10px] text-text-muted">
+              <span className="font-semibold text-text-primary">{points.length ? `${(pointIndex + 1).toLocaleString('fa-IR')} از ${points.length.toLocaleString('fa-IR')}` : 'بدون نقطه'}</span>
+              <span className="hidden text-border-base sm:inline">|</span>
+              <span className="truncate">{currentPoint ? formatDate(currentPoint.device_time) : loadingHistory ? 'در حال دریافت نقاط مسیر…' : 'آماده بازپخش مسیر'}</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <label className="flex items-center gap-1 text-[10px] text-text-muted">سرعت
+                <select value={speed} onChange={(event) => setSpeed(Number(event.target.value))} className="rounded-md border border-border-base bg-bg-base px-1.5 py-1 text-[10px] text-text-primary">
+                  <option value={0.5}>۰٫۵×</option><option value={1}>۱×</option><option value={2}>۲×</option><option value={4}>۴×</option>
+                </select>
+              </label>
+              <button type="button" onClick={() => { setPointIndex(0); setPlaying(false); }} disabled={!points.length} title="ابتدای مسیر" aria-label="ابتدای مسیر" className="flex h-8 w-8 items-center justify-center rounded-md border border-border-base text-text-secondary disabled:opacity-40"><SkipBack size={15} /></button>
+              <button type="button" onClick={() => moveBy(-1)} disabled={!points.length || pointIndex === 0} title="نقطه قبلی" aria-label="نقطه قبلی" className="flex h-8 w-8 items-center justify-center rounded-md border border-border-base text-text-secondary disabled:opacity-40"><ChevronLeft size={15} /></button>
+              <button type="button" onClick={() => setPlaying((value) => !value)} disabled={points.length < 2} aria-label={playing ? 'توقف بازپخش' : 'شروع بازپخش'} title={playing ? 'توقف بازپخش' : 'شروع بازپخش'} className="flex h-8 min-w-10 items-center justify-center gap-1 rounded-md bg-brand-500 px-2 text-xs font-semibold text-white disabled:opacity-40">
+                {playing ? <span>توقف</span> : <><Play size={14} /><span>پخش</span></>}
+              </button>
+              <button type="button" onClick={() => moveBy(1)} disabled={!points.length || pointIndex >= points.length - 1} title="نقطه بعدی" aria-label="نقطه بعدی" className="flex h-8 w-8 items-center justify-center rounded-md border border-border-base text-text-secondary disabled:opacity-40"><ChevronRight size={15} /></button>
+              <button type="button" onClick={() => { setPointIndex(Math.max(0, points.length - 1)); setPlaying(false); }} disabled={!points.length} title="انتهای مسیر" aria-label="انتهای مسیر" className="flex h-8 w-8 items-center justify-center rounded-md border border-border-base text-text-secondary disabled:opacity-40"><SkipForward size={15} /></button>
+            </div>
+          </div>
+          <input aria-label="موقعیت در مسیر" type="range" min="0" max={Math.max(0, points.length - 1)} value={pointIndex} onChange={(event) => { setPlaying(false); setPointIndex(Number(event.target.value)); }} disabled={!points.length} className="block w-full accent-brand-500" style={{ backgroundSize: `${progress}% 100%` }} />
+          <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-[9px] text-text-muted">
+            <div className="flex flex-wrap gap-x-2.5 gap-y-1" aria-label="راهنمای رنگ مسیر بر اساس سرعت">
+              {[['#2563EB','۰–۲۰'],['#16A34A','۲۰–۴۰'],['#EAB308','۴۰–۶۰'],['#F97316','۶۰–۸۰'],['#DC2626','۸۰+']].map(([color,label]) => <span key={label} className="inline-flex items-center gap-1"><span className="h-1 w-3 rounded-full" style={{ backgroundColor: color }} />{label}</span>)}
+              <span>km/h</span>
+            </div>
+            <span>{currentPoint?.matched_latitude != null && currentPoint?.matched_longitude != null ? 'مسیر منطبق‌شده با جاده' : currentPoint ? 'مختصات خام GPS' : 'رنگ مسیر بر اساس سرعت'}</span>
+          </div>
         </div>
       </div>
 
-      <section className="rounded-2xl border border-border-base bg-bg-elevated p-4 shadow-sm">
-        <div className="mb-4 flex items-center justify-between gap-2"><h3 className="font-semibold text-text-primary">ویژگی‌های دستگاه در نقطه انتخاب‌شده</h3><span className="text-xs text-text-muted">{currentPoint ? formatDate(currentPoint.device_time) : '—'}</span></div>
-        <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6">
-          {[
-            ['سرعت', showValue(currentPoint?.speed, ' km/h', 1)],
-            ['مختصات عرض خام', showValue(currentPoint?.latitude, '', 6)],
-            ['مختصات طول خام', showValue(currentPoint?.longitude, '', 6)],
-            ['عرض تطبیق‌یافته', showValue(currentPoint?.matched_latitude, '', 6)],
-            ['طول تطبیق‌یافته', showValue(currentPoint?.matched_longitude, '', 6)],
-            ['دقت GPS', showValue(currentPoint?.accuracy, ' m')],
-            ['جهت حرکت', showValue(currentPoint?.heading, '°')],
-            ['ارتفاع', showValue(currentPoint?.altitude, ' m')],
-            ['ماهواره‌ها', showValue(currentPoint?.satellites)],
-            ['وضعیت GPS', currentPoint ? (currentPoint.gps_valid ? 'معتبر' : 'نامعتبر') : '—'],
-            ['حرکت', currentPoint?.motion === true ? 'در حرکت' : currentPoint?.motion === false ? 'متوقف' : '—'],
-            ['سوئیچ', currentPoint?.ignition === true ? 'روشن' : currentPoint?.ignition === false ? 'خاموش' : '—'],
-            ['ولتاژ باتری', showValue(currentPoint?.battery_voltage, ' V')],
-            ['ولتاژ خارجی', showValue(currentPoint?.external_voltage, ' V')],
-            ['قدرت GSM', showValue(currentPoint?.gsm_signal)],
-            ['کیلومترشمار', showValue(currentPoint?.odometer)],
-            ['ساعت موتور', showValue(currentPoint?.engine_hours)],
-            ['سطح سوخت', showValue(currentPoint?.fuel_level)],
-            ['زمان دریافت سرور', formatDate(currentPoint?.server_received_at)],
-            ['منبع تطبیق', currentPoint?.match_provider || '—'],
-            ['زمان تطبیق', formatDate(currentPoint?.matched_at)],
-          ].map(([label, value]) => (
-            <div key={label} className="min-w-0 rounded-lg border border-border-base bg-bg-base px-2.5 py-2">
-              <div className="text-[11px] leading-4 text-text-muted">{label}</div>
-              <div className="mt-1 break-words text-xs font-semibold leading-5 text-text-primary">{value}</div>
-            </div>
-          ))}
-        </div>
-        {Object.keys(attributes).length > 0 && (
-          <div className="mt-4">
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <h4 className="text-sm font-semibold text-text-primary">سایر ویژگی‌های دریافتی از دستگاه</h4>
-              <span className="text-[11px] text-text-muted">{Object.keys(attributes).length.toLocaleString('fa-IR')} مورد</span>
-            </div>
-            <div className="grid grid-cols-1 gap-2 min-[420px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5">
+      {currentPoint && (
+        <details className="group rounded-xl border border-border-base bg-bg-elevated">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-xs">
+            <span className="font-semibold text-text-primary">جزئیات نقطه و تمام Attributes دریافتی</span>
+            <span className="text-[10px] text-text-muted">{(21 + Object.keys(attributes).length).toLocaleString('fa-IR')} مقدار · مشاهده / بستن</span>
+          </summary>
+          <div className="border-t border-border-base px-3 py-3">
+            <div className="grid grid-cols-2 gap-x-5 gap-y-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+              {[
+                ['عرض جغرافیایی خام', showValue(currentPoint.latitude, '', 6)],
+                ['طول جغرافیایی خام', showValue(currentPoint.longitude, '', 6)],
+                ['عرض تطبیق‌یافته', showValue(currentPoint.matched_latitude, '', 6)],
+                ['طول تطبیق‌یافته', showValue(currentPoint.matched_longitude, '', 6)],
+                ['دقت GPS', showValue(currentPoint.accuracy, ' m')],
+                ['جهت حرکت', showValue(currentPoint.heading, '°')],
+                ['ارتفاع', showValue(currentPoint.altitude, ' m')],
+                ['ماهواره‌ها', showValue(currentPoint.satellites)],
+                ['وضعیت GPS', currentPoint.gps_valid ? 'معتبر' : 'نامعتبر'],
+                ['حرکت', currentPoint.motion === true ? 'در حرکت' : currentPoint.motion === false ? 'متوقف' : '—'],
+                ['سوئیچ', currentPoint.ignition === true ? 'روشن' : currentPoint.ignition === false ? 'خاموش' : '—'],
+                ['ولتاژ باتری', showValue(currentPoint.battery_voltage, ' V')],
+                ['ولتاژ خارجی', showValue(currentPoint.external_voltage, ' V')],
+                ['قدرت GSM', showValue(currentPoint.gsm_signal)],
+                ['کیلومترشمار', showValue(currentPoint.odometer)],
+                ['ساعت موتور', showValue(currentPoint.engine_hours)],
+                ['سطح سوخت', showValue(currentPoint.fuel_level)],
+                ['زمان دریافت سرور', formatDate(currentPoint.server_received_at)],
+                ['منبع تطبیق', currentPoint.match_provider || '—'],
+                ['زمان تطبیق', formatDate(currentPoint.matched_at)],
+                ['زمان دستگاه', formatDate(currentPoint.device_time)],
+              ].map(([label, value]) => (
+                <div key={label} className="min-w-0 border-b border-border-base/70 pb-1.5">
+                  <div className="text-[10px] text-text-muted">{label}</div>
+                  <div className="mt-0.5 break-words text-xs font-medium text-text-primary">{value}</div>
+                </div>
+              ))}
               {Object.entries(attributes).map(([key, value]) => (
-                <div key={key} className="min-w-0 rounded-lg border border-border-base bg-bg-base px-2.5 py-2">
-                  <div className="text-[11px] leading-4 text-text-muted">{formatAttributeLabel(key)}</div>
-                  <div className="mt-1 break-words text-xs font-medium leading-5 text-text-primary">{formatAttributeValue(value)}</div>
+                <div key={`attribute-${key}`} className="min-w-0 border-b border-border-base/70 pb-1.5">
+                  <div className="text-[10px] text-text-muted">{formatAttributeLabel(key)}</div>
+                  <div className="mt-0.5 break-words text-xs font-medium text-text-primary">{formatAttributeValue(value)}</div>
                 </div>
               ))}
             </div>
           </div>
-        )}
-      </section>
+        </details>
+      )}
     </section>
   );
 }
