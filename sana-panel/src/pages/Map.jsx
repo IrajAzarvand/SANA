@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { Activity, MapPin, Navigation, PauseCircle, WifiOff } from 'lucide-react';
-import PageHeader from '../components/PageHeader';
 import apiClient from '../api/client';
 import LiveDeviceMap from '../../../sana-map/src/LiveDeviceMap';
 import { MAP_PROVIDER, MAP_PROVIDERS } from '../../../sana-map/src/config';
@@ -100,10 +99,12 @@ export default function Map() {
 
   return (
     <div className="flex min-h-[560px] flex-col gap-3 lg:h-full lg:min-h-[560px]">
-      <PageHeader
-        title="نقشه زنده"
-        subtitle="نمای لحظه‌ای موقعیت و وضعیت دستگاه‌های GPS"
-      />
+      <header className="flex shrink-0 items-center justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold text-text-primary sm:text-2xl">نقشه زنده</h1>
+          <p className="mt-0.5 text-xs text-text-muted sm:text-sm">نمای لحظه‌ای موقعیت و وضعیت دستگاه‌های GPS</p>
+        </div>
+      </header>
 
       <div className="grid shrink-0 grid-cols-2 gap-2 sm:grid-cols-4">
         <Summary label="دارای موقعیت" value={positions.length} icon={<MapPin size={17} />} tone="text-brand-400" />
