@@ -1,41 +1,94 @@
-import { useState, useEffect, useRef } from 'react';
-import { Terminal, Pause, Play, Trash2, ShieldCheck, ChevronDown } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Terminal, Pause, Play, Trash2, ShieldCheck, RadioTower,
+  CircleStop, Wifi, Server, Database, Activity,
+} from 'lucide-react';
 import apiClient from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
 const LOG_SOURCES = {
-  service: {
-    label: 'لاگ سرویس',
-    description: 'لاگ زنده systemd، همگام‌سازی Traccar و خطاهای سرویس',
-    command: 'journalctl -u sana-gps -f',
+  gps: {
+    label: 'سرویس GPS سانا',
+    description: 'لاگ systemd سرویس GPS، همگام‌سازی و ارتباطات مرتبط با Traccar',
+    icon: RadioTower,
+  },
+  traccar: {
+    label: 'Traccar',
+    description: 'اتصال دستگاه‌ها، دریافت بسته‌ها، تشخیص پروتکل و خطاهای پردازش Traccar',
+    icon: Activity,
+  },
+  backend: {
+    label: 'بک‌اند سانا',
+    description: 'خطاهای Django، API، احراز هویت و ارتباط بک‌اند با سرویس‌های دیگر',
+    icon: Server,
+  },
+  postgres: {
+    label: 'PostgreSQL',
+    description: 'رویدادها و خطاهایی که سرویس PostgreSQL در systemd journal ثبت می‌کند',
+    icon: Database,
+  },
+  system: {
+    label: 'هشدارهای سرور',
+    description: 'هشدارها و خطاهای سطح سیستم از systemd journal',
+    icon: Terminal,
   },
   network: {
-    label: 'پایش بسته‌های شبکه',
-    description: 'خروجی ابزار ضبط بسته‌های شبکه روی سرور؛ نوع و پورت بسته‌ها به تنظیمات ابزار نصب‌شده بستگی دارد.',
-    command: 'sudo /usr/local/sbin/sana-gps-network-capture',
+    label: 'بسته‌های ورودی Traccar',
+    description: 'مشاهده خلاصه بسته‌های TCP/UDP روی پورت انتخابی؛ بدون ذخیره در فایل',
+    icon: Wifi,
   },
 };
 
+const MAX_LINES_PER_SOURCE = 500;
+
 function LiveTerminal() {
-  const [selectedStream, setSelectedStream] = useState('service');
-  const source = LOG_SOURCES[selectedStream];
-  const [running, setRunning] = useState(true);
-  const [status, setStatus] = useState('connecting');
+  const [selectedSource, setSelectedSource] = useState('all');
   const [lines, setLines] = useState([]);
+  const [statuses, setStatuses] = useState({});
+  const [connectionStatus, setConnectionStatus] = useState('connecting');
   const [error, setError] = useState('');
+  const [following, setFollowing] = useState(true);
+  const [capturePort, setCapturePort] = useState('');
+  const [captureProtocol, setCaptureProtocol] = useState('both');
+  const [activeCapture, setActiveCapture] = useState(null);
   const bodyRef = useRef(null);
+  const lineIdRef = useRef(0);
+
+  const visibleLines = useMemo(
+    () => selectedSource === 'all'
+      ? lines
+      : lines.filter((item) => item.source === selectedSource),
+    [lines, selectedSource],
+  );
 
   useEffect(() => {
-    if (!running) return undefined;
     const controller = new AbortController();
     let cancelled = false;
+
     const connect = async () => {
+      setConnectionStatus('connecting');
+      setError('');
+      setStatuses(
+        Object.fromEntries(Object.keys(LOG_SOURCES).filter((key) => key !== 'network')
+          .map((key) => [key, 'connecting'])),
+      );
+
       try {
         const token = localStorage.getItem('sana_access_token');
-        const response = await fetch(`${apiClient.defaults.baseURL}/gps-monitor/logs/${selectedStream}/`, {
-          headers: token ? { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' } : { Accept: 'text/event-stream' },
+        const params = new URLSearchParams();
+        if (activeCapture) {
+          params.set('capture_port', String(activeCapture.port));
+          params.set('capture_protocol', activeCapture.protocol);
+        }
+        const query = params.toString();
+        const endpoint = `${apiClient.defaults.baseURL}/gps-monitor/logs/${query ? `?${query}` : ''}`;
+        const response = await fetch(endpoint, {
+          headers: token
+            ? { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' }
+            : { Accept: 'text/event-stream' },
           signal: controller.signal,
         });
+
         if (!response.ok) {
           const detail = response.status === 403
             ? 'دسترسی فقط برای ادمین کل سایت مجاز است.'
@@ -45,124 +98,278 @@ function LiveTerminal() {
           throw new Error(detail);
         }
         if (!response.body) throw new Error('مرورگر از دریافت زنده پشتیبانی نمی‌کند.');
-        setStatus('live');
+
+        setConnectionStatus('live');
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
+
         while (!cancelled) {
           const { value, done } = await reader.read();
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
           const events = buffer.split('\n\n');
           buffer = events.pop() || '';
+
           for (const event of events) {
             const dataLine = event.split('\n').find((line) => line.startsWith('data: '));
             if (!dataLine) continue;
             try {
               const payload = JSON.parse(dataLine.slice(6));
-              if (payload.line) {
-                setLines((previous) => [...previous, { id: `${Date.now()}-${Math.random()}`, text: payload.line }].slice(-250));
+              if (payload.kind === 'status' && payload.source) {
+                setStatuses((previous) => ({
+                  ...previous,
+                  [payload.source]: payload.status,
+                }));
+                if (payload.message) {
+                  setLines((previous) => [
+                    ...previous,
+                    {
+                      id: ++lineIdRef.current,
+                      source: payload.source,
+                      text: `[وضعیت] ${payload.message}`,
+                    },
+                  ].slice(-MAX_LINES_PER_SOURCE * Object.keys(LOG_SOURCES).length));
+                }
+              } else if (payload.kind === 'line' && payload.source && payload.line) {
+                const item = {
+                  id: ++lineIdRef.current,
+                  source: payload.source,
+                  text: payload.line,
+                };
+                setLines((previous) => {
+                  const next = [...previous, item];
+                  const sourceIndexes = [];
+                  next.forEach((line, index) => {
+                    if (line.source === item.source) sourceIndexes.push(index);
+                  });
+                  if (sourceIndexes.length > MAX_LINES_PER_SOURCE) {
+                    const removeIndex = sourceIndexes[0];
+                    next.splice(removeIndex, 1);
+                  }
+                  return next.slice(-MAX_LINES_PER_SOURCE * Object.keys(LOG_SOURCES).length);
+                });
               }
             } catch {
-              // Ignore incomplete or malformed server-sent events.
+              // Ignore malformed or incomplete server-sent events.
             }
           }
         }
-        if (!cancelled) setStatus('disconnected');
+
+        if (!cancelled) setConnectionStatus('disconnected');
       } catch (err) {
         if (err.name !== 'AbortError' && !cancelled) {
           setError(err.message || 'اتصال برقرار نشد.');
-          setStatus('error');
+          setConnectionStatus('error');
         }
       }
     };
+
     connect();
     return () => {
       cancelled = true;
       controller.abort();
     };
-  }, [running, selectedStream]);
+  }, [activeCapture]);
 
   useEffect(() => {
-    if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
-  }, [lines]);
+    if (following && bodyRef.current) {
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+    }
+  }, [visibleLines, following]);
 
-  const displayStatus = running ? status : 'paused';
-  const statusLabel = displayStatus === 'live' ? 'زنده' : displayStatus === 'connecting' ? 'در حال اتصال' : displayStatus === 'paused' ? 'متوقف' : displayStatus === 'error' ? 'خطا' : 'قطع اتصال';
+  const handleCaptureToggle = () => {
+    if (activeCapture) {
+      setActiveCapture(null);
+      setStatuses((previous) => ({ ...previous, network: 'stopped' }));
+      return;
+    }
+    const parsedPort = Number(capturePort);
+    if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
+      setError('شماره پورت باید عددی بین 1 تا 65535 باشد.');
+      return;
+    }
+    setError('');
+    setActiveCapture({ port: parsedPort, protocol: captureProtocol });
+    setStatuses((previous) => ({ ...previous, network: 'connecting' }));
+  };
+
+  const statusText = (status) => ({
+    live: 'زنده',
+    connecting: 'در حال اتصال',
+    error: 'خطا',
+    stopped: 'متوقف',
+  }[status] || 'آماده');
+
+  const currentSource = LOG_SOURCES[selectedSource];
 
   return (
-    <section className="min-w-0 overflow-hidden rounded-2xl border border-border-base bg-bg-elevated shadow-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-base p-3 sm:p-4">
-        <div className="min-w-0 flex-1">
-          <label htmlFor="live-log-source" className="mb-1.5 block text-xs font-medium text-text-secondary">منبع لاگ</label>
-          <div className="relative max-w-xl">
+    <section className="w-full min-w-0 space-y-3">
+      <div className="rounded-2xl border border-border-base bg-bg-elevated p-3 shadow-sm sm:p-4">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(220px,0.7fr)] xl:items-end">
+          <div className="min-w-0">
+            <label htmlFor="live-log-source" className="mb-1.5 block text-xs font-medium text-text-secondary">
+              نمایش منبع
+            </label>
             <select
               id="live-log-source"
-              value={selectedStream}
-              onChange={(event) => {
-                setSelectedStream(event.target.value);
-                setLines([]);
-                setError('');
-                setStatus('connecting');
-                setRunning(true);
-              }}
-              className="w-full appearance-none rounded-lg border border-border-base bg-bg-base py-2 pl-9 pr-3 text-sm text-text-primary outline-none transition focus:border-brand-500"
+              value={selectedSource}
+              onChange={(event) => setSelectedSource(event.target.value)}
+              className="w-full rounded-lg border border-border-base bg-bg-base px-3 py-2.5 text-sm text-text-primary outline-none focus:border-brand-500"
             >
-              {Object.entries(LOG_SOURCES).map(([key, item]) => (
-                <option key={key} value={key}>{item.label}</option>
+              <option value="all">همه منابع (نمایش ترکیبی)</option>
+              {Object.entries(LOG_SOURCES).map(([key, source]) => (
+                <option key={key} value={key}>{source.label}</option>
               ))}
             </select>
-            <ChevronDown size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+            <p className="mt-1.5 text-xs leading-5 text-text-muted">
+              {selectedSource === 'all'
+                ? 'تمام منابع عادی به‌صورت هم‌زمان دریافت می‌شوند؛ تغییر این فهرست اتصال را قطع نمی‌کند.'
+                : currentSource.description}
+            </p>
           </div>
-          <p className="mt-1.5 text-xs leading-5 text-text-muted">{source.description}</p>
+
+          <div className="flex min-w-0 items-center justify-between gap-2 rounded-lg bg-bg-base px-3 py-2.5">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${connectionStatus === 'live' ? 'animate-pulse bg-emerald-500' : connectionStatus === 'error' ? 'bg-danger' : 'bg-amber-500'}`} />
+              <span className="truncate text-sm font-medium text-text-primary">
+                {connectionStatus === 'live' ? 'اتصال مرکزی برقرار است' : connectionStatus === 'connecting' ? 'در حال اتصال به منابع...' : connectionStatus === 'error' ? 'خطا در اتصال' : 'اتصال قطع شده'}
+              </span>
+            </div>
+            <span className="shrink-0 text-[11px] text-text-muted">یک جریان مشترک</span>
+          </div>
         </div>
-        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${displayStatus === 'live' ? 'bg-emerald-500/10 text-emerald-600' : displayStatus === 'error' ? 'bg-danger/10 text-danger' : 'bg-bg-base text-text-muted'}`}>
-          <span className={`h-1.5 w-1.5 rounded-full ${displayStatus === 'live' ? 'animate-pulse bg-emerald-500' : displayStatus === 'error' ? 'bg-danger' : 'bg-text-muted'}`} />
-          {statusLabel}
-        </span>
-      </div>
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/5 bg-[#111827] px-3 py-2">
-        <div className="flex items-center gap-2 text-[11px] text-slate-400">
-          <span className="h-2.5 w-2.5 rounded-full bg-red-400/90" />
-          <span className="h-2.5 w-2.5 rounded-full bg-amber-400/90" />
-          <span className="h-2.5 w-2.5 rounded-full bg-emerald-400/90" />
-          <span className="mr-2 font-mono">sana@server:~</span>
+
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
+          {Object.entries(LOG_SOURCES).filter(([key]) => key !== 'network').map(([key, source]) => {
+            const Icon = source.icon;
+            const status = statuses[key] || 'connecting';
+            return (
+              <div key={key} className="flex min-w-0 items-center gap-2 rounded-lg border border-border-base px-2.5 py-2">
+                <Icon size={15} className="shrink-0 text-text-muted" />
+                <span className="min-w-0 flex-1 truncate text-xs text-text-secondary">{source.label}</span>
+                <span className={`h-2 w-2 shrink-0 rounded-full ${status === 'live' ? 'bg-emerald-500' : status === 'error' ? 'bg-danger' : 'bg-amber-500'}`} title={statusText(status)} />
+              </div>
+            );
+          })}
         </div>
-        <div className="flex items-center gap-1">
-          <button type="button" onClick={() => setLines([])} title="پاک کردن نمایش" className="rounded-lg p-2 text-slate-400 hover:bg-white/10 hover:text-white"><Trash2 size={15} /></button>
-          <button type="button" onClick={() => {
-            if (running) {
-              setRunning(false);
-            } else {
-              setStatus('connecting');
-              setError('');
-              setRunning(true);
-            }
-          }} title={running ? 'توقف نمایش زنده' : 'ادامه نمایش زنده'} className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-2.5 py-1.5 text-xs text-slate-100 hover:bg-white/15">
-            {running ? <Pause size={13} /> : <Play size={13} />}
-            {running ? 'توقف' : 'ادامه'}
-          </button>
-        </div>
-      </div>
-      <div ref={bodyRef} aria-live="polite" className="h-72 overflow-auto bg-[#0b1220] p-4 font-mono text-[11px] leading-5 text-emerald-300 sm:h-80 sm:text-xs">
-        {lines.length === 0 && !error && (
-          <div className="text-slate-500">
-            <p>{running ? 'در انتظار دریافت لاگ...' : 'نمایش متوقف شده است.'}</p>
-            <p className="mt-1 text-slate-600">$ {source.command}</p>
+
+        {selectedSource === 'network' && (
+          <div className="mt-4 rounded-xl border border-border-base bg-bg-base p-3 sm:p-4">
+            <div className="mb-3 flex items-start gap-2">
+              <Wifi size={17} className="mt-0.5 shrink-0 text-text-secondary" />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-text-primary">پایش بسته‌های ورودی Traccar</p>
+                <p className="mt-1 text-xs leading-5 text-text-muted">
+                  فقط هنگام شروع پایش اجرا می‌شود. خروجی خلاصه بسته‌ها را نشان می‌دهد و در فایل ذخیره نمی‌شود.
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(120px,0.8fr)_minmax(150px,1fr)_auto] sm:items-end">
+              <div className="min-w-0">
+                <label htmlFor="capture-port" className="mb-1 block text-xs text-text-secondary">شماره پورت</label>
+                <input
+                  id="capture-port"
+                  type="number"
+                  min="1"
+                  max="65535"
+                  inputMode="numeric"
+                  value={capturePort}
+                  onChange={(event) => setCapturePort(event.target.value)}
+                  disabled={Boolean(activeCapture)}
+                  placeholder="مثلاً 5027"
+                  className="w-full rounded-lg border border-border-base bg-bg-elevated px-3 py-2.5 text-sm text-text-primary outline-none focus:border-brand-500 disabled:opacity-60"
+                />
+              </div>
+              <div className="min-w-0">
+                <label htmlFor="capture-protocol" className="mb-1 block text-xs text-text-secondary">پروتکل</label>
+                <select
+                  id="capture-protocol"
+                  value={captureProtocol}
+                  onChange={(event) => setCaptureProtocol(event.target.value)}
+                  disabled={Boolean(activeCapture)}
+                  className="w-full rounded-lg border border-border-base bg-bg-elevated px-3 py-2.5 text-sm text-text-primary outline-none focus:border-brand-500 disabled:opacity-60"
+                >
+                  <option value="both">TCP و UDP</option>
+                  <option value="tcp">فقط TCP</option>
+                  <option value="udp">فقط UDP</option>
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={handleCaptureToggle}
+                className={`inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-white transition ${activeCapture ? 'bg-danger hover:opacity-90' : 'bg-brand-600 hover:bg-brand-700'}`}
+              >
+                {activeCapture ? <CircleStop size={16} /> : <Play size={16} />}
+                {activeCapture ? 'توقف پایش' : 'شروع پایش'}
+              </button>
+            </div>
+            {activeCapture && (
+              <p className="mt-2 text-xs text-emerald-600">
+                پایش پورت {activeCapture.port} ({activeCapture.protocol.toUpperCase()}) فعال است.
+              </p>
+            )}
           </div>
         )}
-        {error && <p className="mb-2 whitespace-pre-wrap text-rose-300">خطا: {error}</p>}
-        {lines.map((line) => (
-          <div key={line.id} className="grid grid-cols-[auto_1fr] gap-2 break-words">
-            <span className="select-none text-slate-600">$</span>
-            <span className="whitespace-pre-wrap">{line.text}</span>
-          </div>
-        ))}
-        {displayStatus === 'live' && <span className="inline-block h-3.5 w-1.5 animate-pulse bg-emerald-400 align-middle" />}
       </div>
-      <div className="flex items-center justify-between gap-3 border-t border-border-base px-4 py-2 text-[11px] text-text-muted">
-        <span>{lines.length} خط اخیر در نمایش</span>
-        <span className="inline-flex items-center gap-1"><ShieldCheck size={12} /> فقط خواندنی</span>
+
+      <div className="min-w-0 overflow-hidden rounded-2xl border border-border-base bg-[#0b1220] shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-[#111827] px-3 py-2.5 sm:px-4">
+          <div className="flex min-w-0 items-center gap-2 text-[11px] text-slate-400">
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-red-400/90" />
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-amber-400/90" />
+            <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-400/90" />
+            <span className="truncate font-mono">sana@server:~ / live-monitor</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setLines([])}
+              title="پاک کردن نمایش"
+              className="rounded-lg p-2 text-slate-400 hover:bg-white/10 hover:text-white"
+            >
+              <Trash2 size={15} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setFollowing((value) => !value)}
+              title={following ? 'توقف اسکرول خودکار' : 'ادامه اسکرول خودکار'}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-2.5 py-2 text-xs text-slate-100 hover:bg-white/15"
+            >
+              {following ? <Pause size={13} /> : <Play size={13} />}
+              <span>{following ? 'توقف اسکرول' : 'دنبال‌کردن'}</span>
+            </button>
+          </div>
+        </div>
+
+        <div
+          ref={bodyRef}
+          aria-live="polite"
+          dir="ltr"
+          className="h-[55vh] min-h-72 max-h-[72vh] overflow-auto overscroll-contain p-3 font-mono text-[11px] leading-5 text-emerald-300 sm:p-4 sm:text-xs"
+        >
+          {error && <p className="mb-3 whitespace-pre-wrap break-words text-rose-300">Connection error: {error}</p>}
+          {visibleLines.length === 0 && !error && (
+            <div className="text-slate-500">
+              <p>{connectionStatus === 'connecting' ? 'Connecting to live sources...' : 'Waiting for log events...'}</p>
+              {selectedSource === 'network' && !activeCapture && (
+                <p className="mt-1 text-amber-300">Enter a Traccar port and start packet monitoring to receive network events.</p>
+              )}
+            </div>
+          )}
+          {visibleLines.map((line) => (
+            <div key={line.id} className="grid min-w-0 grid-cols-[minmax(74px,auto)_minmax(0,1fr)] gap-2 border-b border-white/[0.035] py-0.5">
+              <span className="select-none break-words text-sky-400/80">[{LOG_SOURCES[line.source]?.label || line.source}]</span>
+              <span className="min-w-0 whitespace-pre-wrap break-all text-slate-200">{line.text}</span>
+            </div>
+          ))}
+          {connectionStatus === 'live' && <span className="mt-1 inline-block h-3.5 w-1.5 animate-pulse bg-emerald-400 align-middle" />}
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 px-3 py-2 text-[11px] text-slate-400 sm:px-4">
+          <span>{visibleLines.length.toLocaleString('fa-IR')} خط در نمایش · حداکثر {MAX_LINES_PER_SOURCE} خط برای هر منبع</span>
+          <span className="inline-flex items-center gap-1"><ShieldCheck size={12} /> فقط خواندنی · بدون فایل لاگ جدید</span>
+        </div>
       </div>
     </section>
   );
