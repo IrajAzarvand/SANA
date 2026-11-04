@@ -369,7 +369,7 @@ function DevicesTab() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <div title="فیلتر بر اساس وضعیت مدیریتی دستگاه؛ مانند فعال، خراب یا قطع سرویس.">
+          <div title="وضعیت مدیریتی">
             <Select
               placeholder="همه وضعیت‌ها"
               value={filterStatus}
@@ -380,7 +380,7 @@ function DevicesTab() {
           <div className="flex min-w-0 gap-2">
             <div
               className="min-w-0 flex-1"
-              title="فیلتر بر اساس محل استقرار دستگاه: انبار یا تخصیص‌یافته."
+              title="محل استقرار"
             >
               <Select
                 value={filterWarehouse}
