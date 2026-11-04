@@ -60,7 +60,7 @@ export default function Sidebar({ isOpen, onClose }) {
       <aside
         className={`
           fixed inset-y-0 right-0 z-50 h-dvh max-h-dvh w-[min(15rem,calc(100vw-3rem))] bg-bg-elevated border-l border-border-base
-          flex flex-col lg:static lg:h-auto lg:max-h-none lg:w-60 lg:shrink-0
+          flex flex-col lg:static lg:h-auto lg:max-h-none lg:w-52 lg:shrink-0
           transition-transform duration-300 ease-in-out
           ${isOpen ? 'translate-x-0' : 'translate-x-full lg:translate-x-0'}
         `}
@@ -69,7 +69,7 @@ export default function Sidebar({ isOpen, onClose }) {
           <span className="text-2xl font-bold text-brand-500">سانا</span>
         </div>
 
-        <nav className="flex-1 overflow-y-auto py-4 px-3">
+        <nav className="flex-1 overflow-y-auto py-3 px-2.5">
           <ul className="space-y-1">
             {menuItems.map((item) => {
               const Icon = item.icon;
@@ -79,7 +79,7 @@ export default function Sidebar({ isOpen, onClose }) {
                     to={item.path}
                     onClick={onClose}
                     className={({ isActive }) =>
-                      `group flex items-center gap-3 px-3 py-2.5 rounded-field text-sm transition-all relative
+                      `group flex items-center gap-2.5 px-2.5 py-2.5 rounded-field text-[13px] transition-all relative
                        ${isActive
                          ? 'bg-bg-hover text-text-primary font-medium'
                          : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
@@ -91,7 +91,7 @@ export default function Sidebar({ isOpen, onClose }) {
                         {isActive && (
                           <span className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-brand-500 rounded-l" />
                         )}
-                        <Icon size={18} className={isActive ? 'text-brand-500' : 'text-text-muted group-hover:text-text-secondary'} />
+                        <Icon size={17} className={isActive ? 'text-brand-500' : 'text-text-muted group-hover:text-text-secondary'} />
                         <span className="flex-1">{item.label}</span>
                         {item.badge && (
                           <span className="bg-danger text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
