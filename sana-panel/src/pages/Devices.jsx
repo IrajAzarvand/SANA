@@ -377,27 +377,16 @@ function DevicesTab() {
               options={statusOptions}
             />
           </div>
-          <div className="flex min-w-0 gap-2">
-            <div
-              className="min-w-0 flex-1"
-              title="محل استقرار"
-            >
-              <Select
-                value={filterWarehouse}
-                onChange={(e) => setFilterWarehouse(e.target.value)}
-                options={[
-                  { value: '', label: 'همه دستگاه‌ها' },
-                  { value: 'yes', label: 'فقط انبار' },
-                  { value: 'no', label: 'فقط تخصیص‌یافته' },
-                ]}
-              />
-            </div>
-            {isSiteAdmin && (
-              <Button icon={Plus} onClick={() => setAddModalOpen(true)} size="md">
-                <span className="hidden 2xl:inline">افزودن دستگاه</span>
-                <span className="2xl:hidden">افزودن</span>
-              </Button>
-            )}
+          <div title="محل استقرار">
+            <Select
+              value={filterWarehouse}
+              onChange={(e) => setFilterWarehouse(e.target.value)}
+              options={[
+                { value: '', label: 'همه دستگاه‌ها' },
+                { value: 'yes', label: 'فقط انبار' },
+                { value: 'no', label: 'فقط تخصیص‌یافته' },
+              ]}
+            />
           </div>
         </div>
         <div className="mt-3 flex items-center justify-between border-t border-border-base pt-3 text-[11px] text-text-muted">
@@ -417,7 +406,18 @@ function DevicesTab() {
       <Card
         title="فهرست دستگاه‌ها"
         subtitle="اطلاعات شناسایی، تخصیص و وضعیت دریافت داده"
-        action={<span className="rounded-full bg-bg-base px-2.5 py-1 text-xs text-text-secondary">{filtered.length.toLocaleString('fa-IR')} دستگاه</span>}
+        action={
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="rounded-full bg-bg-base px-2 py-1 text-[11px] text-text-secondary whitespace-nowrap">
+              {filtered.length.toLocaleString('fa-IR')} دستگاه
+            </span>
+            {isSiteAdmin && (
+              <Button icon={Plus} onClick={() => setAddModalOpen(true)} size="sm">
+                افزودن دستگاه
+              </Button>
+            )}
+          </div>
+        }
       >
         {filtered.length === 0 ? (
           <EmptyState
