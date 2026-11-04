@@ -1,8 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
-  Search, Plus, Cpu, Pencil, Trash2, Hash, Phone, Eye, History, Activity, Package,
+  Search, Plus, Cpu, Pencil, Trash2, Hash, Phone, Eye, History, Activity, Package, Truck,
 } from 'lucide-react';
-import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
 import Badge from '../components/Badge';
 import Button from '../components/Button';
@@ -49,11 +48,15 @@ const managementStatusMap = {
 
 export default function Devices() {
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="دستگاه‌ها"
-        subtitle="ثبت و مدیریت دستگاه‌ها با IMEI؛ شناسایی پروتکل به‌صورت خودکار"
-      />
+    <div className="space-y-4">
+      <header className="flex shrink-0 items-center gap-3">
+        <div className="min-w-0">
+          <h1 className="text-base font-semibold text-text-primary sm:text-lg">دستگاه‌ها</h1>
+          <p className="mt-0.5 text-[11px] text-text-muted sm:text-xs">
+            ثبت، جستجو و مدیریت دستگاه‌های GPS
+          </p>
+        </div>
+      </header>
       <DevicesTab />
     </div>
   );
@@ -349,42 +352,69 @@ function DevicesTab() {
 
   return (
     <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <DeviceMetric label="کل دستگاه‌ها" value={devices.length} icon={Cpu} />
+        <DeviceMetric label="دریافت داده فعال" value={devices.filter((d) => d.data_active).length} icon={Activity} />
+        <DeviceMetric label="در انبار" value={devices.filter((d) => d.is_in_warehouse).length} icon={Package} />
+        <DeviceMetric label="تخصیص‌یافته" value={devices.filter((d) => !d.is_in_warehouse).length} icon={Truck} />
+      </div>
+
       <Card>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Input
-            icon={Search}
-            placeholder="جستجوی IMEI، شماره SIM یا پلاک..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4 xl:items-center">
+          <div className="xl:col-span-2">
+            <Input
+              icon={Search}
+              placeholder="جستجوی IMEI، شماره SIM، مدل یا پلاک..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
           <Select
             placeholder="همه وضعیت‌ها"
             value={filterStatus}
             onChange={(e) => setFilterStatus(e.target.value)}
             options={statusOptions}
           />
-          <Select
-            placeholder="همه دستگاه‌ها"
-            value={filterWarehouse}
-            onChange={(e) => setFilterWarehouse(e.target.value)}
-            options={[
-              { value: '', label: 'همه دستگاه‌ها' },
-              { value: 'yes', label: 'فقط انبار' },
-              { value: 'no', label: 'فقط تخصیص‌یافته' },
-            ]}
-          />
+          <div className="flex min-w-0 gap-2">
+            <div className="min-w-0 flex-1">
+              <Select
+                placeholder="همه دستگاه‌ها"
+                value={filterWarehouse}
+                onChange={(e) => setFilterWarehouse(e.target.value)}
+                options={[
+                  { value: '', label: 'همه دستگاه‌ها' },
+                  { value: 'yes', label: 'فقط انبار' },
+                  { value: 'no', label: 'فقط تخصیص‌یافته' },
+                ]}
+              />
+            </div>
+            {isSiteAdmin && (
+              <Button icon={Plus} onClick={() => setAddModalOpen(true)} size="md">
+                <span className="hidden 2xl:inline">افزودن دستگاه</span>
+                <span className="2xl:hidden">افزودن</span>
+              </Button>
+            )}
+          </div>
+        </div>
+        <div className="mt-3 flex items-center justify-between border-t border-border-base pt-3 text-[11px] text-text-muted">
+          <span>نمایش {filtered.length.toLocaleString('fa-IR')} از {devices.length.toLocaleString('fa-IR')} دستگاه</span>
+          {(search || filterStatus || filterWarehouse) && (
+            <button
+              type="button"
+              onClick={() => { setSearch(''); setFilterStatus(''); setFilterWarehouse(''); }}
+              className="text-brand-400 transition-colors hover:text-brand-300"
+            >
+              پاک‌کردن فیلترها
+            </button>
+          )}
         </div>
       </Card>
 
-      {isSiteAdmin && (
-        <div className="flex justify-end">
-          <Button icon={Plus} onClick={() => setAddModalOpen(true)}>
-            افزودن دستگاه به انبار
-          </Button>
-        </div>
-      )}
-
-      <Card>
+      <Card
+        title="فهرست دستگاه‌ها"
+        subtitle="اطلاعات شناسایی، تخصیص و وضعیت دریافت داده"
+        action={<span className="rounded-full bg-bg-base px-2.5 py-1 text-xs text-text-secondary">{filtered.length.toLocaleString('fa-IR')} دستگاه</span>}
+      >
         {filtered.length === 0 ? (
           <EmptyState
             icon={Cpu}
@@ -423,8 +453,8 @@ function DevicesTab() {
           <div className="hidden overflow-x-auto -m-5 sm:block">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-border-base">
-                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">IMEI</th>
+                <tr className="border-b border-border-base bg-bg-base/70">
+                  <th className="text-right py-3 px-4 text-[11px] font-semibold text-text-muted whitespace-nowrap">IMEI</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">برند / مدل دستگاه</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">SIM</th>
                   {isSiteAdmin && (
@@ -624,6 +654,20 @@ function DevicesTab() {
           </form>
         </Modal>
       )}
+    </div>
+  );
+}
+
+function DeviceMetric({ label, value, icon: Icon }) {
+  return (
+    <div className="flex min-w-0 items-center gap-2.5 rounded-xl border border-border-base bg-bg-elevated px-3 py-2.5 shadow-sm">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-bg-base text-brand-400">
+        <Icon size={16} />
+      </span>
+      <div className="min-w-0">
+        <div className="truncate text-[10px] text-text-muted sm:text-[11px]">{label}</div>
+        <div className="text-sm font-semibold tabular-nums text-text-primary">{value.toLocaleString('fa-IR')}</div>
+      </div>
     </div>
   );
 }
