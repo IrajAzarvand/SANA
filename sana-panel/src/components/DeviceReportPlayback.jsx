@@ -545,7 +545,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
         )}
 
         {currentPoint && (
-          <div className="pointer-events-none absolute bottom-[6.7rem] left-2 z-[1001] max-w-[calc(100%-1rem)] rounded-xl border border-white/30 bg-bg-elevated/95 px-3 py-2 shadow-lg backdrop-blur-md sm:bottom-[6.4rem] sm:left-3">
+          <div className="pointer-events-none absolute bottom-[6.4rem] left-2 z-[1001] max-w-[calc(100%-1rem)] rounded-xl border border-white/30 bg-bg-elevated/95 px-2.5 py-1.5 shadow-lg backdrop-blur-md sm:bottom-3 sm:left-3 sm:max-w-[min(42%,420px)]">
             <div className="mb-1 text-[10px] font-semibold text-text-muted">اطلاعات نقطه انتخاب‌شده</div>
             <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-text-primary">
               <span>سرعت: <b>{showValue(currentPoint.speed, ' km/h', 1)}</b></span>
@@ -558,35 +558,34 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
           </div>
         )}
 
-        <div className="absolute inset-x-2 bottom-2 z-[1002] rounded-xl border border-white/30 bg-bg-elevated/95 p-2.5 shadow-xl backdrop-blur-md sm:inset-x-3 sm:bottom-3 sm:p-3">
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex min-w-0 items-center gap-2 text-[10px] text-text-muted">
-              <span className="font-semibold text-text-primary">{points.length ? `${(pointIndex + 1).toLocaleString('fa-IR')} از ${points.length.toLocaleString('fa-IR')}` : 'بدون نقطه'}</span>
-              <span className="hidden text-border-base sm:inline">|</span>
-              <span className="truncate">{currentPoint ? formatDate(currentPoint.device_time) : loadingHistory ? 'در حال دریافت نقاط مسیر…' : 'آماده بازپخش مسیر'}</span>
+        <div className="absolute inset-x-2 bottom-2 z-[1002] rounded-xl border border-white/30 bg-bg-elevated/95 p-2 shadow-xl backdrop-blur-md sm:inset-x-auto sm:bottom-3 sm:right-3 sm:w-[min(56%,520px)] sm:p-2.5">
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-1.5 text-[9px] text-text-muted">
+              <span className="shrink-0 font-semibold text-text-primary">{points.length ? `${(pointIndex + 1).toLocaleString('fa-IR')} از ${points.length.toLocaleString('fa-IR')}` : 'بدون نقطه'}</span>
+              <span className="truncate">{currentPoint ? formatDate(currentPoint.device_time) : loadingHistory ? 'در حال دریافت…' : 'آماده بازپخش'}</span>
             </div>
-            <div className="flex items-center gap-1.5">
-              <label className="flex items-center gap-1 text-[10px] text-text-muted">سرعت
-                <select value={speed} onChange={(event) => setSpeed(Number(event.target.value))} className="rounded-md border border-border-base bg-bg-base px-1.5 py-1 text-[10px] text-text-primary">
+            <div className="flex shrink-0 items-center gap-1">
+              <label className="flex items-center gap-1 text-[9px] text-text-muted">سرعت
+                <select value={speed} onChange={(event) => setSpeed(Number(event.target.value))} className="rounded-md border border-border-base bg-bg-base px-1 py-1 text-[9px] text-text-primary">
                   <option value={0.5}>۰٫۵×</option><option value={1}>۱×</option><option value={2}>۲×</option><option value={4}>۴×</option>
                 </select>
               </label>
-              <button type="button" onClick={() => { setPointIndex(0); setPlaying(false); }} disabled={!points.length} title="ابتدای مسیر" aria-label="ابتدای مسیر" className="flex h-8 w-8 items-center justify-center rounded-md border border-border-base text-text-secondary disabled:opacity-40"><SkipBack size={15} /></button>
-              <button type="button" onClick={() => moveBy(-1)} disabled={!points.length || pointIndex === 0} title="نقطه قبلی" aria-label="نقطه قبلی" className="flex h-8 w-8 items-center justify-center rounded-md border border-border-base text-text-secondary disabled:opacity-40"><ChevronLeft size={15} /></button>
-              <button type="button" onClick={() => setPlaying((value) => !value)} disabled={points.length < 2} aria-label={playing ? 'توقف بازپخش' : 'شروع بازپخش'} title={playing ? 'توقف بازپخش' : 'شروع بازپخش'} className="flex h-8 min-w-10 items-center justify-center gap-1 rounded-md bg-brand-500 px-2 text-xs font-semibold text-white disabled:opacity-40">
-                {playing ? <span>توقف</span> : <><Play size={14} /><span>پخش</span></>}
+              <button type="button" onClick={() => { setPointIndex(0); setPlaying(false); }} disabled={!points.length} title="ابتدای مسیر" aria-label="ابتدای مسیر" className="flex h-7 w-7 items-center justify-center rounded-md border border-border-base text-text-secondary disabled:opacity-40"><SkipBack size={13} /></button>
+              <button type="button" onClick={() => moveBy(-1)} disabled={!points.length || pointIndex === 0} title="نقطه قبلی" aria-label="نقطه قبلی" className="flex h-7 w-7 items-center justify-center rounded-md border border-border-base text-text-secondary disabled:opacity-40"><ChevronLeft size={13} /></button>
+              <button type="button" onClick={() => setPlaying((value) => !value)} disabled={points.length < 2} aria-label={playing ? 'توقف بازپخش' : 'شروع بازپخش'} title={playing ? 'توقف بازپخش' : 'شروع بازپخش'} className="flex h-7 min-w-9 items-center justify-center gap-1 rounded-md bg-brand-500 px-1.5 text-[10px] font-semibold text-white disabled:opacity-40">
+                {playing ? <span>توقف</span> : <><Play size={12} /><span>پخش</span></>}
               </button>
-              <button type="button" onClick={() => moveBy(1)} disabled={!points.length || pointIndex >= points.length - 1} title="نقطه بعدی" aria-label="نقطه بعدی" className="flex h-8 w-8 items-center justify-center rounded-md border border-border-base text-text-secondary disabled:opacity-40"><ChevronRight size={15} /></button>
-              <button type="button" onClick={() => { setPointIndex(Math.max(0, points.length - 1)); setPlaying(false); }} disabled={!points.length} title="انتهای مسیر" aria-label="انتهای مسیر" className="flex h-8 w-8 items-center justify-center rounded-md border border-border-base text-text-secondary disabled:opacity-40"><SkipForward size={15} /></button>
+              <button type="button" onClick={() => moveBy(1)} disabled={!points.length || pointIndex >= points.length - 1} title="نقطه بعدی" aria-label="نقطه بعدی" className="flex h-7 w-7 items-center justify-center rounded-md border border-border-base text-text-secondary disabled:opacity-40"><ChevronRight size={13} /></button>
+              <button type="button" onClick={() => { setPointIndex(Math.max(0, points.length - 1)); setPlaying(false); }} disabled={!points.length} title="انتهای مسیر" aria-label="انتهای مسیر" className="flex h-7 w-7 items-center justify-center rounded-md border border-border-base text-text-secondary disabled:opacity-40"><SkipForward size={13} /></button>
             </div>
           </div>
           <input aria-label="موقعیت در مسیر" type="range" min="0" max={Math.max(0, points.length - 1)} value={pointIndex} onChange={(event) => { setPlaying(false); setPointIndex(Number(event.target.value)); }} disabled={!points.length} className="block w-full accent-brand-500" style={{ backgroundSize: `${progress}% 100%` }} />
-          <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-[9px] text-text-muted">
-            <div className="flex flex-wrap gap-x-2.5 gap-y-1" aria-label="راهنمای رنگ مسیر بر اساس سرعت">
-              {[['#2563EB','۰–۲۰'],['#16A34A','۲۰–۴۰'],['#EAB308','۴۰–۶۰'],['#F97316','۶۰–۸۰'],['#DC2626','۸۰+']].map(([color,label]) => <span key={label} className="inline-flex items-center gap-1"><span className="h-1 w-3 rounded-full" style={{ backgroundColor: color }} />{label}</span>)}
+          <div className="mt-1 flex items-center justify-between gap-2 text-[8px] text-text-muted">
+            <div className="flex flex-wrap gap-x-2 gap-y-0.5" aria-label="راهنمای رنگ مسیر بر اساس سرعت">
+              {[['#2563EB','۰–۲۰'],['#16A34A','۲۰–۴۰'],['#EAB308','۴۰–۶۰'],['#F97316','۶۰–۸۰'],['#DC2626','۸۰+']].map(([color,label]) => <span key={label} className="inline-flex items-center gap-1"><span className="h-1 w-2.5 rounded-full" style={{ backgroundColor: color }} />{label}</span>)}
               <span>km/h</span>
             </div>
-            <span>{currentPoint?.matched_latitude != null && currentPoint?.matched_longitude != null ? 'مسیر منطبق‌شده با جاده' : currentPoint ? 'مختصات خام GPS' : 'رنگ مسیر بر اساس سرعت'}</span>
+            <span className="hidden truncate sm:inline">{currentPoint?.matched_latitude != null && currentPoint?.matched_longitude != null ? 'مسیر منطبق با جاده' : currentPoint ? 'مختصات خام GPS' : 'رنگ مسیر بر اساس سرعت'}</span>
           </div>
         </div>
       </div>
