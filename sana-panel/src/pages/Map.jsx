@@ -101,8 +101,8 @@ export default function Map() {
     <div className="flex min-h-[calc(100dvh-6.5rem)] flex-col gap-3 lg:h-full lg:min-h-[560px]">
       <header className="flex shrink-0 items-center gap-3">
         <div className="min-w-0">
-          <h1 className="text-xl font-bold text-text-primary sm:text-2xl">نقشه زنده</h1>
-          <p className="mt-0.5 text-xs text-text-muted sm:text-sm">نمای لحظه‌ای موقعیت و وضعیت دستگاه‌های GPS</p>
+          <h1 className="text-base font-semibold text-text-primary sm:text-lg">نقشه زنده</h1>
+          <p className="mt-0.5 text-[11px] text-text-muted sm:text-xs">نمای لحظه‌ای موقعیت و وضعیت دستگاه‌های GPS</p>
         </div>
       </header>
 
