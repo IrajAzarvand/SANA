@@ -117,6 +117,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
   const [progress, setProgress] = useState(0);
   const timerRef = useRef(null);
   const searchInputRef = useRef(null);
+  const dateSelectionTouchedRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -155,6 +156,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
   ].filter(Boolean).join(' · ');
 
   useEffect(() => {
+    dateSelectionTouchedRef.current = false;
     setMetadata(null);
     setFrom('');
     setTo('');
@@ -172,7 +174,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
       .then(({ data }) => {
         if (!active) return;
         setMetadata(data);
-        if (!isSiteAdmin && data.range_start && data.range_end) {
+        if (!isSiteAdmin && data.range_start && data.range_end && !dateSelectionTouchedRef.current) {
           const rangeStart = dateTimeLocal(data.range_start);
           const rangeEnd = dateTimeLocal(data.range_end);
           setFrom(rangeStart);
@@ -436,10 +438,16 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
             <label className="block text-xs font-medium text-text-secondary">از تاریخ و ساعت</label>
             <JalaliDatePicker
               value={from ? `${datePart(from)}T12:00:00` : ''}
-                  onChange={(value) => setFrom(composeDateTime(value, fromTime))}
+              onChange={(value) => {
+                dateSelectionTouchedRef.current = true;
+                setError('');
+                setFrom(composeDateTime(value, fromTime));
+              }}
               showTime
               timeValue={fromTime}
               onTimeChange={(value) => {
+                dateSelectionTouchedRef.current = true;
+                setError('');
                 setFromTime(value);
                 setFrom((current) => datePart(current) ? composeDateTime(datePart(current), value) : current);
               }}
@@ -455,10 +463,16 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
             <label className="block text-xs font-medium text-text-secondary">تا تاریخ و ساعت</label>
             <JalaliDatePicker
               value={to ? `${datePart(to)}T12:00:00` : ''}
-              onChange={(value) => setTo(composeDateTime(value, toTime))}
+              onChange={(value) => {
+                dateSelectionTouchedRef.current = true;
+                setError('');
+                setTo(composeDateTime(value, toTime));
+              }}
               showTime
               timeValue={toTime}
               onTimeChange={(value) => {
+                dateSelectionTouchedRef.current = true;
+                setError('');
                 setToTime(value);
                 setTo((current) => datePart(current) ? composeDateTime(datePart(current), value) : current);
               }}
