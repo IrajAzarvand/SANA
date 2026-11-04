@@ -206,54 +206,64 @@ function LiveTerminal() {
   return (
     <section className="w-full min-w-0 space-y-3">
       <div className="rounded-2xl border border-border-base bg-bg-elevated p-3 shadow-sm sm:p-4">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(220px,0.7fr)] xl:items-end">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
-            <label htmlFor="live-log-source" className="mb-1.5 block text-xs font-medium text-text-secondary">
-              نمایش منبع
-            </label>
-            <select
-              id="live-log-source"
-              value={selectedSource}
-              onChange={(event) => setSelectedSource(event.target.value)}
-              className="w-full rounded-lg border border-border-base bg-bg-base px-3 py-2.5 text-sm text-text-primary outline-none focus:border-brand-500"
-            >
-              <option value="all">همه منابع (نمایش ترکیبی)</option>
-              {Object.entries(LOG_SOURCES).map(([key, source]) => (
-                <option key={key} value={key}>{source.label}</option>
-              ))}
-            </select>
-            <p className="mt-1.5 text-xs leading-5 text-text-muted">
-              {selectedSource === 'all'
-                ? 'تمام منابع عادی به‌صورت هم‌زمان دریافت می‌شوند؛ تغییر این فهرست اتصال را قطع نمی‌کند.'
-                : currentSource.description}
-            </p>
+            <h2 className="text-sm font-semibold text-text-primary">نمایش منبع</h2>
+            <p className="mt-0.5 text-xs text-text-muted">برای فیلتر کردن خروجی، یک منبع را انتخاب کنید.</p>
           </div>
-
-          <div className="flex min-w-0 items-center justify-between gap-2 rounded-lg bg-bg-base px-3 py-2.5">
-            <div className="flex min-w-0 items-center gap-2">
-              <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${connectionStatus === 'live' ? 'animate-pulse bg-emerald-500' : connectionStatus === 'error' ? 'bg-danger' : 'bg-amber-500'}`} />
-              <span className="truncate text-sm font-medium text-text-primary">
-                {connectionStatus === 'live' ? 'اتصال مرکزی برقرار است' : connectionStatus === 'connecting' ? 'در حال اتصال به منابع...' : connectionStatus === 'error' ? 'خطا در اتصال' : 'اتصال قطع شده'}
-              </span>
-            </div>
-            <span className="shrink-0 text-[11px] text-text-muted">
-              {activeCapture ? `پایش ${activeCapture.port}: ${statusText(statuses.network || 'connecting')}` : 'پایش شبکه خاموش'}
+          <div className="inline-flex min-w-0 items-center gap-2 rounded-full border border-border-base bg-bg-base px-3 py-2">
+            <span className={`h-2 w-2 shrink-0 rounded-full ${connectionStatus === 'live' ? 'animate-pulse bg-emerald-500' : connectionStatus === 'error' ? 'bg-danger' : 'bg-amber-500'}`} />
+            <span className="truncate text-xs font-medium text-text-primary">
+              {connectionStatus === 'live' ? 'اتصال مرکزی برقرار است' : connectionStatus === 'connecting' ? 'در حال اتصال به منابع...' : connectionStatus === 'error' ? 'خطا در اتصال' : 'اتصال قطع شده'}
             </span>
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
-          {Object.entries(LOG_SOURCES).filter(([key]) => key !== 'network').map(([key, source]) => {
+        <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            ['all', {
+              label: 'همه منابع',
+              description: 'نمایش ترکیبی لاگ‌های تمام منابع',
+              icon: Terminal,
+            }],
+            ...Object.entries(LOG_SOURCES),
+          ].map(([key, source]) => {
             const Icon = source.icon;
-            const status = statuses[key] || 'connecting';
+            const status = key === 'all' ? connectionStatus : (statuses[key] || (key === 'network' ? 'stopped' : 'connecting'));
+            const selected = selectedSource === key;
             return (
-              <div key={key} className="flex min-w-0 items-center gap-2 rounded-lg border border-border-base px-2.5 py-2">
-                <Icon size={15} className="shrink-0 text-text-muted" />
-                <span className="min-w-0 flex-1 truncate text-xs text-text-secondary">{source.label}</span>
-                <span className={`h-2 w-2 shrink-0 rounded-full ${status === 'live' ? 'bg-emerald-500' : status === 'error' ? 'bg-danger' : 'bg-amber-500'}`} title={statusText(status)} />
-              </div>
+              <button
+                key={key}
+                type="button"
+                onClick={() => setSelectedSource(key)}
+                aria-pressed={selected}
+                className={`flex min-w-0 items-center gap-3 rounded-xl border p-3 text-right transition-colors focus:outline-none focus:ring-2 focus:ring-brand-500/40 ${selected ? 'border-brand-500 bg-brand-500/10' : 'border-border-base bg-bg-base hover:border-brand-500/50 hover:bg-bg-hover'}`}
+              >
+                <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${selected ? 'bg-brand-500/15 text-brand-600' : 'bg-bg-hover text-text-muted'}`}>
+                  <Icon size={17} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-xs font-semibold text-text-primary">{source.label}</span>
+                  <span className="mt-1 flex items-center gap-1.5 text-[11px] text-text-muted">
+                    <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${status === 'live' ? 'bg-emerald-500' : status === 'error' ? 'bg-danger' : status === 'stopped' ? 'bg-text-muted' : 'bg-amber-500'}`} />
+                    {statusText(status)}
+                  </span>
+                </span>
+                {selected && <span className="shrink-0 text-[10px] font-medium text-brand-600">انتخاب‌شده</span>}
+              </button>
             );
           })}
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-bg-base px-3 py-2.5">
+          <p className="min-w-0 flex-1 text-xs leading-5 text-text-muted">
+            {selectedSource === 'all'
+              ? 'تمام منابع به‌صورت هم‌زمان دریافت می‌شوند؛ انتخاب منبع فقط خروجی را فیلتر می‌کند و اتصال را قطع نمی‌کند.'
+              : currentSource.description}
+          </p>
+          <span className="shrink-0 text-[11px] text-text-muted">
+            {activeCapture ? `پایش پورت ${activeCapture.port} · ${statusText(statuses.network || 'connecting')}` : 'پایش شبکه خاموش'}
+          </span>
         </div>
 
         {selectedSource === 'network' && (
