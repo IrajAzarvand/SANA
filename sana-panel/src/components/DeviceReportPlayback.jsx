@@ -552,7 +552,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
               <span>زمان: <b>{formatDate(currentPoint.device_time)}</b></span>
               <span>سوئیچ: <b>{currentPoint.ignition === true ? 'روشن' : currentPoint.ignition === false ? 'خاموش' : '—'}</b></span>
               <span>GPS: <b>{currentPoint.gps_valid ? 'معتبر' : 'نامعتبر'}</b></span>
-              <span>ماهواره: <b>{showValue(currentPoint.satellites)}</b></span>
+              <span>ماهواره: <b>{showValue(currentPoint.satellites, '', 0)}</b></span>
               <span>باتری: <b>{showValue(currentPoint.battery_voltage, ' V')}</b></span>
             </div>
           </div>
@@ -604,16 +604,16 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
                 ['طول جغرافیایی خام', showValue(currentPoint.longitude, '', 6)],
                 ['عرض تطبیق‌یافته', showValue(currentPoint.matched_latitude, '', 6)],
                 ['طول تطبیق‌یافته', showValue(currentPoint.matched_longitude, '', 6)],
-                ['دقت GPS', showValue(currentPoint.accuracy, ' m')],
-                ['جهت حرکت', showValue(currentPoint.heading, '°')],
-                ['ارتفاع', showValue(currentPoint.altitude, ' m')],
-                ['ماهواره‌ها', showValue(currentPoint.satellites)],
+                ['دقت GPS', showValue(currentPoint.accuracy, ' m', 1)],
+                ['جهت حرکت', showValue(currentPoint.heading, '°', 0)],
+                ['ارتفاع', showValue(currentPoint.altitude, ' m', 1)],
+                ['ماهواره‌ها', showValue(currentPoint.satellites, '', 0)],
                 ['وضعیت GPS', currentPoint.gps_valid ? 'معتبر' : 'نامعتبر'],
                 ['حرکت', currentPoint.motion === true ? 'در حرکت' : currentPoint.motion === false ? 'متوقف' : '—'],
                 ['سوئیچ', currentPoint.ignition === true ? 'روشن' : currentPoint.ignition === false ? 'خاموش' : '—'],
                 ['ولتاژ باتری', showValue(currentPoint.battery_voltage, ' V')],
                 ['ولتاژ خارجی', showValue(currentPoint.external_voltage, ' V')],
-                ['قدرت GSM', showValue(currentPoint.gsm_signal)],
+                ['قدرت GSM', showValue(currentPoint.gsm_signal, '', 0)],
                 ['کیلومترشمار', showValue(currentPoint.odometer)],
                 ['ساعت موتور', showValue(currentPoint.engine_hours)],
                 ['سطح سوخت', showValue(currentPoint.fuel_level)],
