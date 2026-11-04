@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import subprocess
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -54,9 +55,29 @@ def main() -> int:
     except (OSError, ET.ParseError, ValueError) as exc:
         return fail(f"Could not read Traccar listener configuration: {exc}", 1)
 
-    if port not in configured_ports:
+    # Prefer the explicit protocol configuration. If Traccar relies on a
+    # built-in default port that is not written to traccar.xml, accept it only
+    # when the running Java (Traccar) process currently owns that listener.
+    is_configured = port in configured_ports
+    if not is_configured:
+        ss = next((path for path in ("/usr/bin/ss", "/bin/ss") if os.access(path, os.X_OK)), None)
+        if ss:
+            result = subprocess.run(
+                [ss, "-H", "-lntup"],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                check=False,
+                timeout=5,
+            )
+            port_pattern = re.compile(rf":{port}(?:\\s|$)")
+            is_configured = any(
+                "users:((\\"java\\"" in line and port_pattern.search(line)
+                for line in (result.stdout or "").splitlines()
+            )
+    if not is_configured:
         return fail(
-            f"Port {port} is not configured for an enabled Traccar protocol.",
+            f"Port {port} is not configured or currently listening as a Traccar port.",
             1,
         )
 
