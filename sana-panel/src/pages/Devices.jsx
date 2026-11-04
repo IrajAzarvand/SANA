@@ -369,16 +369,20 @@ function DevicesTab() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <Select
-            placeholder="همه وضعیت‌ها"
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            options={statusOptions}
-          />
+          <div title="فیلتر بر اساس وضعیت مدیریتی دستگاه؛ مانند فعال، خراب یا قطع سرویس.">
+            <Select
+              placeholder="همه وضعیت‌ها"
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              options={statusOptions}
+            />
+          </div>
           <div className="flex min-w-0 gap-2">
-            <div className="min-w-0 flex-1">
+            <div
+              className="min-w-0 flex-1"
+              title="فیلتر بر اساس محل استقرار دستگاه: انبار یا تخصیص‌یافته."
+            >
               <Select
-                label="محل استقرار دستگاه"
                 value={filterWarehouse}
                 onChange={(e) => setFilterWarehouse(e.target.value)}
                 options={[
