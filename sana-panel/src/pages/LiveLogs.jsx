@@ -1,9 +1,24 @@
 import { useState, useEffect, useRef } from 'react';
-import { Terminal, Radio, Pause, Play, Trash2, ShieldCheck } from 'lucide-react';
+import { Terminal, Pause, Play, Trash2, ShieldCheck, ChevronDown } from 'lucide-react';
 import apiClient from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
-function LiveTerminal({ streamName, title, description, icon: Icon, accent }) {
+const LOG_SOURCES = {
+  service: {
+    label: 'لاگ سرویس',
+    description: 'لاگ زنده systemd، همگام‌سازی Traccar و خطاهای سرویس',
+    command: 'journalctl -u sana-gps -f',
+  },
+  network: {
+    label: 'پایش بسته‌های شبکه',
+    description: 'خروجی ابزار ضبط بسته‌های شبکه روی سرور؛ نوع و پورت بسته‌ها به تنظیمات ابزار نصب‌شده بستگی دارد.',
+    command: 'sudo /usr/local/sbin/sana-gps-network-capture',
+  },
+};
+
+function LiveTerminal() {
+  const [selectedStream, setSelectedStream] = useState('service');
+  const source = LOG_SOURCES[selectedStream];
   const [running, setRunning] = useState(true);
   const [status, setStatus] = useState('connecting');
   const [lines, setLines] = useState([]);
@@ -17,7 +32,7 @@ function LiveTerminal({ streamName, title, description, icon: Icon, accent }) {
     const connect = async () => {
       try {
         const token = localStorage.getItem('sana_access_token');
-        const response = await fetch(`${apiClient.defaults.baseURL}/gps-monitor/logs/${streamName}/`, {
+        const response = await fetch(`${apiClient.defaults.baseURL}/gps-monitor/logs/${selectedStream}/`, {
           headers: token ? { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' } : { Accept: 'text/event-stream' },
           signal: controller.signal,
         });
@@ -66,7 +81,7 @@ function LiveTerminal({ streamName, title, description, icon: Icon, accent }) {
       cancelled = true;
       controller.abort();
     };
-  }, [running, streamName]);
+  }, [running, selectedStream]);
 
   useEffect(() => {
     if (bodyRef.current) bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
@@ -77,15 +92,29 @@ function LiveTerminal({ streamName, title, description, icon: Icon, accent }) {
 
   return (
     <section className="min-w-0 overflow-hidden rounded-2xl border border-border-base bg-bg-elevated shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border-base p-4">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${accent}`}>
-            <Icon size={19} />
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-base p-3 sm:p-4">
+        <div className="min-w-0 flex-1">
+          <label htmlFor="live-log-source" className="mb-1.5 block text-xs font-medium text-text-secondary">منبع لاگ</label>
+          <div className="relative max-w-xl">
+            <select
+              id="live-log-source"
+              value={selectedStream}
+              onChange={(event) => {
+                setSelectedStream(event.target.value);
+                setLines([]);
+                setError('');
+                setStatus('connecting');
+                setRunning(true);
+              }}
+              className="w-full appearance-none rounded-lg border border-border-base bg-bg-base py-2 pl-9 pr-3 text-sm text-text-primary outline-none transition focus:border-brand-500"
+            >
+              {Object.entries(LOG_SOURCES).map(([key, item]) => (
+                <option key={key} value={key}>{item.label}</option>
+              ))}
+            </select>
+            <ChevronDown size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
           </div>
-          <div className="min-w-0">
-            <h3 className="font-semibold text-text-primary">{title}</h3>
-            <p className="mt-1 text-xs leading-5 text-text-muted">{description}</p>
-          </div>
+          <p className="mt-1.5 text-xs leading-5 text-text-muted">{source.description}</p>
         </div>
         <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${displayStatus === 'live' ? 'bg-emerald-500/10 text-emerald-600' : displayStatus === 'error' ? 'bg-danger/10 text-danger' : 'bg-bg-base text-text-muted'}`}>
           <span className={`h-1.5 w-1.5 rounded-full ${displayStatus === 'live' ? 'animate-pulse bg-emerald-500' : displayStatus === 'error' ? 'bg-danger' : 'bg-text-muted'}`} />
@@ -119,7 +148,7 @@ function LiveTerminal({ streamName, title, description, icon: Icon, accent }) {
         {lines.length === 0 && !error && (
           <div className="text-slate-500">
             <p>{running ? 'در انتظار دریافت لاگ...' : 'نمایش متوقف شده است.'}</p>
-            <p className="mt-1 text-slate-600">$ {streamName === 'service' ? 'journalctl -u sana-gps -f' : 'sudo /usr/local/sbin/sana-gps-network-capture'}</p>
+            <p className="mt-1 text-slate-600">$ {source.command}</p>
           </div>
         )}
         {error && <p className="mb-2 whitespace-pre-wrap text-rose-300">خطا: {error}</p>}
@@ -139,27 +168,6 @@ function LiveTerminal({ streamName, title, description, icon: Icon, accent }) {
   );
 }
 
-function AdminGPSMonitor() {
-  return (
-    <section className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-brand-500/20 bg-brand-500/5 px-3 py-1 text-xs font-medium text-brand-600">
-            <ShieldCheck size={14} /> ویژه ادمین کل سایت
-          </div>
-          <h2 className="text-base font-semibold text-text-primary sm:text-lg">مانیتورینگ زنده GPS</h2>
-          <p className="mt-0.5 max-w-2xl text-[11px] leading-5 text-text-muted sm:text-xs">لاگ سرویس و ترافیک شبکه را از یک صفحه بررسی کن. این بخش فقط خواندنی است و هیچ دستوری برای تغییر تنظیمات یا وضعیت دستگاه اجرا نمی‌کند.</p>
-        </div>
-        
-      </div>
-      <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
-        <LiveTerminal streamName="service" title="لاگ زنده سرویس sana-gps" description="رویدادهای systemd، همگام‌سازی Traccar و خطاهای سرویس" icon={Terminal} accent="bg-sky-500/10 text-sky-500" />
-        <LiveTerminal streamName="network" title="ترافیک زنده شبکه" description="نمایش ترافیک شبکه از طریق ابزار تشخیصی محدودشده سرور" icon={Radio} accent="bg-emerald-500/10 text-emerald-500" />
-      </div>
-    </section>
-  );
-}
-
 export default function LiveLogs() {
   const { isSiteAdmin } = useAuth();
 
@@ -172,13 +180,5 @@ export default function LiveLogs() {
     );
   }
 
-  return (
-    <div className="space-y-4">
-      <header>
-        <h1 className="text-base font-semibold text-text-primary sm:text-lg">لاگ زنده</h1>
-        <p className="mt-0.5 text-[11px] text-text-muted sm:text-xs">مانیتورینگ زنده سرویس GPS و ترافیک شبکه</p>
-      </header>
-      <AdminGPSMonitor />
-    </div>
-  );
+  return <LiveTerminal />;
 }
