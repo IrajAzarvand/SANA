@@ -486,7 +486,8 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
           </div>
           <div className="flex flex-col justify-end gap-2 md:col-span-2 xl:col-span-12 xl:flex-row xl:items-center">
             <button type="button" onClick={loadHistory} disabled={loadingHistory || !deviceId} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60 xl:ml-auto xl:w-auto xl:min-w-56">
-              {loadingHistory ? <LoaderCircle size={16} className="animate-spin" /> : <CalendarClock size={16} />}
+              <span className={loadingHistory ? 'hidden' : 'inline-flex'} aria-hidden="true"><CalendarClock size={16} /></span>
+              <span className={loadingHistory ? 'inline-flex' : 'hidden'} aria-hidden="true"><LoaderCircle size={16} className="animate-spin" /></span>
               {loadingHistory ? 'در حال دریافت مسیر…' : 'نمایش مسیر و گزارش'}
             </button>
           </div>
@@ -527,8 +528,13 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
           <div className="text-sm font-semibold text-text-primary">{metadata?.device?.imei || selectedDevice?.imei || 'دستگاه انتخاب نشده'}</div>
           <div className="text-xs text-text-muted">{points.length.toLocaleString('fa-IR')} نقطه {loadingHistory ? '· در حال بارگذاری' : ''}</div>
         </div>
-        <div className="h-[clamp(320px,55vh,680px)] min-h-[320px]">
-          {mapPosition.length ? <LiveDeviceMap positions={mapPosition} provider={provider} followPosition animationDuration={Math.max(150, 900 / speed)} routeSegments={routeSegments} /> : <div className="flex h-full items-center justify-center text-sm text-text-muted">پس از انتخاب دستگاه و بازه زمانی، مسیر در این نقشه نمایش داده می‌شود.</div>}
+        <div className="relative h-[clamp(320px,55vh,680px)] min-h-[320px]">
+          <LiveDeviceMap positions={mapPosition} provider={provider} followPosition animationDuration={Math.max(150, 900 / speed)} routeSegments={routeSegments} />
+          {!mapPosition.length && (
+            <div className="pointer-events-none absolute inset-0 z-[1000] flex items-center justify-center bg-bg-elevated/90 px-4 text-center text-sm text-text-muted">
+              پس از انتخاب دستگاه و بازه زمانی، مسیر در این نقشه نمایش داده می‌شود.
+            </div>
+          )}
         </div>
         <div className="min-w-0 space-y-3 border-t border-border-base p-3 sm:p-4">
           <div className="flex flex-wrap gap-3 text-xs text-text-secondary" aria-label="راهنمای رنگ مسیر بر اساس سرعت">
