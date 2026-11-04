@@ -237,7 +237,7 @@ function LiveTerminal() {
               </span>
             </div>
             <span className="shrink-0 text-[11px] text-text-muted">
-              {activeCapture ? `پایش ${activeCapture.port} فعال` : 'پایش شبکه خاموش'}
+              {activeCapture ? `پایش ${activeCapture.port}: ${statusText(statuses.network || 'connecting')}` : 'پایش شبکه خاموش'}
             </span>
           </div>
         </div>
