@@ -1,4 +1,5 @@
-import { NavLink } from 'react-router-dom';
+import { useState } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Map as MapIcon, Truck, Users, Cpu, BarChart3,
   AlertTriangle, Settings, ChevronDown, Building2, Car, Shield, Globe,
@@ -8,6 +9,8 @@ import { useAuth } from '../context/AuthContext';
 
 export default function Sidebar({ isOpen, onClose }) {
   const { user, isSiteAdmin, isOrganization, isBranchManager, isMainUser, isPersonal } = useAuth();
+  const location = useLocation();
+  const [reportsExpanded, setReportsExpanded] = useState(() => window.location.pathname.startsWith('/panel/reports'));
 
   // ادمین کل سایت باید به تمام بخش‌های پنل دسترسی مستقیم داشته باشد.
   const adminMenu = [
@@ -21,7 +24,7 @@ export default function Sidebar({ isOpen, onClose }) {
     { path: '/panel/companies',      icon: Building2,        label: 'شرکت‌ها' },
     { path: '/panel/subscriptions',  icon: FileText,         label: 'قراردادها' },
     { path: '/panel/ai',             icon: BrainCircuit,     label: 'هوش مصنوعی' },
-    { path: '/panel/reports',        icon: BarChart3,         label: 'گزارش‌ها', children: [{ path: '/panel/reports/trips', label: 'گزارش مسیرها' }] },
+    { id: 'reports', icon: BarChart3, label: 'گزارش‌ها', children: [{ path: '/panel/reports/trips', label: 'گزارش مسیرها' }, { path: '/panel/reports/live-logs', label: 'لاگ زنده' }] },
     { path: '/panel/alerts',         icon: AlertTriangle,    label: 'هشدارها', badge: 8 },
     { path: '/panel/settings',       icon: Settings,         label: 'تنظیمات سایت' },
   ];
@@ -34,7 +37,7 @@ export default function Sidebar({ isOpen, onClose }) {
     { path: '/panel/devices',    icon: Cpu,               label: 'دستگاه‌ها' },
     ...(isMainUser ? [{ path: '/panel/branches', icon: Building2, label: 'شعبه‌ها' }] : []),
     ...(isMainUser ? [{ path: '/panel/users', icon: Shield, label: 'کاربران' }] : []),
-    { path: '/panel/reports',    icon: BarChart3,        label: 'گزارش‌ها', children: [{ path: '/panel/reports/trips', label: 'گزارش مسیرها' }] },
+    { id: 'reports', icon: BarChart3, label: 'گزارش‌ها', children: [{ path: '/panel/reports/trips', label: 'گزارش مسیرها' }, { path: '/panel/reports/live-logs', label: 'لاگ زنده' }] },
     { path: '/panel/alerts',     icon: AlertTriangle,    label: 'هشدارها', badge: 3 },
     { path: '/panel/settings',   icon: Settings,         label: 'تنظیمات' },
   ];
@@ -74,53 +77,66 @@ export default function Sidebar({ isOpen, onClose }) {
             {menuItems.map((item) => {
               const Icon = item.icon;
               return (
-                <li key={item.path}>
-                  <NavLink
-                    to={item.path}
-                    onClick={onClose}
-                    className={({ isActive }) =>
-                      `group flex items-center gap-2.5 px-2.5 py-2.5 rounded-field text-[13px] transition-all relative
-                       ${isActive
-                         ? 'bg-bg-hover text-text-primary font-medium'
-                         : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
-                       }`
-                    }
-                  >
-                    {({ isActive }) => (
-                      <>
-                        {isActive && (
-                          <span className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-brand-500 rounded-l" />
-                        )}
-                        <Icon size={17} className={isActive ? 'text-brand-500' : 'text-text-muted group-hover:text-text-secondary'} />
+                <li key={item.id || item.path}>
+                  {item.children ? (
+                    <>
+                      <button
+                        type="button"
+                        aria-expanded={reportsExpanded}
+                        onClick={() => setReportsExpanded((expanded) => !expanded)}
+                        className={`group flex w-full items-center gap-2.5 px-2.5 py-2.5 rounded-field text-[13px] transition-all text-right
+                          ${location.pathname.startsWith('/panel/reports')
+                            ? 'bg-bg-hover text-text-primary font-medium'
+                            : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
+                          }`}
+                      >
+                        <Icon size={17} className={location.pathname.startsWith('/panel/reports') ? 'text-brand-500' : 'text-text-muted group-hover:text-text-secondary'} />
                         <span className="flex-1">{item.label}</span>
-                        {item.badge && (
-                          <span className="bg-danger text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
-                            {item.badge}
-                          </span>
-                        )}
-                      </>
-                    )}
-                  </NavLink>
-                  {item.children && (
-                    <ul className="mb-1 mt-1 space-y-1 pr-8">
-                      {item.children.map((child) => (
-                        <li key={child.path}>
-                          <NavLink
-                            to={child.path}
-                            onClick={onClose}
-                            className={({ isActive }) =>
-                              `block rounded-field px-3 py-2 text-xs transition-colors
-                               ${isActive
-                                 ? 'bg-bg-hover text-brand-500 font-medium'
-                                 : 'text-text-muted hover:bg-bg-hover hover:text-text-primary'
-                               }`
-                            }
-                          >
-                            {child.label}
-                          </NavLink>
-                        </li>
-                      ))}
-                    </ul>
+                        <ChevronDown size={15} className={`transition-transform ${reportsExpanded ? 'rotate-180' : ''}`} />
+                      </button>
+                      {reportsExpanded && (
+                        <ul className="mb-1 mt-1 space-y-1 pr-8">
+                          {item.children.map((child) => (
+                            <li key={child.path}>
+                              <NavLink
+                                to={child.path}
+                                onClick={onClose}
+                                className={({ isActive }) =>
+                                  `block rounded-field px-3 py-2 text-xs transition-colors
+                                   ${isActive
+                                     ? 'bg-bg-hover text-brand-500 font-medium'
+                                     : 'text-text-muted hover:bg-bg-hover hover:text-text-primary'
+                                   }`
+                                }
+                              >
+                                {child.label}
+                              </NavLink>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </>
+                  ) : (
+                    <NavLink
+                      to={item.path}
+                      onClick={onClose}
+                      className={({ isActive }) =>
+                        `group flex items-center gap-2.5 px-2.5 py-2.5 rounded-field text-[13px] transition-all relative
+                         ${isActive
+                           ? 'bg-bg-hover text-text-primary font-medium'
+                           : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
+                         }`
+                      }
+                    >
+                      {({ isActive }) => (
+                        <>
+                          {isActive && <span className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-brand-500 rounded-l" />}
+                          <Icon size={17} className={isActive ? 'text-brand-500' : 'text-text-muted group-hover:text-text-secondary'} />
+                          <span className="flex-1">{item.label}</span>
+                          {item.badge && <span className="bg-danger text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{item.badge}</span>}
+                        </>
+                      )}
+                    </NavLink>
                   )}
                 </li>
               );
