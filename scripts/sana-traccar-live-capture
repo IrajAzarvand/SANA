@@ -1,0 +1,44 @@
+#!/bin/sh
+# Root-owned, read-only live packet summary for a selected Traccar listener.
+# Accepts only a numeric port and an explicit transport selector.
+set -eu
+
+if [ "$#" -ne 2 ]; then
+    echo "Usage: sana-traccar-live-capture PORT tcp|udp|both" >&2
+    exit 64
+fi
+
+port="$1"
+protocol="$2"
+
+case "$port" in
+    ''|*[!0-9]*)
+        echo "Port must be numeric." >&2
+        exit 64
+        ;;
+esac
+
+if [ "${#port}" -gt 5 ] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+    echo "Port must be between 1 and 65535." >&2
+    exit 64
+fi
+
+case "$protocol" in
+    tcp) filter="tcp port $port" ;;
+    udp) filter="udp port $port" ;;
+    both) filter="(tcp port $port) or (udp port $port)" ;;
+    *)
+        echo "Protocol must be tcp, udp, or both." >&2
+        exit 64
+        ;;
+esac
+
+for tcpdump in /usr/sbin/tcpdump /usr/bin/tcpdump; do
+    if [ -x "$tcpdump" ]; then
+        # Summary only: do not print packet payload or write a capture file.
+        exec "$tcpdump" -l -nn -tttt -q -i any "$filter"
+    fi
+done
+
+echo "tcpdump is not installed in /usr/sbin or /usr/bin." >&2
+exit 127
