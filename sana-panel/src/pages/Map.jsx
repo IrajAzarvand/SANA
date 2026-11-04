@@ -98,20 +98,13 @@ export default function Map() {
   const offline = positions.filter((item) => item.status === 'offline').length;
 
   return (
-    <div className="flex min-h-[560px] flex-col gap-3 lg:h-full lg:min-h-[560px]">
-      <header className="flex shrink-0 items-center justify-between gap-3">
+    <div className="flex min-h-[calc(100dvh-6.5rem)] flex-col gap-3 lg:h-full lg:min-h-[560px]">
+      <header className="flex shrink-0 items-center gap-3">
         <div className="min-w-0">
           <h1 className="text-xl font-bold text-text-primary sm:text-2xl">نقشه زنده</h1>
           <p className="mt-0.5 text-xs text-text-muted sm:text-sm">نمای لحظه‌ای موقعیت و وضعیت دستگاه‌های GPS</p>
         </div>
       </header>
-
-      <div className="grid shrink-0 grid-cols-2 gap-2 sm:grid-cols-4">
-        <Summary label="دارای موقعیت" value={positions.length} icon={<MapPin size={17} />} tone="text-brand-400" />
-        <Summary label="در حرکت" value={moving} icon={<Navigation size={17} />} tone="text-success" />
-        <Summary label="متوقف" value={stopped} icon={<PauseCircle size={17} />} tone="text-warning" />
-        <Summary label="آفلاین" value={offline} icon={<WifiOff size={17} />} tone="text-text-muted" />
-      </div>
 
       {error && (
         <div role="alert" className="shrink-0 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-xs leading-6 text-text-primary">
@@ -120,41 +113,8 @@ export default function Map() {
         </div>
       )}
 
-      <section className="flex min-h-[360px] flex-1 flex-col overflow-hidden rounded-2xl border border-border-base bg-bg-elevated shadow-sm">
-        <div className="flex shrink-0 flex-col gap-2 border-b border-border-base bg-bg-elevated px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:px-4">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-            <div className="flex items-center gap-2 text-sm font-semibold text-text-primary">
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-500/10 text-brand-400">
-                <Activity size={17} />
-              </span>
-              موقعیت دستگاه‌ها
-            </div>
-            <label className="flex items-center gap-2 text-xs text-text-secondary">
-              <span>نوع نقشه</span>
-              <select
-                aria-label="انتخاب ارائه‌دهنده نقشه"
-                value={mapProvider}
-                onChange={(event) => setMapProvider(event.target.value)}
-                className="min-w-36 rounded-lg border border-border-base bg-bg-base px-3 py-2 text-xs text-text-primary outline-none transition focus:border-brand-400"
-              >
-                <option value={MAP_PROVIDERS.LEAFLET_OSM}>OpenStreetMap</option>
-                <option value={MAP_PROVIDERS.NESHAN_LEAFLET}>نشان</option>
-              </select>
-            </label>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-text-muted">
-            <span className="inline-flex items-center gap-1.5">
-              <span className={`h-2 w-2 rounded-full ${loading ? 'bg-warning animate-pulse' : error ? 'bg-danger' : 'bg-success'}`} />
-              {loading ? 'در حال دریافت' : error ? 'اختلال در ارتباط' : 'اتصال فعال'}
-            </span>
-            <span>به‌روزرسانی هر {refreshIntervalSeconds.toLocaleString('fa-IR')} ثانیه</span>
-            <span>{lastUpdated ? `آخرین دریافت: ${lastUpdated.toLocaleTimeString('fa-IR')}` : 'هنوز به‌روزرسانی نشده'}</span>
-            {followedDeviceId && <span className="hidden text-text-secondary md:inline">دستگاه انتخاب‌شده در مرکز نقشه</span>}
-          </div>
-        </div>
-
-        <div className="relative min-h-[300px] flex-1">
+      <section className="relative flex min-h-[480px] flex-1 flex-col overflow-hidden rounded-2xl border border-border-base bg-bg-elevated shadow-sm sm:min-h-[540px]">
+        <div className="absolute inset-0">
           <LiveDeviceMap
             positions={positions}
             provider={mapProvider}
@@ -164,9 +124,46 @@ export default function Map() {
           />
         </div>
 
+        <div className="pointer-events-none absolute inset-x-2 top-2 z-[500] sm:inset-x-3 sm:top-3">
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 sm:gap-2.5">
+            <Summary label="دارای موقعیت" value={positions.length} icon={<MapPin size={15} />} tone="text-brand-400" />
+            <Summary label="در حرکت" value={moving} icon={<Navigation size={15} />} tone="text-success" />
+            <Summary label="متوقف" value={stopped} icon={<PauseCircle size={15} />} tone="text-warning" />
+            <Summary label="آفلاین" value={offline} icon={<WifiOff size={15} />} tone="text-text-muted" />
+          </div>
+        </div>
+
+        <div className="absolute inset-x-2 bottom-2 z-[500] flex flex-col gap-2 sm:inset-x-3 sm:bottom-3 sm:flex-row sm:items-end sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-bg-elevated/95 px-2.5 py-2 text-[11px] text-text-secondary shadow-lg backdrop-blur-md sm:gap-3 sm:px-3">
+            <label className="flex items-center gap-2">
+              <span>نقشه</span>
+              <select
+                aria-label="انتخاب ارائه‌دهنده نقشه"
+                value={mapProvider}
+                onChange={(event) => setMapProvider(event.target.value)}
+                className="min-w-28 rounded-lg border border-border-base bg-bg-base px-2.5 py-1.5 text-xs text-text-primary outline-none focus:border-brand-400"
+              >
+                <option value={MAP_PROVIDERS.LEAFLET_OSM}>OpenStreetMap</option>
+                <option value={MAP_PROVIDERS.NESHAN_LEAFLET}>نشان</option>
+              </select>
+            </label>
+            <span className="hidden h-4 w-px bg-border-strong sm:block" />
+            <span className="inline-flex items-center gap-1.5">
+              <span className={`h-2 w-2 rounded-full ${loading ? 'bg-warning animate-pulse' : error ? 'bg-danger' : 'bg-success'}`} />
+              {loading ? 'در حال دریافت' : error ? 'اختلال ارتباط' : 'آنلاین'}
+            </span>
+            <span>هر {refreshIntervalSeconds.toLocaleString('fa-IR')} ثانیه</span>
+          </div>
+
+          <div className="self-end rounded-lg border border-white/10 bg-bg-elevated/90 px-2.5 py-1.5 text-[10px] text-text-secondary shadow-lg backdrop-blur-md">
+            {lastUpdated ? `آخرین دریافت: ${lastUpdated.toLocaleTimeString('fa-IR')}` : 'در انتظار اولین دریافت'}
+            {followedDeviceId && <span className="mr-2 hidden md:inline">· دستگاه انتخاب‌شده در مرکز نقشه</span>}
+          </div>
+        </div>
+
         {!loading && !error && positions.length === 0 && (
-          <div className="flex shrink-0 items-center justify-center gap-2 border-t border-border-base bg-bg-base/40 px-4 py-3 text-xs text-text-muted">
-            <MapPin size={15} />
+          <div className="pointer-events-none absolute left-1/2 top-1/2 z-[500] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border-base bg-bg-elevated/95 px-4 py-3 text-center text-xs text-text-primary shadow-lg backdrop-blur-md">
+            <MapPin size={17} className="mx-auto mb-1 text-text-muted" />
             هنوز موقعیت معتبری برای دستگاه‌های قابل‌دسترسی ثبت نشده است.
           </div>
         )}
@@ -177,13 +174,13 @@ export default function Map() {
 
 function Summary({ label, value, tone = 'text-text-primary', icon }) {
   return (
-    <div className="flex min-h-[62px] items-center gap-2.5 rounded-xl border border-border-base bg-bg-elevated px-3 py-2 sm:gap-3 sm:px-3.5">
-      <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-bg-base ${tone}`}>
+    <div className="pointer-events-auto flex min-h-[48px] min-w-0 items-center gap-1.5 rounded-lg border border-white/10 bg-bg-elevated/95 px-2 py-1.5 shadow-lg backdrop-blur-md sm:min-h-[54px] sm:gap-2 sm:rounded-xl sm:px-2.5">
+      <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-bg-base/90 sm:h-8 sm:w-8 ${tone}`}>
         {icon}
       </span>
       <div className="min-w-0">
-        <div className="truncate text-[11px] text-text-muted sm:text-xs">{label}</div>
-        <div className={`mt-0.5 text-lg font-bold leading-6 tabular-nums ${tone}`}>{value.toLocaleString('fa-IR')}</div>
+        <div className="truncate text-[10px] leading-4 text-text-muted sm:text-[11px]">{label}</div>
+        <div className={`text-sm font-bold leading-5 tabular-nums sm:text-base ${tone}`}>{value.toLocaleString('fa-IR')}</div>
       </div>
     </div>
   );
