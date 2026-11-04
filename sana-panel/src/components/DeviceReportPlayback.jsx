@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, CalendarClock, ChevronLeft, ChevronRight, CircleAlert, Download, Gauge, LoaderCircle, Play, Route, Search, SkipBack, SkipForward } from 'lucide-react';
+import { CalendarClock, ChevronLeft, ChevronRight, CircleAlert, Download, LoaderCircle, Play, Search, SkipBack, SkipForward } from 'lucide-react';
 import apiClient from '../api/client';
 import JalaliDatePicker from './JalaliDatePicker';
 import LiveDeviceMap from '../../../sana-map/src/LiveDeviceMap';
