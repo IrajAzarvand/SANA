@@ -21,21 +21,35 @@ from fleet.traccar_api import (
 
 logger = logging.getLogger(__name__)
 
-# Dedicated raw-capture port, independent of the selected Traccar port.
+# Legacy raw-capture helper still used by the separate port-diagnostics workflow.
 CAPTURE_TEST_PORT = 1256
 
-# Commands and filters are deliberately fixed: request data is never passed to a shell.
-# Network capture runs through a root-owned, argument-free wrapper with a narrowly
-# scoped sudoers rule; the Django service itself must never run as root.
+# Each fixed source has its own reader process. The browser receives all sources
+# through one multiplexed SSE connection and filters them locally.
 STREAM_COMMANDS = {
-    "service": [
+    "gps": [
         "journalctl", "--no-pager", "--follow", "--lines=50",
         "--unit=sana-gps.service", "--output=short-iso",
     ],
-    "network": [
-        "sudo", "-n", "/usr/local/sbin/sana-gps-network-capture",
+    "traccar": [
+        "journalctl", "--no-pager", "--follow", "--lines=50",
+        "--unit=traccar.service", "--output=short-iso",
+    ],
+    "backend": [
+        "journalctl", "--no-pager", "--follow", "--lines=50",
+        "--unit=sana-backend.service", "--output=short-iso",
+    ],
+    "postgres": [
+        "journalctl", "--no-pager", "--follow", "--lines=50",
+        "--unit=postgresql.service", "--output=short-iso",
+    ],
+    "system": [
+        "journalctl", "--no-pager", "--follow", "--lines=50",
+        "--priority=warning", "--output=short-iso",
     ],
 }
+
+LIVE_CAPTURE_HELPER = "/usr/local/sbin/sana-traccar-live-capture"
 
 
 def _require_admin(request) -> None:
@@ -46,79 +60,174 @@ def _require_admin(request) -> None:
 
 
 def _event(line: str) -> str:
-    return "data: " + json.dumps({"line": line.rstrip("\n")}, ensure_ascii=False) + "\n\n"
+    return "data: " + json.dumps({"line": line.rstrip("\\n")}, ensure_ascii=False) + "\\n\\n"
+
+
+def _live_event(payload: dict) -> str:
+    return "data: " + json.dumps(payload, ensure_ascii=False) + "\\n\\n"
+
+
+def _validated_capture(port_value: str, protocol_value: str) -> tuple[int, str]:
+    if not port_value.isdigit():
+        raise ValueError("شماره پورت باید عددی باشد.")
+    port = int(port_value)
+    if not 1 <= port <= 65535:
+        raise ValueError("پورت باید بین 1 و 65535 باشد.")
+    protocol = protocol_value.strip().lower()
+    if protocol not in {"tcp", "udp", "both"}:
+        raise ValueError("پروتکل باید TCP، UDP یا هر دو باشد.")
+    return port, protocol
 
 
 class LiveLogStreamView(APIView):
-    """Admin-only server-sent log stream for fixed, read-only diagnostic commands."""
+    """One admin-only SSE connection multiplexing all live diagnostic sources."""
 
     permission_classes = [IsAuthenticated, IsSiteAdmin]
 
     def perform_content_negotiation(self, request, force=False):
-        # The stream response is a Django StreamingHttpResponse, not a DRF Response.
-        # Negotiate JSON for DRF-generated auth/error responses while allowing browsers
-        # to request text/event-stream without DRF rejecting the request with HTTP 406.
         from rest_framework.renderers import JSONRenderer
 
         if "text/event-stream" in request.META.get("HTTP_ACCEPT", ""):
             return JSONRenderer(), "application/json"
         return super().perform_content_negotiation(request, force)
 
-    def get(self, request, stream_name: str):
+    def get(self, request):
         _require_admin(request)
-        command = STREAM_COMMANDS.get(stream_name)
-        if command is None:
-            return JsonResponse({"detail": "منبع لاگ نامعتبر است."}, status=404)
 
-        executable = shutil.which(command[0])
-        if not executable:
-            message = (
-                "برای ضبط ترافیک شبکه، sudo روی سرور لازم است."
-                if stream_name == "network" and command[0] == "sudo"
-                else f"ابزار {command[0]} روی سرور نصب نیست."
+        capture_port = request.query_params.get("capture_port", "").strip()
+        capture_protocol = request.query_params.get("capture_protocol", "").strip()
+        if bool(capture_port) != bool(capture_protocol):
+            return JsonResponse(
+                {"detail": "برای پایش شبکه، پورت و پروتکل هر دو لازم هستند."},
+                status=400,
             )
-            return StreamingHttpResponse(
-                iter([_event(message)]),
-                content_type="text/event-stream",
-                status=200,
-            )
-        command = [executable, *command[1:]]
+
+        commands = dict(STREAM_COMMANDS)
+        if capture_port:
+            try:
+                port, protocol = _validated_capture(capture_port, capture_protocol)
+            except ValueError as exc:
+                return JsonResponse({"detail": str(exc)}, status=400)
+            commands["network"] = [
+                "sudo", "-n", LIVE_CAPTURE_HELPER, str(port), protocol,
+            ]
 
         def generate() -> Iterator[str]:
-            process = None
-            try:
-                process = subprocess.Popen(
-                    command,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1,
-                    close_fds=True,
-                )
-                assert process.stdout is not None
-                for line in process.stdout:
-                    yield _event(line)
-            except (OSError, ValueError) as exc:
-                logger.warning("Could not start GPS diagnostic stream %s: %s", stream_name, exc)
-                yield _event(
-                    "اجرای دستور ممکن نشد؛ مجوز سرویس یا نصب ابزار را بررسی کنید. "
-                    "(جزئیات فنی در لاگ بک‌اند ثبت شده است.)"
-                )
-            finally:
-                if process is not None:
+            events: queue.Queue = queue.Queue(maxsize=3000)
+            stop_event = threading.Event()
+            process_lock = threading.Lock()
+            processes: list[subprocess.Popen] = []
+            threads: list[threading.Thread] = []
+
+            def publish(payload: dict) -> None:
+                try:
+                    events.put_nowait(payload)
+                except queue.Full:
                     try:
-                        process.terminate()
+                        events.get_nowait()
+                    except queue.Empty:
+                        pass
+                    try:
+                        events.put_nowait(payload)
+                    except queue.Full:
+                        pass
+
+            def read_source(source: str, command: list[str]) -> None:
+                process = None
+                try:
+                    executable = shutil.which(command[0])
+                    if not executable:
+                        publish({
+                            "kind": "status", "source": source, "status": "error",
+                            "message": f"ابزار {command[0]} روی سرور پیدا نشد.",
+                        })
+                        return
+
+                    safe_command = [executable, *command[1:]]
+                    process = subprocess.Popen(
+                        safe_command,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                        bufsize=1,
+                        close_fds=True,
+                        start_new_session=True,
+                    )
+                    with process_lock:
+                        processes.append(process)
+                    publish({"kind": "status", "source": source, "status": "live"})
+                    assert process.stdout is not None
+                    for line in process.stdout:
+                        if stop_event.is_set():
+                            break
+                        publish({
+                            "kind": "line",
+                            "source": source,
+                            "line": line.rstrip("\\r\\n"),
+                        })
+                    return_code = process.wait()
+                    if not stop_event.is_set() and return_code:
+                        publish({
+                            "kind": "status", "source": source, "status": "error",
+                            "message": f"فرایند منبع با کد {return_code} متوقف شد.",
+                        })
+                except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                    logger.warning("Could not start live log source %s: %s", source, exc)
+                    publish({
+                        "kind": "status", "source": source, "status": "error",
+                        "message": "اجرای منبع لاگ ممکن نشد؛ مجوزها و نصب ابزار را بررسی کنید.",
+                    })
+                finally:
+                    if process is not None and process.stdout is not None:
+                        try:
+                            process.stdout.close()
+                        except OSError:
+                            pass
+
+            for source, command in commands.items():
+                thread = threading.Thread(
+                    target=read_source,
+                    args=(source, command),
+                    name=f"sana-live-log-{source}",
+                    daemon=True,
+                )
+                threads.append(thread)
+                thread.start()
+
+            try:
+                while not stop_event.is_set():
+                    try:
+                        payload = events.get(timeout=15)
+                        yield _live_event(payload)
+                    except queue.Empty:
+                        yield ": keep-alive\\n\\n"
+            finally:
+                stop_event.set()
+                with process_lock:
+                    active_processes = list(processes)
+                for process in active_processes:
+                    if process.poll() is None:
+                        try:
+                            process.terminate()
+                        except OSError:
+                            pass
+                for process in active_processes:
+                    try:
                         process.wait(timeout=2)
-                    except Exception:
+                    except subprocess.TimeoutExpired:
                         try:
                             process.kill()
-                        except Exception:
+                            process.wait(timeout=2)
+                        except (OSError, subprocess.SubprocessError):
                             pass
+                for thread in threads:
+                    thread.join(timeout=0.25)
 
         response = StreamingHttpResponse(generate(), content_type="text/event-stream")
         response["Cache-Control"] = "no-cache, no-transform"
         response["X-Accel-Buffering"] = "no"
-        response["Content-Disposition"] = 'inline; filename="sana-gps-live.log"'
         return response
 
 
