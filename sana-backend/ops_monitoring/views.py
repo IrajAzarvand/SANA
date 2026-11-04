@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import queue
 import shutil
-import threading
+import signal
 import subprocess
+import threading
 from typing import Iterator
 
 from django.http import StreamingHttpResponse, JsonResponse
@@ -212,15 +214,28 @@ class LiveLogStreamView(APIView):
                 for process in active_processes:
                     if process.poll() is None:
                         try:
-                            process.terminate()
-                        except OSError:
+                            # Each reader owns a process group so sudo/tcpdump children
+                            # are also stopped when the browser disconnects.
+                            os.killpg(process.pid, signal.SIGTERM)
+                        except ProcessLookupError:
                             pass
+                        except OSError:
+                            try:
+                                process.terminate()
+                            except OSError:
+                                pass
                 for process in active_processes:
                     try:
                         process.wait(timeout=2)
                     except subprocess.TimeoutExpired:
                         try:
-                            process.kill()
+                            os.killpg(process.pid, signal.SIGKILL)
+                        except (ProcessLookupError, OSError):
+                            try:
+                                process.kill()
+                            except OSError:
+                                pass
+                        try:
                             process.wait(timeout=2)
                         except (OSError, subprocess.SubprocessError):
                             pass
