@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarClock, ChevronLeft, ChevronRight, CircleAlert, Download, LoaderCircle, Play, Search, SkipBack, SkipForward } from 'lucide-react';
+import { CalendarClock, ChevronLeft, ChevronRight, CircleAlert, Download, Play, Search, SkipBack, SkipForward } from 'lucide-react';
 import apiClient from '../api/client';
 import JalaliDatePicker from './JalaliDatePicker';
 import LiveDeviceMap from '../../../sana-map/src/LiveDeviceMap';
@@ -484,7 +484,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
 
           <div className="flex min-w-0 gap-2">
             <button type="button" onClick={loadHistory} disabled={loadingHistory || !deviceId} className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60 lg:flex-none">
-              {loadingHistory ? <LoaderCircle size={16} className="animate-spin" /> : <CalendarClock size={16} />}
+              <CalendarClock size={16} className={loadingHistory ? 'animate-pulse' : ''} />
               {loadingHistory ? 'در حال دریافت…' : 'نمایش گزارش'}
             </button>
             <label className="flex items-center gap-1.5 rounded-lg border border-border-base bg-bg-base px-2 text-xs text-text-secondary">
