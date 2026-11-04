@@ -185,8 +185,8 @@ function LiveTerminal() {
       return;
     }
     const parsedPort = Number(capturePort);
-    if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
-      setError('شماره پورت باید عددی بین 1 تا 65535 باشد.');
+    if (!Number.isInteger(parsedPort) || parsedPort < 1024 || parsedPort > 65535) {
+      setError('شماره پورت باید بین 1024 تا 65535 و مربوط به یکی از listenerهای Traccar باشد.');
       return;
     }
     setError('');
@@ -271,7 +271,7 @@ function LiveTerminal() {
                 <input
                   id="capture-port"
                   type="number"
-                  min="1"
+                  min="1024"
                   max="65535"
                   inputMode="numeric"
                   value={capturePort}
