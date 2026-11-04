@@ -60,7 +60,7 @@ class GPSMonitoringPermissionsTests(TestCase):
     def test_capture_port_and_protocol_are_validated(self):
         self.assertEqual(_validated_capture("5027", "tcp"), (5027, "tcp"))
         self.assertEqual(_validated_capture("5027", "both"), (5027, "both"))
-        for port, protocol in (("0", "tcp"), ("65536", "udp"), ("bad", "tcp"), ("5027", "icmp")):
+        for port, protocol in (("0", "tcp"), ("80", "tcp"), ("65536", "udp"), ("bad", "tcp"), ("5027", "icmp")):
             with self.subTest(port=port, protocol=protocol):
                 with self.assertRaises(ValueError):
                     _validated_capture(port, protocol)
