@@ -1,12 +1,11 @@
 import io
 from unittest.mock import MagicMock, patch
 from django.contrib.auth import get_user_model
-from unittest.mock import patch
 
 from django.test import TestCase
 from rest_framework.test import APIClient
 
-from ops_monitoring.views import STREAM_COMMANDS
+from ops_monitoring.views import LIVE_CAPTURE_HELPER, STREAM_COMMANDS, _validated_capture
 
 
 def stream_response_text(response):
@@ -36,31 +35,61 @@ class GPSMonitoringPermissionsTests(TestCase):
             is_superuser=True,
         )
 
-    def test_anonymous_user_cannot_access_live_logs(self):
-        response = self.client.get("/api/gps-monitor/logs/service/")
+    def test_anonymous_user_cannot_access_multiplexed_live_logs(self):
+        response = self.client.get("/api/gps-monitor/logs/")
         self.assertIn(response.status_code, (401, 403))
 
-    def test_non_admin_cannot_access_live_logs(self):
+    def test_non_admin_cannot_access_multiplexed_live_logs(self):
         self.client.force_authenticate(user=self.regular_user)
-        self.assertEqual(self.client.get("/api/gps-monitor/logs/service/").status_code, 403)
+        self.assertEqual(self.client.get("/api/gps-monitor/logs/").status_code, 403)
 
-    def test_network_capture_uses_only_the_privileged_fixed_wrapper(self):
+    def test_fixed_live_sources_are_all_configured(self):
         self.assertEqual(
-            STREAM_COMMANDS["network"],
-            ["sudo", "-n", "/usr/local/sbin/sana-gps-network-capture"],
+            set(STREAM_COMMANDS),
+            {"gps", "traccar", "backend", "postgres", "system"},
         )
+        self.assertIn("--unit=traccar.service", STREAM_COMMANDS["traccar"])
+        self.assertIn("--unit=sana-backend.service", STREAM_COMMANDS["backend"])
+
+    def test_network_capture_uses_a_dedicated_validating_helper(self):
+        self.assertEqual(
+            LIVE_CAPTURE_HELPER,
+            "/usr/local/sbin/sana-traccar-live-capture",
+        )
+
+    def test_capture_port_and_protocol_are_validated(self):
+        self.assertEqual(_validated_capture("5027", "tcp"), (5027, "tcp"))
+        self.assertEqual(_validated_capture("5027", "both"), (5027, "both"))
+        for port, protocol in (("0", "tcp"), ("65536", "udp"), ("bad", "tcp"), ("5027", "icmp")):
+            with self.subTest(port=port, protocol=protocol):
+                with self.assertRaises(ValueError):
+                    _validated_capture(port, protocol)
+
+    def test_invalid_capture_query_is_rejected(self):
+        self.client.force_authenticate(user=self.site_admin)
+        response = self.client.get(
+            "/api/gps-monitor/logs/?capture_port=5027&capture_protocol=icmp",
+            HTTP_ACCEPT="text/event-stream",
+        )
+        self.assertEqual(response.status_code, 400)
 
     def test_live_logs_accept_server_sent_events_without_406(self):
         self.client.force_authenticate(user=self.site_admin)
-        with patch("ops_monitoring.views.shutil.which", return_value=None):
-            for stream_name in ("service", "network"):
-                with self.subTest(stream_name=stream_name):
-                    response = self.client.get(
-                        f"/api/gps-monitor/logs/{stream_name}/",
-                        HTTP_ACCEPT="text/event-stream",
-                    )
-                    self.assertEqual(response.status_code, 200)
-                    self.assertEqual(response["Content-Type"], "text/event-stream")
+        response = self.client.get(
+            "/api/gps-monitor/logs/",
+            HTTP_ACCEPT="text/event-stream",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/event-stream")
+
+    def test_live_logs_accept_on_demand_network_capture_parameters(self):
+        self.client.force_authenticate(user=self.site_admin)
+        response = self.client.get(
+            "/api/gps-monitor/logs/?capture_port=5027&capture_protocol=tcp",
+            HTTP_ACCEPT="text/event-stream",
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/event-stream")
 
 
 class TraccarPortManagementPermissionsTests(GPSMonitoringPermissionsTests):
