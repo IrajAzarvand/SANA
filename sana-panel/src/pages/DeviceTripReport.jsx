@@ -1,6 +1,5 @@
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight, Route } from 'lucide-react';
-import PageHeader from '../components/PageHeader';
 import Button from '../components/Button';
 import DeviceReportPlayback from '../components/DeviceReportPlayback';
 import { useAuth } from '../context/AuthContext';
@@ -10,31 +9,26 @@ export default function DeviceTripReport() {
   const { isSiteAdmin } = useAuth();
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="گزارش جامع دستگاه"
-        subtitle="مسیر، عملکرد، وضعیت GPS و داده‌های دریافتی دستگاه را در بازه زمانی دلخواه بررسی کنید."
-        actions={(
-          <Button variant="secondary" onClick={() => navigate('/panel/reports')}>
-            <ArrowRight size={16} />
-            بازگشت به گزارش‌ها
-          </Button>
-        )}
-      />
-      <div className="rounded-2xl border border-border-base bg-bg-elevated p-4 sm:p-6">
-        <div className="mb-5 flex items-start gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-500/10 text-brand-500">
-            <Route size={21} />
+    <div className="min-w-0 space-y-4">
+      <header className="flex min-w-0 flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-500/10 text-brand-500">
+            <Route size={19} />
           </div>
-          <div>
-            <h2 className="font-semibold text-text-primary">گزارش عملکرد و تاریخچه موقعیت GPS</h2>
-            <p className="mt-1 text-sm leading-6 text-text-muted">
-              دستگاه، سیم‌کارت یا راننده را جست‌وجو کنید، بازه زمانی را انتخاب کنید و مسیر ذخیره‌شده را روی نقشه بازپخش کنید.
+          <div className="min-w-0">
+            <h1 className="text-base font-semibold text-text-primary sm:text-lg">گزارش جامع دستگاه</h1>
+            <p className="mt-0.5 text-[11px] leading-5 text-text-muted sm:text-xs">
+              بررسی مسیر، عملکرد، وضعیت GPS و داده‌های دریافتی دستگاه
             </p>
           </div>
         </div>
-        <DeviceReportPlayback isSiteAdmin={isSiteAdmin} />
-      </div>
+        <Button variant="secondary" onClick={() => navigate('/panel/reports')}>
+          <ArrowRight size={15} />
+          بازگشت به گزارش‌ها
+        </Button>
+      </header>
+
+      <DeviceReportPlayback isSiteAdmin={isSiteAdmin} />
     </div>
   );
 }
