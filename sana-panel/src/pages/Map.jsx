@@ -124,7 +124,7 @@ export default function Map() {
           />
         </div>
 
-        <div className="pointer-events-none absolute inset-x-2 top-2 z-[500] sm:inset-x-3 sm:top-3">
+        <div className="pointer-events-none absolute inset-x-2 top-2 z-[1000] sm:inset-x-3 sm:top-3">
           <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4 sm:gap-2.5">
             <Summary label="دارای موقعیت" value={positions.length} icon={<MapPin size={15} />} tone="text-brand-400" />
             <Summary label="در حرکت" value={moving} icon={<Navigation size={15} />} tone="text-success" />
@@ -133,7 +133,7 @@ export default function Map() {
           </div>
         </div>
 
-        <div className="absolute inset-x-2 bottom-2 z-[500] flex flex-col gap-2 sm:inset-x-3 sm:bottom-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="absolute inset-x-2 bottom-2 z-[1000] flex flex-col gap-2 sm:inset-x-3 sm:bottom-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-bg-elevated/95 px-2.5 py-2 text-[11px] text-text-secondary shadow-lg backdrop-blur-md sm:gap-3 sm:px-3">
             <label className="flex items-center gap-2">
               <span>نقشه</span>
@@ -162,7 +162,7 @@ export default function Map() {
         </div>
 
         {!loading && !error && positions.length === 0 && (
-          <div className="pointer-events-none absolute left-1/2 top-1/2 z-[500] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border-base bg-bg-elevated/95 px-4 py-3 text-center text-xs text-text-primary shadow-lg backdrop-blur-md">
+          <div className="pointer-events-none absolute left-1/2 top-1/2 z-[1000] -translate-x-1/2 -translate-y-1/2 rounded-xl border border-border-base bg-bg-elevated/95 px-4 py-3 text-center text-xs text-text-primary shadow-lg backdrop-blur-md">
             <MapPin size={17} className="mx-auto mb-1 text-text-muted" />
             هنوز موقعیت معتبری برای دستگاه‌های قابل‌دسترسی ثبت نشده است.
           </div>
