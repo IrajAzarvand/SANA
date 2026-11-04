@@ -236,7 +236,9 @@ function LiveTerminal() {
                 {connectionStatus === 'live' ? 'اتصال مرکزی برقرار است' : connectionStatus === 'connecting' ? 'در حال اتصال به منابع...' : connectionStatus === 'error' ? 'خطا در اتصال' : 'اتصال قطع شده'}
               </span>
             </div>
-            <span className="shrink-0 text-[11px] text-text-muted">یک جریان مشترک</span>
+            <span className="shrink-0 text-[11px] text-text-muted">
+              {activeCapture ? `پایش ${activeCapture.port} فعال` : 'پایش شبکه خاموش'}
+            </span>
           </div>
         </div>
 
