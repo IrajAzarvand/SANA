@@ -2,7 +2,8 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from datetime import datetime, time as datetime_time
 from django.db import connection, transaction
-from django.db.models import Exists, OuterRef, Prefetch, Q
+from django.db.models import Exists, OuterRef, Prefetch, Q, Value
+from django.db.models.functions import Concat, Lower
 from rest_framework import viewsets, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -28,10 +29,12 @@ from .traccar_api import TraccarAPIError, traccar_current_positions, traccar_dev
 
 
 def traccar_position_timestamp(position):
-    """Use Traccar receipt time; device clocks are not a reliable timeline."""
-    return parse_datetime(
-        position.get('serverTime') or position.get('fixTime') or position.get('deviceTime') or ''
-    )
+    """Return only Traccar's server-side receipt time.
+
+    Device/fix timestamps are retained as raw diagnostics, but must never be
+    used for freshness, ordering, or communication-state calculations.
+    """
+    return parse_datetime(str(position.get('serverTime') or ''))
 
 
 class VehicleTypeViewSet(viewsets.ModelViewSet):
@@ -245,30 +248,51 @@ class DeviceViewSet(viewsets.ModelViewSet):
         hardware metadata. If model is absent or cannot be matched confidently,
         the existing SANA model is left untouched.
         """
-        catalog = list(
-            DeviceModel.objects.filter(is_verified=True).only(
-                'id', 'manufacturer', 'name'
-            )
-        )
-        full_labels = {}
-        models_by_name = {}
-        for model in catalog:
-            full_label = " ".join(
-                f"{model.manufacturer} {model.name}".split()
-            ).casefold()
-            full_labels.setdefault(full_label, model)
-            name_key = " ".join(model.name.split()).casefold()
-            models_by_name.setdefault(name_key, []).append(model)
-
+        reported_by_device = {}
+        reported_models = set()
         for device in devices:
             traccar_device = traccar_by_imei.get(str(device.imei).strip())
             if not traccar_device:
                 continue
             reported_model = " ".join(
                 str(traccar_device.get('model') or '').split()
-            ).casefold()
-            if not reported_model:
-                continue
+            ).lower()
+            if reported_model:
+                reported_by_device[device.pk] = (device, reported_model)
+                reported_models.add(reported_model)
+
+        # Avoid loading the entire verified catalog (currently thousands of
+        # rows) on every six-second device-list poll. Ask the database only
+        # for exact full-label or model-name candidates actually reported by
+        # the Traccar devices in this page.
+        if not reported_models:
+            return
+
+        catalog = list(
+            DeviceModel.objects.filter(is_verified=True)
+            .annotate(
+                normalized_full_label=Lower(
+                    Concat('manufacturer', Value(' '), 'name')
+                ),
+                normalized_name=Lower('name'),
+            )
+            .filter(
+                Q(normalized_full_label__in=reported_models)
+                | Q(normalized_name__in=reported_models)
+            )
+            .only('id', 'manufacturer', 'name')
+        )
+        full_labels = {}
+        models_by_name = {}
+        for model in catalog:
+            full_label = " ".join(
+                f"{model.manufacturer} {model.name}".split()
+            ).lower()
+            full_labels.setdefault(full_label, model)
+            name_key = " ".join(model.name.split()).lower()
+            models_by_name.setdefault(name_key, []).append(model)
+
+        for device, reported_model in reported_by_device.values():
             # Full manufacturer + model is unambiguous. A model-only match is
             # accepted only when that model name belongs to exactly one brand.
             matched_model = full_labels.get(reported_model)
@@ -320,7 +344,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     if received_at is not None:
                         received_at_by_traccar_id[traccar_id] = received_at
             except TraccarAPIError:
-                # Fall back to the device-level lastUpdate value below.
+                # Without /positions.serverTime, receipt time is unknown.
+                # Do not substitute Device.lastUpdate or device-originated time.
                 pass
 
         for device in devices:
@@ -332,9 +357,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     received_at = received_at_by_traccar_id.get(int(traccar_id))
                 except (TypeError, ValueError):
                     pass
-            if received_at is None and traccar_device:
-                last_update = traccar_device.get('lastUpdate')
-                received_at = parse_datetime(str(last_update)) if last_update else None
+            # No fallback to /devices.lastUpdate: serverTime is the
+            # authoritative receipt timestamp and may legitimately be absent.
             device.last_data_received_at = received_at
 
         serializer = self.get_serializer(devices, many=True)
@@ -648,13 +672,13 @@ class DeviceViewSet(viewsets.ModelViewSet):
         now = timezone.now()
         output = []
         for position_id, traccar_id, device, traccar_device, position, latitude, longitude in current:
-            last_update = parse_datetime(str(traccar_device.get('lastUpdate') or ''))
-            if last_update is not None and timezone.is_naive(last_update):
-                last_update = timezone.make_aware(last_update)
+            server_received_at = traccar_position_timestamp(position)
+            if server_received_at is not None and timezone.is_naive(server_received_at):
+                server_received_at = timezone.make_aware(server_received_at)
             is_online = (
                 str(traccar_device.get('status') or '').lower() == 'online'
-                and last_update is not None
-                and (now - last_update).total_seconds() <= 300
+                and server_received_at is not None
+                and 0 <= (now - server_received_at).total_seconds() <= 300
             )
             attributes = position.get('attributes') if isinstance(position.get('attributes'), dict) else {}
             match = matches.get(position_id)
@@ -676,7 +700,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 'matched_at': match['matched_at'] if match else None,
                 'speed': speed_kmh,
                 'heading': position.get('course'),
-                'last_seen': position.get('serverTime') or traccar_device.get('lastUpdate'),
+                'last_seen': server_received_at.isoformat() if server_received_at else None,
                 'device_time': position.get('fixTime') or position.get('deviceTime'),
                 'status': status,
             })

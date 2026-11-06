@@ -71,7 +71,7 @@ class TraccarDeviceModelSyncTests(SimpleTestCase):
         catalog_model = SimpleNamespace(
             id=12, manufacturer="Teltonika", name="FMB920"
         )
-        filter_models.return_value.only.return_value = [catalog_model]
+        filter_models.return_value.annotate.return_value.filter.return_value.only.return_value = [catalog_model]
         device = self.make_device("352016703005868")
         traccar = {
             "352016703005868": {
@@ -91,7 +91,7 @@ class TraccarDeviceModelSyncTests(SimpleTestCase):
         catalog_model = SimpleNamespace(
             id=12, manufacturer="Teltonika", name="FMB920"
         )
-        filter_models.return_value.only.return_value = [catalog_model]
+        filter_models.return_value.annotate.return_value.filter.return_value.only.return_value = [catalog_model]
         device = self.make_device("352016703005868", model_id=99)
         traccar = {
             "352016703005868": {
@@ -194,15 +194,13 @@ class TraccarPositionTimestampTests(SimpleTestCase):
 
         self.assertEqual(result.isoformat(), "2026-10-31T08:00:00+00:00")
 
-    def test_device_timestamps_are_fallbacks_when_server_time_is_missing(self):
+    def test_missing_server_time_does_not_fall_back_to_device_clock(self):
         position = {
             "fixTime": "2026-10-31T07:58:00Z",
             "deviceTime": "2026-10-31T07:57:00Z",
         }
 
-        result = traccar_position_timestamp(position)
-
-        self.assertEqual(result.isoformat(), "2026-10-31T07:58:00+00:00")
+        self.assertIsNone(traccar_position_timestamp(position))
 
 
 class TraccarAPIClientFailureTests(SimpleTestCase):
