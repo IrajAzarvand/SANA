@@ -165,7 +165,9 @@ class UsernameAvailabilityTests(TestCase):
             account_type='personal',
             role='personal_user',
         )
-        self.authenticate_as(regular_user)
+        # Bypass subscription-aware JWT authentication so this test isolates
+        # the endpoint's site-admin permission check.
+        self.client.force_authenticate(user=regular_user)
 
         response = self.client.get(
             '/api/users/username-availability/',
