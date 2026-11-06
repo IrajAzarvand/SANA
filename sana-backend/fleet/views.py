@@ -383,6 +383,15 @@ class DeviceViewSet(viewsets.ModelViewSet):
             # Keep the device list available during a temporary Traccar outage.
             pass
 
+        # Keep Traccar's explicit model value as transient list metadata.
+        # It is not persisted: the verified SANA catalog remains the source
+        # of normalized manufacturer/model records.
+        for device in devices:
+            traccar_device = traccar_by_imei.get(str(device.imei).strip())
+            device.traccar_model = " ".join(
+                str((traccar_device or {}).get('model') or '').split()
+            ) or None
+
         # Only explicit Traccar model metadata can update the SANA catalog link.
         # User-defined Traccar device names are not considered model evidence.
         self._sync_models_from_traccar(devices, traccar_by_imei)
