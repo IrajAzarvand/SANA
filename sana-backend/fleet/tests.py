@@ -71,7 +71,7 @@ class TraccarDeviceModelSyncTests(SimpleTestCase):
         catalog_model = SimpleNamespace(
             id=12, manufacturer="Teltonika", name="FMB920"
         )
-        filter_models.return_value.only.return_value = [catalog_model]
+        filter_models.return_value.annotate.return_value.filter.return_value.only.return_value = [catalog_model]
         device = self.make_device("352016703005868")
         traccar = {
             "352016703005868": {
@@ -91,7 +91,7 @@ class TraccarDeviceModelSyncTests(SimpleTestCase):
         catalog_model = SimpleNamespace(
             id=12, manufacturer="Teltonika", name="FMB920"
         )
-        filter_models.return_value.only.return_value = [catalog_model]
+        filter_models.return_value.annotate.return_value.filter.return_value.only.return_value = [catalog_model]
         device = self.make_device("352016703005868", model_id=99)
         traccar = {
             "352016703005868": {
