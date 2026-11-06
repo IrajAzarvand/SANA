@@ -3,7 +3,7 @@ from django.utils.dateparse import parse_datetime
 from datetime import datetime, time as datetime_time
 from django.db import connection, transaction
 from django.db.models import Exists, OuterRef, Prefetch, Q
-from django.db.models.functions import Concat, Lower
+from django.db.models.functions import Concat, Lower, Value
 from rest_framework import viewsets, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
