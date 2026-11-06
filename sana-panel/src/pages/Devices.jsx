@@ -397,7 +397,7 @@ function DevicesTab() {
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <DeviceMetric label="کل دستگاه‌ها" value={devices.length} icon={Cpu} />
-        <DeviceMetric label="سرویس قراردادی فعال" value={devices.filter((d) => d.data_active).length} icon={Activity} />
+        <DeviceMetric label="مجوز سرویس GPS فعال" value={devices.filter((d) => d.data_active).length} icon={Activity} />
         <DeviceMetric label="در انبار" value={devices.filter((d) => d.is_in_warehouse).length} icon={Package} />
         <DeviceMetric label="تخصیص‌یافته" value={devices.filter((d) => !d.is_in_warehouse).length} icon={Truck} />
       </div>
@@ -492,7 +492,9 @@ function DevicesTab() {
                     <div><div className="text-text-muted">خودرو</div><div className="mt-1 font-mono text-text-primary">{d.vehicle_plate || '—'}</div></div>
                     <div><div className="text-text-muted">وضعیت مدیریتی</div><div className="mt-1"><Badge variant={mgmt.variant}>{mgmt.label}</Badge></div></div>
                     <div><div className="text-text-muted">آخرین دریافت GPS</div><div className="mt-1 text-text-primary">{formatReceivedAt(d.last_data_received_at)}</div></div>
-                    <div><div className="text-text-muted">وضعیت سرویس قراردادی</div><div className="mt-1"><Badge variant={d.data_active ? 'success' : 'muted'}>{d.data_active ? 'سرویس فعال' : 'سرویس غیرفعال'}</Badge></div></div>
+                    <div><div className="text-text-muted">مجوز سرویس GPS</div><div className="mt-1"><span title={!d.data_active ? (d.data_inactive_reason || 'علت غیرفعال بودن مشخص نیست') : undefined}>
+                        <Badge variant={d.data_active ? 'success' : 'muted'}>{d.data_active ? 'سرویس فعال' : 'سرویس غیرفعال'}</Badge>
+                      </span></div></div>
                     {d.replacement_device_imei && <div className="col-span-2"><div className="text-text-muted">دستگاه مرتبط</div><button type="button" onClick={() => focusRelatedDevice(d.replacement_device_imei)} className="mt-1 text-brand-400">{d.replacement_device_imei}</button></div>}
                   </div>
                 </article>
@@ -514,7 +516,7 @@ function DevicesTab() {
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">خودرو</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">وضعیت مدیریتی</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">آخرین دریافت GPS</th>
-                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">وضعیت سرویس قراردادی</th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">مجوز سرویس GPS</th>
                   <th className="w-12"></th>
                 </tr>
               </thead>
@@ -581,12 +583,14 @@ function DevicesTab() {
                         </span>
                       </td>
                       <td className="py-3 px-4">
-                        <Badge variant={d.data_active ? 'success' : 'muted'}>
-                          <span className="inline-flex items-center gap-1.5">
-                            <Activity size={12} />
-                            {d.data_active ? 'سرویس فعال' : 'سرویس غیرفعال'}
-                          </span>
-                        </Badge>
+                        <span title={!d.data_active ? (d.data_inactive_reason || 'علت غیرفعال بودن مشخص نیست') : undefined}>
+                          <Badge variant={d.data_active ? 'success' : 'muted'}>
+                            <span className="inline-flex items-center gap-1.5">
+                              <Activity size={12} />
+                              {d.data_active ? 'سرویس فعال' : 'سرویس غیرفعال'}
+                            </span>
+                          </Badge>
+                        </span>
                       </td>
                       <td className="py-3 px-2">
                         <ActionMenu items={getMenuItems(d)} />
