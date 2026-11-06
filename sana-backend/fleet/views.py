@@ -3,6 +3,7 @@ from django.utils.dateparse import parse_datetime
 from datetime import datetime, time as datetime_time
 from django.db import connection, transaction
 from django.db.models import Exists, OuterRef, Prefetch, Q
+from django.db.models.functions import Concat, Lower
 from rest_framework import viewsets, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -247,30 +248,51 @@ class DeviceViewSet(viewsets.ModelViewSet):
         hardware metadata. If model is absent or cannot be matched confidently,
         the existing SANA model is left untouched.
         """
-        catalog = list(
-            DeviceModel.objects.filter(is_verified=True).only(
-                'id', 'manufacturer', 'name'
-            )
-        )
-        full_labels = {}
-        models_by_name = {}
-        for model in catalog:
-            full_label = " ".join(
-                f"{model.manufacturer} {model.name}".split()
-            ).casefold()
-            full_labels.setdefault(full_label, model)
-            name_key = " ".join(model.name.split()).casefold()
-            models_by_name.setdefault(name_key, []).append(model)
-
+        reported_by_device = {}
+        reported_models = set()
         for device in devices:
             traccar_device = traccar_by_imei.get(str(device.imei).strip())
             if not traccar_device:
                 continue
             reported_model = " ".join(
                 str(traccar_device.get('model') or '').split()
-            ).casefold()
-            if not reported_model:
-                continue
+            ).lower()
+            if reported_model:
+                reported_by_device[device.pk] = (device, reported_model)
+                reported_models.add(reported_model)
+
+        # Avoid loading the entire verified catalog (currently thousands of
+        # rows) on every six-second device-list poll. Ask the database only
+        # for exact full-label or model-name candidates actually reported by
+        # the Traccar devices in this page.
+        if not reported_models:
+            return
+
+        catalog = list(
+            DeviceModel.objects.filter(is_verified=True)
+            .annotate(
+                normalized_full_label=Lower(
+                    Concat('manufacturer', Value(' '), 'name')
+                ),
+                normalized_name=Lower('name'),
+            )
+            .filter(
+                Q(normalized_full_label__in=reported_models)
+                | Q(normalized_name__in=reported_models)
+            )
+            .only('id', 'manufacturer', 'name')
+        )
+        full_labels = {}
+        models_by_name = {}
+        for model in catalog:
+            full_label = " ".join(
+                f"{model.manufacturer} {model.name}".split()
+            ).lower()
+            full_labels.setdefault(full_label, model)
+            name_key = " ".join(model.name.split()).lower()
+            models_by_name.setdefault(name_key, []).append(model)
+
+        for device, reported_model in reported_by_device.values():
             # Full manufacturer + model is unambiguous. A model-only match is
             # accepted only when that model name belongs to exactly one brand.
             matched_model = full_labels.get(reported_model)
