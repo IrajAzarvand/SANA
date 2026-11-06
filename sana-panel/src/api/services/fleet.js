@@ -117,6 +117,12 @@ export const usersAPI = {
     const response = await apiClient.get('/users/', { params });
     return response.data;
   },
+  checkUsername: async (username) => {
+    const response = await apiClient.get('/users/username-availability/', {
+      params: { username },
+    });
+    return response.data;
+  },
   get: async (id) => {
     const response = await apiClient.get(`/users/${id}/`);
     return response.data;
