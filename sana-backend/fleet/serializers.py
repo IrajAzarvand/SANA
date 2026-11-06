@@ -153,10 +153,49 @@ class DeviceSerializer(serializers.ModelSerializer):
 
 class DeviceListSerializer(serializers.ModelSerializer):
     management_status = serializers.SerializerMethodField()
+    data_active = serializers.SerializerMethodField()
+    is_in_warehouse = serializers.SerializerMethodField()
+
+    def _active_subscription_link(self, obj):
+        """Reuse the list-prefetched active link instead of querying per field."""
+        if hasattr(obj, '_list_active_subscription_link'):
+            return obj._list_active_subscription_link
+
+        links = getattr(obj, '_prefetched_subscription_links', None)
+        if links is None:
+            link = obj.active_subscription_link
+        else:
+            link = next(
+                (item for item in links if item.unassigned_at is None),
+                None,
+            )
+
+        obj._list_active_subscription_link = link
+        return link
+
+    def _is_in_warehouse(self, obj):
+        return (
+            obj.management_status == 'warehouse'
+            and self._active_subscription_link(obj) is None
+        )
+
+    def get_is_in_warehouse(self, obj):
+        return self._is_in_warehouse(obj)
+
+    def get_data_active(self, obj):
+        link = self._active_subscription_link(obj)
+        if not link:
+            return False
+        if obj.management_status in {
+            'faulty', 'ready', 'lost', 'stolen',
+            'disconnected', 'retired', 'disposed',
+        }:
+            return False
+        return link.is_active
 
     def get_management_status(self, obj):
-        """اگه توی انباره، warehouse نشون بده"""
-        if obj.is_in_warehouse:
+        """Keep the existing warehouse display rule without an extra query."""
+        if self._is_in_warehouse(obj):
             return 'warehouse'
         return obj.management_status
 
@@ -182,11 +221,7 @@ class DeviceListSerializer(serializers.ModelSerializer):
     replacement_relation_direction = serializers.SerializerMethodField()
 
     # وضعیت دریافت داده از GPS
-    data_active = serializers.BooleanField(source='is_data_active', read_only=True)
     last_data_received_at = serializers.DateTimeField(read_only=True, allow_null=True)
-
-    # وضعیت انبار
-    is_in_warehouse = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Device
@@ -226,53 +261,62 @@ class DeviceListSerializer(serializers.ModelSerializer):
         return None
 
     def _display_subscription_link(self, obj):
-        """قرارداد قابل نمایش دستگاه را از وضعیت فعلی یا سابقه آن پیدا می‌کند.
+        """Resolve once per device using the list-prefetched related records."""
+        if hasattr(obj, '_display_subscription_link_cache'):
+            return obj._display_subscription_link_cache
 
-        در دستگاه‌های جایگزین، ممکن است دستگاه قبلی دیگر اتصال فعال نداشته
-        باشد؛ با این حال باید قرارداد مرتبط با سابقه دستگاه همچنان در لیست
-        قابل مشاهده باشد.
-        """
-        active_link = obj.active_subscription_link
+        active_link = self._active_subscription_link(obj)
         if active_link:
-            return active_link
+            result = active_link
+        else:
+            links = getattr(obj, '_prefetched_subscription_links', None)
+            if links is None:
+                result = obj.subscription_links.select_related(
+                    'subscription'
+                ).order_by('-assigned_at', '-id').first()
+            else:
+                result = links[0] if links else None
 
-        # اگر اتصال فعال بسته شده باشد، آخرین اتصال تاریخی دستگاه را نشان بده.
-        historical_link = obj.subscription_links.select_related(
-            'subscription'
-        ).order_by('-assigned_at', '-id').first()
-        if historical_link:
-            return historical_link
+            # Legacy replacement records may exist without a SubscriptionDevice.
+            if result is None:
+                operations = getattr(
+                    obj, '_prefetched_replacement_source_operations', None
+                )
+                if operations is None:
+                    result = obj.operations.filter(
+                        replacement_device__isnull=False,
+                        subscription__isnull=False,
+                        operation_type__in={
+                            'return_for_repair',
+                            'temporary_replacement',
+                            'permanent_replacement',
+                        },
+                    ).select_related('subscription').order_by(
+                        '-performed_at', '-id'
+                    ).first()
+                else:
+                    result = operations[0] if operations else None
 
-        # پشتیبان برای داده‌های قدیمی/غیرهمگام که عملیات جایگزینی قرارداد
-        # را ثبت کرده ولی SubscriptionDevice برای دستگاه موجود نیست.
-        replacement_operation = obj.operations.filter(
-            replacement_device__isnull=False,
-            subscription__isnull=False,
-            operation_type__in={
-                'return_for_repair',
-                'temporary_replacement',
-                'permanent_replacement',
-            },
-        ).select_related('subscription').order_by(
-            '-performed_at', '-id'
-        ).first()
-        if replacement_operation:
-            return replacement_operation
+            if result is None:
+                operations = getattr(
+                    obj, '_prefetched_replacement_target_operations', None
+                )
+                if operations is None:
+                    result = obj.replacement_operations.filter(
+                        subscription__isnull=False,
+                        operation_type__in={
+                            'return_for_repair',
+                            'temporary_replacement',
+                            'permanent_replacement',
+                        },
+                    ).select_related('subscription').order_by(
+                        '-performed_at', '-id'
+                    ).first()
+                else:
+                    result = operations[0] if operations else None
 
-        replacement_operation = obj.replacement_operations.filter(
-            subscription__isnull=False,
-            operation_type__in={
-                'return_for_repair',
-                'temporary_replacement',
-                'permanent_replacement',
-            },
-        ).select_related('subscription').order_by(
-            '-performed_at', '-id'
-        ).first()
-        if replacement_operation:
-            return replacement_operation
-
-        return None
+        obj._display_subscription_link_cache = result
+        return result
 
     def get_subscription_id(self, obj):
         link = self._display_subscription_link(obj)
@@ -289,20 +333,33 @@ class DeviceListSerializer(serializers.ModelSerializer):
         return getattr(link, 'end_date', None) or getattr(link.subscription, 'end_date', None)
 
     def _current_replacement_operation(self, obj):
-        link = obj.active_subscription_link
+        link = self._active_subscription_link(obj)
         if not link:
             return None
 
         # B is the replacement device in the return-for-repair operation.
         # Match the operation to the currently active contract so an old
         # replacement history cannot affect the current device role.
+        operations = getattr(
+            obj, '_prefetched_replacement_target_operations', None
+        )
+        if operations is not None:
+            return next(
+                (
+                    operation for operation in operations
+                    if operation.operation_type == 'return_for_repair'
+                    and operation.subscription_id == link.subscription_id
+                ),
+                None,
+            )
+
         return obj.replacement_operations.filter(
             operation_type='return_for_repair',
             subscription=link.subscription,
         ).order_by('-performed_at', '-id').first()
 
     def get_subscription_device_type(self, obj):
-        link = obj.active_subscription_link
+        link = self._active_subscription_link(obj)
         if not link:
             return None
 
@@ -313,18 +370,30 @@ class DeviceListSerializer(serializers.ModelSerializer):
         # Fallback for existing records created before DeviceOperation was
         # linked consistently: the replacement relation still contains the
         # authoritative replacement type.
-        relation = obj.replacement_relations_as_replacement.order_by(
-            '-replacement_date', '-id'
-        ).first()
+        replacement_relations = getattr(
+            obj, '_replacement_relations_as_replacement', None
+        )
+        if replacement_relations is None:
+            relation = obj.replacement_relations_as_replacement.order_by(
+                '-replacement_date', '-id'
+            ).first()
+        else:
+            relation = replacement_relations[0] if replacement_relations else None
         if relation:
             return relation.replacement_type
 
         # The source device remains in the contract after replacement.
         # While it is out of operation, show its relationship as «replaced»
         # instead of incorrectly presenting it as the current primary device.
-        source_relation = obj.replacement_relations_as_source.order_by(
-            '-replacement_date', '-id'
-        ).first()
+        source_relations = getattr(
+            obj, '_replacement_relations_as_source', None
+        )
+        if source_relations is None:
+            source_relation = obj.replacement_relations_as_source.order_by(
+                '-replacement_date', '-id'
+            ).first()
+        else:
+            source_relation = source_relations[0] if source_relations else None
         if source_relation and obj.management_status in {
             'faulty', 'lost', 'stolen', 'ready'
         }:
