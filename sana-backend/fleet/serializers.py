@@ -184,14 +184,22 @@ class DeviceListSerializer(serializers.ModelSerializer):
 
     def get_data_active(self, obj):
         link = self._active_subscription_link(obj)
-        if not link:
+        if not link or not link.is_active:
             return False
+
+        # A device link can remain unassigned_at=None after a contract is
+        # suspended, cancelled, not-yet-started, or expired. Contract dates
+        # and its computed status must both authorize data service.
+        subscription = getattr(link, 'subscription', None)
+        if not subscription or subscription.computed_status != 'active':
+            return False
+
         if obj.management_status in {
             'faulty', 'ready', 'lost', 'stolen',
             'disconnected', 'retired', 'disposed',
         }:
             return False
-        return link.is_active
+        return True
 
     def get_management_status(self, obj):
         """Keep the existing warehouse display rule without an extra query."""
@@ -246,10 +254,15 @@ class DeviceListSerializer(serializers.ModelSerializer):
         ]
 
     def get_customer_name(self, obj):
-        # نمایش مشتری باید فقط به current_holder وابسته نباشد؛
-        # دستگاه‌هایی که از مسیر قرارداد به مشتری تخصیص یافته‌اند
-        # ممکن است مالکیتشان روی organization / owner_user ثبت شده باشد
-        # ولی current_holder هنوز مقداردهی نشده باشد.
+        # The current contract is the strongest source for the customer shown
+        # in this table. Ownership/holder fields remain fallbacks for devices
+        # that are not currently linked to a contract.
+        link = self._active_subscription_link(obj)
+        if link and link.subscription:
+            contract_customer = link.subscription.get_customer_name()
+            if contract_customer and contract_customer != '—':
+                return contract_customer
+
         if obj.current_holder_organization:
             return obj.current_holder_organization.name
         if obj.current_holder_user:
