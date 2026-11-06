@@ -32,6 +32,24 @@ const formatReceivedAt = (value) => {
   return date.toLocaleString('fa-IR', { dateStyle: 'short', timeStyle: 'medium' });
 };
 
+const hasDeviceModel = (device) => Boolean(
+  device.device_model_manufacturer && device.device_model_name
+);
+
+const formatDeviceModel = (device) => {
+  if (hasDeviceModel(device)) {
+    return `${device.device_model_manufacturer} - ${device.device_model_name}`;
+  }
+  const partial = [device.device_model_manufacturer, device.device_model_name]
+    .filter(Boolean)
+    .join(' - ');
+  return partial ? `اطلاعات ناقص: ${partial}` : 'مدل شناسایی نشده';
+};
+
+const formatProtocol = (protocol) => (
+  protocolLabelMap[(protocol || '').toLowerCase()] || protocol
+);
+
 const managementStatusMap = {
   warehouse:    { label: 'در انبار',      variant: 'info'    },
   sold:         { label: 'فروخته شده',    variant: 'brand'   },
