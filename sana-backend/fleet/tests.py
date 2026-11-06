@@ -1,3 +1,4 @@
+from datetime import date
 from types import SimpleNamespace
 from urllib.error import HTTPError, URLError
 from unittest.mock import MagicMock, patch
@@ -273,6 +274,64 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
                     _prefetched_replacement_target_operations=[],
                 )
                 self.assertFalse(self.serializer.get_data_active(device))
+
+    def test_inactive_reason_reports_missing_contract(self):
+        device = SimpleNamespace(
+            management_status='warehouse',
+            _prefetched_subscription_links=[],
+        )
+        self.assertEqual(
+            self.serializer.get_data_inactive_reason(device),
+            'دستگاه به هیچ قراردادی متصل نیست',
+        )
+
+    @patch('fleet.serializers.timezone.localdate', return_value=date(2026, 11, 6))
+    def test_inactive_reason_reports_assignment_date_before_contract_status(self, _today):
+        link = SimpleNamespace(
+            unassigned_at=None,
+            is_active=False,
+            start_date=date(2026, 11, 7),
+            end_date=date(2026, 12, 1),
+            subscription=SimpleNamespace(computed_status='suspended'),
+        )
+        device = SimpleNamespace(
+            management_status='active',
+            _prefetched_subscription_links=[link],
+        )
+        self.assertEqual(
+            self.serializer.get_data_inactive_reason(device),
+            'تاریخ شروع تخصیص دستگاه هنوز نرسیده',
+        )
+
+    def test_inactive_reason_reports_contract_status_before_management_status(self):
+        link = SimpleNamespace(
+            unassigned_at=None,
+            is_active=True,
+            subscription=SimpleNamespace(computed_status='suspended'),
+        )
+        device = SimpleNamespace(
+            management_status='faulty',
+            _prefetched_subscription_links=[link],
+        )
+        self.assertEqual(
+            self.serializer.get_data_inactive_reason(device),
+            'قرارداد تعلیق شده است',
+        )
+
+    def test_inactive_reason_reports_management_status(self):
+        link = SimpleNamespace(
+            unassigned_at=None,
+            is_active=True,
+            subscription=SimpleNamespace(computed_status='active'),
+        )
+        device = SimpleNamespace(
+            management_status='faulty',
+            _prefetched_subscription_links=[link],
+        )
+        self.assertEqual(
+            self.serializer.get_data_inactive_reason(device),
+            'دستگاه خراب است',
+        )
 
     def test_customer_name_prefers_current_contract_customer(self):
         subscription = SimpleNamespace(
