@@ -257,7 +257,7 @@ class DeviceListSerializer(serializers.ModelSerializer):
         # The current contract is the strongest source for the customer shown
         # in this table. Ownership/holder fields remain fallbacks for devices
         # that are not currently linked to a contract.
-        link = self._active_subscription_link(obj)
+        link = self._display_subscription_link(obj)
         if link and link.subscription:
             contract_customer = link.subscription.get_customer_name()
             if contract_customer and contract_customer != '—':
