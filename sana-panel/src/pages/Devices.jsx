@@ -32,6 +32,24 @@ const formatReceivedAt = (value) => {
   return date.toLocaleString('fa-IR', { dateStyle: 'short', timeStyle: 'medium' });
 };
 
+const hasDeviceModel = (device) => Boolean(
+  device.device_model_manufacturer && device.device_model_name
+);
+
+const formatDeviceModel = (device) => {
+  if (hasDeviceModel(device)) {
+    return `${device.device_model_manufacturer} - ${device.device_model_name}`;
+  }
+  const partial = [device.device_model_manufacturer, device.device_model_name]
+    .filter(Boolean)
+    .join(' - ');
+  return partial ? `اطلاعات ناقص: ${partial}` : 'مدل شناسایی نشده';
+};
+
+const formatProtocol = (protocol) => (
+  protocolLabelMap[(protocol || '').toLowerCase()] || protocol
+);
+
 const managementStatusMap = {
   warehouse:    { label: 'در انبار',      variant: 'info'    },
   sold:         { label: 'فروخته شده',    variant: 'brand'   },
@@ -354,7 +372,7 @@ function DevicesTab() {
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <DeviceMetric label="کل دستگاه‌ها" value={devices.length} icon={Cpu} />
-        <DeviceMetric label="دریافت داده فعال" value={devices.filter((d) => d.data_active).length} icon={Activity} />
+        <DeviceMetric label="سرویس قراردادی فعال" value={devices.filter((d) => d.data_active).length} icon={Activity} />
         <DeviceMetric label="در انبار" value={devices.filter((d) => d.is_in_warehouse).length} icon={Package} />
         <DeviceMetric label="تخصیص‌یافته" value={devices.filter((d) => !d.is_in_warehouse).length} icon={Truck} />
       </div>
@@ -435,19 +453,26 @@ function DevicesTab() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 font-mono text-sm font-semibold text-text-primary"><Hash size={13} className="text-text-muted" />{d.imei}</div>
-                      <div className="mt-2"><Badge variant={d.protocol ? 'brand' : 'muted'}>{[d.device_model_manufacturer,d.device_model_name].filter(Boolean).join(' - ') || protocolLabelMap[(d.protocol || '').toLowerCase()] || d.protocol || 'در انتظار شناسایی'}</Badge></div>
+                      <div className="mt-2 flex flex-col items-start gap-1">
+                        <Badge variant={hasDeviceModel(d) ? 'brand' : 'muted'}>{formatDeviceModel(d)}</Badge>
+                        {d.protocol ? (
+                          <span className="text-[10px] text-text-muted">پروتکل: {formatProtocol(d.protocol)}</span>
+                        ) : !hasDeviceModel(d) ? (
+                          <span className="text-[10px] text-text-muted">پروتکل هنوز شناسایی نشده</span>
+                        ) : null}
+                      </div>
                     </div>
                     <ActionMenu items={getMenuItems(d)} />
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-3 border-t border-border-base pt-3 text-xs">
                     <div><div className="text-text-muted">SIM</div><div className="mt-1 font-mono text-text-primary">{d.sim_number || '—'}</div></div>
-                    {isSiteAdmin && <div><div className="text-text-muted">مشتری</div><div className="mt-1 text-text-primary">{d.customer_name || 'در انبار'}</div></div>}
-                    <div><div className="text-text-muted">قرارداد</div><div className="mt-1 font-mono text-text-primary">{d.subscription_number || '—'}</div></div>
+                    {isSiteAdmin && <div><div className="text-text-muted">مشتری</div><div className="mt-1 text-text-primary">{d.customer_name || (d.is_in_warehouse ? 'در انبار' : 'نامشخص')}</div></div>}
+                    <div><div className="text-text-muted">قرارداد مرتبط</div><div className="mt-1 font-mono text-text-primary">{d.subscription_number || '—'}</div></div>
                     <div><div className="text-text-muted">نوع ارتباط</div><div className="mt-1 text-text-primary">{d.subscription_device_type_display || '—'}</div></div>
                     <div><div className="text-text-muted">خودرو</div><div className="mt-1 font-mono text-text-primary">{d.vehicle_plate || '—'}</div></div>
                     <div><div className="text-text-muted">وضعیت مدیریتی</div><div className="mt-1"><Badge variant={mgmt.variant}>{mgmt.label}</Badge></div></div>
                     <div><div className="text-text-muted">آخرین دریافت GPS</div><div className="mt-1 text-text-primary">{formatReceivedAt(d.last_data_received_at)}</div></div>
-                    <div><div className="text-text-muted">وضعیت قرارداد داده</div><div className="mt-1"><Badge variant={d.data_active ? 'success' : 'muted'}>{d.data_active ? 'دریافت داده فعال' : 'دریافت داده غیرفعال'}</Badge></div></div>
+                    <div><div className="text-text-muted">وضعیت سرویس قراردادی</div><div className="mt-1"><Badge variant={d.data_active ? 'success' : 'muted'}>{d.data_active ? 'سرویس فعال' : 'سرویس غیرفعال'}</Badge></div></div>
                     {d.replacement_device_imei && <div className="col-span-2"><div className="text-text-muted">دستگاه مرتبط</div><button type="button" onClick={() => focusRelatedDevice(d.replacement_device_imei)} className="mt-1 text-brand-400">{d.replacement_device_imei}</button></div>}
                   </div>
                 </article>
@@ -464,12 +489,12 @@ function DevicesTab() {
                   {isSiteAdmin && (
                     <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">مشتری</th>
                   )}
-                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">قرارداد</th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">قرارداد مرتبط</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">نوع ارتباط</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">خودرو</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">وضعیت مدیریتی</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">آخرین دریافت GPS</th>
-                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">وضعیت قرارداد داده</th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">وضعیت سرویس قراردادی</th>
                   <th className="w-12"></th>
                 </tr>
               </thead>
@@ -485,12 +510,14 @@ function DevicesTab() {
                         </div>
                       </td>
                       <td className="py-3 px-4">
-                        <Badge variant={d.protocol ? 'brand' : 'muted'}>
-                          {[
-                            d.device_model_manufacturer,
-                            d.device_model_name,
-                          ].filter(Boolean).join(' - ') || protocolLabelMap[(d.protocol || '').toLowerCase()] || d.protocol || 'در انتظار شناسایی'}
-                        </Badge>
+                        <div className="flex flex-col items-start gap-1">
+                          <Badge variant={hasDeviceModel(d) ? 'brand' : 'muted'}>{formatDeviceModel(d)}</Badge>
+                          {d.protocol ? (
+                            <span className="text-[10px] text-text-muted">پروتکل: {formatProtocol(d.protocol)}</span>
+                          ) : !hasDeviceModel(d) ? (
+                            <span className="text-[10px] text-text-muted">پروتکل هنوز شناسایی نشده</span>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-1.5 font-mono text-xs text-text-secondary">
@@ -501,7 +528,7 @@ function DevicesTab() {
                       {isSiteAdmin && (
                         <td className="py-3 px-4 text-text-secondary text-xs">
                           {d.customer_name || (
-                            <span className="text-text-muted">در انبار</span>
+                            <span className="text-text-muted">{d.is_in_warehouse ? 'در انبار' : 'نامشخص'}</span>
                           )}
                         </td>
                       )}
@@ -544,7 +571,7 @@ function DevicesTab() {
                         <Badge variant={d.data_active ? 'success' : 'muted'}>
                           <span className="inline-flex items-center gap-1.5">
                             <Activity size={12} />
-                            {d.data_active ? 'دریافت داده فعال' : 'دریافت داده غیرفعال'}
+                            {d.data_active ? 'سرویس فعال' : 'سرویس غیرفعال'}
                           </span>
                         </Badge>
                       </td>

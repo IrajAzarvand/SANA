@@ -130,20 +130,65 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
         self.assertIs(self.serializer._active_subscription_link(device), active_link)
         self.assertIs(self.serializer._active_subscription_link(device), active_link)
 
-    def test_latest_historical_subscription_link_is_used_when_no_active_link_exists(self):
+    def test_historical_subscription_links_are_not_displayed_as_current_contract(self):
         latest = SimpleNamespace(unassigned_at=object(), subscription_id=12)
         older = SimpleNamespace(unassigned_at=object(), subscription_id=8)
         device = SimpleNamespace(
             management_status='warehouse',
             _prefetched_subscription_links=[latest, older],
-            _prefetched_replacement_source_operations=[],
-            _prefetched_replacement_target_operations=[],
         )
 
-        self.assertIs(self.serializer._display_subscription_link(device), latest)
-        self.assertIs(self.serializer._display_subscription_link(device), latest)
+        self.assertIsNone(self.serializer._display_subscription_link(device))
+        self.assertIsNone(self.serializer._display_subscription_link(device))
 
-    def test_replacement_operation_fallback_uses_prefetched_source_operations(self):
+    def test_ended_or_unassigned_contract_is_not_displayed(self):
+        subscription = SimpleNamespace(computed_status='active')
+        ended_link = SimpleNamespace(
+            unassigned_at=object(),
+            is_active=False,
+            subscription=subscription,
+        )
+        device = SimpleNamespace(
+            management_status='active',
+            _prefetched_subscription_links=[ended_link],
+        )
+
+        self.assertIsNone(self.serializer._display_subscription_link(device))
+
+    def test_expired_contract_is_not_displayed_even_if_assignment_is_open(self):
+        subscription = SimpleNamespace(computed_status='expired')
+        link = SimpleNamespace(
+            unassigned_at=None,
+            is_active=False,
+            subscription=subscription,
+        )
+        device = SimpleNamespace(
+            management_status='active',
+            _prefetched_subscription_links=[link],
+        )
+
+        self.assertIsNone(self.serializer._display_subscription_link(device))
+
+    def test_current_valid_contract_is_displayed(self):
+        subscription = SimpleNamespace(
+            id=12,
+            contract_number='ORG-1405-0012',
+            computed_status='active',
+        )
+        link = SimpleNamespace(
+            unassigned_at=None,
+            is_active=True,
+            subscription=subscription,
+        )
+        device = SimpleNamespace(
+            management_status='active',
+            _prefetched_subscription_links=[link],
+        )
+
+        self.assertIs(self.serializer._display_subscription_link(device), link)
+        self.assertEqual(self.serializer.get_subscription_number(device), 'ORG-1405-0012')
+
+    def test_legacy_replacement_operation_does_not_create_a_current_contract(self):
         operation = SimpleNamespace(subscription_id=12)
         device = SimpleNamespace(
             management_status='faulty',
@@ -152,7 +197,7 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
             _prefetched_replacement_target_operations=[],
         )
 
-        self.assertIs(self.serializer._display_subscription_link(device), operation)
+        self.assertIsNone(self.serializer._display_subscription_link(device))
 
     def test_current_replacement_operation_matches_active_subscription(self):
         active_link = SimpleNamespace(unassigned_at=None, subscription_id=12)
@@ -178,7 +223,10 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
         )
 
     def test_warehouse_and_data_status_reuse_prefetched_active_link(self):
-        active_link = SimpleNamespace(unassigned_at=None, is_active=True)
+        subscription = SimpleNamespace(computed_status='active')
+        active_link = SimpleNamespace(
+            unassigned_at=None, is_active=True, subscription=subscription
+        )
         device = SimpleNamespace(
             management_status='active',
             _prefetched_subscription_links=[active_link],
@@ -188,6 +236,41 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
         self.assertFalse(self.serializer.get_is_in_warehouse(device))
         self.assertTrue(self.serializer.get_data_active(device))
         self.assertEqual(self.serializer.get_management_status(device), 'active')
+
+    def test_data_service_is_inactive_when_contract_is_suspended_or_expired(self):
+        for contract_status in ('suspended', 'cancelled', 'expired', 'pending'):
+            with self.subTest(contract_status=contract_status):
+                subscription = SimpleNamespace(computed_status=contract_status)
+                active_link = SimpleNamespace(
+                    unassigned_at=None, is_active=True, subscription=subscription
+                )
+                device = SimpleNamespace(
+                    management_status='active',
+                    _prefetched_subscription_links=[active_link],
+                    _prefetched_replacement_target_operations=[],
+                )
+                self.assertFalse(self.serializer.get_data_active(device))
+
+    def test_customer_name_prefers_current_contract_customer(self):
+        subscription = SimpleNamespace(
+            computed_status='active',
+            get_customer_name=lambda: 'مشتری قرارداد'
+        )
+        active_link = SimpleNamespace(
+            unassigned_at=None, is_active=True, subscription=subscription
+        )
+        device = SimpleNamespace(
+            _prefetched_subscription_links=[active_link],
+            current_holder_organization=None,
+            current_holder_user=None,
+            organization=None,
+            owner_user=None,
+        )
+
+        self.assertEqual(
+            self.serializer.get_customer_name(device),
+            'مشتری قرارداد',
+        )
 
 
 class TraccarPositionTimestampTests(SimpleTestCase):
