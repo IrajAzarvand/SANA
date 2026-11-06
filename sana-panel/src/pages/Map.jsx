@@ -155,10 +155,6 @@ export default function Map() {
             <span>هر {refreshIntervalSeconds.toLocaleString('fa-IR')} ثانیه</span>
           </div>
 
-          <div className="self-end rounded-lg border border-white/10 bg-bg-elevated/90 px-2.5 py-1.5 text-[10px] text-text-secondary shadow-lg backdrop-blur-md">
-            {lastUpdated ? `آخرین دریافت: ${lastUpdated.toLocaleTimeString('fa-IR')}` : 'در انتظار اولین دریافت'}
-            {followedDeviceId && <span className="mr-2 hidden md:inline">· دستگاه انتخاب‌شده در مرکز نقشه</span>}
-          </div>
         </div>
 
         {!loading && !error && positions.length === 0 && (
