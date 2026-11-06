@@ -33,6 +33,7 @@ export default function SubscriptionWizard() {
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [usernameAvailability, setUsernameAvailability] = useState('idle');
 
   const [form, setForm] = useState({
     customer_type: 'organization',
@@ -100,8 +101,16 @@ export default function SubscriptionWizard() {
           return false;
         }
       }
-      if (!form.username) {
+      if (!form.username.trim()) {
         setError('نام کاربری الزامی است');
+        return false;
+      }
+      if (!form.existing_user_id && usernameAvailability === 'taken') {
+        setError('این نام کاربری قبلاً در سامانه استفاده شده است؛ نام دیگری انتخاب کنید');
+        return false;
+      }
+      if (!form.existing_user_id && usernameAvailability === 'checking') {
+        setError('لطفاً تا پایان بررسی سراسری نام کاربری صبر کنید');
         return false;
       }
       if (!form.existing_user_id && (!form.password || form.password.length < 8)) {
@@ -261,7 +270,14 @@ export default function SubscriptionWizard() {
 
       <Card>
         {step === 1 && <Step1 form={form} updateForm={updateForm} />}
-        {step === 2 && <Step2 form={form} updateForm={updateForm} setForm={setForm} />}
+        {step === 2 && (
+          <Step2
+            form={form}
+            updateForm={updateForm}
+            setForm={setForm}
+            onUsernameAvailabilityChange={setUsernameAvailability}
+          />
+        )}
         {step === 3 && <Step3 form={form} updateForm={updateForm} />}
         {step === 4 && <Step4 form={form} updateForm={updateForm} />}
         {step === 5 && <Step5 form={form} updateForm={updateForm} />}
@@ -364,7 +380,7 @@ function Step1({ form, updateForm }) {
    مرحله ۲ — اطلاعات مشتری
    ═══════════════════════════════════════════════ */
 
-function Step2({ form, updateForm, setForm }) {
+function Step2({ form, updateForm, setForm, onUsernameAvailabilityChange }) {
   const isOrg = form.customer_type === 'organization';
 
   return (
