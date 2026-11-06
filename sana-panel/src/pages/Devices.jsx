@@ -453,7 +453,14 @@ function DevicesTab() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 font-mono text-sm font-semibold text-text-primary"><Hash size={13} className="text-text-muted" />{d.imei}</div>
-                      <div className="mt-2"><Badge variant={hasDeviceModel(d) ? 'brand' : 'muted'}>{formatDeviceModel(d)}</Badge></div>
+                      <div className="mt-2 flex flex-col items-start gap-1">
+                        <Badge variant={hasDeviceModel(d) ? 'brand' : 'muted'}>{formatDeviceModel(d)}</Badge>
+                        {d.protocol ? (
+                          <span className="text-[10px] text-text-muted">پروتکل: {formatProtocol(d.protocol)}</span>
+                        ) : !hasDeviceModel(d) ? (
+                          <span className="text-[10px] text-text-muted">پروتکل هنوز شناسایی نشده</span>
+                        ) : null}
+                      </div>
                     </div>
                     <ActionMenu items={getMenuItems(d)} />
                   </div>
