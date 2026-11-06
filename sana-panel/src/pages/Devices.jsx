@@ -510,12 +510,14 @@ function DevicesTab() {
                         </div>
                       </td>
                       <td className="py-3 px-4">
-                        <Badge variant={d.protocol ? 'brand' : 'muted'}>
-                          {[
-                            d.device_model_manufacturer,
-                            d.device_model_name,
-                          ].filter(Boolean).join(' - ') || protocolLabelMap[(d.protocol || '').toLowerCase()] || d.protocol || 'در انتظار شناسایی'}
-                        </Badge>
+                        <div className="flex flex-col items-start gap-1">
+                          <Badge variant={hasDeviceModel(d) ? 'brand' : 'muted'}>{formatDeviceModel(d)}</Badge>
+                          {d.protocol ? (
+                            <span className="text-[10px] text-text-muted">پروتکل: {formatProtocol(d.protocol)}</span>
+                          ) : !hasDeviceModel(d) ? (
+                            <span className="text-[10px] text-text-muted">پروتکل هنوز شناسایی نشده</span>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-1.5 font-mono text-xs text-text-secondary">
