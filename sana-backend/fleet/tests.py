@@ -12,6 +12,7 @@ from .views import (
     DeviceViewSet,
     normalize_traccar_history_positions,
     parse_report_history_cursor,
+    traccar_position_protocol,
     traccar_position_timestamp,
 )
 from .serializers import DeviceListSerializer
@@ -129,6 +130,17 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
     def test_raw_traccar_model_is_empty_when_traccar_does_not_report_one(self):
         device = SimpleNamespace()
         self.assertIsNone(self.serializer.get_traccar_model(device))
+
+    def test_live_traccar_protocol_is_exposed_for_device_list(self):
+        device = SimpleNamespace(traccar_protocol='teltonika')
+        self.assertEqual(
+            self.serializer.get_traccar_protocol(device),
+            'teltonika',
+        )
+
+    def test_live_traccar_protocol_is_empty_when_no_position_protocol_exists(self):
+        device = SimpleNamespace()
+        self.assertIsNone(self.serializer.get_traccar_protocol(device))
 
     def test_active_subscription_link_uses_prefetched_links_and_is_cached(self):
         active_link = SimpleNamespace(unassigned_at=None, subscription_id=12)
@@ -285,6 +297,15 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
 
 
 class TraccarPositionTimestampTests(SimpleTestCase):
+    def test_position_protocol_is_normalized_from_traccar_decoder_metadata(self):
+        self.assertEqual(
+            traccar_position_protocol({"protocol": "  Teltonika  "}),
+            "teltonika",
+        )
+
+    def test_missing_position_protocol_remains_unknown(self):
+        self.assertEqual(traccar_position_protocol({"protocol": ""}), "")
+
     def test_server_time_is_preferred_over_unreliable_device_clock(self):
         position = {
             "serverTime": "2026-10-31T08:00:00Z",
