@@ -402,7 +402,7 @@ class DeviceListSerializer(serializers.ModelSerializer):
         return 'primary'
 
     def get_management_status(self, obj):
-        if obj.is_in_warehouse:
+        if self._is_in_warehouse(obj):
             return 'warehouse'
 
         replacement_operation = self._current_replacement_operation(obj)
