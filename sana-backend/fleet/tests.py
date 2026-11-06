@@ -3,9 +3,17 @@ from urllib.error import HTTPError, URLError
 from unittest.mock import MagicMock, patch
 
 from django.test import SimpleTestCase, override_settings
+from django.utils.dateparse import parse_datetime
+from rest_framework.test import APIRequestFactory, force_authenticate
+from types import SimpleNamespace
 
 from .traccar_api import TraccarAPIError, traccar_device_positions, traccar_devices
-from .views import DeviceViewSet, traccar_position_timestamp
+from .views import (
+    DeviceViewSet,
+    normalize_traccar_history_positions,
+    parse_report_history_cursor,
+    traccar_position_timestamp,
+)
 from .serializers import DeviceListSerializer
 
 
@@ -229,3 +237,100 @@ class TraccarAPIClientFailureTests(SimpleTestCase):
 
         with self.assertRaisesRegex(TraccarAPIError, "URLError"):
             traccar_devices()
+
+ 
+
+class TraccarHistoryIntegrityTests(SimpleTestCase):
+    def setUp(self):
+        self.start = parse_datetime("2026-11-01T00:00:00Z")
+        self.end = parse_datetime("2026-11-02T00:00:00Z")
+
+    def position(self, point_id, server_time, latitude=35.7, longitude=51.4, **extra):
+        return {
+            "id": point_id,
+            "serverTime": server_time,
+            "latitude": latitude,
+            "longitude": longitude,
+            **extra,
+        }
+
+    def test_history_is_sorted_by_server_time_and_duplicate_position_ids_are_removed(self):
+        positions = [
+            self.position(12, "2026-11-01T10:02:00Z"),
+            self.position(11, "2026-11-01T10:01:00Z"),
+            self.position(11, "2026-11-01T10:01:00Z", latitude=0, longitude=0),
+        ]
+
+        result = normalize_traccar_history_positions(positions, self.start, self.end)
+
+        self.assertEqual([row[1] for row in result], [11, 12])
+        self.assertEqual(result[0][3:], (35.7, 51.4))
+
+    def test_history_rejects_missing_server_time_and_invalid_coordinates(self):
+        positions = [
+            self.position(1, None),
+            self.position(2, "2026-11-01T10:00:00Z", latitude=91),
+            self.position(3, "2026-11-01T10:00:00Z", longitude=181),
+            self.position(4, "2026-11-01T10:00:00Z", latitude=float("nan")),
+            self.position(5, "2026-11-03T10:00:00Z"),
+        ]
+
+        self.assertEqual(
+            normalize_traccar_history_positions(positions, self.start, self.end),
+            [],
+        )
+
+    def test_history_cursor_uses_server_time_and_position_id_as_tiebreaker(self):
+        cursor_time = parse_datetime("2026-11-01T10:00:00Z")
+        positions = [
+            self.position(10, "2026-11-01T10:00:00Z"),
+            self.position(11, "2026-11-01T10:00:00Z"),
+            self.position(12, "2026-11-01T10:01:00Z"),
+        ]
+
+        result = normalize_traccar_history_positions(
+            positions, self.start, self.end, cursor_time=cursor_time, cursor_id=10,
+        )
+
+        self.assertEqual([row[1] for row in result], [11, 12])
+
+    def test_cursor_rejects_invalid_or_incomplete_values(self):
+        for raw_time, raw_id in (
+            ("not-a-date", "12"),
+            ("2026-11-01T10:00:00Z", "bad"),
+            ("2026-11-01T10:00:00Z", "0"),
+            (None, "12"),
+        ):
+            with self.subTest(raw_time=raw_time, raw_id=raw_id):
+                with self.assertRaises(ValueError):
+                    parse_report_history_cursor(raw_time, raw_id)
+
+    def test_empty_cursor_is_valid_for_first_page(self):
+        self.assertEqual(parse_report_history_cursor(None, None), (None, 0))
+
+
+class ReportHistoryRequestSecurityTests(SimpleTestCase):
+    def test_non_numeric_device_id_is_rejected_before_queryset_access(self):
+        factory = APIRequestFactory()
+        request = factory.get("/api/devices/report-history/", {"device_id": "not-an-id"})
+        force_authenticate(
+            request,
+            user=SimpleNamespace(is_authenticated=True, is_site_admin=True),
+        )
+
+        response = DeviceViewSet.as_view({"get": "report_history"})(request)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["detail"], "شناسه دستگاه نامعتبر است.")
+
+    def test_non_positive_device_id_is_rejected_before_queryset_access(self):
+        factory = APIRequestFactory()
+        request = factory.get("/api/devices/report-history/", {"device_id": "0"})
+        force_authenticate(
+            request,
+            user=SimpleNamespace(is_authenticated=True, is_site_admin=True),
+        )
+
+        response = DeviceViewSet.as_view({"get": "report_history"})(request)
+
+        self.assertEqual(response.status_code, 400)
