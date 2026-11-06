@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.db.models import Q
+from django.utils import timezone
 from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DriverVehicleAssignment, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation
 
 
@@ -154,6 +155,7 @@ class DeviceSerializer(serializers.ModelSerializer):
 class DeviceListSerializer(serializers.ModelSerializer):
     management_status = serializers.SerializerMethodField()
     data_active = serializers.SerializerMethodField()
+    data_inactive_reason = serializers.SerializerMethodField()
     is_in_warehouse = serializers.SerializerMethodField()
 
     def _active_subscription_link(self, obj):
@@ -200,6 +202,48 @@ class DeviceListSerializer(serializers.ModelSerializer):
         }:
             return False
         return True
+
+    def get_data_inactive_reason(self, obj):
+        """Return one concise, highest-priority reason why GPS service is not authorized."""
+        link = self._active_subscription_link(obj)
+        if not link:
+            return 'دستگاه به هیچ قراردادی متصل نیست'
+
+        today = timezone.localdate()
+        if not link.is_active:
+            if link.start_date > today:
+                return 'تاریخ شروع تخصیص دستگاه هنوز نرسیده'
+            if link.end_date < today:
+                return 'مهلت تخصیص دستگاه به پایان رسیده'
+            return 'اتصال دستگاه به قرارداد فعال نیست'
+
+        subscription = getattr(link, 'subscription', None)
+        if not subscription:
+            return 'قرارداد مرتبط پیدا نشد'
+
+        contract_status_reasons = {
+            'suspended': 'قرارداد تعلیق شده است',
+            'cancelled': 'قرارداد لغو شده است',
+            'expired': 'قرارداد منقضی شده است',
+            'pending': 'تاریخ شروع قرارداد هنوز نرسیده',
+        }
+        contract_status = subscription.computed_status
+        if contract_status != 'active':
+            return contract_status_reasons.get(
+                contract_status,
+                'وضعیت قرارداد اجازه ارائه سرویس نمی‌دهد',
+            )
+
+        management_status_reasons = {
+            'faulty': 'دستگاه خراب است',
+            'ready': 'دستگاه آماده تعیین تکلیف است',
+            'lost': 'دستگاه گمشده ثبت شده است',
+            'stolen': 'دستگاه سرقت‌شده ثبت شده است',
+            'disconnected': 'سرویس دستگاه قطع شده است',
+            'retired': 'دستگاه بازنشسته شده است',
+            'disposed': 'دستگاه از رده خارج و امحاء شده است',
+        }
+        return management_status_reasons.get(obj.management_status)
 
     def get_management_status(self, obj):
         """Keep the existing warehouse display rule without an extra query."""
@@ -258,6 +302,7 @@ class DeviceListSerializer(serializers.ModelSerializer):
             'replacement_device_id', 'replacement_device_imei', 'replacement_relation_direction',
             'management_status',
             'data_active',
+            'data_inactive_reason',
             'last_data_received_at',
             'is_in_warehouse',
             'created_at',
