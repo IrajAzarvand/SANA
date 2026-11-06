@@ -38,6 +38,11 @@ def traccar_position_timestamp(position):
     return parse_datetime(str(position.get('serverTime') or ''))
 
 
+def traccar_position_protocol(position):
+    """Return the decoder protocol reported by Traccar for a position."""
+    return str(position.get('protocol') or '').strip().lower()
+
+
 def parse_report_history_cursor(raw_cursor_time, raw_cursor_id):
     """Parse a strict (serverTime, Traccar position ID) pagination cursor."""
     if not raw_cursor_time:
@@ -371,6 +376,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
         # transient serializer attribute and does not persist a duplicate timestamp.
         for device in devices:
             device.last_data_received_at = None
+            device.traccar_protocol = None
 
         traccar_by_imei = {}
         try:
@@ -399,6 +405,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
         # /positions supplies serverTime: when Traccar received the position.
         # GPS-originated fixTime/deviceTime are deliberately not used for this field.
         received_at_by_traccar_id = {}
+        protocol_by_traccar_id = {}
         if traccar_by_imei:
             try:
                 for position in traccar_current_positions():
@@ -406,12 +413,19 @@ class DeviceViewSet(viewsets.ModelViewSet):
                         traccar_id = int(position.get('deviceId'))
                     except (TypeError, ValueError):
                         continue
+
+                    # Position.protocol is Traccar's actual decoder protocol.
+                    # Read it independently from serverTime: a valid protocol
+                    # remains useful even if a position has no receipt timestamp.
+                    protocol = traccar_position_protocol(position)
+                    if protocol:
+                        protocol_by_traccar_id[traccar_id] = protocol
+
                     received_at = parse_datetime(str(position.get('serverTime') or ''))
                     if received_at is not None:
                         received_at_by_traccar_id[traccar_id] = received_at
             except TraccarAPIError:
-                # Without /positions.serverTime, receipt time is unknown.
-                # Do not substitute Device.lastUpdate or device-originated time.
+                # Without /positions, neither live protocol nor receipt time is available.
                 pass
 
         for device in devices:
@@ -426,6 +440,11 @@ class DeviceViewSet(viewsets.ModelViewSet):
             # No fallback to /devices.lastUpdate: serverTime is the
             # authoritative receipt timestamp and may legitimately be absent.
             device.last_data_received_at = received_at
+            if traccar_id is not None:
+                try:
+                    device.traccar_protocol = protocol_by_traccar_id.get(int(traccar_id))
+                except (TypeError, ValueError):
+                    device.traccar_protocol = None
 
         serializer = self.get_serializer(devices, many=True)
         if page is not None:
