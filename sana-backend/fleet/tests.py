@@ -253,10 +253,11 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
 
     def test_customer_name_prefers_current_contract_customer(self):
         subscription = SimpleNamespace(
+            computed_status='active',
             get_customer_name=lambda: 'مشتری قرارداد'
         )
         active_link = SimpleNamespace(
-            unassigned_at=None, subscription=subscription
+            unassigned_at=None, is_active=True, subscription=subscription
         )
         device = SimpleNamespace(
             _prefetched_subscription_links=[active_link],
