@@ -119,6 +119,17 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
     def setUp(self):
         self.serializer = DeviceListSerializer()
 
+    def test_raw_traccar_model_is_exposed_without_catalog_match(self):
+        device = SimpleNamespace(traccar_model='Queclink GV300')
+        self.assertEqual(
+            self.serializer.get_traccar_model(device),
+            'Queclink GV300',
+        )
+
+    def test_raw_traccar_model_is_empty_when_traccar_does_not_report_one(self):
+        device = SimpleNamespace()
+        self.assertIsNone(self.serializer.get_traccar_model(device))
+
     def test_active_subscription_link_uses_prefetched_links_and_is_cached(self):
         active_link = SimpleNamespace(unassigned_at=None, subscription_id=12)
         older_link = SimpleNamespace(unassigned_at=None, subscription_id=8)
