@@ -49,22 +49,23 @@ const hasRawTraccarModel = (device) => (
 
 const DeviceModelCell = ({ device }) => {
   const reportedProtocol = device.traccar_protocol || device.protocol;
+  const protocolTooltip = reportedProtocol
+    ? `پروتکل: ${formatProtocol(reportedProtocol)}`
+    : 'پروتکل شناسایی نشده';
 
   return (
     <div className="flex flex-col items-start gap-1">
-      <span className={hasDeviceModel(device) || hasRawTraccarModel(device)
-        ? 'text-xs font-medium text-text-primary'
-        : 'text-xs text-text-muted'}>
+      <span
+        title={protocolTooltip}
+        className={`cursor-help ${hasDeviceModel(device) || hasRawTraccarModel(device)
+          ? 'text-xs font-medium text-text-primary'
+          : 'text-xs text-text-muted'}`}
+      >
         {formatDeviceModel(device)}
       </span>
       {hasRawTraccarModel(device) && (
         <span className="text-[10px] text-text-muted">مدل گزارش‌شده توسط Traccar</span>
       )}
-      {reportedProtocol ? (
-        <span className="text-[10px] text-text-muted">پروتکل: {formatProtocol(reportedProtocol)}</span>
-      ) : !hasDeviceModel(device) ? (
-        <span className="text-[10px] text-text-muted">پروتکل هنوز شناسایی نشده</span>
-      ) : null}
     </div>
   );
 };
