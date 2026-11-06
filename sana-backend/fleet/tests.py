@@ -178,7 +178,10 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
         )
 
     def test_warehouse_and_data_status_reuse_prefetched_active_link(self):
-        active_link = SimpleNamespace(unassigned_at=None, is_active=True)
+        subscription = SimpleNamespace(computed_status='active')
+        active_link = SimpleNamespace(
+            unassigned_at=None, is_active=True, subscription=subscription
+        )
         device = SimpleNamespace(
             management_status='active',
             _prefetched_subscription_links=[active_link],
@@ -188,6 +191,40 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
         self.assertFalse(self.serializer.get_is_in_warehouse(device))
         self.assertTrue(self.serializer.get_data_active(device))
         self.assertEqual(self.serializer.get_management_status(device), 'active')
+
+    def test_data_service_is_inactive_when_contract_is_suspended_or_expired(self):
+        for contract_status in ('suspended', 'cancelled', 'expired', 'pending'):
+            with self.subTest(contract_status=contract_status):
+                subscription = SimpleNamespace(computed_status=contract_status)
+                active_link = SimpleNamespace(
+                    unassigned_at=None, is_active=True, subscription=subscription
+                )
+                device = SimpleNamespace(
+                    management_status='active',
+                    _prefetched_subscription_links=[active_link],
+                    _prefetched_replacement_target_operations=[],
+                )
+                self.assertFalse(self.serializer.get_data_active(device))
+
+    def test_customer_name_prefers_current_contract_customer(self):
+        subscription = SimpleNamespace(
+            get_customer_name=lambda: 'مشتری قرارداد'
+        )
+        active_link = SimpleNamespace(
+            unassigned_at=None, subscription=subscription
+        )
+        device = SimpleNamespace(
+            _prefetched_subscription_links=[active_link],
+            current_holder_organization=None,
+            current_holder_user=None,
+            organization=None,
+            owner_user=None,
+        )
+
+        self.assertEqual(
+            self.serializer.get_customer_name(device),
+            'مشتری قرارداد',
+        )
 
 
 class TraccarPositionTimestampTests(SimpleTestCase):
