@@ -47,23 +47,27 @@ const hasRawTraccarModel = (device) => (
   !hasDeviceModel(device) && Boolean(device.traccar_model)
 );
 
-const DeviceModelCell = ({ device }) => (
-  <div className="flex flex-col items-start gap-1">
-    <span className={hasDeviceModel(device) || hasRawTraccarModel(device)
-      ? 'text-xs font-medium text-text-primary'
-      : 'text-xs text-text-muted'}>
-      {formatDeviceModel(device)}
-    </span>
-    {hasRawTraccarModel(device) && (
-      <span className="text-[10px] text-text-muted">مدل گزارش‌شده توسط Traccar</span>
-    )}
-    {device.protocol ? (
-      <span className="text-[10px] text-text-muted">پروتکل: {formatProtocol(device.protocol)}</span>
-    ) : !hasDeviceModel(device) ? (
-      <span className="text-[10px] text-text-muted">پروتکل هنوز شناسایی نشده</span>
-    ) : null}
-  </div>
-);
+const DeviceModelCell = ({ device }) => {
+  const reportedProtocol = device.traccar_protocol || device.protocol;
+
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <span className={hasDeviceModel(device) || hasRawTraccarModel(device)
+        ? 'text-xs font-medium text-text-primary'
+        : 'text-xs text-text-muted'}>
+        {formatDeviceModel(device)}
+      </span>
+      {hasRawTraccarModel(device) && (
+        <span className="text-[10px] text-text-muted">مدل گزارش‌شده توسط Traccar</span>
+      )}
+      {reportedProtocol ? (
+        <span className="text-[10px] text-text-muted">پروتکل: {formatProtocol(reportedProtocol)}</span>
+      ) : !hasDeviceModel(device) ? (
+        <span className="text-[10px] text-text-muted">پروتکل هنوز شناسایی نشده</span>
+      ) : null}
+    </div>
+  );
+};
 
 const formatProtocol = (protocol) => (
   protocolLabelMap[(protocol || '').toLowerCase()] || protocol

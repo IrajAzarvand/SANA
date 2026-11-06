@@ -210,11 +210,16 @@ class DeviceListSerializer(serializers.ModelSerializer):
     device_model_name = serializers.CharField(source='device_model.name', read_only=True, allow_null=True)
     device_model_manufacturer = serializers.CharField(source='device_model.manufacturer', read_only=True, allow_null=True)
     traccar_model = serializers.SerializerMethodField()
+    traccar_protocol = serializers.SerializerMethodField()
     protocol = serializers.CharField(read_only=True)
 
     def get_traccar_model(self, obj):
         """Return the raw model reported by Traccar for this list response only."""
         return getattr(obj, 'traccar_model', None)
+
+    def get_traccar_protocol(self, obj):
+        """Return the live decoder protocol from Traccar's current position."""
+        return getattr(obj, 'traccar_protocol', None)
     organization_name = serializers.CharField(source='organization.name', read_only=True)
     owner_name = serializers.CharField(source='owner_user.full_name', read_only=True)
     vehicle_plate = serializers.CharField(source='vehicle.plate', read_only=True)
@@ -240,7 +245,7 @@ class DeviceListSerializer(serializers.ModelSerializer):
         model = Device
         fields = [
             'id', 'imei',
-            'device_model_name', 'device_model_manufacturer', 'traccar_model', 'protocol',
+            'device_model_name', 'device_model_manufacturer', 'traccar_model', 'protocol', 'traccar_protocol',
             'sim_number',
             'organization', 'organization_name',
             'owner_user', 'owner_name',
