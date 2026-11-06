@@ -6,6 +6,7 @@ from django.test import SimpleTestCase, override_settings
 
 from .traccar_api import TraccarAPIError, traccar_device_positions, traccar_devices
 from .views import DeviceViewSet, traccar_position_timestamp
+from .serializers import DeviceListSerializer
 
 
 @override_settings(
@@ -104,6 +105,81 @@ class TraccarDeviceModelSyncTests(SimpleTestCase):
 
         self.assertEqual(device.device_model_id, 99)
         device.save.assert_not_called()
+
+
+class DeviceListSerializerPrefetchTests(SimpleTestCase):
+    def setUp(self):
+        self.serializer = DeviceListSerializer()
+
+    def test_active_subscription_link_uses_prefetched_links_and_is_cached(self):
+        active_link = SimpleNamespace(unassigned_at=None, subscription_id=12)
+        older_link = SimpleNamespace(unassigned_at=None, subscription_id=8)
+        device = SimpleNamespace(
+            management_status='active',
+            _prefetched_subscription_links=[active_link, older_link],
+        )
+
+        self.assertIs(self.serializer._active_subscription_link(device), active_link)
+        self.assertIs(self.serializer._active_subscription_link(device), active_link)
+
+    def test_latest_historical_subscription_link_is_used_when_no_active_link_exists(self):
+        latest = SimpleNamespace(unassigned_at=object(), subscription_id=12)
+        older = SimpleNamespace(unassigned_at=object(), subscription_id=8)
+        device = SimpleNamespace(
+            management_status='warehouse',
+            _prefetched_subscription_links=[latest, older],
+            _prefetched_replacement_source_operations=[],
+            _prefetched_replacement_target_operations=[],
+        )
+
+        self.assertIs(self.serializer._display_subscription_link(device), latest)
+        self.assertIs(self.serializer._display_subscription_link(device), latest)
+
+    def test_replacement_operation_fallback_uses_prefetched_source_operations(self):
+        operation = SimpleNamespace(subscription_id=12)
+        device = SimpleNamespace(
+            management_status='faulty',
+            _prefetched_subscription_links=[],
+            _prefetched_replacement_source_operations=[operation],
+            _prefetched_replacement_target_operations=[],
+        )
+
+        self.assertIs(self.serializer._display_subscription_link(device), operation)
+
+    def test_current_replacement_operation_matches_active_subscription(self):
+        active_link = SimpleNamespace(unassigned_at=None, subscription_id=12)
+        old_operation = SimpleNamespace(
+            operation_type='return_for_repair',
+            subscription_id=8,
+        )
+        current_operation = SimpleNamespace(
+            operation_type='return_for_repair',
+            subscription_id=12,
+        )
+        device = SimpleNamespace(
+            management_status='installed',
+            _prefetched_subscription_links=[active_link],
+            _prefetched_replacement_target_operations=[
+                old_operation, current_operation,
+            ],
+        )
+
+        self.assertIs(
+            self.serializer._current_replacement_operation(device),
+            current_operation,
+        )
+
+    def test_warehouse_and_data_status_reuse_prefetched_active_link(self):
+        active_link = SimpleNamespace(unassigned_at=None, is_active=True)
+        device = SimpleNamespace(
+            management_status='active',
+            _prefetched_subscription_links=[active_link],
+            _prefetched_replacement_target_operations=[],
+        )
+
+        self.assertFalse(self.serializer.get_is_in_warehouse(device))
+        self.assertTrue(self.serializer.get_data_active(device))
+        self.assertEqual(self.serializer.get_management_status(device), 'active')
 
 
 class TraccarPositionTimestampTests(SimpleTestCase):

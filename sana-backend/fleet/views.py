@@ -129,18 +129,57 @@ class DeviceViewSet(viewsets.ModelViewSet):
         qs = Device.objects.select_related(
             'device_model', 'organization', 'branch', 'vehicle', 'owner_user',
             'current_holder_organization', 'current_holder_user',
-        ).prefetch_related(
-            Prefetch(
-                'replacement_relations_as_source',
-                queryset=DeviceReplacementRelation.objects.select_related('replacement_device').order_by('-replacement_date', '-id'),
-                to_attr='_replacement_relations_as_source',
-            ),
-            Prefetch(
-                'replacement_relations_as_replacement',
-                queryset=DeviceReplacementRelation.objects.select_related('source_device').order_by('-replacement_date', '-id'),
-                to_attr='_replacement_relations_as_replacement',
-            ),
         )
+
+        # The list serializer needs a compact, preloaded snapshot of the
+        # subscription and replacement history. Keep these prefetches off
+        # detail/actions so unrelated endpoints do not pay for list-only data.
+        if self.action == 'list':
+            replacement_operation_types = (
+                'return_for_repair',
+                'temporary_replacement',
+                'permanent_replacement',
+            )
+            qs = qs.prefetch_related(
+                Prefetch(
+                    'replacement_relations_as_source',
+                    queryset=DeviceReplacementRelation.objects.select_related(
+                        'replacement_device'
+                    ).order_by('-replacement_date', '-id'),
+                    to_attr='_replacement_relations_as_source',
+                ),
+                Prefetch(
+                    'replacement_relations_as_replacement',
+                    queryset=DeviceReplacementRelation.objects.select_related(
+                        'source_device'
+                    ).order_by('-replacement_date', '-id'),
+                    to_attr='_replacement_relations_as_replacement',
+                ),
+                Prefetch(
+                    'subscription_links',
+                    queryset=SubscriptionDevice.objects.select_related(
+                        'subscription'
+                    ).order_by('-assigned_at', '-id'),
+                    to_attr='_prefetched_subscription_links',
+                ),
+                Prefetch(
+                    'operations',
+                    queryset=DeviceOperation.objects.filter(
+                        replacement_device__isnull=False,
+                        subscription__isnull=False,
+                        operation_type__in=replacement_operation_types,
+                    ).select_related('subscription').order_by('-performed_at', '-id'),
+                    to_attr='_prefetched_replacement_source_operations',
+                ),
+                Prefetch(
+                    'replacement_operations',
+                    queryset=DeviceOperation.objects.filter(
+                        subscription__isnull=False,
+                        operation_type__in=replacement_operation_types,
+                    ).select_related('subscription').order_by('-performed_at', '-id'),
+                    to_attr='_prefetched_replacement_target_operations',
+                ),
+            )
 
         if user.is_site_admin:
             pass
