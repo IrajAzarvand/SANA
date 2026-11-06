@@ -1,6 +1,7 @@
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from datetime import datetime, time as datetime_time
+import math
 from django.db import connection, transaction
 from django.db.models import Exists, OuterRef, Prefetch, Q, Value
 from django.db.models.functions import Concat, Lower
@@ -35,6 +36,62 @@ def traccar_position_timestamp(position):
     used for freshness, ordering, or communication-state calculations.
     """
     return parse_datetime(str(position.get('serverTime') or ''))
+
+
+def parse_report_history_cursor(raw_cursor_time, raw_cursor_id):
+    """Parse a strict (serverTime, Traccar position ID) pagination cursor."""
+    if not raw_cursor_time:
+        if raw_cursor_id not in (None, '', '0'):
+            raise ValueError('cursor_id بدون cursor_time معتبر نیست.')
+        return None, 0
+
+    cursor_time = parse_datetime(raw_cursor_time)
+    try:
+        cursor_id = int(raw_cursor_id)
+    except (TypeError, ValueError):
+        raise ValueError('شناسه نشانگر صفحه‌بندی نامعتبر است.') from None
+
+    if cursor_time is None or cursor_id <= 0:
+        raise ValueError('نشانگر صفحه‌بندی نامعتبر است.')
+    if timezone.is_naive(cursor_time):
+        cursor_time = timezone.make_aware(cursor_time)
+    return cursor_time, cursor_id
+
+
+def normalize_traccar_history_positions(positions, range_start, range_end, cursor_time=None, cursor_id=0):
+    """Validate, deduplicate and order Traccar history using serverTime only."""
+    normalized = []
+    seen_position_ids = set()
+
+    for item in positions:
+        try:
+            point_id = int(item['id'])
+            point_time = traccar_position_timestamp(item)
+            latitude = float(item['latitude'])
+            longitude = float(item['longitude'])
+        except (KeyError, TypeError, ValueError, OverflowError):
+            continue
+
+        if point_time is None:
+            continue
+        if timezone.is_naive(point_time):
+            point_time = timezone.make_aware(point_time)
+        if point_time < range_start or point_time > range_end:
+            continue
+        if not math.isfinite(latitude) or not math.isfinite(longitude):
+            continue
+        if not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
+            continue
+        if point_id in seen_position_ids:
+            continue
+        seen_position_ids.add(point_id)
+
+        if cursor_time is not None and (point_time, point_id) <= (cursor_time, cursor_id):
+            continue
+        normalized.append((point_time, point_id, item, latitude, longitude))
+
+    normalized.sort(key=lambda row: (row[0], row[1]))
+    return normalized
 
 
 class VehicleTypeViewSet(viewsets.ModelViewSet):
@@ -369,9 +426,15 @@ class DeviceViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='report-history')
     def report_history(self, request):
         """Return authorized device history for map playback; customer dates are contract-bounded."""
-        device_id = request.query_params.get('device_id')
-        if not device_id:
+        raw_device_id = request.query_params.get('device_id')
+        if not raw_device_id:
             return Response({'detail': 'انتخاب دستگاه الزامی است.'}, status=400)
+        try:
+            device_id = int(raw_device_id)
+            if device_id <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            return Response({'detail': 'شناسه دستگاه نامعتبر است.'}, status=400)
 
         device = self.get_queryset().filter(pk=device_id).select_related('vehicle').first()
         if device is None:
@@ -455,12 +518,12 @@ class DeviceViewSet(viewsets.ModelViewSet):
             }, status=403)
 
         try:
-            cursor_time = parse_datetime(request.query_params.get('cursor_time', ''))
-            cursor_id = int(request.query_params.get('cursor_id', '0'))
-        except (TypeError, ValueError):
+            cursor_time, cursor_id = parse_report_history_cursor(
+                request.query_params.get('cursor_time'),
+                request.query_params.get('cursor_id'),
+            )
+        except ValueError:
             return Response({'detail': 'نشانگر صفحه‌بندی نامعتبر است.'}, status=400)
-        if cursor_time is not None and timezone.is_naive(cursor_time):
-            cursor_time = timezone.make_aware(cursor_time)
 
         limit = 5000
         try:
@@ -481,23 +544,9 @@ class DeviceViewSet(viewsets.ModelViewSet):
         except TraccarAPIError:
             return Response({'detail': 'دریافت تاریخچه از Traccar موقتاً ممکن نیست.'}, status=503)
 
-        normalized = []
-        for item in positions:
-            try:
-                point_id = int(item['id'])
-                point_time = traccar_position_timestamp(item)
-                latitude = float(item['latitude'])
-                longitude = float(item['longitude'])
-            except (KeyError, TypeError, ValueError):
-                continue
-            if point_time is None:
-                continue
-            if timezone.is_naive(point_time):
-                point_time = timezone.make_aware(point_time)
-            if cursor_time is not None and cursor_id > 0 and (point_time, point_id) <= (cursor_time, cursor_id):
-                continue
-            normalized.append((point_time, point_id, item, latitude, longitude))
-        normalized.sort(key=lambda row: (row[0], row[1]))
+        normalized = normalize_traccar_history_positions(
+            positions, raw_start, raw_end, cursor_time=cursor_time, cursor_id=cursor_id,
+        )
         has_more = len(normalized) > limit
         normalized = normalized[:limit]
         point_ids = [row[1] for row in normalized]

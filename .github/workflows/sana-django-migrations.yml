@@ -9,7 +9,8 @@ on:
 
 jobs:
   migrations:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
     services:
       postgres:
         image: postgis/postgis:16-3.4
@@ -44,10 +45,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install system GIS and PostgreSQL dependencies
+      - name: Install runtime GIS and PostgreSQL dependencies
+        timeout-minutes: 8
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update
-          sudo apt-get install -y binutils gdal-bin libgdal-dev libgeos-dev libproj-dev postgresql-client
+          sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30
+          sudo apt-get install -y --no-install-recommends \
+            libgdal34t64 libgeos-c1t64 libproj25 postgresql-client-16
       - name: Prepare PostGIS databases
         env:
           PGPASSWORD: postgres
