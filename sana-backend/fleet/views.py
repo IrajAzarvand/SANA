@@ -28,10 +28,12 @@ from .traccar_api import TraccarAPIError, traccar_current_positions, traccar_dev
 
 
 def traccar_position_timestamp(position):
-    """Use Traccar receipt time; device clocks are not a reliable timeline."""
-    return parse_datetime(
-        position.get('serverTime') or position.get('fixTime') or position.get('deviceTime') or ''
-    )
+    """Return only Traccar's server-side receipt time.
+
+    Device/fix timestamps are retained as raw diagnostics, but must never be
+    used for freshness, ordering, or communication-state calculations.
+    """
+    return parse_datetime(str(position.get('serverTime') or ''))
 
 
 class VehicleTypeViewSet(viewsets.ModelViewSet):
@@ -320,7 +322,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     if received_at is not None:
                         received_at_by_traccar_id[traccar_id] = received_at
             except TraccarAPIError:
-                # Fall back to the device-level lastUpdate value below.
+                # Without /positions.serverTime, receipt time is unknown.
+                # Do not substitute Device.lastUpdate or device-originated time.
                 pass
 
         for device in devices:
@@ -332,9 +335,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     received_at = received_at_by_traccar_id.get(int(traccar_id))
                 except (TypeError, ValueError):
                     pass
-            if received_at is None and traccar_device:
-                last_update = traccar_device.get('lastUpdate')
-                received_at = parse_datetime(str(last_update)) if last_update else None
+            # No fallback to /devices.lastUpdate: serverTime is the
+            # authoritative receipt timestamp and may legitimately be absent.
             device.last_data_received_at = received_at
 
         serializer = self.get_serializer(devices, many=True)
@@ -648,13 +650,13 @@ class DeviceViewSet(viewsets.ModelViewSet):
         now = timezone.now()
         output = []
         for position_id, traccar_id, device, traccar_device, position, latitude, longitude in current:
-            last_update = parse_datetime(str(traccar_device.get('lastUpdate') or ''))
-            if last_update is not None and timezone.is_naive(last_update):
-                last_update = timezone.make_aware(last_update)
+            server_received_at = traccar_position_timestamp(position)
+            if server_received_at is not None and timezone.is_naive(server_received_at):
+                server_received_at = timezone.make_aware(server_received_at)
             is_online = (
                 str(traccar_device.get('status') or '').lower() == 'online'
-                and last_update is not None
-                and (now - last_update).total_seconds() <= 300
+                and server_received_at is not None
+                and 0 <= (now - server_received_at).total_seconds() <= 300
             )
             attributes = position.get('attributes') if isinstance(position.get('attributes'), dict) else {}
             match = matches.get(position_id)
@@ -676,7 +678,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 'matched_at': match['matched_at'] if match else None,
                 'speed': speed_kmh,
                 'heading': position.get('course'),
-                'last_seen': position.get('serverTime') or traccar_device.get('lastUpdate'),
+                'last_seen': server_received_at.isoformat() if server_received_at else None,
                 'device_time': position.get('fixTime') or position.get('deviceTime'),
                 'status': status,
             })
