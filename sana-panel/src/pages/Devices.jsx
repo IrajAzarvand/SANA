@@ -466,7 +466,7 @@ function DevicesTab() {
                   </div>
                   <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-3 border-t border-border-base pt-3 text-xs">
                     <div><div className="text-text-muted">SIM</div><div className="mt-1 font-mono text-text-primary">{d.sim_number || '—'}</div></div>
-                    {isSiteAdmin && <div><div className="text-text-muted">مشتری</div><div className="mt-1 text-text-primary">{d.customer_name || 'در انبار'}</div></div>}
+                    {isSiteAdmin && <div><div className="text-text-muted">مشتری</div><div className="mt-1 text-text-primary">{d.customer_name || (d.is_in_warehouse ? 'در انبار' : 'نامشخص')}</div></div>}
                     <div><div className="text-text-muted">قرارداد مرتبط</div><div className="mt-1 font-mono text-text-primary">{d.subscription_number || '—'}</div></div>
                     <div><div className="text-text-muted">نوع ارتباط</div><div className="mt-1 text-text-primary">{d.subscription_device_type_display || '—'}</div></div>
                     <div><div className="text-text-muted">خودرو</div><div className="mt-1 font-mono text-text-primary">{d.vehicle_plate || '—'}</div></div>
@@ -528,7 +528,7 @@ function DevicesTab() {
                       {isSiteAdmin && (
                         <td className="py-3 px-4 text-text-secondary text-xs">
                           {d.customer_name || (
-                            <span className="text-text-muted">در انبار</span>
+                            <span className="text-text-muted">{d.is_in_warehouse ? 'در انبار' : 'نامشخص'}</span>
                           )}
                         </td>
                       )}
