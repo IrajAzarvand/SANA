@@ -172,13 +172,13 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
     def test_warehouse_and_data_status_reuse_prefetched_active_link(self):
         active_link = SimpleNamespace(unassigned_at=None, is_active=True)
         device = SimpleNamespace(
-            management_status='warehouse',
+            management_status='active',
             _prefetched_subscription_links=[active_link],
         )
 
         self.assertFalse(self.serializer.get_is_in_warehouse(device))
         self.assertTrue(self.serializer.get_data_active(device))
-        self.assertEqual(self.serializer.get_management_status(device), 'warehouse')
+        self.assertEqual(self.serializer.get_management_status(device), 'active')
 
 
 class TraccarPositionTimestampTests(SimpleTestCase):
