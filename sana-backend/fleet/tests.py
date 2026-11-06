@@ -174,6 +174,7 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
         device = SimpleNamespace(
             management_status='active',
             _prefetched_subscription_links=[active_link],
+            _prefetched_replacement_target_operations=[],
         )
 
         self.assertFalse(self.serializer.get_is_in_warehouse(device))
