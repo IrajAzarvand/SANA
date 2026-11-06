@@ -435,7 +435,7 @@ function DevicesTab() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 font-mono text-sm font-semibold text-text-primary"><Hash size={13} className="text-text-muted" />{d.imei}</div>
-                      <div className="mt-2"><Badge variant={d.protocol ? 'brand' : 'muted'}>{[d.device_model_manufacturer,d.device_model_name].filter(Boolean).join(' - ') || protocolLabelMap[(d.protocol || '').toLowerCase()] || d.protocol || 'در انتظار شناسایی'}</Badge></div>
+                      <div className="mt-2"><Badge variant={hasDeviceModel(d) ? 'brand' : 'muted'}>{formatDeviceModel(d)}</Badge></div>
                     </div>
                     <ActionMenu items={getMenuItems(d)} />
                   </div>
