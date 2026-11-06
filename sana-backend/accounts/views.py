@@ -65,6 +65,12 @@ class UserViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='username-availability')
     def username_availability(self, request):
         """Check username uniqueness across every account type without exposing user data."""
+        if not request.user.is_site_admin:
+            return Response(
+                {'detail': 'اجازه دسترسی به این بررسی را ندارید'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
         username = str(request.query_params.get('username', '') or '').strip()
         if not username:
             return Response(
