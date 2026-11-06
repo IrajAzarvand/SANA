@@ -274,59 +274,29 @@ class DeviceListSerializer(serializers.ModelSerializer):
         return None
 
     def _display_subscription_link(self, obj):
-        """Resolve once per device using the list-prefetched related records."""
+        """Return only a currently valid contract assignment for the device list.
+
+        Historical links and legacy replacement operations belong in history
+        views; they must never be presented as the device's current contract.
+        """
         if hasattr(obj, '_display_subscription_link_cache'):
             return obj._display_subscription_link_cache
 
-        active_link = self._active_subscription_link(obj)
-        if active_link:
-            result = active_link
+        link = self._active_subscription_link(obj)
+        subscription = getattr(link, 'subscription', None) if link else None
+
+        # The assignment period and the contract itself must both be current.
+        # A non-null unassigned_at is already excluded by
+        # _active_subscription_link(); is_active also checks the device dates.
+        if (
+            link
+            and getattr(link, 'is_active', False)
+            and subscription
+            and subscription.computed_status == 'active'
+        ):
+            result = link
         else:
-            links = getattr(obj, '_prefetched_subscription_links', None)
-            if links is None:
-                result = obj.subscription_links.select_related(
-                    'subscription'
-                ).order_by('-assigned_at', '-id').first()
-            else:
-                result = links[0] if links else None
-
-            # Legacy replacement records may exist without a SubscriptionDevice.
-            if result is None:
-                operations = getattr(
-                    obj, '_prefetched_replacement_source_operations', None
-                )
-                if operations is None:
-                    result = obj.operations.filter(
-                        replacement_device__isnull=False,
-                        subscription__isnull=False,
-                        operation_type__in={
-                            'return_for_repair',
-                            'temporary_replacement',
-                            'permanent_replacement',
-                        },
-                    ).select_related('subscription').order_by(
-                        '-performed_at', '-id'
-                    ).first()
-                else:
-                    result = operations[0] if operations else None
-
-            if result is None:
-                operations = getattr(
-                    obj, '_prefetched_replacement_target_operations', None
-                )
-                if operations is None:
-                    result = obj.replacement_operations.filter(
-                        subscription__isnull=False,
-                        operation_type__in={
-                            'return_for_repair',
-                            'temporary_replacement',
-                            'permanent_replacement',
-                        },
-                    ).select_related('subscription').order_by(
-                        '-performed_at', '-id'
-                    ).first()
-                else:
-                    result = operations[0] if operations else None
+            result = None
 
         obj._display_subscription_link_cache = result
         return result
@@ -372,7 +342,7 @@ class DeviceListSerializer(serializers.ModelSerializer):
         ).order_by('-performed_at', '-id').first()
 
     def get_subscription_device_type(self, obj):
-        link = self._active_subscription_link(obj)
+        link = self._display_subscription_link(obj)
         if not link:
             return None
 
