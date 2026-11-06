@@ -40,11 +40,30 @@ const formatDeviceModel = (device) => {
   if (hasDeviceModel(device)) {
     return `${device.device_model_manufacturer} - ${device.device_model_name}`;
   }
-  const partial = [device.device_model_manufacturer, device.device_model_name]
-    .filter(Boolean)
-    .join(' - ');
-  return partial ? `اطلاعات ناقص: ${partial}` : 'مدل شناسایی نشده';
+  return device.traccar_model || 'نامشخص';
 };
+
+const hasRawTraccarModel = (device) => (
+  !hasDeviceModel(device) && Boolean(device.traccar_model)
+);
+
+const DeviceModelCell = ({ device }) => (
+  <div className="flex flex-col items-start gap-1">
+    <span className={hasDeviceModel(device) || hasRawTraccarModel(device)
+      ? 'text-xs font-medium text-text-primary'
+      : 'text-xs text-text-muted'}>
+      {formatDeviceModel(device)}
+    </span>
+    {hasRawTraccarModel(device) && (
+      <span className="text-[10px] text-text-muted">مدل گزارش‌شده توسط Traccar</span>
+    )}
+    {device.protocol ? (
+      <span className="text-[10px] text-text-muted">پروتکل: {formatProtocol(device.protocol)}</span>
+    ) : !hasDeviceModel(device) ? (
+      <span className="text-[10px] text-text-muted">پروتکل هنوز شناسایی نشده</span>
+    ) : null}
+  </div>
+);
 
 const formatProtocol = (protocol) => (
   protocolLabelMap[(protocol || '').toLowerCase()] || protocol
@@ -143,6 +162,7 @@ function DevicesTab() {
           !(d.sim_number && d.sim_number.includes(search)) &&
           !(d.device_model_manufacturer && d.device_model_manufacturer.toLowerCase().includes(search.toLowerCase())) &&
           !(d.device_model_name && d.device_model_name.toLowerCase().includes(search.toLowerCase())) &&
+          !(d.traccar_model && d.traccar_model.toLowerCase().includes(search.toLowerCase())) &&
           !(d.vehicle_plate && d.vehicle_plate.includes(search))) return false;
       if (filterStatus && d.management_status !== filterStatus) return false;
       if (filterWarehouse === 'yes' && !d.is_in_warehouse) return false;
@@ -453,13 +473,8 @@ function DevicesTab() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5 font-mono text-sm font-semibold text-text-primary"><Hash size={13} className="text-text-muted" />{d.imei}</div>
-                      <div className="mt-2 flex flex-col items-start gap-1">
-                        <Badge variant={hasDeviceModel(d) ? 'brand' : 'muted'}>{formatDeviceModel(d)}</Badge>
-                        {d.protocol ? (
-                          <span className="text-[10px] text-text-muted">پروتکل: {formatProtocol(d.protocol)}</span>
-                        ) : !hasDeviceModel(d) ? (
-                          <span className="text-[10px] text-text-muted">پروتکل هنوز شناسایی نشده</span>
-                        ) : null}
+                      <div className="mt-2">
+                        <DeviceModelCell device={d} />
                       </div>
                     </div>
                     <ActionMenu items={getMenuItems(d)} />
@@ -510,14 +525,7 @@ function DevicesTab() {
                         </div>
                       </td>
                       <td className="py-3 px-4">
-                        <div className="flex flex-col items-start gap-1">
-                          <Badge variant={hasDeviceModel(d) ? 'brand' : 'muted'}>{formatDeviceModel(d)}</Badge>
-                          {d.protocol ? (
-                            <span className="text-[10px] text-text-muted">پروتکل: {formatProtocol(d.protocol)}</span>
-                          ) : !hasDeviceModel(d) ? (
-                            <span className="text-[10px] text-text-muted">پروتکل هنوز شناسایی نشده</span>
-                          ) : null}
-                        </div>
+                        <DeviceModelCell device={d} />
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex items-center gap-1.5 font-mono text-xs text-text-secondary">
