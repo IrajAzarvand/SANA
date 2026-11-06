@@ -448,6 +448,7 @@ function Step2({ form, updateForm, setForm, onUsernameAvailabilityChange }) {
             onChange={(val) => updateForm('username', val)}
             selectedUserId={form.existing_user_id}
             accountType={form.customer_type}
+            onUsernameAvailabilityChange={onUsernameAvailabilityChange}
             onSelectUser={(user) => {
               setForm((f) => {
                 const updates = {
