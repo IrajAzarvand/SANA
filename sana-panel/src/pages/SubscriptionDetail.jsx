@@ -167,6 +167,7 @@ export default function SubscriptionDetail() {
     surplus_policy: 'credit',
     first_due_date: '',
     custom_amounts_text: '',
+    contract_price: '',
   });
   const [paymentForm, setPaymentForm] = useState({
     amount: '',
@@ -645,6 +646,7 @@ export default function SubscriptionDetail() {
       surplus_policy: currentPlan?.surplus_policy || 'credit',
       first_due_date: firstUnpaid?.due_date || '',
       custom_amounts_text: '',
+      contract_price: '',
     });
     setActionError('');
     setPlanRevisionModalOpen(true);
@@ -670,7 +672,15 @@ export default function SubscriptionDetail() {
     setSaving(true);
     setActionError('');
     try {
+      const contractPrice = plan.contract_price
+        ? Number(String(plan.contract_price).replace(/[^0-9]/g, ''))
+        : undefined;
+      if (plan.contract_price && (!Number.isInteger(contractPrice) || contractPrice <= 0)) {
+        setActionError('مبلغ جدید قرارداد باید عدد صحیح و بیشتر از صفر باشد.');
+        return;
+      }
       await subscriptionsAPI.reviseInstallmentPlan(id, {
+        contract_price: contractPrice,
         installment_count: count,
         interval_months: interval,
         calculation_mode: plan.calculation_mode,
@@ -2052,6 +2062,12 @@ export default function SubscriptionDetail() {
       >
         <form id="revise-installment-plan-form" onSubmit={handleReviseInstallmentPlan} className="space-y-4">
           {actionError && <div className="bg-danger/10 border border-danger/30 rounded-field p-3"><p className="text-xs text-danger whitespace-pre-line">{actionError}</p></div>}
+          <Input
+            label="مبلغ جدید قرارداد (ریال؛ اختیاری)"
+            value={planRevisionForm.contract_price}
+            onChange={(e) => setPlanRevisionForm({ ...planRevisionForm, contract_price: e.target.value })}
+            placeholder={Number(subscription.price || 0).toLocaleString('en-US')}
+          />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <Input type="number" label="تعداد اقساط جدید" value={planRevisionForm.installment_count} onChange={(e) => setPlanRevisionForm({ ...planRevisionForm, installment_count: e.target.value })} />
             <Input type="number" label="فاصله اقساط (ماه)" value={planRevisionForm.interval_months} onChange={(e) => setPlanRevisionForm({ ...planRevisionForm, interval_months: e.target.value })} />
@@ -2078,7 +2094,7 @@ export default function SubscriptionDetail() {
             />
           )}
           <p className="text-[11px] text-text-muted leading-5">
-            در نسخه جدید فقط مانده پرداخت‌نشده اقساط قبلی زمان‌بندی می‌شود. مبالغ اقساط تسویه‌شده، مبالغ پرداخت‌شده اقساط نیمه‌تسویه و تخصیص‌های قبلی تغییر نمی‌کنند و نسخه قبلی برای تاریخچه باقی می‌ماند.
+            اگر مبلغ جدید وارد شود، مبلغ قرارداد تغییر می‌کند و برنامه بر اساس مبلغ‌های قبلاً تخصیص‌یافته دوباره محاسبه می‌شود؛ در غیر این صورت فقط مانده برنامه فعلی بازتنظیم خواهد شد. مبالغ اقساط تسویه‌شده، بخش پرداخت‌شده اقساط نیمه‌تسویه و تخصیص‌های قبلی تغییر نمی‌کنند و نسخه قبلی برای تاریخچه باقی می‌ماند.
           </p>
         </form>
       </Modal>
