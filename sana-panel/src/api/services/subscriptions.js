@@ -34,6 +34,10 @@ export const subscriptionsAPI = {
     const response = await apiClient.post(`/subscriptions/${id}/renew/`, data);
     return response.data;
   },
+  reviseInstallmentPlan: async (id, data) => {
+    const response = await apiClient.post(`/subscriptions/${id}/revise_installment_plan/`, data);
+    return response.data;
+  },
 
   operations: async (id) => {
     const response = await apiClient.get(`/subscriptions/${id}/operations/`);
