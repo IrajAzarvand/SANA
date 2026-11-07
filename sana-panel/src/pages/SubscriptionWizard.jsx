@@ -246,7 +246,7 @@ export default function SubscriptionWizard() {
         return false;
       }
       if (plan.calculation_mode === 'custom') {
-        const amounts = String(plan.custom_amounts_text || '').split(/[،,]/).map((value) => parseAmountInput(value.trim()));
+        const amounts = String(plan.custom_amounts_text || '').split(/[؛;\n]/).map((value) => parseAmountInput(value.trim()));
         if (amounts.length !== Number(plan.installment_count) || amounts.some((value) => value <= 0) || amounts.reduce((sum, value) => sum + value, 0) !== scheduled) {
           setError('مبالغ دلخواه اقساط باید به تعداد اقساط وارد شوند و مجموعشان دقیقاً برابر مبلغ قابل تقسیط باشد');
           return false;
@@ -1175,7 +1175,7 @@ function Step5({ form, updateForm }) {
               ]} />
             </div>
             {plan.calculation_mode === 'custom' ? (
-              <Input label="مبالغ اقساط به ترتیب (با ویرگول جدا کنید)" value={plan.custom_amounts_text || ''} onChange={(e) => updatePlan('custom_amounts_text', e.target.value)} placeholder="مثلاً 20,000,000، 20,000,000، 40,000,000" />
+              <Input label="مبالغ اقساط به ترتیب (با نقطه‌ویرگول جدا کنید)" value={plan.custom_amounts_text || ''} onChange={(e) => updatePlan('custom_amounts_text', e.target.value)} placeholder="مثلاً 20,000,000؛ 20,000,000؛ 40,000,000" />
             ) : (
               <div className="text-xs text-text-secondary bg-bg-base rounded-field p-3">
                 مبلغ هر یک از {count - 1} قسط اول: {equalBase.toLocaleString('fa-IR')} ریال
