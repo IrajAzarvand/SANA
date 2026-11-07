@@ -160,6 +160,15 @@ export default function SubscriptionDetail() {
   const [allocationModalOpen, setAllocationModalOpen] = useState(false);
   const [allocationPaymentId, setAllocationPaymentId] = useState(null);
   const [allocationForm, setAllocationForm] = useState({ allocation_mode: 'manual', allocations: {} });
+  const [planRevisionModalOpen, setPlanRevisionModalOpen] = useState(false);
+  const [planRevisionForm, setPlanRevisionForm] = useState({
+    installment_count: 4,
+    interval_months: 3,
+    calculation_mode: 'equal',
+    surplus_policy: 'credit',
+    first_due_date: '',
+    custom_amounts_text: '',
+  });
   const [paymentForm, setPaymentForm] = useState({
     amount: '',
     payment_date: todayGregorian(),
@@ -635,6 +644,61 @@ export default function SubscriptionDetail() {
     }
   };
 
+  const openPlanRevisionModal = () => {
+    const currentPlan = subscription.installment_plan;
+    const firstUnpaid = currentPlan?.installments?.find((item) => Number(item.remaining_amount) > 0);
+    setPlanRevisionForm({
+      installment_count: currentPlan?.installment_count || 4,
+      interval_months: currentPlan?.interval_months || 3,
+      calculation_mode: currentPlan?.calculation_mode || 'equal',
+      surplus_policy: currentPlan?.surplus_policy || 'credit',
+      first_due_date: firstUnpaid?.due_date || '',
+      custom_amounts_text: '',
+    });
+    setActionError('');
+    setPlanRevisionModalOpen(true);
+  };
+
+  const handleReviseInstallmentPlan = async (e) => {
+    e.preventDefault();
+    const plan = planRevisionForm;
+    const count = Number(plan.installment_count);
+    const interval = Number(plan.interval_months);
+    if (!Number.isInteger(count) || count < 1 || count > 120 || !Number.isInteger(interval) || interval < 1 || interval > 120) {
+      setActionError('تعداد و فاصله اقساط باید بین ۱ تا ۱۲۰ باشند.');
+      return;
+    }
+    const customAmounts = plan.calculation_mode === 'custom'
+      ? String(plan.custom_amounts_text || '').split(/[؛;\n]/).map((value) => Number(String(value).replace(/[^0-9]/g, '')))
+      : [];
+    if (plan.calculation_mode === 'custom' && (customAmounts.length !== count || customAmounts.some((value) => value <= 0))) {
+      setActionError('برای هر قسط یک مبلغ صحیح و مثبت وارد کنید و مبالغ را با نقطه‌ویرگول جدا کنید.');
+      return;
+    }
+
+    setSaving(true);
+    setActionError('');
+    try {
+      await subscriptionsAPI.reviseInstallmentPlan(id, {
+        installment_count: count,
+        interval_months: interval,
+        calculation_mode: plan.calculation_mode,
+        surplus_policy: plan.surplus_policy,
+        first_due_date: plan.first_due_date || undefined,
+        custom_amounts: customAmounts,
+      });
+      setPlanRevisionModalOpen(false);
+      refetch();
+    } catch (err) {
+      const msg = err.response?.data
+        ? Object.entries(err.response.data).map(([key, value]) => `${key}: ${Array.isArray(value) ? value[0] : value}`).join('\n')
+        : 'خطا در بازتنظیم برنامه اقساط';
+      setActionError(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const openAllocationModal = (payment) => {
     setAllocationPaymentId(payment.id);
     setAllocationForm({ allocation_mode: 'manual', allocations: {} });
@@ -1038,10 +1102,25 @@ export default function SubscriptionDetail() {
         )}
       </section>
 
-      {subscription.installment_plan && (
+      {(subscription.installment_plan || (isSiteAdmin && !isCancelled)) && (
         <section className={sectionClass}>
-          <div className="px-5 py-4 border-b border-border-base">
-            <h3 className="text-sm font-semibold text-text-primary">برنامه اقساط قرارداد</h3>
+          <div className="px-5 py-4 border-b border-border-base flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">برنامه اقساط قرارداد</h3>
+              {subscription.installment_plan && (
+                <p className="text-[11px] text-text-muted mt-1">
+                  نسخه {subscription.installment_plan.version} · هر {subscription.installment_plan.interval_months} ماه · {subscription.installment_plan.calculation_mode === 'equal' ? 'اقساط مساوی' : 'مبالغ دلخواه'}
+                </p>
+              )}
+            </div>
+            {isSiteAdmin && !isCancelled && (
+              <Button size="sm" variant="secondary" onClick={openPlanRevisionModal}>
+                {subscription.installment_plan ? 'بازتنظیم اقساط' : 'ایجاد برنامه اقساط'}
+              </Button>
+            )}
+          </div>
+          {subscription.installment_plan ? (
+            <div className="overflow-x-auto">
             <p className="text-[11px] text-text-muted mt-1">
               نسخه {subscription.installment_plan.version} · هر {subscription.installment_plan.interval_months} ماه · {subscription.installment_plan.calculation_mode === 'equal' ? 'اقساط مساوی' : 'مبالغ دلخواه'}
             </p>
@@ -1070,6 +1149,20 @@ export default function SubscriptionDetail() {
               </tbody>
             </table>
           </div>
+          {subscription.installment_plan_history?.filter((plan) => plan.status !== 'active').length > 0 && (
+            <div className="px-5 py-3 border-t border-border-base space-y-2">
+              <div className="text-[10px] font-medium text-text-muted">نسخه‌های قبلی برنامه اقساط</div>
+              {subscription.installment_plan_history.filter((plan) => plan.status !== 'active').map((plan) => (
+                <div key={plan.id} className="flex items-center justify-between text-[11px] text-text-muted">
+                  <span>نسخه {plan.version} · {plan.installment_count} قسط · {plan.interval_months} ماه فاصله</span>
+                  <span className="font-mono">{Number(plan.scheduled_amount).toLocaleString('fa-IR')} ریال</span>
+                </div>
+              ))}
+            </div>
+          )}
+          ) : (
+            <div className="px-5 py-8 text-center text-xs text-text-muted">برای این قرارداد هنوز برنامه اقساطی ثبت نشده است.</div>
+          )}
         </section>
       )}
 
@@ -1962,6 +2055,50 @@ export default function SubscriptionDetail() {
             onChange={(e) => setPaymentForm({ ...paymentForm, description: e.target.value })}
             placeholder="مثلاً پرداخت برای ۲ دستگاه"
           />
+        </form>
+      </Modal>
+
+      <Modal
+        open={planRevisionModalOpen}
+        onClose={() => setPlanRevisionModalOpen(false)}
+        title={subscription.installment_plan ? 'بازتنظیم برنامه اقساط' : 'ایجاد برنامه اقساط'}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setPlanRevisionModalOpen(false)} disabled={saving}>انصراف</Button>
+            <Button type="submit" form="revise-installment-plan-form" disabled={saving}>{saving ? 'در حال ذخیره...' : 'ثبت برنامه جدید'}</Button>
+          </>
+        }
+      >
+        <form id="revise-installment-plan-form" onSubmit={handleReviseInstallmentPlan} className="space-y-4">
+          {actionError && <div className="bg-danger/10 border border-danger/30 rounded-field p-3"><p className="text-xs text-danger whitespace-pre-line">{actionError}</p></div>}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Input type="number" label="تعداد اقساط جدید" value={planRevisionForm.installment_count} onChange={(e) => setPlanRevisionForm({ ...planRevisionForm, installment_count: e.target.value })} />
+            <Input type="number" label="فاصله اقساط (ماه)" value={planRevisionForm.interval_months} onChange={(e) => setPlanRevisionForm({ ...planRevisionForm, interval_months: e.target.value })} />
+            <Select label="روش محاسبه" value={planRevisionForm.calculation_mode} onChange={(e) => setPlanRevisionForm({ ...planRevisionForm, calculation_mode: e.target.value })} options={[
+              { value: 'equal', label: 'اقساط مساوی' },
+              { value: 'custom', label: 'مبالغ دلخواه' },
+            ]} />
+            <Select label="نحوه مدیریت مازاد دریافتی" value={planRevisionForm.surplus_policy} onChange={(e) => setPlanRevisionForm({ ...planRevisionForm, surplus_policy: e.target.value })} options={[
+              { value: 'credit', label: 'نگهداری به‌عنوان اعتبار مشتری' },
+              { value: 'future', label: 'تخصیص به اقساط آینده' },
+            ]} />
+          </div>
+          <JalaliDatePicker
+            label="سررسید اولین قسط برنامه جدید"
+            value={planRevisionForm.first_due_date}
+            onChange={(value) => setPlanRevisionForm({ ...planRevisionForm, first_due_date: value })}
+          />
+          {planRevisionForm.calculation_mode === 'custom' && (
+            <Input
+              label="مبالغ اقساط به ترتیب (با نقطه‌ویرگول جدا کنید)"
+              value={planRevisionForm.custom_amounts_text}
+              onChange={(e) => setPlanRevisionForm({ ...planRevisionForm, custom_amounts_text: e.target.value })}
+              placeholder="مثلاً 20,000,000؛ 30,000,000"
+            />
+          )}
+          <p className="text-[11px] text-text-muted leading-5">
+            در نسخه جدید فقط مانده پرداخت‌نشده اقساط قبلی زمان‌بندی می‌شود. مبالغ اقساط تسویه‌شده، مبالغ پرداخت‌شده اقساط نیمه‌تسویه و تخصیص‌های قبلی تغییر نمی‌کنند و نسخه قبلی برای تاریخچه باقی می‌ماند.
+          </p>
         </form>
       </Modal>
 
