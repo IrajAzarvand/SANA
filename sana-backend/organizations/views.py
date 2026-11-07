@@ -437,7 +437,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
 
             # دریافتی‌ای که تخصیص مالی دارد قابل ویرایش مستقیم نیست؛
             # برای اصلاح آن باید در جریان مالی جداگانه برگشت/اصلاح ثبت شود.
-            payment_fields = {'amount', 'payment_date', 'device_count', 'description'}
+            payment_fields = {'amount', 'payment_date', 'description'}
             for payment, item in payment_objects.values():
                 if payment.allocations.exists():
                     raise serializers.ValidationError({
@@ -448,8 +448,6 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                         continue
                     new_value = item[field]
                     if field == 'amount':
-                        new_value = int(new_value)
-                    elif field == 'device_count':
                         new_value = int(new_value)
                     model_field = field
                     if field == 'payment_date':
