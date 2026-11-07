@@ -49,8 +49,8 @@ def create_installment_plan(subscription, data, created_by=None):
         if len(custom_amounts) != count:
             raise ValidationError({'custom_amounts': 'تعداد مبالغ باید با تعداد اقساط برابر باشد'})
         amounts = [Decimal(str(value)) for value in custom_amounts]
-        if any(value <= 0 for value in amounts):
-            raise ValidationError({'custom_amounts': 'مبلغ هر قسط باید بیشتر از صفر باشد'})
+        if any(value <= 0 or value != value.to_integral_value() for value in amounts):
+            raise ValidationError({'custom_amounts': 'مبلغ هر قسط باید عدد صحیح و بیشتر از صفر باشد'})
         if sum(amounts) != scheduled_amount:
             raise ValidationError({'custom_amounts': 'مجموع مبالغ اقساط باید دقیقاً برابر مبلغ قابل تقسیط باشد'})
     else:
