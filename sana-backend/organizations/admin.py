@@ -35,7 +35,7 @@ class SubscriptionDeviceInline(admin.TabularInline):
 class SubscriptionPaymentInline(admin.TabularInline):
     model = SubscriptionPayment
     extra = 0
-    fields = ['amount', 'received_at', 'device_count', 'description']
+    fields = ['amount', 'received_at', 'description']
 
 
 @admin.register(Subscription)
@@ -79,7 +79,7 @@ class SubscriptionDeviceAdmin(admin.ModelAdmin):
 
 @admin.register(SubscriptionPayment)
 class SubscriptionPaymentAdmin(admin.ModelAdmin):
-    list_display = ['subscription', 'amount', 'received_at', 'device_count', 'created_at']
+    list_display = ['subscription', 'amount', 'received_at', 'created_at']
     list_filter = ['received_at']
     search_fields = ['subscription__contract_number', 'description']
     raw_id_fields = ['subscription']
