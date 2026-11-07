@@ -490,11 +490,21 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                 new_status=subscription.status,
                 notes='بازتنظیم برنامه اقساط؛ اقساط پرداخت‌شده و تخصیص‌های قبلی حفظ شدند.',
             )
+            old_price = subscription.price
             revise_installment_plan(
                 subscription,
                 request.data,
                 created_by=request.user,
             )
+            subscription.refresh_from_db()
+            if old_price != subscription.price:
+                SubscriptionOperationChange.objects.create(
+                    operation=operation,
+                    entity_type='Subscription',
+                    field_name='price',
+                    old_value=str(old_price),
+                    new_value=str(subscription.price),
+                )
         return Response(SubscriptionSerializer(subscription).data)
 
     @action(detail=True, methods=['get'])
