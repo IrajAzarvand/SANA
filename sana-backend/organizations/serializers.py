@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from decimal import Decimal, InvalidOperation
 from django.utils import timezone
 from django.db.models import Sum
 from fleet.lifecycle import record_device_lifecycle_event
@@ -751,16 +752,27 @@ class SubscriptionWizardSerializer(serializers.Serializer):
             plan_data = dict(plan_data)
             plan_data['scheduled_amount'] = scheduled_amount
             mode = plan_data.get('calculation_mode', 'equal')
-            count = int(plan_data.get('installment_count') or 0)
-            interval = int(plan_data.get('interval_months') or 0)
+            try:
+                count = int(plan_data.get('installment_count') or 0)
+                interval = int(plan_data.get('interval_months') or 0)
+            except (TypeError, ValueError):
+                raise serializers.ValidationError({'installment_plan': 'تعداد و فاصله اقساط باید عدد صحیح باشند'})
             if not 1 <= count <= 120:
                 raise serializers.ValidationError({'installment_plan': 'تعداد اقساط باید بین ۱ تا ۱۲۰ باشد'})
             if not 1 <= interval <= 120:
                 raise serializers.ValidationError({'installment_plan': 'فاصله اقساط باید بین ۱ تا ۱۲۰ ماه باشد'})
             if mode == 'custom':
                 custom = plan_data.get('custom_amounts') or []
-                if len(custom) != count or any(value <= 0 for value in custom) or sum(custom) != scheduled_amount:
-                    raise serializers.ValidationError({'installment_plan': 'مبالغ دلخواه باید مثبت باشند و مجموعشان دقیقاً برابر مانده قرارداد باشد'})
+                try:
+                    custom_values = [Decimal(str(value)) for value in custom]
+                except (InvalidOperation, TypeError, ValueError):
+                    raise serializers.ValidationError({'installment_plan': 'مبالغ دلخواه اقساط نامعتبر هستند'})
+                if (
+                    len(custom_values) != count
+                    or any(value <= 0 or value != value.to_integral_value() for value in custom_values)
+                    or sum(custom_values, Decimal('0')) != scheduled_amount
+                ):
+                    raise serializers.ValidationError({'installment_plan': 'مبالغ دلخواه باید عدد صحیح و مثبت باشند و مجموعشان دقیقاً برابر مانده قرارداد باشد'})
             elif mode != 'equal':
                 raise serializers.ValidationError({'installment_plan': 'روش محاسبه اقساط نامعتبر است'})
             if plan_data.get('surplus_policy', 'credit') not in ('credit', 'future'):
