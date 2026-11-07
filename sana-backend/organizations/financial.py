@@ -196,7 +196,7 @@ def allocate_payment(payment, mode='automatic', allocations=None, allocation_typ
 
         # Future installments are touched only when the plan explicitly allows it.
         if available > 0 and active_plan.surplus_policy == 'future':
-            for installment in installments.filter(due_date__gt=locked_payment.payment_date):
+            for installment in installments.filter(due_date__gt=locked_payment.received_at):
                 remaining = installment_remaining_amount(installment)
                 if remaining <= 0:
                     continue
