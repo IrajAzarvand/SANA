@@ -128,7 +128,6 @@ export default function SubscriptionDetail() {
   const [renewPaymentDraft, setRenewPaymentDraft] = useState({
     amount: '',
     payment_date: todayGregorian(),
-    device_count: 0,
     description: '',
   });
 
@@ -172,7 +171,6 @@ export default function SubscriptionDetail() {
   const [paymentForm, setPaymentForm] = useState({
     amount: '',
     payment_date: todayGregorian(),
-    device_count: 0,
     description: '',
     allocation_mode: 'automatic',
     allocations: {},
@@ -220,7 +218,6 @@ export default function SubscriptionDetail() {
       payment_changes: Object.fromEntries((subscription.payments || []).map((p) => [p.id, {
         amount: p.amount,
         payment_date: p.payment_date,
-        device_count: p.device_count,
         description: p.description || '',
       }])),
     });
@@ -275,7 +272,6 @@ export default function SubscriptionDetail() {
         id: Number(paymentId),
         ...payment,
         amount: Number(payment.amount),
-        device_count: Number(payment.device_count) || 0,
       }));
 
     setSaving(true);
@@ -518,7 +514,6 @@ export default function SubscriptionDetail() {
       payments: [...prev.payments, {
         ...renewPaymentDraft,
         amount: Number(renewPaymentDraft.amount),
-        device_count: Number(renewPaymentDraft.device_count) || 0,
       }],
     }));
     setRenewPaymentDraft({
@@ -627,8 +622,7 @@ export default function SubscriptionDetail() {
       setPaymentForm({
         amount: '',
         payment_date: todayGregorian(),
-        device_count: 0,
-        description: '',
+            description: '',
         allocation_mode: 'automatic',
         allocations: {},
       });
@@ -1178,8 +1172,7 @@ export default function SubscriptionDetail() {
                 setPaymentForm({
                   amount: '',
                   payment_date: todayGregorian(),
-                  device_count: 0,
-                  description: '',
+                                description: '',
                   allocation_mode: 'automatic',
                   allocations: {},
                 });
@@ -1410,7 +1403,7 @@ export default function SubscriptionDetail() {
                                   {Number(payment.amount || 0).toLocaleString('fa-IR')} ریال
                                 </div>
                                 <div className="text-[10px] text-text-muted mt-1">
-                                  {toJalali(payment.payment_date)} · {payment.device_count || 0} دستگاه
+                                  {toJalali(payment.payment_date)}
                                   {payment.description ? ` · ${payment.description}` : ''}
                                 </div>
                               </div>
@@ -1799,15 +1792,9 @@ export default function SubscriptionDetail() {
                 placeholder="مثلاً 50000000"
               />
               <JalaliDatePicker
-                label="تاریخ پرداخت"
+                label="تاریخ واقعی دریافت وجه"
                 value={renewPaymentDraft.payment_date}
                 onChange={(val) => setRenewPaymentDraft({ ...renewPaymentDraft, payment_date: val })}
-              />
-              <Input
-                type="number"
-                label="تعداد دستگاه"
-                value={renewPaymentDraft.device_count}
-                onChange={(e) => setRenewPaymentDraft({ ...renewPaymentDraft, device_count: e.target.value })}
               />
               <Input
                 label="توضیحات پرداخت"
@@ -1828,7 +1815,7 @@ export default function SubscriptionDetail() {
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-mono">{Number(payment.amount).toLocaleString('fa-IR')} ریال</div>
                       <div className="text-[10px] text-text-muted">
-                        {toJalali(payment.payment_date)} · {payment.device_count || 0} دستگاه
+                        {toJalali(payment.payment_date)}
                         {payment.description ? ` · ${payment.description}` : ''}
                       </div>
                     </div>
