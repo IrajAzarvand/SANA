@@ -98,7 +98,7 @@ export default function SubscriptionWizard() {
 
     if (step === 2) {
       if (form.customer_type === 'organization') {
-        if (!form.organization_id && !form.organization_name.trim()) {
+        if (!form.organization_name.trim()) {
           setError('نام سازمان الزامی است');
           return false;
         }
