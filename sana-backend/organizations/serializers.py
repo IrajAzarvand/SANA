@@ -257,6 +257,7 @@ class SubscriptionPaymentSerializer(serializers.ModelSerializer):
             'description', 'operation', 'allocations', 'unallocated_amount', 'created_at',
         ]
         read_only_fields = ['id', 'created_at', 'allocations', 'unallocated_amount']
+        extra_kwargs = {'amount': {'min_value': 1}}
 
     def get_unallocated_amount(self, obj):
         from django.db.models import Sum
@@ -595,7 +596,7 @@ class SubscriptionWizardDeviceSerializer(serializers.Serializer):
 
 class SubscriptionWizardPaymentSerializer(serializers.Serializer):
     """اطلاعات یک پرداخت در Wizard"""
-    amount = serializers.DecimalField(max_digits=15, decimal_places=0)
+    amount = serializers.DecimalField(max_digits=15, decimal_places=0, min_value=1)
     payment_date = serializers.DateField()
     device_count = serializers.IntegerField(default=0)
     description = serializers.CharField(required=False, allow_blank=True)
@@ -636,7 +637,7 @@ class SubscriptionWizardSerializer(serializers.Serializer):
     # اطلاعات قرارداد
     contract_number = serializers.CharField()
     price = serializers.DecimalField(
-        max_digits=15, decimal_places=0, min_value=0, required=False, default=0
+        max_digits=15, decimal_places=0, min_value=1, required=True
     )
     start_date = serializers.DateField()
     end_date = serializers.DateField()
