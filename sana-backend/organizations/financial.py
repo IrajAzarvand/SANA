@@ -150,8 +150,15 @@ def allocate_payment(payment, mode='automatic', allocations=None, allocation_typ
             installment_ids = [item.get('installment_id') for item in allocations]
             if len(installment_ids) != len(set(installment_ids)):
                 raise ValidationError({'allocations': 'یک قسط را بیش از یک بار انتخاب کرده‌اید'})
+            try:
+                ordered_allocations = sorted(
+                    allocations,
+                    key=lambda value: int(value.get('installment_id') or 0),
+                )
+            except (TypeError, ValueError):
+                raise ValidationError({'allocations': 'شناسه یکی از اقساط نامعتبر است'})
             requested_total = Decimal('0')
-            for item in sorted(allocations, key=lambda value: int(value.get('installment_id') or 0)):
+            for item in ordered_allocations:
                 installment = SubscriptionInstallment.objects.select_for_update().select_related(
                     'plan__subscription'
                 ).filter(
