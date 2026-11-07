@@ -92,8 +92,4 @@ class Migration(migrations.Migration):
                 name='org_allocation_type_installment_consistent',
             ),
         ),
-        migrations.AddConstraint(
-            model_name='subscriptionpaymentallocation',
-            constraint=models.UniqueConstraint(condition=models.Q(installment__isnull=False), fields=('payment', 'installment'), name='org_payment_installment_allocation_uniq'),
-        ),
     ]
