@@ -1121,11 +1121,6 @@ export default function SubscriptionDetail() {
           </div>
           {subscription.installment_plan ? (
             <div className="overflow-x-auto">
-            <p className="text-[11px] text-text-muted mt-1">
-              نسخه {subscription.installment_plan.version} · هر {subscription.installment_plan.interval_months} ماه · {subscription.installment_plan.calculation_mode === 'equal' ? 'اقساط مساوی' : 'مبالغ دلخواه'}
-            </p>
-          </div>
-          <div className="overflow-x-auto">
             <table className="w-full text-right">
               <thead className="bg-bg-base text-[10px] text-text-muted">
                 <tr>
