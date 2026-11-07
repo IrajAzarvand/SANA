@@ -369,7 +369,7 @@ class SubscriptionContractPriceTests(TestCase):
         SubscriptionPayment.objects.create(
             subscription=subscription,
             amount=20000000,
-            payment_date='2026-11-07',
+            received_at='2026-11-07',
         )
         SubscriptionPayment.objects.create(
             subscription=subscription,
