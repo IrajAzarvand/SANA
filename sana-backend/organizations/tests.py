@@ -374,7 +374,7 @@ class SubscriptionContractPriceTests(TestCase):
         SubscriptionPayment.objects.create(
             subscription=subscription,
             amount=30000000,
-            payment_date='2026-12-07',
+            received_at='2026-12-07',
         )
 
         subscription.refresh_from_db()
@@ -441,7 +441,7 @@ class SubscriptionInstallmentLedgerTests(TestCase):
         payment = SubscriptionPayment.objects.create(
             subscription=self.subscription,
             amount=60,
-            payment_date='2026-04-01',
+            received_at='2026-04-01',
         )
         allocate_payment(payment)
         allocations = list(
@@ -458,7 +458,7 @@ class SubscriptionInstallmentLedgerTests(TestCase):
         payment = SubscriptionPayment.objects.create(
             subscription=self.subscription,
             amount=70,
-            payment_date='2026-01-15',
+            received_at='2026-01-15',
         )
         allocate_payment(payment)
         self.assertEqual(
@@ -473,7 +473,7 @@ class SubscriptionInstallmentLedgerTests(TestCase):
         payment = SubscriptionPayment.objects.create(
             subscription=self.subscription,
             amount=70,
-            payment_date='2026-01-15',
+            received_at='2026-01-15',
         )
         allocate_payment(payment)
         self.assertEqual(
@@ -487,7 +487,7 @@ class SubscriptionInstallmentLedgerTests(TestCase):
         payment = SubscriptionPayment.objects.create(
             subscription=self.subscription,
             amount=25,
-            payment_date='2026-01-10',
+            received_at='2026-01-10',
         )
         allocate_payment(
             payment,
@@ -504,7 +504,7 @@ class SubscriptionInstallmentLedgerTests(TestCase):
         payment = SubscriptionPayment.objects.create(
             subscription=self.subscription,
             amount=20,
-            payment_date='2026-01-10',
+            received_at='2026-01-10',
         )
         with self.assertRaises(ValidationError):
             allocate_payment(
@@ -518,7 +518,7 @@ class SubscriptionInstallmentLedgerTests(TestCase):
         payment = SubscriptionPayment.objects.create(
             subscription=self.subscription,
             amount=130,
-            payment_date='2026-04-01',
+            received_at='2026-04-01',
         )
         allocate_payment(payment)
         allocated = payment.allocations.aggregate(
@@ -531,7 +531,7 @@ class SubscriptionInstallmentLedgerTests(TestCase):
         payment = SubscriptionPayment.objects.create(
             subscription=self.subscription,
             amount=20,
-            payment_date='2026-01-31',
+            received_at='2026-01-31',
         )
         allocate_payment(payment, allocation_type='contract_advance')
         allocation = payment.allocations.get()
