@@ -238,9 +238,8 @@ def allocate_payment(payment, mode='automatic', allocations=None, allocation_typ
 
 
 def revise_installment_plan(subscription, data, created_by=None):
-    """Create a new version containing only the unpaid remainder of the current plan."""
+    """Create a new schedule version containing only the unpaid/revised contract balance."""
     from django.db.models import Sum
-    from .models import SubscriptionPayment
 
     with transaction.atomic():
         locked_subscription = subscription.__class__.objects.select_for_update().get(pk=subscription.pk)
@@ -249,7 +248,27 @@ def revise_installment_plan(subscription, data, created_by=None):
             status='active',
         ).first()
 
-        if current_plan:
+        applied_total = SubscriptionPaymentAllocation.objects.filter(
+            payment__subscription=locked_subscription,
+        ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+        requested_price = data.get('contract_price')
+        price_changed = requested_price not in (None, '')
+        if price_changed:
+            try:
+                new_price = Decimal(str(requested_price))
+            except (TypeError, ValueError, ArithmeticError):
+                raise ValidationError({'contract_price': 'مبلغ جدید قرارداد نامعتبر است'})
+            if new_price <= 0 or new_price != new_price.to_integral_value():
+                raise ValidationError({'contract_price': 'مبلغ قرارداد باید عدد صحیح و بیشتر از صفر باشد'})
+            if new_price < applied_total:
+                raise ValidationError({
+                    'contract_price': 'مبلغ قرارداد نمی‌تواند از مبالغی که قبلاً به قرارداد یا اقساط تخصیص یافته کمتر باشد'
+                })
+            locked_subscription.price = new_price
+            locked_subscription.save(update_fields=['price'])
+            outstanding = new_price - applied_total
+        elif current_plan:
             outstanding = Decimal('0')
             unpaid_installments = []
             for installment in current_plan.installments.filter(status='active').order_by('due_date', 'number'):
@@ -259,14 +278,24 @@ def revise_installment_plan(subscription, data, created_by=None):
                     unpaid_installments.append(installment)
             default_first_due = unpaid_installments[0].due_date if unpaid_installments else None
         else:
-            advances = SubscriptionPaymentAllocation.objects.filter(
-                payment__subscription=locked_subscription,
-                allocation_type='contract_advance',
-            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
-            outstanding = max(Decimal(locked_subscription.price) - advances, Decimal('0'))
+            outstanding = max(Decimal(locked_subscription.price) - applied_total, Decimal('0'))
+            default_first_due = None
+
+        if price_changed and current_plan:
+            unpaid_installments = [
+                item for item in current_plan.installments.filter(status='active').order_by('due_date', 'number')
+                if installment_remaining_amount(item) > 0
+            ]
+            default_first_due = unpaid_installments[0].due_date if unpaid_installments else None
+        elif price_changed:
             default_first_due = None
 
         if outstanding <= 0:
+            if price_changed and current_plan:
+                current_plan.status = 'superseded'
+                current_plan.save(update_fields=['status'])
+                current_plan.installments.filter(status='active').update(status='superseded')
+                return None
             raise ValidationError({'installment_plan': 'مانده قابل تقسیطی برای ایجاد برنامه جدید وجود ندارد'})
 
         first_due_date = data.get('first_due_date') or default_first_due
