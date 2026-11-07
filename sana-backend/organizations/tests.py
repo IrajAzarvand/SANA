@@ -9,8 +9,10 @@ from organizations.models import (
 )
 from organizations.financial import create_installment_plan, allocate_payment, revise_installment_plan
 from rest_framework.exceptions import ValidationError
+from django.utils import timezone
+from datetime import timedelta
 from django.db.models import Sum
-from .serializers import SubscriptionWizardSerializer
+from .serializers import SubscriptionWizardSerializer, SubscriptionPaymentSerializer
 
 
 class SubscriptionWizardExistingUserTests(TestCase):
@@ -548,6 +550,28 @@ class SubscriptionInstallmentLedgerTests(TestCase):
         )['total']
         self.assertEqual(allocated, 100)
         self.assertEqual(payment.amount - allocated, 30)
+
+    def test_payment_api_payment_date_alias_maps_to_received_at(self):
+        today = timezone.localdate()
+        serializer = SubscriptionPaymentSerializer(data={
+            'subscription': self.subscription.id,
+            'amount': 10,
+            'payment_date': today.isoformat(),
+            'description': 'تست تاریخ دریافت',
+        })
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        payment = serializer.save()
+        self.assertEqual(payment.received_at, today)
+
+    def test_payment_api_rejects_future_receipt_date(self):
+        future_date = timezone.localdate() + timedelta(days=1)
+        serializer = SubscriptionPaymentSerializer(data={
+            'subscription': self.subscription.id,
+            'amount': 10,
+            'payment_date': future_date.isoformat(),
+        })
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('payment_date', serializer.errors)
 
     def test_contract_advance_is_not_mistaken_for_installment_or_credit(self):
         payment = SubscriptionPayment.objects.create(
