@@ -260,6 +260,11 @@ class SubscriptionPaymentSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'allocations', 'unallocated_amount']
         extra_kwargs = {'amount': {'min_value': 1}}
 
+    def validate_payment_date(self, value):
+        if value > timezone.localdate():
+            raise serializers.ValidationError('تاریخ دریافت وجه نمی‌تواند در آینده باشد')
+        return value
+
     def get_unallocated_amount(self, obj):
         from django.db.models import Sum
         from decimal import Decimal
@@ -596,11 +601,16 @@ class SubscriptionWizardDeviceSerializer(serializers.Serializer):
 
 
 class SubscriptionWizardPaymentSerializer(serializers.Serializer):
-    """اطلاعات یک پرداخت در Wizard"""
+    """دریافتی واقعی هنگام عقد قرارداد"""
     amount = serializers.DecimalField(max_digits=15, decimal_places=0, min_value=1)
     payment_date = serializers.DateField()
     device_count = serializers.IntegerField(default=0)
     description = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_payment_date(self, value):
+        if value > timezone.localdate():
+            raise serializers.ValidationError('تاریخ دریافت وجه نمی‌تواند در آینده باشد')
+        return value
 
 
 class SubscriptionWizardSerializer(serializers.Serializer):
