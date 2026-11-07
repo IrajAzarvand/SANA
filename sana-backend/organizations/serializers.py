@@ -303,7 +303,7 @@ class SubscriptionInstallmentPlanSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'version', 'scheduled_amount', 'installment_count',
             'interval_months', 'calculation_mode', 'surplus_policy',
-            'status', 'created_at', 'installments',
+            'status', 'created_at', 'created_by', 'installments',
         ]
         read_only_fields = fields
 
