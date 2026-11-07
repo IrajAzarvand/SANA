@@ -582,10 +582,15 @@ class SubscriptionListSerializer(serializers.ModelSerializer):
         )
 
     def get_future_due_balance(self, obj):
+        from django.db.models import Sum
         plan = obj.installment_plans.filter(status='active').first()
         if not plan:
             return 0
-        return self.get_future_payment_amount(obj)
+        total = 0
+        for item in plan.installments.filter(status='active', due_date__gte=timezone.localdate()):
+            allocated = item.allocations.aggregate(value=Sum('amount'))['value'] or 0
+            total += max(item.amount - allocated, 0)
+        return total
 
     def get_unallocated_credit(self, obj):
         from django.db.models import Sum
