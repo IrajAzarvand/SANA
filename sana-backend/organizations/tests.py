@@ -489,7 +489,7 @@ class SubscriptionInstallmentLedgerTests(TestCase):
         )
         allocate_payment(payment)
         allocated = payment.allocations.aggregate(
-            total=__import__('django').db.models.Sum('amount')
+            total=Sum('amount')
         )['total']
         self.assertEqual(allocated, 100)
         self.assertEqual(payment.amount - allocated, 30)
