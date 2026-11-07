@@ -1058,7 +1058,6 @@ function Step5({ form, updateForm }) {
   const [payment, setPayment] = useState({
     amount: '',
     payment_date: todayGregorian(),
-    device_count: 0,
     description: 'پیش‌پرداخت زمان عقد قرارداد',
   });
   const plan = form.installment_plan || {
@@ -1072,12 +1071,10 @@ function Step5({ form, updateForm }) {
     updateForm('payments', [...form.payments, {
       ...payment,
       amount: parseAmountInput(payment.amount),
-      device_count: 0,
     }]);
     setPayment({
       amount: '',
       payment_date: new Date().toISOString().split('T')[0],
-      device_count: 0,
       description: '',
     });
   };
