@@ -17,7 +17,7 @@ import { devicesAPI } from '../api/services/fleet';
 import { subscriptionsAPI } from '../api/services/subscriptions';
 import { organizationsAPI } from '../api/services/organizations';
 import JalaliDatePicker from '../components/JalaliDatePicker';
-import { toJalali } from '../utils/dateUtils';
+import { toJalali, todayGregorian } from '../utils/dateUtils';
 import UserComboBox from '../components/UserComboBox';
 
 
@@ -1057,7 +1057,7 @@ function parseAmountInput(value) {
 function Step5({ form, updateForm }) {
   const [payment, setPayment] = useState({
     amount: '',
-    payment_date: new Date().toISOString().split('T')[0],
+    payment_date: todayGregorian(),
     device_count: 0,
     description: 'پیش‌پرداخت زمان عقد قرارداد',
   });
