@@ -36,11 +36,18 @@ export default function UserComboBox({
     setSearch(value);
   }, [value]);
 
-  // گرفتن همه‌ی کاربران (یه بار)
+  // با تغییر نوع حساب، فهرست قبلی نباید برای نوع جدید استفاده شود.
   useEffect(() => {
-    if (!open) return;
-    if (allUsers.length > 0) return;
+    setAllUsers([]);
+    setOpen(false);
+  }, [accountType]);
 
+  // دریافت کاربران متناسب با نوع حساب؛ پاسخ درخواست قدیمی نادیده گرفته می‌شود.
+  useEffect(() => {
+    if (!open) return undefined;
+    if (allUsers.length > 0) return undefined;
+
+    let cancelled = false;
     const fetchUsers = async () => {
       setLoading(true);
       try {
@@ -48,16 +55,17 @@ export default function UserComboBox({
           account_type: accountType,
         });
         const list = Array.isArray(result) ? result : result.results || [];
-        setAllUsers(list);
+        if (!cancelled) setAllUsers(list);
       } catch (e) {
         console.error('Error fetching users:', e);
-        setAllUsers([]);
+        if (!cancelled) setAllUsers([]);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     fetchUsers();
+    return () => { cancelled = true; };
   }, [open, accountType, allUsers.length]);
 
   // Check uniqueness globally, independently from the account-type-filtered suggestions.
