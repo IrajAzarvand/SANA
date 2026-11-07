@@ -379,7 +379,7 @@ class SubscriptionPayment(models.Model):
         max_digits=15, decimal_places=0,
         verbose_name='مبلغ (ریال)'
     )
-    payment_date = models.DateField(verbose_name='تاریخ پرداخت')
+    received_at = models.DateField(verbose_name='تاریخ واقعی دریافت وجه')
 
     device_count = models.IntegerField(
         default=0, verbose_name='تعداد دستگاه این پرداخت'
@@ -394,7 +394,7 @@ class SubscriptionPayment(models.Model):
     class Meta:
         verbose_name = 'پرداخت'
         verbose_name_plural = 'پرداخت‌ها'
-        ordering = ['-payment_date']
+        ordering = ['-received_at']
 
     def __str__(self):
         return f'{self.subscription.contract_number} — {self.amount}'
