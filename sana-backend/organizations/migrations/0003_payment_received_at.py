@@ -17,4 +17,12 @@ class Migration(migrations.Migration):
             name='received_at',
             field=models.DateField(verbose_name='تاریخ واقعی دریافت وجه'),
         ),
+        migrations.AlterModelOptions(
+            name='subscriptionpayment',
+            options={
+                'verbose_name': 'پرداخت',
+                'verbose_name_plural': 'پرداخت‌ها',
+                'ordering': ['-received_at'],
+            },
+        ),
     ]
