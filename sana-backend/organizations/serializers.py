@@ -498,6 +498,8 @@ class SubscriptionWizardSerializer(serializers.Serializer):
     customer_type = serializers.ChoiceField(choices=['organization', 'personal'])
     # انتخاب کاربر موجود (اختیاری)
     existing_user_id = serializers.IntegerField(required=False, allow_null=True)
+    # انتخاب سازمان موجود مستقل از انتخاب مدیر شرکت است.
+    organization_id = serializers.IntegerField(required=False, allow_null=True)
 
 
     # اطلاعات مشتری (اگه سازمانی)
@@ -548,61 +550,81 @@ class SubscriptionWizardSerializer(serializers.Serializer):
         return value
 
     def validate(self, data):
-        existing_user_id = data.get('existing_user_id')
+        from accounts.models import User
 
-        # اگه کاربر موجود انتخاب شده، اطلاعات User جدید اجباری نیست
+        customer_type = data['customer_type']
+        existing_user_id = data.get('existing_user_id')
+        organization_id = data.get('organization_id')
+        selected_user = None
+        selected_organization = None
+
+        if customer_type == 'organization':
+            if organization_id:
+                try:
+                    selected_organization = Organization.objects.get(id=organization_id)
+                except Organization.DoesNotExist:
+                    raise serializers.ValidationError({
+                        'organization_id': 'سازمان انتخاب‌شده یافت نشد'
+                    })
+            elif not data.get('organization_name', '').strip():
+                raise serializers.ValidationError({
+                    'organization_name': 'برای ساخت سازمان جدید، نام سازمان الزامی است'
+                })
+        elif organization_id:
+            raise serializers.ValidationError({
+                'organization_id': 'برای مشتری شخصی نباید سازمان انتخاب شود'
+            })
+
         if existing_user_id:
-            from accounts.models import User
             try:
-                user = User.objects.get(id=existing_user_id)
-                # customer_type باید با account_type کاربر مطابقت داشته باشه.
-                if user.account_type != data['customer_type']:
-                    raise serializers.ValidationError({
-                        'existing_user_id': 'نوع حساب کاربر با نوع مشتری انتخاب‌شده مطابقت ندارد'
-                    })
-                # شناسه و نام کاربری باید به یک حساب واحد اشاره کنند.
-                if user.username != data.get('username'):
-                    raise serializers.ValidationError({
-                        'username': 'نام کاربری با حساب انتخاب‌شده مطابقت ندارد'
-                    })
+                selected_user = User.objects.select_related('organization').get(id=existing_user_id)
             except User.DoesNotExist:
                 raise serializers.ValidationError({
                     'existing_user_id': 'کاربر انتخاب‌شده یافت نشد'
                 })
+
+            if selected_user.account_type != customer_type:
+                raise serializers.ValidationError({
+                    'existing_user_id': 'نوع حساب کاربر با نوع مشتری انتخاب‌شده مطابقت ندارد'
+                })
+            if selected_user.username != data.get('username'):
+                raise serializers.ValidationError({
+                    'username': 'نام کاربری با حساب انتخاب‌شده مطابقت ندارد'
+                })
+
+            if customer_type == 'organization':
+                if selected_organization:
+                    if selected_user.organization_id and selected_user.organization_id != selected_organization.id:
+                        raise serializers.ValidationError({
+                            'existing_user_id': 'مدیر انتخاب‌شده عضو سازمان دیگری است؛ برای جلوگیری از جابه‌جایی ناخواسته، مدیر دیگری انتخاب کنید'
+                        })
+                elif selected_user.organization_id:
+                    raise serializers.ValidationError({
+                        'organization_id': 'مدیر انتخاب‌شده به یک سازمان موجود متصل است؛ همان سازمان را انتخاب کنید'
+                    })
         else:
-            # برای ساخت حساب جدید، رمز عبور الزامی است.
             if not data.get('password'):
                 raise serializers.ValidationError({
                     'password': 'برای ساخت حساب جدید، رمز عبور الزامی است'
                 })
-            # چک: اگه سازمانی، اطلاعات سازمانی لازمه
-            if data['customer_type'] == 'organization':
-                if not data.get('organization_name'):
-                    raise serializers.ValidationError({
-                        'organization_name': 'نام سازمان الزامی است'
-                    })
 
-        # چک تاریخ
         if data['start_date'] > data['end_date']:
             raise serializers.ValidationError({
                 'end_date': 'تاریخ پایان باید بعد از تاریخ شروع باشد'
             })
 
-        # چک طول کد ملی
         national_id = data.get('national_id', '')
         if national_id and len(national_id) > 20:
             raise serializers.ValidationError({
                 'national_id': 'کد ملی نباید بیشتر از ۲۰ کاراکتر باشد'
             })
 
-        # چک طول موبایل
         mobile = data.get('mobile', '')
         if mobile and len(mobile) > 20:
             raise serializers.ValidationError({
                 'mobile': 'موبایل نباید بیشتر از ۲۰ کاراکتر باشد'
             })
 
-        # چک دستگاه‌ها
         for i, device_data in enumerate(data.get('devices', [])):
             if device_data['start_date'] > device_data['end_date']:
                 raise serializers.ValidationError({
@@ -629,31 +651,43 @@ class SubscriptionWizardSerializer(serializers.Serializer):
         # ═════════════
 
         with transaction.atomic():
-            # ─── ۱. ساخت Organization (اگه سازمانی) ───
+            # ─── ۱. انتخاب یا ساخت Organization ───
             organization = None
+            organization_id = validated_data.pop('organization_id', None)
             if customer_type == 'organization':
-                # تولید خودکار کد سازمان اگه داده نشده
-                org_code = validated_data.get('organization_code', '').strip()
-                if not org_code:
-                    # تولید از username: ORG-{username.upper()}
-                    org_code = f"ORG-{validated_data['username'].upper()}"
-                    # چک کن تکراری نباشه
-                    base_code = org_code
-                    counter = 1
-                    while Organization.objects.filter(code=org_code).exists():
-                        counter += 1
-                        org_code = f"{base_code}-{counter}"
+                if organization_id:
+                    organization = Organization.objects.select_for_update().get(id=organization_id)
+                    organization_fields = {
+                        'name': validated_data.get('organization_name', organization.name),
+                        'registration_number': validated_data.get('registration_number', organization.registration_number),
+                        'economy_code': validated_data.get('economy_code', organization.economy_code),
+                        'phone': validated_data.get('organization_phone', organization.phone),
+                        'email': validated_data.get('organization_email', organization.email),
+                        'address': validated_data.get('organization_address', organization.address),
+                    }
+                    for field, value in organization_fields.items():
+                        setattr(organization, field, value)
+                    organization.save(update_fields=list(organization_fields.keys()) + ['updated_at'])
+                else:
+                    org_code = validated_data.get('organization_code', '').strip()
+                    if not org_code:
+                        org_code = f"ORG-{validated_data['username'].upper()}"
+                        base_code = org_code
+                        counter = 1
+                        while Organization.objects.filter(code=org_code).exists():
+                            counter += 1
+                            org_code = f"{base_code}-{counter}"
 
-                organization = Organization.objects.create(
-                    name=validated_data['organization_name'],
-                    code=org_code,
-                    registration_number=validated_data.get('registration_number', ''),
-                    economy_code=validated_data.get('economy_code', ''),
-                    phone=validated_data.get('organization_phone', ''),
-                    email=validated_data.get('organization_email', ''),
-                    address=validated_data.get('organization_address', ''),
-                    status='active',
-                )
+                    organization = Organization.objects.create(
+                        name=validated_data['organization_name'],
+                        code=org_code,
+                        registration_number=validated_data.get('registration_number', ''),
+                        economy_code=validated_data.get('economy_code', ''),
+                        phone=validated_data.get('organization_phone', ''),
+                        email=validated_data.get('organization_email', ''),
+                        address=validated_data.get('organization_address', ''),
+                        status='active',
+                    )
 
             # ─── ۲. ساخت User ───
             existing_user_id = validated_data.pop('existing_user_id', None)
@@ -675,10 +709,16 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                 if changed_fields:
                     user.save(update_fields=changed_fields)
 
-                # اگه organization جدید ساخته شده (نوع سازمانی)، به User وصلش کن
-                if organization and not user.organization_id:
-                    user.organization = organization
-                    user.save(update_fields=['organization'])
+                # مدیر موجود فقط در صورت نداشتن سازمان به سازمان انتخاب‌شده وصل می‌شود.
+                # انتقال از یک سازمان به سازمان دیگر عمداً مجاز نیست.
+                if organization:
+                    if user.organization_id and user.organization_id != organization.id:
+                        raise serializers.ValidationError({
+                            'existing_user_id': 'مدیر انتخاب‌شده عضو سازمان دیگری است'
+                        })
+                    if not user.organization_id:
+                        user.organization = organization
+                        user.save(update_fields=['organization'])
             else:
                 # کاربر جدید بساز
                 user = User.objects.create_user(
