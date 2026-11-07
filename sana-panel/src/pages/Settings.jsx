@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Plus, Pencil, Trash2, Camera, Mail, Phone,
   Shield, Smartphone, Building2, MapPin, Globe,
-  UserX, Globe as GlobeIcon, Database, Server,
+  UserX, Globe as GlobeIcon, Database, Server, Copy,
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
@@ -828,7 +828,7 @@ function TraccarPortManager() {
   };
 
   const copyLogs = async () => {
-    const content = logs.join('\\n');
+    const content = logs.join('\n');
     if (!content) return;
     try {
       await navigator.clipboard.writeText(content);
@@ -967,7 +967,7 @@ function TraccarPortManager() {
           <div className="flex items-center justify-between border-b border-white/10 px-4 py-2">
             <div className="flex items-center gap-3">
               <span className="text-xs font-medium text-slate-200">گزارش اجرای عملیات</span>
-              <Button variant="secondary" disabled={!logs.length} onClick={copyLogs}>کپی کل لاگ</Button>
+              <button type="button" title="کپی تمام لاگ‌ها" aria-label="کپی تمام لاگ‌ها" disabled={!logs.length} onClick={copyLogs} className="inline-flex h-8 w-8 items-center justify-center rounded-field border border-white/15 text-slate-300 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"><Copy size={15} aria-hidden="true" /></button>
             </div>
             <div className="flex items-center gap-3 text-[10px] text-slate-400">
               {captureRunning && <span dir="ltr" className="font-mono">{formatCaptureTime(captureRemainingSeconds)}</span>}
