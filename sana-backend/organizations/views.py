@@ -451,22 +451,24 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                         new_value = int(new_value)
                     elif field == 'device_count':
                         new_value = int(new_value)
-                    elif field == 'payment_date':
+                    model_field = field
+                    if field == 'payment_date':
                         try:
                             new_value = date.fromisoformat(new_value)
                         except (TypeError, ValueError):
-                            raise serializers.ValidationError({'payment_changes': 'فرمت تاریخ پرداخت نامعتبر است'})
-                    old_value = getattr(payment, field)
+                            raise serializers.ValidationError({'payment_changes': 'فرمت تاریخ دریافت وجه نامعتبر است'})
+                        model_field = 'received_at'
+                    old_value = getattr(payment, model_field)
                     if str(old_value) == str(new_value):
                         continue
                     SubscriptionOperationChange.objects.create(
                         operation=operation,
                         entity_type='SubscriptionPayment',
-                        field_name=field,
+                        field_name=model_field,
                         old_value='' if old_value is None else str(old_value),
                         new_value='' if new_value is None else str(new_value),
                     )
-                    setattr(payment, field, new_value)
+                    setattr(payment, model_field, new_value)
                 payment.save()
 
         return Response(SubscriptionSerializer(subscription).data)
