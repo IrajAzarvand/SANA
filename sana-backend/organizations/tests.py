@@ -596,6 +596,70 @@ class SubscriptionInstallmentLedgerTests(TestCase):
         self.assertEqual(new_plan.installments.count(), 4)
 
 
+    def test_contract_price_change_rebalances_only_the_unpaid_schedule(self):
+        old_plan = self._plan(installment_count=2)
+        first, _ = list(old_plan.installments.order_by('number'))
+        receipt = SubscriptionPayment.objects.create(
+            subscription=self.subscription,
+            amount=50,
+            received_at=first.due_date,
+        )
+        allocate_payment(
+            receipt,
+            mode='manual',
+            allocations=[{'installment_id': first.id, 'amount': 50}],
+        )
+
+        new_plan = revise_installment_plan(
+            self.subscription,
+            {
+                'contract_price': 120,
+                'installment_count': 2,
+                'interval_months': 2,
+                'calculation_mode': 'equal',
+                'surplus_policy': 'credit',
+            },
+        )
+        self.subscription.refresh_from_db()
+        old_plan.refresh_from_db()
+        first.refresh_from_db()
+        self.assertEqual(self.subscription.price, 120)
+        self.assertEqual(old_plan.status, 'superseded')
+        self.assertEqual(first.amount, 50)
+        self.assertEqual(first.allocations.get().amount, 50)
+        self.assertEqual(new_plan.scheduled_amount, 70)
+        self.assertEqual(
+            list(new_plan.installments.order_by('number').values_list('amount', flat=True)),
+            [35, 35],
+        )
+
+    def test_contract_price_cannot_be_reduced_below_already_allocated_amount(self):
+        plan = self._plan(installment_count=2)
+        first = plan.installments.get(number=1)
+        receipt = SubscriptionPayment.objects.create(
+            subscription=self.subscription,
+            amount=50,
+            received_at=first.due_date,
+        )
+        allocate_payment(
+            receipt,
+            mode='manual',
+            allocations=[{'installment_id': first.id, 'amount': 50}],
+        )
+        with self.assertRaises(ValidationError):
+            revise_installment_plan(
+                self.subscription,
+                {
+                    'contract_price': 40,
+                    'installment_count': 2,
+                    'interval_months': 2,
+                    'calculation_mode': 'equal',
+                    'surplus_policy': 'credit',
+                },
+            )
+        self.subscription.refresh_from_db()
+        self.assertEqual(self.subscription.price, 100)
+
     def test_schedule_revision_preserves_paid_and_partially_paid_installments(self):
         old_plan = self._plan(installment_count=2)
         first, second = list(old_plan.installments.order_by('number'))
