@@ -633,10 +633,48 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                 'mobile': 'موبایل نباید بیشتر از ۲۰ کاراکتر باشد'
             })
 
-        for i, device_data in enumerate(data.get('devices', [])):
+        from fleet.models import Device
+
+        devices_data = data.get('devices', [])
+        if not devices_data:
+            raise serializers.ValidationError({
+                'devices': 'برای ثبت قرارداد، انتخاب حداقل یک دستگاه الزامی است'
+            })
+
+        device_ids = [item['device_id'] for item in devices_data]
+        if len(device_ids) != len(set(device_ids)):
+            raise serializers.ValidationError({
+                'devices': 'یک دستگاه را بیش از یک بار انتخاب کرده‌اید'
+            })
+
+        devices_by_id = Device.objects.in_bulk(device_ids)
+        for i, device_data in enumerate(devices_data):
+            device_id = device_data['device_id']
+            device = devices_by_id.get(device_id)
+            if not device:
+                raise serializers.ValidationError({
+                    'devices': f'دستگاه با شناسه {device_id} یافت نشد'
+                })
+
             if device_data['start_date'] > device_data['end_date']:
                 raise serializers.ValidationError({
                     'devices': f'دستگاه {i+1}: تاریخ پایان باید بعد از تاریخ شروع باشد'
+                })
+            if (
+                device_data['start_date'] < data['start_date']
+                or device_data['end_date'] > data['end_date']
+            ):
+                raise serializers.ValidationError({
+                    'devices': f'بازه زمانی دستگاه {device.imei} باید داخل بازه قرارداد باشد'
+                })
+
+            if device.management_status != 'warehouse':
+                raise serializers.ValidationError({
+                    'devices': f'دستگاه {device.imei} در وضعیت انبار نیست و قابل تخصیص به قرارداد جدید نیست'
+                })
+            if device.subscription_links.filter(unassigned_at__isnull=True).exists():
+                raise serializers.ValidationError({
+                    'devices': f'دستگاه {device.imei} قبلاً به یک قرارداد فعال متصل شده است'
                 })
 
         return data
@@ -659,6 +697,31 @@ class SubscriptionWizardSerializer(serializers.Serializer):
         # ═════════════
 
         with transaction.atomic():
+            # قفل‌کردن دستگاه‌ها و بررسی دوباره وضعیت انبار داخل تراکنش؛
+            # این بررسی جلوی تخصیص هم‌زمان یک دستگاه در دو Wizard را می‌گیرد.
+            device_ids = [item['device_id'] for item in devices_data]
+            locked_devices = {
+                device.pk: device
+                for device in Device.objects.select_for_update()
+                .filter(pk__in=device_ids)
+                .order_by('pk')
+            }
+            if len(locked_devices) != len(set(device_ids)):
+                raise serializers.ValidationError({
+                    'devices': 'یک یا چند دستگاه انتخاب‌شده دیگر در سامانه وجود ندارند'
+                })
+
+            for device_id in device_ids:
+                device = locked_devices[device_id]
+                if device.management_status != 'warehouse':
+                    raise serializers.ValidationError({
+                        'devices': f'دستگاه {device.imei} دیگر در انبار موجود نیست'
+                    })
+                if device.subscription_links.filter(unassigned_at__isnull=True).exists():
+                    raise serializers.ValidationError({
+                        'devices': f'دستگاه {device.imei} در این فاصله به قرارداد دیگری متصل شده است'
+                    })
+
             # ─── ۱. انتخاب یا ساخت Organization ───
             organization = None
             organization_id = validated_data.pop('organization_id', None)
@@ -770,21 +833,7 @@ class SubscriptionWizardSerializer(serializers.Serializer):
 
             # ─── ۴. اضافه کردن دستگاه‌ها ───
             for device_data in devices_data:
-                try:
-                    device = Device.objects.get(id=device_data['device_id'])
-                except Device.DoesNotExist:
-                    raise serializers.ValidationError({
-                        'devices': f'دستگاه با ID {device_data["device_id"]} یافت نشد'
-                    })
-
-                # چک: دستگاه نباید توی قرارداد فعال دیگه باشه
-                active_link = device.subscription_links.filter(
-                    unassigned_at__isnull=True
-                ).first()
-                if active_link:
-                    raise serializers.ValidationError({
-                        'devices': f'دستگاه {device.imei} در قرارداد فعال دیگری است'
-                    })
+                device = locked_devices[device_data['device_id']]
 
                 SubscriptionDevice.objects.create(
                     subscription=subscription,
