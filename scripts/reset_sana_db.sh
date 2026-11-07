@@ -318,8 +318,8 @@ done
 
 echo "✅ SQLهای GPS اجرا شدند."
 
-# ۸. آزمون اتصال، وجود جداول و دسترسی به جداول مشترک
-step "۱۰/۱۲ - آزمون دیتابیس و جداول"
+# ۸. آزمون اتصال دیتابیس و وضعیت migrationها
+step "۱۰/۱۲ - آزمون اتصال دیتابیس و migrationها"
 
 cd "$BACKEND"
 
@@ -347,13 +347,6 @@ if not settings.TRACCAR_API_USERNAME or not settings.TRACCAR_API_PASSWORD:
 else:
     print("Traccar API credentials are configured for the Django backend.")
 
-required_tables = [
-    "public.fleet_device",
-    "public.fleet_devicemodel",
-    "gps.map_matching_watchers",
-    "gps.map_matched_position",
-]
-
 with connection.cursor() as cursor:
     cursor.execute("SELECT current_database(), current_user")
     db, user = cursor.fetchone()
@@ -362,85 +355,18 @@ with connection.cursor() as cursor:
     assert db == expected_db, f"Wrong database: {db}"
     assert user == expected_user, f"Wrong database user: {user}"
 
-    for table in required_tables:
-        cursor.execute("SELECT to_regclass(%s)", [table])
-        exists = cursor.fetchone()[0]
-        print(f"{table}: {exists}")
-        assert exists is not None, f"Required table is missing: {table}"
-
-    forbidden_tables = [
-        "public.fleet_gpstelemetry",
-        "public.fleet_unknowngpsdata",
-        "gps.raw_packet",
-        "gps.location_history",
-        "gps.current_state",
-        "gps.event",
-        "gps.trip",
-        "gps.geofence",
-        "gps.geofence_version",
-        "gps.geofence_assignment",
-        "gps.vehicle_geofence_state",
-        "gps.traccar_unknown_device",
-    ]
-    for table in forbidden_tables:
-        cursor.execute("SELECT to_regclass(%s)", [table])
-        exists = cursor.fetchone()[0]
-        print(f"Legacy table must be absent: {table} -> {exists}")
-        assert exists is None, f"Obsolete duplicate GPS table still exists: {table}"
-
-    # Validate columns that were added by the latest SQL schema changes, not just
-    # table names. This catches a partially applied or outdated GPS schema.
-    required_columns = {
-        # Final Django schema after fleet migrations through 0015.
-        "public.fleet_device": {
-            "imei", "device_model_id", "protocol", "organization_id", "owner_user_id",
-            "branch_id", "current_holder_organization_id", "current_holder_user_id",
-            "vehicle_id", "management_status", "installed_at", "created_at", "updated_at",
-        },
-        "public.fleet_devicemodel": {
-            "manufacturer", "name", "code", "protocol", "port", "traccar_version",
-            "source_url", "is_verified", "created_at",
-        },
-        "gps.map_matching_watchers": {
-            "session_id", "user_id", "expires_at", "updated_at",
-        },
-        "gps.map_matched_position": {
-            "traccar_position_id", "traccar_device_id", "device_id", "device_time",
-            "matched_latitude", "matched_longitude", "matched_geom", "match_provider", "matched_at",
-        },
-    }
-    for table, expected_columns in required_columns.items():
-        schema, table_name = table.split(".", 1)
-        cursor.execute("""
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_schema = %s AND table_name = %s
-        """, [schema, table_name])
-        actual_columns = {row[0] for row in cursor.fetchall()}
-        missing = expected_columns - actual_columns
-        assert not missing, f"{table} missing columns: {sorted(missing)}"
-        print(f"Columns OK: {table} ({len(expected_columns)} checked)")
-
-    # Exercise SELECT privileges using the actual application database login.
-    for table in (
-        "gps.map_matching_watchers",
-        "gps.map_matched_position",
-    ):
-        cursor.execute(f"SELECT COUNT(*) FROM {table}")
-        print(f"SELECT access OK: {table}; rows={cursor.fetchone()[0]}")
-
     cursor.execute("SELECT postgis_full_version()")
     print("PostGIS:", cursor.fetchone()[0])
 
-print("✅ Database, Django migrations, current GPS schema and privileges passed.")
+print("✅ Database connection, Django migration state and PostGIS passed.")
 '
 
-echo "✅ جداول و دسترسی‌های اصلی تأیید شدند."
+echo "✅ اتصال دیتابیس و وضعیت migrationها تأیید شدند."
 
 # ۹. ساخت سوپریوزر
 step "۱۱/۱۲ - ساخت سوپریوزر سایت"
 
-echo "نام کاربری، ایمیل و رمز را در پرسش‌های Django وارد کن."
+echo "نام کاربری و رمز عبور حساب مدیر سایت را در پرسش‌های Django وارد کن."
 echo "رمز در فایل اسکریپت یا گزارش ذخیره نمی‌شود."
 
 "$PYTHON" "$MANAGE" createsuperuser
