@@ -374,7 +374,6 @@ export default function SubscriptionDetail() {
     setRenewPaymentDraft({
       amount: '',
       payment_date: todayGregorian(),
-      device_count: subscription.device_count || 0,
       description: '',
     });
     setActionError('');
@@ -519,7 +518,6 @@ export default function SubscriptionDetail() {
     setRenewPaymentDraft({
       amount: '',
       payment_date: todayGregorian(),
-      device_count: subscription.device_count || 0,
       description: '',
     });
     setActionError('');
@@ -609,7 +607,6 @@ export default function SubscriptionDetail() {
         subscription: Number(id),
         amount: Number(paymentForm.amount),
         payment_date: paymentForm.payment_date,
-        device_count: Number(paymentForm.device_count) || 0,
         description: paymentForm.description,
         allocation_mode: paymentForm.allocation_mode,
         allocations: paymentForm.allocation_mode === 'manual'
