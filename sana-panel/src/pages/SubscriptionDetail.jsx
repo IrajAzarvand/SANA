@@ -845,7 +845,7 @@ export default function SubscriptionDetail() {
             </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="mt-4 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
             <div className="p-4 rounded-xl bg-bg-base border border-border-base">
               <div className="text-[10px] text-text-muted mb-1">مبلغ کل قرارداد</div>
               <div className="text-sm font-semibold text-text-primary">{Number(subscription.price || 0).toLocaleString('fa-IR')} ریال</div>
@@ -857,6 +857,14 @@ export default function SubscriptionDetail() {
             <div className="p-4 rounded-xl bg-bg-base border border-border-base">
               <div className="text-[10px] text-text-muted mb-1">مانده اقساط سررسیدشده</div>
               <div className="text-sm font-semibold text-warning">{Number(subscription.overdue_balance || 0).toLocaleString('fa-IR')} ریال</div>
+            </div>
+            <div className="p-4 rounded-xl bg-bg-base border border-border-base">
+              <div className="text-[10px] text-text-muted mb-1">مانده کل قرارداد</div>
+              <div className="text-sm font-semibold text-warning">{Number(subscription.outstanding_payment_amount || 0).toLocaleString('fa-IR')} ریال</div>
+            </div>
+            <div className="p-4 rounded-xl bg-bg-base border border-border-base">
+              <div className="text-[10px] text-text-muted mb-1">مانده اقساط آینده</div>
+              <div className="text-sm font-semibold text-text-primary">{Number(subscription.future_due_balance || 0).toLocaleString('fa-IR')} ریال</div>
             </div>
             <div className="p-4 rounded-xl bg-bg-base border border-border-base">
               <div className="text-[10px] text-text-muted mb-1">اعتبار تخصیص‌نیافته مشتری</div>
@@ -1397,10 +1405,16 @@ export default function SubscriptionDetail() {
             <h3 className="text-sm font-semibold text-text-primary">اصلاح پرداخت‌ها</h3>
             {(subscription.payments || []).map((p) => {
               const payment = editForm.payment_changes[p.id] || p;
-              return <div key={p.id} className="grid grid-cols-1 md:grid-cols-4 gap-3 p-3 bg-bg-base border border-border-base rounded-field">
-                <Input type="number" label="مبلغ" value={payment.amount} onChange={(e) => updateEditPayment(p.id,'amount',e.target.value)} />
-                <JalaliDatePicker label="تاریخ پرداخت" value={payment.payment_date} onChange={(val) => updateEditPayment(p.id,'payment_date',val)} />
-                <Input type="number" label="تعداد دستگاه" value={payment.device_count} onChange={(e) => updateEditPayment(p.id,'device_count',e.target.value)} />
+              if (p.allocations?.length) {
+                return (
+                  <div key={p.id} className="p-3 bg-bg-base border border-border-base rounded-field text-xs text-text-muted">
+                    دریافتی {Number(p.amount).toLocaleString('fa-IR')} ریال در {toPersianDigits(toJalali(p.payment_date))} تخصیص مالی دارد و در این فرم قابل تغییر نیست.
+                  </div>
+                );
+              }
+              return <div key={p.id} className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 bg-bg-base border border-border-base rounded-field">
+                <Input type="number" label="مبلغ دریافتی" value={payment.amount} onChange={(e) => updateEditPayment(p.id,'amount',e.target.value)} />
+                <JalaliDatePicker label="تاریخ واقعی دریافت وجه" value={payment.payment_date} onChange={(val) => updateEditPayment(p.id,'payment_date',val)} />
                 <Input label="توضیحات" value={payment.description || ''} onChange={(e) => updateEditPayment(p.id,'description',e.target.value)} />
               </div>;
             })}
