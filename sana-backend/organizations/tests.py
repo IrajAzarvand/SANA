@@ -128,6 +128,13 @@ class SubscriptionWizardOrganizationSelectionTests(TestCase):
         self.assertEqual(self.manager.organization_id, self.organization.id)
         self.assertTrue(self.manager.check_password('Original-Password-123'))
 
+    def test_existing_organization_requires_a_non_empty_name(self):
+        serializer = SubscriptionWizardSerializer(
+            data=self._payload(organization_name='   ')
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('organization_name', serializer.errors)
+
     def test_new_manager_is_attached_to_selected_existing_organization(self):
         payload = self._payload(
             existing_user_id=None,
