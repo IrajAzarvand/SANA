@@ -566,6 +566,7 @@ class SubscriptionInstallmentLedgerTests(TestCase):
         new_plan = self._plan(installment_count=4, scheduled_amount=80)
         old_plan.refresh_from_db()
         self.assertEqual(old_plan.status, 'superseded')
+        self.assertEqual(old_plan.installments.filter(status='superseded').count(), 2)
         self.assertEqual(new_plan.version, 2)
         self.assertEqual(old_plan.installments.count(), 2)
         self.assertEqual(new_plan.installments.count(), 4)
