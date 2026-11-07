@@ -1026,9 +1026,28 @@ export default function SubscriptionDetail() {
         <div className="px-5 py-4 border-b border-border-base flex items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold text-text-primary">پرداخت‌های قرارداد</h3>
-            <p className="text-[11px] text-text-muted mt-1">{subscription.payments?.length || 0} پرداخت ثبت‌شده</p>
+            <p className="text-[11px] text-text-muted mt-1">{subscription.payments?.length || 0} دریافتی ثبت‌شده</p>
           </div>
-
+          {isSiteAdmin && !isCancelled && (
+            <Button
+              size="sm"
+              icon={Plus}
+              onClick={() => {
+                setPaymentForm({
+                  amount: '',
+                  payment_date: todayGregorian(),
+                  device_count: 0,
+                  description: '',
+                  allocation_mode: 'automatic',
+                  allocations: {},
+                });
+                setActionError('');
+                setPaymentModalOpen(true);
+              }}
+            >
+              ثبت دریافتی
+            </Button>
+          )}
         </div>
         {(!subscription.payments || subscription.payments.length === 0) ? (
           <div className="py-10 text-center">
@@ -1848,6 +1867,7 @@ export default function SubscriptionDetail() {
             options={[
               { value: 'automatic', label: 'خودکار؛ از قدیمی‌ترین قسط سررسیدشده' },
               { value: 'manual', label: 'انتخاب دستی اقساط' },
+              { value: 'contract_advance', label: 'پیش‌پرداخت قرارداد؛ بدون اتصال به قسط' },
             ]}
           />
           {paymentForm.allocation_mode === 'manual' && (
