@@ -39,6 +39,7 @@ export default function UserComboBox({
   // با تغییر نوع حساب، فهرست قبلی نباید برای نوع جدید استفاده شود.
   useEffect(() => {
     setAllUsers([]);
+    setLoading(false);
     setOpen(false);
   }, [accountType]);
 
