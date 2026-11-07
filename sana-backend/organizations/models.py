@@ -195,14 +195,6 @@ class Subscription(models.Model):
         """تعداد دستگاه‌های فعال این قرارداد"""
         return self.subscription_devices.filter(unassigned_at__isnull=True).count()
 
-    def recalculate_price(self):
-        """محاسبه‌ی مجدد مبلغ از مجموع پرداخت‌ها"""
-        total = self.payments.aggregate(
-            total=models.Sum('amount')
-        )['total'] or 0
-        self.price = total
-        self.save(update_fields=['price'])
-
     def recalculate_end_date(self):
         """محاسبه‌ی مجدد end_date از آخرین دستگاه فعال"""
         latest = self.subscription_devices.filter(
@@ -406,10 +398,4 @@ class SubscriptionPayment(models.Model):
 
     def __str__(self):
         return f'{self.subscription.contract_number} — {self.amount}'
-
-    def save(self, *args, **kwargs):
-        super().save(*args, **kwargs)
-        # بعد از ذخیره، price قرارداد رو آپدیت کن
-        self.subscription.recalculate_price()
-
 
