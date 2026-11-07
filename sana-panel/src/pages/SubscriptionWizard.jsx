@@ -17,7 +17,7 @@ import { devicesAPI } from '../api/services/fleet';
 import { subscriptionsAPI } from '../api/services/subscriptions';
 import { organizationsAPI } from '../api/services/organizations';
 import JalaliDatePicker from '../components/JalaliDatePicker';
-import { toJalali } from '../utils/dateUtils';
+import { toJalali, todayGregorian } from '../utils/dateUtils';
 import UserComboBox from '../components/UserComboBox';
 
 
@@ -60,9 +60,18 @@ export default function SubscriptionWizard() {
     existing_user_id: null,
     start_date: '',
     end_date: '',
+    price: '',
     notes: '',
     devices: [],
     payments: [],
+    installment_plan: {
+      enabled: false,
+      interval_months: 3,
+      installment_count: 4,
+      calculation_mode: 'equal',
+      surplus_policy: 'credit',
+      custom_amounts_text: '',
+    },
   });
 
   // تولید شماره قرارداد خودکار از Backend
@@ -215,6 +224,34 @@ export default function SubscriptionWizard() {
         setError('تاریخ پایان باید بعد از تاریخ شروع باشد');
         return false;
       }
+      if (parseAmountInput(form.price) <= 0) {
+        setError('مبلغ کل قرارداد باید بیشتر از صفر باشد');
+        return false;
+      }
+    }
+
+    if (step === 5 && form.installment_plan?.enabled) {
+      const scheduled = parseAmountInput(form.price) - form.payments.reduce((sum, item) => sum + Number(item.amount || 0), 0);
+      if (scheduled <= 0) {
+        setError('پس از کسر دریافتی اولیه، مبلغی برای تقسیط باقی نمانده است');
+        return false;
+      }
+      const plan = form.installment_plan;
+      if (!Number.isInteger(Number(plan.installment_count)) || Number(plan.installment_count) < 1 || Number(plan.installment_count) > 120) {
+        setError('تعداد اقساط باید بین ۱ تا ۱۲۰ باشد');
+        return false;
+      }
+      if (!Number.isInteger(Number(plan.interval_months)) || Number(plan.interval_months) < 1 || Number(plan.interval_months) > 120) {
+        setError('فاصله اقساط باید بین ۱ تا ۱۲۰ ماه باشد');
+        return false;
+      }
+      if (plan.calculation_mode === 'custom') {
+        const amounts = String(plan.custom_amounts_text || '').split(/[؛;\n]/).map((value) => parseAmountInput(value.trim()));
+        if (amounts.length !== Number(plan.installment_count) || amounts.some((value) => value <= 0) || amounts.reduce((sum, value) => sum + value, 0) !== scheduled) {
+          setError('مبالغ دلخواه اقساط باید به تعداد اقساط وارد شوند و مجموعشان دقیقاً برابر مبلغ قابل تقسیط باشد');
+          return false;
+        }
+      }
     }
 
     if (step === 4) {
@@ -289,9 +326,19 @@ export default function SubscriptionWizard() {
         contract_number: form.contract_number,
         start_date: form.start_date,
         end_date: form.end_date,
+        price: parseAmountInput(form.price),
         notes: form.notes,
         devices: form.devices,
         payments: form.payments,
+        installment_plan: form.installment_plan?.enabled ? {
+          interval_months: Number(form.installment_plan.interval_months),
+          installment_count: Number(form.installment_plan.installment_count),
+          calculation_mode: form.installment_plan.calculation_mode,
+          surplus_policy: form.installment_plan.surplus_policy,
+          custom_amounts: form.installment_plan.calculation_mode === 'custom'
+            ? String(form.installment_plan.custom_amounts_text || '').split(/[،,]/).map((value) => parseAmountInput(value.trim()))
+            : [],
+        } : null,
       };
 
       const result = await subscriptionsAPI.create(payload);
@@ -755,7 +802,7 @@ function Step3({ form, updateForm }) {
         <p className="text-sm text-text-muted">شماره قرارداد و بازه‌ی زمانی آن را مشخص کنید</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <Input
           label="شماره قرارداد"
           value={form.contract_number}
@@ -774,6 +821,14 @@ function Step3({ form, updateForm }) {
           value={form.end_date}
           minDate={form.start_date || null}
           onChange={(val) => updateForm('end_date', val)}
+          required
+        />
+        <Input
+          inputMode="numeric"
+          label="مبلغ کل قرارداد (ریال)"
+          value={form.price}
+          onChange={(e) => updateForm('price', formatAmountInput(e.target.value))}
+          placeholder="مثلاً 100,000,000"
           required
         />
       </div>
@@ -1002,18 +1057,24 @@ function parseAmountInput(value) {
 function Step5({ form, updateForm }) {
   const [payment, setPayment] = useState({
     amount: '',
-    payment_date: new Date().toISOString().split('T')[0],
-    device_count: form.devices.length,
-    description: 'پرداخت اولیه',
+    payment_date: todayGregorian(),
+    description: 'پیش‌پرداخت زمان عقد قرارداد',
   });
+  const plan = form.installment_plan || {
+    enabled: false, interval_months: 3, installment_count: 4,
+    calculation_mode: 'equal', surplus_policy: 'credit', custom_amounts_text: '',
+  };
+  const updatePlan = (field, value) => updateForm('installment_plan', { ...plan, [field]: value });
 
   const addPayment = () => {
-    if (!payment.amount) return;
-    updateForm('payments', [...form.payments, { ...payment, amount: parseAmountInput(payment.amount) }]);
+    if (!payment.amount || parseAmountInput(payment.amount) <= 0) return;
+    updateForm('payments', [...form.payments, {
+      ...payment,
+      amount: parseAmountInput(payment.amount),
+    }]);
     setPayment({
       amount: '',
       payment_date: new Date().toISOString().split('T')[0],
-      device_count: form.devices.length,
       description: '',
     });
   };
@@ -1022,100 +1083,118 @@ function Step5({ form, updateForm }) {
     updateForm('payments', form.payments.filter((_, i) => i !== idx));
   };
 
-  const totalAmount = form.payments.reduce((sum, p) => sum + Number(p.amount), 0);
+  const totalAmount = form.payments.reduce((sum, item) => sum + Number(item.amount), 0);
+  const scheduledAmount = Math.max(parseAmountInput(form.price) - totalAmount, 0);
+  const count = Math.max(Number(plan.installment_count) || 1, 1);
+  const equalBase = Math.floor(scheduledAmount / count);
+  const equalLast = scheduledAmount - equalBase * (count - 1);
 
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-semibold text-text-primary mb-1">پرداخت اولیه</h3>
+        <h3 className="text-lg font-semibold text-text-primary mb-1">دریافتی و برنامه اقساط</h3>
         <p className="text-sm text-text-muted">
-          پرداخت‌های مشتری را ثبت کنید. می‌توانید بعداً از صفحه‌ی قرارداد، پرداخت‌های بیشتر اضافه کنید.
+          مبلغ قرارداد مستقل از دریافتی‌هاست. مبالغی که هنگام عقد دریافت می‌شوند از مبلغ قابل تقسیط کسر خواهند شد.
         </p>
       </div>
 
       <div className="bg-bg-base border border-border-base rounded-card p-4 space-y-3">
-        <h4 className="text-xs font-medium text-text-muted">افزودن پرداخت</h4>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <h4 className="text-xs font-medium text-text-muted">ثبت دریافتی زمان عقد قرارداد</h4>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <Input
             inputMode="numeric"
-            label="مبلغ (ریال)"
+            label="مبلغ دریافتی (ریال)"
             value={payment.amount}
             onChange={(e) => setPayment({ ...payment, amount: formatAmountInput(e.target.value) })}
-            placeholder="مثلاً 50,000,000"
+            placeholder="مثلاً 20,000,000"
           />
           <JalaliDatePicker
-            label="تاریخ پرداخت"
+            label="تاریخ واقعی دریافت وجه"
             value={payment.payment_date}
+          maxDate={todayGregorian()}
             onChange={(val) => setPayment({ ...payment, payment_date: val })}
-          />
-          <Input
-            type="number"
-            label="تعداد دستگاه"
-            value={payment.device_count}
-            onChange={(e) => setPayment({ ...payment, device_count: Number(e.target.value) })}
           />
         </div>
         <Input
           label="توضیحات"
           value={payment.description}
           onChange={(e) => setPayment({ ...payment, description: e.target.value })}
-          placeholder="مثلاً پرداخت اولیه بابت ۲ دستگاه"
+          placeholder="توضیحات اختیاری"
         />
         <div className="flex justify-end">
-          <Button type="button" onClick={addPayment} icon={Plus} size="sm">
-            افزودن پرداخت
-          </Button>
+          <Button type="button" onClick={addPayment} icon={Plus} size="sm">ثبت دریافتی</Button>
         </div>
       </div>
 
       {form.payments.length > 0 && (
         <div className="space-y-2">
-          <h4 className="text-xs font-medium text-text-muted">پرداخت‌های ثبت‌شده</h4>
-          {form.payments.map((p, idx) => (
+          <h4 className="text-xs font-medium text-text-muted">دریافتی‌های ثبت‌شده</h4>
+          {form.payments.map((item, idx) => (
             <div key={idx} className="flex items-center justify-between p-3 bg-bg-base border border-border-base rounded-field">
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-3">
-                  <span className="font-mono text-sm text-text-primary">
-                    {Number(p.amount).toLocaleString('fa-IR')} ریال
-                  </span>
-                  <span className="text-xs text-text-muted">{p.device_count} دستگاه</span>
-                  <span className="text-xs text-text-muted font-mono">{toJalali(p.payment_date)}</span>
-                </div>
-                {p.description && (
-                  <div className="text-[10px] text-text-muted mt-1">{p.description}</div>
-                )}
+                <div className="font-mono text-sm text-text-primary">{Number(item.amount).toLocaleString('fa-IR')} ریال</div>
+                <div className="text-[10px] text-text-muted font-mono mt-1">{toJalali(item.payment_date)}</div>
+                {item.description && <div className="text-[10px] text-text-muted mt-1">{item.description}</div>}
               </div>
-              <button
-                type="button"
-                onClick={() => removePayment(idx)}
-                className="p-1.5 rounded-field text-text-muted hover:bg-danger/10 hover:text-danger transition-colors"
-              >
+              <button type="button" onClick={() => removePayment(idx)} className="p-1.5 rounded-field text-text-muted hover:bg-danger/10 hover:text-danger transition-colors">
                 <Trash2 size={14} />
               </button>
             </div>
           ))}
-
           <div className="flex items-center justify-between p-3 bg-brand-500/10 border border-brand-500/30 rounded-field">
-            <span className="text-sm text-text-secondary">مجموع پرداخت‌ها</span>
-            <span className="font-mono text-base font-bold text-brand-400">
-              {totalAmount.toLocaleString('fa-IR')} ریال
-            </span>
+            <span className="text-sm text-text-secondary">مجموع دریافتی زمان عقد</span>
+            <span className="font-mono text-sm font-bold text-brand-400">{totalAmount.toLocaleString('fa-IR')} ریال</span>
           </div>
         </div>
       )}
 
+      <div className="border border-border-base rounded-card p-4 space-y-4">
+        <label className="flex items-center gap-2 text-sm text-text-primary cursor-pointer">
+          <input type="checkbox" checked={Boolean(plan.enabled)} onChange={(e) => updatePlan('enabled', e.target.checked)} className="accent-brand-500" />
+          برای مانده قرارداد برنامه اقساط ایجاد شود
+        </label>
+        {plan.enabled && (
+          <>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-text-muted">مبلغ قابل تقسیط</span>
+              <strong className="font-mono text-text-primary">{scheduledAmount.toLocaleString('fa-IR')} ریال</strong>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Input type="number" label="تعداد اقساط" value={plan.installment_count} onChange={(e) => updatePlan('installment_count', e.target.value)} />
+              <Input type="number" label="فاصله هر قسط (ماه)" value={plan.interval_months} onChange={(e) => updatePlan('interval_months', e.target.value)} />
+              <Select label="روش محاسبه مبلغ اقساط" value={plan.calculation_mode} onChange={(e) => updatePlan('calculation_mode', e.target.value)} options={[
+                { value: 'equal', label: 'اقساط مساوی' },
+                { value: 'custom', label: 'مبلغ دلخواه برای هر قسط' },
+              ]} />
+              <Select label="نحوه مدیریت مازاد دریافتی" value={plan.surplus_policy} onChange={(e) => updatePlan('surplus_policy', e.target.value)} options={[
+                { value: 'credit', label: 'نگهداری به‌عنوان اعتبار مشتری' },
+                { value: 'future', label: 'تخصیص به اقساط آینده' },
+              ]} />
+            </div>
+            {plan.calculation_mode === 'custom' ? (
+              <Input label="مبالغ اقساط به ترتیب (با نقطه‌ویرگول جدا کنید)" value={plan.custom_amounts_text || ''} onChange={(e) => updatePlan('custom_amounts_text', e.target.value)} placeholder="مثلاً 20,000,000؛ 20,000,000؛ 40,000,000" />
+            ) : (
+              <div className="text-xs text-text-secondary bg-bg-base rounded-field p-3">
+                مبلغ هر یک از {count - 1} قسط اول: {equalBase.toLocaleString('fa-IR')} ریال
+                <br />
+                مبلغ قسط آخر با احتساب باقیمانده: {equalLast.toLocaleString('fa-IR')} ریال
+              </div>
+            )}
+            <p className="text-[10px] text-text-muted leading-5">
+              سررسید اولین قسط از تاریخ شروع همین قرارداد و به‌اندازه فاصله انتخاب‌شده محاسبه می‌شود؛ سررسید اقساط بعدی نیز با همان فاصله ادامه پیدا می‌کند.
+            </p>
+          </>
+        )}
+      </div>
+
       <div className="bg-info/10 border border-info/30 rounded-field p-3">
         <p className="text-xs text-text-secondary leading-relaxed">
-          <span className="font-medium text-info">اختیاری:</span> اگه الان پرداختی ثبت نکنید، می‌تونید بعداً از صفحه‌ی قرارداد اضافه کنید.
+          ثبت دریافتی اختیاری است. اگر برنامه اقساطی هم نسازید، می‌توانید بعداً از صفحه قرارداد دریافتی‌های جدید را ثبت کنید.
         </p>
       </div>
     </div>
   );
 }
-
-/* ═══════════════════════════════════════════════
-   مرحله ۶ — خلاصه
-   ═══════════════════════════════════════════════ */
 
 function Step6({ form }) {
   const totalAmount = form.payments.reduce((sum, p) => sum + Number(p.amount), 0);
@@ -1163,6 +1242,7 @@ function Step6({ form }) {
           <SummaryItem label="شماره قرارداد" value={form.contract_number} mono />
           <SummaryItem label="تاریخ شروع" value={toJalali(form.start_date)} mono />
           <SummaryItem label="تاریخ پایان" value={toJalali(form.end_date)} mono />
+          <SummaryItem label="مبلغ کل قرارداد" value={`${parseAmountInput(form.price).toLocaleString('fa-IR')} ریال`} />
         </div>
         {form.notes && (
           <div>
@@ -1196,7 +1276,7 @@ function Step6({ form }) {
       {form.payments.length > 0 && (
         <div className="pt-4 border-t border-border-base space-y-3">
           <h4 className="text-xs font-medium text-text-muted">
-            پرداخت‌ها ({form.payments.length})
+            دریافتی‌های زمان عقد ({form.payments.length})
           </h4>
           <div className="space-y-2">
             {form.payments.map((p, idx) => (
@@ -1213,6 +1293,19 @@ function Step6({ form }) {
             <span className="font-mono text-base font-bold text-brand-400">
               {totalAmount.toLocaleString('fa-IR')} ریال
             </span>
+          </div>
+        </div>
+      )}
+
+      {form.installment_plan?.enabled && (
+        <div className="pt-4 border-t border-border-base space-y-3">
+          <h4 className="text-xs font-medium text-text-muted">برنامه اقساط</h4>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <SummaryItem label="مبلغ قابل تقسیط" value={`${Math.max(parseAmountInput(form.price) - totalAmount, 0).toLocaleString('fa-IR')} ریال`} />
+            <SummaryItem label="تعداد اقساط" value={form.installment_plan.installment_count} />
+            <SummaryItem label="فاصله اقساط" value={`${form.installment_plan.interval_months} ماه`} />
+            <SummaryItem label="روش محاسبه" value={form.installment_plan.calculation_mode === 'equal' ? 'اقساط مساوی' : 'مبالغ دلخواه'} />
+            <SummaryItem label="مازاد دریافتی" value={form.installment_plan.surplus_policy === 'future' ? 'تخصیص به اقساط آینده' : 'اعتبار مشتری'} />
           </div>
         </div>
       )}

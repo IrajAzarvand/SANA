@@ -15,6 +15,7 @@ from .models import (
     Subscription,
     SubscriptionDevice,
     SubscriptionPayment,
+    SubscriptionPaymentAllocation,
     SubscriptionOperation,
     SubscriptionOperationChange,
 )
@@ -153,7 +154,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         return qs
 
     def get_permissions(self):
-        if self.action in ['create', 'destroy', 'renew', 'modify']:
+        if self.action in ['create', 'destroy', 'renew', 'modify', 'revise_installment_plan']:
             return [IsSiteAdmin()]
         return super().get_permissions()
 
@@ -177,6 +178,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             return Response({'new_end_date': 'این فیلد الزامی است'}, status=status.HTTP_400_BAD_REQUEST)
 
         from datetime import date
+        from .financial import allocate_payment
         try:
             new_end_date = date.fromisoformat(new_end_date)
         except ValueError:
@@ -256,7 +258,8 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                     data={**item, 'subscription': subscription.id, 'operation': operation.id}
                 )
                 payment_serializer.is_valid(raise_exception=True)
-                payment_serializer.save()
+                payment = payment_serializer.save()
+                allocate_payment(payment)
 
             # تغییر اطلاعات مشتری
             customer_changes = request.data.get('customer_changes', {})
@@ -432,35 +435,76 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                     setattr(target, field, new_value)
                 target.save()
 
-            # اصلاح پرداخت‌ها؛ هر اصلاح هم در همان عملیات ثبت می‌شود.
-            payment_fields = {'amount', 'payment_date', 'device_count', 'description'}
+            # دریافتی‌ای که تخصیص مالی دارد قابل ویرایش مستقیم نیست؛
+            # برای اصلاح آن باید در جریان مالی جداگانه برگشت/اصلاح ثبت شود.
+            payment_fields = {'amount', 'payment_date', 'description'}
             for payment, item in payment_objects.values():
+                if payment.allocations.exists():
+                    raise serializers.ValidationError({
+                        'payment_changes': f'دریافتی {payment.id} تخصیص مالی دارد و قابل ویرایش مستقیم نیست'
+                    })
                 for field in payment_fields:
                     if field not in item:
                         continue
                     new_value = item[field]
                     if field == 'amount':
                         new_value = int(new_value)
-                    elif field == 'device_count':
-                        new_value = int(new_value)
-                    elif field == 'payment_date':
+                    model_field = field
+                    if field == 'payment_date':
                         try:
                             new_value = date.fromisoformat(new_value)
                         except (TypeError, ValueError):
-                            raise serializers.ValidationError({'payment_changes': 'فرمت تاریخ پرداخت نامعتبر است'})
-                    old_value = getattr(payment, field)
+                            raise serializers.ValidationError({'payment_changes': 'فرمت تاریخ دریافت وجه نامعتبر است'})
+                        model_field = 'received_at'
+                    old_value = getattr(payment, model_field)
                     if str(old_value) == str(new_value):
                         continue
                     SubscriptionOperationChange.objects.create(
                         operation=operation,
                         entity_type='SubscriptionPayment',
-                        field_name=field,
+                        field_name=model_field,
                         old_value='' if old_value is None else str(old_value),
                         new_value='' if new_value is None else str(new_value),
                     )
-                    setattr(payment, field, new_value)
+                    setattr(payment, model_field, new_value)
                 payment.save()
 
+        return Response(SubscriptionSerializer(subscription).data)
+
+    @action(detail=True, methods=['post'])
+    def revise_installment_plan(self, request, pk=None):
+        """Revise only the unpaid remainder; old schedule versions stay intact."""
+        from .financial import revise_installment_plan
+
+        subscription = self.get_object()
+        with transaction.atomic():
+            operation = SubscriptionOperation.objects.create(
+                subscription=subscription,
+                operation_type='modify',
+                performed_by=request.user,
+                old_start_date=subscription.start_date,
+                new_start_date=subscription.start_date,
+                old_end_date=subscription.end_date,
+                new_end_date=subscription.end_date,
+                old_status=subscription.status,
+                new_status=subscription.status,
+                notes='بازتنظیم برنامه اقساط؛ اقساط پرداخت‌شده و تخصیص‌های قبلی حفظ شدند.',
+            )
+            old_price = subscription.price
+            revise_installment_plan(
+                subscription,
+                request.data,
+                created_by=request.user,
+            )
+            subscription.refresh_from_db()
+            if old_price != subscription.price:
+                SubscriptionOperationChange.objects.create(
+                    operation=operation,
+                    entity_type='Subscription',
+                    field_name='price',
+                    old_value=str(old_price),
+                    new_value=str(subscription.price),
+                )
         return Response(SubscriptionSerializer(subscription).data)
 
     @action(detail=True, methods=['get'])
@@ -591,7 +635,7 @@ class SubscriptionDeviceViewSet(viewsets.ModelViewSet):
         return qs
 
     def get_permissions(self):
-        if self.action in ['create', 'destroy', 'update', 'partial_update']:
+        if self.action in ['create', 'destroy', 'update', 'partial_update', 'allocate']:
             return [IsSiteAdmin()]
         return super().get_permissions()
 
@@ -664,9 +708,13 @@ class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
         return qs
 
     def create(self, request, *args, **kwargs):
+        from .financial import allocate_payment
+
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         subscription = serializer.validated_data['subscription']
+        allocation_mode = request.data.get('allocation_mode', 'automatic')
+        allocations = request.data.get('allocations')
         with transaction.atomic():
             operation = SubscriptionOperation.objects.create(
                 subscription=subscription,
@@ -676,7 +724,65 @@ class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
                 new_end_date=subscription.end_date,
             )
             instance = serializer.save(operation=operation)
+            if allocation_mode == 'contract_advance':
+                from decimal import Decimal
+                from django.db.models import Sum
+                received_before = subscription.payments.exclude(pk=instance.pk).aggregate(
+                    total=Sum('amount')
+                )['total'] or Decimal('0')
+                contract_balance_before = max(Decimal(subscription.price) - received_before, Decimal('0'))
+                allocate_payment(
+                    instance,
+                    allocation_type='contract_advance',
+                    allocation_amount=min(Decimal(instance.amount), contract_balance_before),
+                )
+            elif allocation_mode == 'credit':
+                # Deliberately leave the receipt unallocated as customer credit.
+                pass
+            else:
+                allocate_payment(
+                    instance,
+                    mode=allocation_mode,
+                    allocations=allocations,
+                )
         return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'])
+    def allocate(self, request, pk=None):
+        """Apply an existing unallocated receipt to selected or oldest unpaid installments."""
+        from .financial import allocate_payment
+
+        payment = self.get_object()
+        allocation_mode = request.data.get('allocation_mode', 'automatic')
+        allocations = request.data.get('allocations')
+        with transaction.atomic():
+            SubscriptionOperation.objects.create(
+                subscription=payment.subscription,
+                operation_type='payment',
+                performed_by=request.user,
+                old_end_date=payment.subscription.end_date,
+                new_end_date=payment.subscription.end_date,
+                notes=f'تخصیص مجدد دریافتی شماره {payment.id}',
+            )
+            allocate_payment(
+                payment,
+                mode=allocation_mode,
+                allocations=allocations,
+            )
+        payment.refresh_from_db()
+        return Response(self.get_serializer(payment).data)
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.allocations.exists():
+            raise serializers.ValidationError('دریافتی دارای تخصیص مالی است و قابل ویرایش مستقیم نیست')
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.allocations.exists():
+            raise serializers.ValidationError('دریافتی دارای تخصیص مالی است و قابل حذف مستقیم نیست')
+        return super().destroy(request, *args, **kwargs)
 
     def get_permissions(self):
         if self.action in ['create', 'destroy', 'update', 'partial_update']:

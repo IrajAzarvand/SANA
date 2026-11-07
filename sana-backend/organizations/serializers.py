@@ -1,5 +1,7 @@
 from rest_framework import serializers
+from decimal import Decimal, InvalidOperation
 from django.utils import timezone
+from django.db.models import Sum
 from fleet.lifecycle import record_device_lifecycle_event
 from .models import (
     Organization,
@@ -7,6 +9,9 @@ from .models import (
     Subscription,
     SubscriptionDevice,
     SubscriptionPayment,
+    SubscriptionInstallmentPlan,
+    SubscriptionInstallment,
+    SubscriptionPaymentAllocation,
     SubscriptionOperation,
     SubscriptionOperationChange,
 )
@@ -232,15 +237,75 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
 # SubscriptionPayment
 # ═══════════════════════════════════════════════
 
+class SubscriptionPaymentAllocationSerializer(serializers.ModelSerializer):
+    installment_number = serializers.IntegerField(source='installment.number', read_only=True)
+    due_date = serializers.DateField(source='installment.due_date', read_only=True)
+
+    class Meta:
+        model = SubscriptionPaymentAllocation
+        fields = ['id', 'allocation_type', 'installment', 'installment_number', 'due_date', 'amount', 'created_at']
+        read_only_fields = fields
+
+
 class SubscriptionPaymentSerializer(serializers.ModelSerializer):
+    payment_date = serializers.DateField(source='received_at')
+    allocations = SubscriptionPaymentAllocationSerializer(many=True, read_only=True)
+    unallocated_amount = serializers.SerializerMethodField()
+
     class Meta:
         model = SubscriptionPayment
         fields = [
-            'id', 'subscription',
-            'amount', 'payment_date', 'device_count', 'description', 'operation',
-            'created_at',
+            'id', 'subscription', 'amount', 'payment_date',
+            'description', 'operation', 'allocations', 'unallocated_amount', 'created_at',
         ]
-        read_only_fields = ['id', 'created_at']
+        read_only_fields = ['id', 'created_at', 'allocations', 'unallocated_amount']
+        extra_kwargs = {'amount': {'min_value': 1}}
+
+    def validate_payment_date(self, value):
+        if value > timezone.localdate():
+            raise serializers.ValidationError('تاریخ دریافت وجه نمی‌تواند در آینده باشد')
+        return value
+
+    def get_unallocated_amount(self, obj):
+        from django.db.models import Sum
+        from decimal import Decimal
+        allocated = obj.allocations.aggregate(total=Sum('amount'))['total'] or Decimal('0')
+        return max(Decimal(obj.amount) - allocated, Decimal('0'))
+
+
+class SubscriptionInstallmentSerializer(serializers.ModelSerializer):
+    paid_amount = serializers.SerializerMethodField()
+    remaining_amount = serializers.SerializerMethodField()
+    is_overdue = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SubscriptionInstallment
+        fields = ['id', 'number', 'amount', 'due_date', 'status', 'paid_amount', 'remaining_amount', 'is_overdue']
+        read_only_fields = fields
+
+    def get_paid_amount(self, obj):
+        from django.db.models import Sum
+        return obj.allocations.aggregate(total=Sum('amount'))['total'] or 0
+
+    def get_remaining_amount(self, obj):
+        from .financial import installment_remaining_amount
+        return installment_remaining_amount(obj)
+
+    def get_is_overdue(self, obj):
+        return obj.due_date < timezone.localdate() and self.get_remaining_amount(obj) > 0
+
+
+class SubscriptionInstallmentPlanSerializer(serializers.ModelSerializer):
+    installments = SubscriptionInstallmentSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = SubscriptionInstallmentPlan
+        fields = [
+            'id', 'version', 'scheduled_amount', 'installment_count',
+            'interval_months', 'calculation_mode', 'surplus_policy',
+            'status', 'created_at', 'created_by', 'installments',
+        ]
+        read_only_fields = fields
 
 
 # ═══════════════════════════════════════════════
@@ -331,6 +396,8 @@ class SubscriptionSerializer(serializers.ModelSerializer):
     devices = serializers.SerializerMethodField()
     payments = SubscriptionPaymentSerializer(many=True, read_only=True)
     operations = SubscriptionOperationSerializer(many=True, read_only=True)
+    installment_plan = serializers.SerializerMethodField()
+    installment_plan_history = serializers.SerializerMethodField()
 
     device_count = serializers.SerializerMethodField()
     active_device_count = serializers.SerializerMethodField()
@@ -338,6 +405,9 @@ class SubscriptionSerializer(serializers.ModelSerializer):
     paid_payment_amount = serializers.SerializerMethodField()
     future_payment_amount = serializers.SerializerMethodField()
     outstanding_payment_amount = serializers.SerializerMethodField()
+    overdue_balance = serializers.SerializerMethodField()
+    future_due_balance = serializers.SerializerMethodField()
+    unallocated_credit = serializers.SerializerMethodField()
 
 
     class Meta:
@@ -355,7 +425,8 @@ class SubscriptionSerializer(serializers.ModelSerializer):
             'days_until_expiry', 'is_active', 'is_expiring_soon',
             'device_count', 'active_device_count',
             'total_payment_amount', 'paid_payment_amount', 'future_payment_amount',
-            'outstanding_payment_amount',
+            'outstanding_payment_amount', 'overdue_balance',
+            'future_due_balance', 'unallocated_credit', 'installment_plan', 'installment_plan_history',
             'devices', 'payments', 'operations',
             'created_at', 'updated_at',
         ]
@@ -387,25 +458,57 @@ class SubscriptionSerializer(serializers.ModelSerializer):
         return sum((payment.amount or 0) for payment in obj.payments.all())
 
     def get_paid_payment_amount(self, obj):
-        today = timezone.now().date()
-        return sum(
-            (payment.amount or 0)
-            for payment in obj.payments.all()
-            if payment.payment_date <= today
-        )
+        return self.get_total_payment_amount(obj)
 
     def get_future_payment_amount(self, obj):
-        today = timezone.now().date()
+        today = timezone.localdate()
+        plan = obj.installment_plans.filter(status='active').first()
+        if not plan:
+            return 0
         return sum(
-            (payment.amount or 0)
-            for payment in obj.payments.all()
-            if payment.payment_date > today
+            max(installment.amount - (installment.allocations.aggregate(total=Sum('amount'))['total'] or 0), 0)
+            for installment in plan.installments.filter(status='active', due_date__gt=today)
         )
 
     def get_outstanding_payment_amount(self, obj):
-        total = self.get_total_payment_amount(obj)
-        paid = self.get_paid_payment_amount(obj)
-        return max(total - paid, 0)
+        return max(obj.price - self.get_total_payment_amount(obj), 0)
+
+    def get_installment_plan(self, obj):
+        plan = obj.installment_plans.filter(status='active').prefetch_related('installments__allocations').first()
+        return SubscriptionInstallmentPlanSerializer(plan).data if plan else None
+
+    def get_installment_plan_history(self, obj):
+        plans = obj.installment_plans.prefetch_related('installments__allocations').order_by('-version')
+        return SubscriptionInstallmentPlanSerializer(plans, many=True).data
+
+    def _remaining_by_due(self, obj, overdue):
+        from django.db.models import Sum
+        today = timezone.localdate()
+        plan = obj.installment_plans.filter(status='active').first()
+        if not plan:
+            return 0
+        qs = plan.installments.filter(status='active')
+        qs = qs.filter(due_date__lt=today) if overdue else qs.filter(due_date__gte=today)
+        total = 0
+        for installment in qs:
+            allocated = installment.allocations.aggregate(value=Sum('amount'))['value'] or 0
+            total += max(installment.amount - allocated, 0)
+        return total
+
+    def get_overdue_balance(self, obj):
+        return self._remaining_by_due(obj, True)
+
+    def get_future_due_balance(self, obj):
+        return self._remaining_by_due(obj, False)
+
+    def get_unallocated_credit(self, obj):
+        from django.db.models import Sum
+        from decimal import Decimal
+        receipts = obj.payments.aggregate(value=Sum('amount'))['value'] or Decimal('0')
+        allocations = SubscriptionPaymentAllocation.objects.filter(
+            payment__subscription=obj
+        ).aggregate(value=Sum('amount'))['value'] or Decimal('0')
+        return max(receipts - allocations, Decimal('0'))
 
 class SubscriptionListSerializer(serializers.ModelSerializer):
     """سریالایزر سبک برای لیست"""
@@ -420,6 +523,9 @@ class SubscriptionListSerializer(serializers.ModelSerializer):
     paid_payment_amount = serializers.SerializerMethodField()
     future_payment_amount = serializers.SerializerMethodField()
     outstanding_payment_amount = serializers.SerializerMethodField()
+    overdue_balance = serializers.SerializerMethodField()
+    future_due_balance = serializers.SerializerMethodField()
+    unallocated_credit = serializers.SerializerMethodField()
 
     class Meta:
         model = Subscription
@@ -433,6 +539,7 @@ class SubscriptionListSerializer(serializers.ModelSerializer):
             'device_count', 'active_device_count',
             'total_payment_amount', 'paid_payment_amount',
             'future_payment_amount', 'outstanding_payment_amount',
+            'overdue_balance', 'future_due_balance', 'unallocated_credit',
         ]
 
     def get_device_count(self, obj):
@@ -450,23 +557,47 @@ class SubscriptionListSerializer(serializers.ModelSerializer):
         return sum((payment.amount or 0) for payment in obj.payments.all())
 
     def get_paid_payment_amount(self, obj):
-        today = timezone.now().date()
-        return sum(
-            (payment.amount or 0)
-            for payment in obj.payments.all()
-            if payment.payment_date <= today
-        )
+        return self.get_total_payment_amount(obj)
 
     def get_future_payment_amount(self, obj):
-        today = timezone.now().date()
+        plan = obj.installment_plans.filter(status='active').first()
+        if not plan:
+            return 0
         return sum(
-            (payment.amount or 0)
-            for payment in obj.payments.all()
-            if payment.payment_date > today
+            max(item.amount - (item.allocations.aggregate(value=Sum('amount'))['value'] or 0), 0)
+            for item in plan.installments.filter(status='active', due_date__gt=timezone.localdate())
         )
 
     def get_outstanding_payment_amount(self, obj):
-        return self.get_future_payment_amount(obj)
+        return max(obj.price - self.get_total_payment_amount(obj), 0)
+
+    def get_overdue_balance(self, obj):
+        from django.db.models import Sum
+        plan = obj.installment_plans.filter(status='active').first()
+        if not plan:
+            return 0
+        return sum(
+            max(item.amount - (item.allocations.aggregate(value=Sum('amount'))['value'] or 0), 0)
+            for item in plan.installments.filter(status='active', due_date__lt=timezone.localdate())
+        )
+
+    def get_future_due_balance(self, obj):
+        from django.db.models import Sum
+        plan = obj.installment_plans.filter(status='active').first()
+        if not plan:
+            return 0
+        total = 0
+        for item in plan.installments.filter(status='active', due_date__gte=timezone.localdate()):
+            allocated = item.allocations.aggregate(value=Sum('amount'))['value'] or 0
+            total += max(item.amount - allocated, 0)
+        return total
+
+    def get_unallocated_credit(self, obj):
+        from django.db.models import Sum
+        from decimal import Decimal
+        receipts = obj.payments.aggregate(value=Sum('amount'))['value'] or Decimal('0')
+        allocations = SubscriptionPaymentAllocation.objects.filter(payment__subscription=obj).aggregate(value=Sum('amount'))['value'] or Decimal('0')
+        return max(receipts - allocations, Decimal('0'))
 
 
 # ═══════════════════════════════════════════════
@@ -481,11 +612,15 @@ class SubscriptionWizardDeviceSerializer(serializers.Serializer):
 
 
 class SubscriptionWizardPaymentSerializer(serializers.Serializer):
-    """اطلاعات یک پرداخت در Wizard"""
-    amount = serializers.DecimalField(max_digits=15, decimal_places=0)
+    """دریافتی واقعی هنگام عقد قرارداد"""
+    amount = serializers.DecimalField(max_digits=15, decimal_places=0, min_value=1)
     payment_date = serializers.DateField()
-    device_count = serializers.IntegerField(default=0)
     description = serializers.CharField(required=False, allow_blank=True)
+
+    def validate_payment_date(self, value):
+        if value > timezone.localdate():
+            raise serializers.ValidationError('تاریخ دریافت وجه نمی‌تواند در آینده باشد')
+        return value
 
 
 class SubscriptionWizardSerializer(serializers.Serializer):
@@ -522,6 +657,9 @@ class SubscriptionWizardSerializer(serializers.Serializer):
 
     # اطلاعات قرارداد
     contract_number = serializers.CharField()
+    price = serializers.DecimalField(
+        max_digits=15, decimal_places=0, min_value=1, required=True
+    )
     start_date = serializers.DateField()
     end_date = serializers.DateField()
     notes = serializers.CharField(required=False, allow_blank=True)
@@ -531,6 +669,7 @@ class SubscriptionWizardSerializer(serializers.Serializer):
 
     # پرداخت
     payments = SubscriptionWizardPaymentSerializer(many=True, default=list)
+    installment_plan = serializers.JSONField(required=False, allow_null=True)
 
     def validate_username(self, value):
         from accounts.models import User
@@ -621,6 +760,44 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                 'end_date': 'تاریخ پایان باید بعد از تاریخ شروع باشد'
             })
 
+        contract_price = data.get('price', 0)
+        initial_receipts = sum((item['amount'] for item in data.get('payments', [])), 0)
+        plan_data = data.get('installment_plan')
+        if plan_data:
+            scheduled_amount = contract_price - initial_receipts
+            if scheduled_amount <= 0:
+                raise serializers.ValidationError({
+                    'installment_plan': 'پس از کسر پیش‌پرداخت، مبلغی برای تقسیط باقی نمانده است'
+                })
+            plan_data = dict(plan_data)
+            plan_data['scheduled_amount'] = scheduled_amount
+            mode = plan_data.get('calculation_mode', 'equal')
+            try:
+                count = int(plan_data.get('installment_count') or 0)
+                interval = int(plan_data.get('interval_months') or 0)
+            except (TypeError, ValueError):
+                raise serializers.ValidationError({'installment_plan': 'تعداد و فاصله اقساط باید عدد صحیح باشند'})
+            if not 1 <= count <= 120:
+                raise serializers.ValidationError({'installment_plan': 'تعداد اقساط باید بین ۱ تا ۱۲۰ باشد'})
+            if not 1 <= interval <= 120:
+                raise serializers.ValidationError({'installment_plan': 'فاصله اقساط باید بین ۱ تا ۱۲۰ ماه باشد'})
+            if mode == 'custom':
+                custom = plan_data.get('custom_amounts') or []
+                try:
+                    custom_values = [Decimal(str(value)) for value in custom]
+                except (InvalidOperation, TypeError, ValueError):
+                    raise serializers.ValidationError({'installment_plan': 'مبالغ دلخواه اقساط نامعتبر هستند'})
+                if (
+                    len(custom_values) != count
+                    or any(value <= 0 or value != value.to_integral_value() for value in custom_values)
+                    or sum(custom_values, Decimal('0')) != scheduled_amount
+                ):
+                    raise serializers.ValidationError({'installment_plan': 'مبالغ دلخواه باید عدد صحیح و مثبت باشند و مجموعشان دقیقاً برابر مانده قرارداد باشد'})
+            elif mode != 'equal':
+                raise serializers.ValidationError({'installment_plan': 'روش محاسبه اقساط نامعتبر است'})
+            if plan_data.get('surplus_policy', 'credit') not in ('credit', 'future'):
+                raise serializers.ValidationError({'installment_plan': 'نحوه مدیریت مازاد دریافتی نامعتبر است'})
+
         national_id = data.get('national_id', '')
         if national_id and len(national_id) > 20:
             raise serializers.ValidationError({
@@ -684,17 +861,12 @@ class SubscriptionWizardSerializer(serializers.Serializer):
         from accounts.models import User
         from fleet.models import Device
         from django.db import transaction
+        from .financial import allocate_payment, create_installment_plan
 
         devices_data = validated_data.pop('devices', [])
         payments_data = validated_data.pop('payments', [])
+        installment_plan_data = validated_data.pop('installment_plan', None)
         customer_type = validated_data['customer_type']
-
-        # ═══ DEBUG TEMP LINES═══
-        print("=" * 60)
-        print("📥 Payments received:", payments_data)
-        print("📥 Devices received:", len(devices_data))
-        print("=" * 60)
-        # ═════════════
 
         with transaction.atomic():
             # قفل‌کردن دستگاه‌ها و بررسی دوباره وضعیت انبار داخل تراکنش؛
@@ -813,6 +985,7 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                 user=user if customer_type == 'personal' else None,
                 start_date=validated_data['start_date'],
                 end_date=validated_data['end_date'],
+                price=validated_data.get('price', 0),
                 notes=validated_data.get('notes', ''),
                 status='active',
             )
@@ -866,15 +1039,34 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                     description=f'دستگاه به قرارداد {subscription.contract_number} اضافه شد.',
                 )
 
-            # ─── ۵. اضافه کردن پرداخت‌ها ───
+            # ─── ۵. ثبت دریافتی‌های واقعی زمان عقد قرارداد ───
+            advance_remaining = subscription.price
             for payment_data in payments_data:
-                SubscriptionPayment.objects.create(
+                payment = SubscriptionPayment.objects.create(
                     subscription=subscription,
                     amount=payment_data['amount'],
-                    payment_date=payment_data['payment_date'],
-                    device_count=payment_data.get('device_count', 0),
+                    received_at=payment_data['payment_date'],
                     description=payment_data.get('description', ''),
                     operation=operation,
+                )
+                # پیش‌پرداخت فقط تا سقف مبلغ قرارداد اعمال می‌شود؛ اضافه آن اعتبار می‌ماند.
+                advance_amount = min(payment.amount, max(advance_remaining, 0))
+                allocate_payment(
+                    payment,
+                    allocation_type='contract_advance',
+                    allocation_amount=advance_amount,
+                )
+                advance_remaining -= advance_amount
+
+            # ─── ۶. ساخت نسخه اول برنامه اقساط ───
+            if installment_plan_data:
+                installment_plan_data['scheduled_amount'] = (
+                    subscription.price - sum((item['amount'] for item in payments_data), 0)
+                )
+                create_installment_plan(
+                    subscription,
+                    installment_plan_data,
+                    created_by=self.context.get('request').user if self.context.get('request') else None,
                 )
 
             return subscription

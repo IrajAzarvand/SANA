@@ -128,7 +128,6 @@ export default function SubscriptionDetail() {
   const [renewPaymentDraft, setRenewPaymentDraft] = useState({
     amount: '',
     payment_date: todayGregorian(),
-    device_count: 0,
     description: '',
   });
 
@@ -157,11 +156,25 @@ export default function SubscriptionDetail() {
   });
 
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [allocationModalOpen, setAllocationModalOpen] = useState(false);
+  const [allocationPaymentId, setAllocationPaymentId] = useState(null);
+  const [allocationForm, setAllocationForm] = useState({ allocation_mode: 'manual', allocations: {} });
+  const [planRevisionModalOpen, setPlanRevisionModalOpen] = useState(false);
+  const [planRevisionForm, setPlanRevisionForm] = useState({
+    installment_count: 4,
+    interval_months: 3,
+    calculation_mode: 'equal',
+    surplus_policy: 'credit',
+    first_due_date: '',
+    custom_amounts_text: '',
+    contract_price: '',
+  });
   const [paymentForm, setPaymentForm] = useState({
     amount: '',
     payment_date: todayGregorian(),
-    device_count: 0,
     description: '',
+    allocation_mode: 'automatic',
+    allocations: {},
   });
 
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
@@ -206,7 +219,6 @@ export default function SubscriptionDetail() {
       payment_changes: Object.fromEntries((subscription.payments || []).map((p) => [p.id, {
         amount: p.amount,
         payment_date: p.payment_date,
-        device_count: p.device_count,
         description: p.description || '',
       }])),
     });
@@ -250,12 +262,18 @@ export default function SubscriptionDetail() {
       ? editCustomer
       : editCustomer;
 
-    const payment_changes = Object.entries(editForm.payment_changes).map(([paymentId, payment]) => ({
-      id: Number(paymentId),
-      ...payment,
-      amount: Number(payment.amount),
-      device_count: Number(payment.device_count) || 0,
-    }));
+    const allocatedPaymentIds = new Set(
+      (subscription.payments || [])
+        .filter((payment) => payment.allocations?.length)
+        .map((payment) => String(payment.id))
+    );
+    const payment_changes = Object.entries(editForm.payment_changes)
+      .filter(([paymentId]) => !allocatedPaymentIds.has(String(paymentId)))
+      .map(([paymentId, payment]) => ({
+        id: Number(paymentId),
+        ...payment,
+        amount: Number(payment.amount),
+      }));
 
     setSaving(true);
     setActionError('');
@@ -357,7 +375,6 @@ export default function SubscriptionDetail() {
     setRenewPaymentDraft({
       amount: '',
       payment_date: todayGregorian(),
-      device_count: subscription.device_count || 0,
       description: '',
     });
     setActionError('');
@@ -497,13 +514,11 @@ export default function SubscriptionDetail() {
       payments: [...prev.payments, {
         ...renewPaymentDraft,
         amount: Number(renewPaymentDraft.amount),
-        device_count: Number(renewPaymentDraft.device_count) || 0,
       }],
     }));
     setRenewPaymentDraft({
       amount: '',
       payment_date: todayGregorian(),
-      device_count: subscription.device_count || 0,
       description: '',
     });
     setActionError('');
@@ -593,15 +608,21 @@ export default function SubscriptionDetail() {
         subscription: Number(id),
         amount: Number(paymentForm.amount),
         payment_date: paymentForm.payment_date,
-        device_count: Number(paymentForm.device_count) || 0,
         description: paymentForm.description,
+        allocation_mode: paymentForm.allocation_mode,
+        allocations: paymentForm.allocation_mode === 'manual'
+          ? Object.entries(paymentForm.allocations || {})
+              .filter(([, amount]) => Number(amount) > 0)
+              .map(([installment_id, amount]) => ({ installment_id: Number(installment_id), amount: Number(amount) }))
+          : undefined,
       });
       setPaymentModalOpen(false);
       setPaymentForm({
         amount: '',
         payment_date: todayGregorian(),
-        device_count: 0,
-        description: '',
+            description: '',
+        allocation_mode: 'automatic',
+        allocations: {},
       });
       refetch();
     } catch (err) {
@@ -609,6 +630,104 @@ export default function SubscriptionDetail() {
       const msg = err.response?.data
         ? Object.entries(err.response.data).map(([k, v]) => `${k}: ${Array.isArray(v) ? v[0] : v}`).join('\n')
         : 'خطا در افزودن پرداخت';
+      setActionError(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openPlanRevisionModal = () => {
+    const currentPlan = subscription.installment_plan;
+    const firstUnpaid = currentPlan?.installments?.find((item) => Number(item.remaining_amount) > 0);
+    setPlanRevisionForm({
+      installment_count: currentPlan?.installment_count || 4,
+      interval_months: currentPlan?.interval_months || 3,
+      calculation_mode: currentPlan?.calculation_mode || 'equal',
+      surplus_policy: currentPlan?.surplus_policy || 'credit',
+      first_due_date: firstUnpaid?.due_date || '',
+      custom_amounts_text: '',
+      contract_price: '',
+    });
+    setActionError('');
+    setPlanRevisionModalOpen(true);
+  };
+
+  const handleReviseInstallmentPlan = async (e) => {
+    e.preventDefault();
+    const plan = planRevisionForm;
+    const count = Number(plan.installment_count);
+    const interval = Number(plan.interval_months);
+    if (!Number.isInteger(count) || count < 1 || count > 120 || !Number.isInteger(interval) || interval < 1 || interval > 120) {
+      setActionError('تعداد و فاصله اقساط باید بین ۱ تا ۱۲۰ باشند.');
+      return;
+    }
+    const customAmounts = plan.calculation_mode === 'custom'
+      ? String(plan.custom_amounts_text || '').split(/[؛;\n]/).map((value) => Number(String(value).replace(/[^0-9]/g, '')))
+      : [];
+    if (plan.calculation_mode === 'custom' && (customAmounts.length !== count || customAmounts.some((value) => value <= 0))) {
+      setActionError('برای هر قسط یک مبلغ صحیح و مثبت وارد کنید و مبالغ را با نقطه‌ویرگول جدا کنید.');
+      return;
+    }
+
+    setSaving(true);
+    setActionError('');
+    try {
+      const contractPrice = plan.contract_price
+        ? Number(String(plan.contract_price).replace(/[^0-9]/g, ''))
+        : undefined;
+      if (plan.contract_price && (!Number.isInteger(contractPrice) || contractPrice <= 0)) {
+        setActionError('مبلغ جدید قرارداد باید عدد صحیح و بیشتر از صفر باشد.');
+        return;
+      }
+      await subscriptionsAPI.reviseInstallmentPlan(id, {
+        contract_price: contractPrice,
+        installment_count: count,
+        interval_months: interval,
+        calculation_mode: plan.calculation_mode,
+        surplus_policy: plan.surplus_policy,
+        first_due_date: plan.first_due_date || undefined,
+        custom_amounts: customAmounts,
+      });
+      setPlanRevisionModalOpen(false);
+      refetch();
+    } catch (err) {
+      const msg = err.response?.data
+        ? Object.entries(err.response.data).map(([key, value]) => `${key}: ${Array.isArray(value) ? value[0] : value}`).join('\n')
+        : 'خطا در بازتنظیم برنامه اقساط';
+      setActionError(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openAllocationModal = (payment) => {
+    setAllocationPaymentId(payment.id);
+    setAllocationForm({ allocation_mode: 'manual', allocations: {} });
+    setActionError('');
+    setAllocationModalOpen(true);
+  };
+
+  const handleAllocateExistingReceipt = async (e) => {
+    e.preventDefault();
+    if (!allocationPaymentId) return;
+    setSaving(true);
+    setActionError('');
+    try {
+      await subscriptionPaymentsAPI.allocate(allocationPaymentId, {
+        allocation_mode: allocationForm.allocation_mode,
+        allocations: allocationForm.allocation_mode === 'manual'
+          ? Object.entries(allocationForm.allocations || {})
+              .filter(([, amount]) => Number(amount) > 0)
+              .map(([installment_id, amount]) => ({ installment_id: Number(installment_id), amount: Number(amount) }))
+          : undefined,
+      });
+      setAllocationModalOpen(false);
+      setAllocationPaymentId(null);
+      refetch();
+    } catch (err) {
+      const msg = err.response?.data
+        ? Object.entries(err.response.data).map(([key, value]) => `${key}: ${Array.isArray(value) ? value[0] : value}`).join('\n')
+        : 'خطا در تخصیص اعتبار';
       setActionError(msg);
     } finally {
       setSaving(false);
@@ -835,22 +954,30 @@ export default function SubscriptionDetail() {
             </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="mt-4 grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
             <div className="p-4 rounded-xl bg-bg-base border border-border-base">
-              <div className="text-[10px] text-text-muted mb-1">کل مبالغ ثبت‌شده</div>
-              <div className="text-sm font-semibold text-text-primary">{Number(subscription.total_payment_amount || 0).toLocaleString('fa-IR')} ریال</div>
+              <div className="text-[10px] text-text-muted mb-1">مبلغ کل قرارداد</div>
+              <div className="text-sm font-semibold text-text-primary">{Number(subscription.price || 0).toLocaleString('fa-IR')} ریال</div>
             </div>
             <div className="p-4 rounded-xl bg-bg-base border border-border-base">
-              <div className="text-[10px] text-text-muted mb-1">پرداخت‌شده تا امروز</div>
+              <div className="text-[10px] text-text-muted mb-1">مجموع دریافتی واقعی</div>
               <div className="text-sm font-semibold text-brand-400">{Number(subscription.paid_payment_amount || 0).toLocaleString('fa-IR')} ریال</div>
             </div>
             <div className="p-4 rounded-xl bg-bg-base border border-border-base">
-              <div className="text-[10px] text-text-muted mb-1">پرداخت آینده</div>
-              <div className="text-sm font-semibold text-text-primary">{Number(subscription.future_payment_amount || 0).toLocaleString('fa-IR')} ریال</div>
+              <div className="text-[10px] text-text-muted mb-1">مانده اقساط سررسیدشده</div>
+              <div className="text-sm font-semibold text-warning">{Number(subscription.overdue_balance || 0).toLocaleString('fa-IR')} ریال</div>
             </div>
             <div className="p-4 rounded-xl bg-bg-base border border-border-base">
-              <div className="text-[10px] text-text-muted mb-1">مانده پرداخت</div>
+              <div className="text-[10px] text-text-muted mb-1">مانده کل قرارداد</div>
               <div className="text-sm font-semibold text-warning">{Number(subscription.outstanding_payment_amount || 0).toLocaleString('fa-IR')} ریال</div>
+            </div>
+            <div className="p-4 rounded-xl bg-bg-base border border-border-base">
+              <div className="text-[10px] text-text-muted mb-1">مانده اقساط آینده</div>
+              <div className="text-sm font-semibold text-text-primary">{Number(subscription.future_due_balance || 0).toLocaleString('fa-IR')} ریال</div>
+            </div>
+            <div className="p-4 rounded-xl bg-bg-base border border-border-base">
+              <div className="text-[10px] text-text-muted mb-1">اعتبار تخصیص‌نیافته مشتری</div>
+              <div className="text-sm font-semibold text-text-primary">{Number(subscription.unallocated_credit || 0).toLocaleString('fa-IR')} ریال</div>
             </div>
           </div>
 
@@ -976,14 +1103,93 @@ export default function SubscriptionDetail() {
         )}
       </section>
 
+      {(subscription.installment_plan || (isSiteAdmin && !isCancelled)) && (
+        <section className={sectionClass}>
+          <div className="px-5 py-4 border-b border-border-base flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-text-primary">برنامه اقساط قرارداد</h3>
+              {subscription.installment_plan && (
+                <p className="text-[11px] text-text-muted mt-1">
+                  نسخه {subscription.installment_plan.version} · هر {subscription.installment_plan.interval_months} ماه · {subscription.installment_plan.calculation_mode === 'equal' ? 'اقساط مساوی' : 'مبالغ دلخواه'}
+                </p>
+              )}
+            </div>
+            {isSiteAdmin && !isCancelled && (
+              <Button size="sm" variant="secondary" onClick={openPlanRevisionModal}>
+                {subscription.installment_plan ? 'بازتنظیم اقساط' : 'ایجاد برنامه اقساط'}
+              </Button>
+            )}
+          </div>
+          {subscription.installment_plan ? (
+            <>
+            <div className="overflow-x-auto">
+            <table className="w-full text-right">
+              <thead className="bg-bg-base text-[10px] text-text-muted">
+                <tr>
+                  <th className="px-4 py-3">قسط</th>
+                  <th className="px-4 py-3">سررسید</th>
+                  <th className="px-4 py-3">مبلغ</th>
+                  <th className="px-4 py-3">پرداخت‌شده</th>
+                  <th className="px-4 py-3">مانده</th>
+                </tr>
+              </thead>
+              <tbody>
+                {subscription.installment_plan.installments.filter((item) => item.status === 'active').map((item) => (
+                  <tr key={item.id} className="border-t border-border-base text-xs">
+                    <td className="px-4 py-3 font-mono">{item.number}</td>
+                    <td className="px-4 py-3 font-mono">{toPersianDigits(toJalali(item.due_date))}</td>
+                    <td className="px-4 py-3 font-mono">{Number(item.amount).toLocaleString('fa-IR')} ریال</td>
+                    <td className="px-4 py-3 font-mono">{Number(item.paid_amount).toLocaleString('fa-IR')} ریال</td>
+                    <td className="px-4 py-3 font-mono">{Number(item.remaining_amount).toLocaleString('fa-IR')} ریال</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {subscription.installment_plan_history?.filter((plan) => plan.status !== 'active').length > 0 && (
+            <div className="px-5 py-3 border-t border-border-base space-y-2">
+              <div className="text-[10px] font-medium text-text-muted">نسخه‌های قبلی برنامه اقساط</div>
+              {subscription.installment_plan_history.filter((plan) => plan.status !== 'active').map((plan) => (
+                <div key={plan.id} className="flex items-center justify-between text-[11px] text-text-muted">
+                  <span>نسخه {plan.version} · {plan.installment_count} قسط · {plan.interval_months} ماه فاصله</span>
+                  <span className="font-mono">{Number(plan.scheduled_amount).toLocaleString('fa-IR')} ریال</span>
+                </div>
+              ))}
+            </div>
+          )}
+            </>
+          ) : (
+            <div className="px-5 py-8 text-center text-xs text-text-muted">برای این قرارداد هنوز برنامه اقساطی ثبت نشده است.</div>
+          )}
+        </section>
+      )}
+
       {/* ═══ پرداخت‌های قرارداد ═══ */}
       <section className={sectionClass}>
         <div className="px-5 py-4 border-b border-border-base flex items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold text-text-primary">پرداخت‌های قرارداد</h3>
-            <p className="text-[11px] text-text-muted mt-1">{subscription.payments?.length || 0} پرداخت ثبت‌شده</p>
+            <p className="text-[11px] text-text-muted mt-1">{subscription.payments?.length || 0} دریافتی ثبت‌شده</p>
           </div>
-
+          {isSiteAdmin && !isCancelled && (
+            <Button
+              size="sm"
+              icon={Plus}
+              onClick={() => {
+                setPaymentForm({
+                  amount: '',
+                  payment_date: todayGregorian(),
+                                description: '',
+                  allocation_mode: 'automatic',
+                  allocations: {},
+                });
+                setActionError('');
+                setPaymentModalOpen(true);
+              }}
+            >
+              ثبت دریافتی
+            </Button>
+          )}
         </div>
         {(!subscription.payments || subscription.payments.length === 0) ? (
           <div className="py-10 text-center">
@@ -993,25 +1199,24 @@ export default function SubscriptionDetail() {
         ) : (
           <div className="p-4 space-y-2">
             {subscription.payments.map((p) => {
-              const paymentDate = new Date(p.payment_date);
-              const today = new Date();
-              today.setHours(0, 0, 0, 0);
-              const isFuture = paymentDate > today;
-              const isToday = paymentDate.getTime() === today.getTime();
-
               return (
                 <div key={p.id} className="flex items-center justify-between gap-4 p-3.5 bg-bg-base border border-border-base rounded-xl">
                   <div className="flex items-center gap-4 min-w-0 flex-wrap">
                     <span className="text-sm font-medium text-text-primary">{Number(p.amount).toLocaleString('fa-IR')} ریال</span>
-                    <span className="text-xs text-text-muted">{p.device_count} دستگاه</span>
-                    <span className="text-xs text-text-muted">{toPersianDigits(toJalali(p.payment_date))}</span>
+                    <span className="text-xs text-text-muted">دریافت: {toPersianDigits(toJalali(p.payment_date))}</span>
                     {p.description && <span className="text-xs text-text-muted truncate">{p.description}</span>}
+                    {Number(p.unallocated_amount || 0) > 0 && (
+                      <span className="text-[10px] text-warning">اعتبار باقی‌مانده: {Number(p.unallocated_amount).toLocaleString('fa-IR')} ریال</span>
+                    )}
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
-                    {isFuture && <Badge variant="info">پرداخت در آینده</Badge>}
-                    {isToday && <Badge variant="warning">امروز</Badge>}
-                    {isSiteAdmin && !isCancelled && (
-                      <button onClick={() => handleRemovePayment(p.id)} className="p-1.5 rounded-field text-text-muted hover:bg-danger/10 hover:text-danger transition-colors" title="حذف پرداخت">
+                    {isSiteAdmin && !isCancelled && Number(p.unallocated_amount || 0) > 0 && subscription.installment_plan && (
+                      <Button size="sm" variant="secondary" onClick={() => openAllocationModal(p)}>
+                        تخصیص اعتبار
+                      </Button>
+                    )}
+                    {isSiteAdmin && !isCancelled && !p.allocations?.length && (
+                      <button onClick={() => handleRemovePayment(p.id)} className="p-1.5 rounded-field text-text-muted hover:bg-danger/10 hover:text-danger transition-colors" title="حذف دریافتی">
                         <Trash2 size={14} />
                       </button>
                     )}
@@ -1020,7 +1225,7 @@ export default function SubscriptionDetail() {
               );
             })}
             <div className="flex items-center justify-between p-4 rounded-xl bg-brand-500/10 border border-brand-500/30">
-              <span className="text-sm text-text-secondary">مجموع پرداخت‌های ثبت‌شده</span>
+              <span className="text-sm text-text-secondary">مجموع دریافتی‌های ثبت‌شده</span>
               <span className="text-base font-bold text-brand-400">{totalPayments.toLocaleString('fa-IR')} ریال</span>
             </div>
           </div>
@@ -1205,7 +1410,7 @@ export default function SubscriptionDetail() {
                                   {Number(payment.amount || 0).toLocaleString('fa-IR')} ریال
                                 </div>
                                 <div className="text-[10px] text-text-muted mt-1">
-                                  {toJalali(payment.payment_date)} · {payment.device_count || 0} دستگاه
+                                  {toJalali(payment.payment_date)}
                                   {payment.description ? ` · ${payment.description}` : ''}
                                 </div>
                               </div>
@@ -1339,10 +1544,16 @@ export default function SubscriptionDetail() {
             <h3 className="text-sm font-semibold text-text-primary">اصلاح پرداخت‌ها</h3>
             {(subscription.payments || []).map((p) => {
               const payment = editForm.payment_changes[p.id] || p;
-              return <div key={p.id} className="grid grid-cols-1 md:grid-cols-4 gap-3 p-3 bg-bg-base border border-border-base rounded-field">
-                <Input type="number" label="مبلغ" value={payment.amount} onChange={(e) => updateEditPayment(p.id,'amount',e.target.value)} />
-                <JalaliDatePicker label="تاریخ پرداخت" value={payment.payment_date} onChange={(val) => updateEditPayment(p.id,'payment_date',val)} />
-                <Input type="number" label="تعداد دستگاه" value={payment.device_count} onChange={(e) => updateEditPayment(p.id,'device_count',e.target.value)} />
+              if (p.allocations?.length) {
+                return (
+                  <div key={p.id} className="p-3 bg-bg-base border border-border-base rounded-field text-xs text-text-muted">
+                    دریافتی {Number(p.amount).toLocaleString('fa-IR')} ریال در {toPersianDigits(toJalali(p.payment_date))} تخصیص مالی دارد و در این فرم قابل تغییر نیست.
+                  </div>
+                );
+              }
+              return <div key={p.id} className="grid grid-cols-1 md:grid-cols-3 gap-3 p-3 bg-bg-base border border-border-base rounded-field">
+                <Input type="number" label="مبلغ دریافتی" value={payment.amount} onChange={(e) => updateEditPayment(p.id,'amount',e.target.value)} />
+                <JalaliDatePicker label="تاریخ واقعی دریافت وجه" value={payment.payment_date} onChange={(val) => updateEditPayment(p.id,'payment_date',val)} />
                 <Input label="توضیحات" value={payment.description || ''} onChange={(e) => updateEditPayment(p.id,'description',e.target.value)} />
               </div>;
             })}
@@ -1588,15 +1799,9 @@ export default function SubscriptionDetail() {
                 placeholder="مثلاً 50000000"
               />
               <JalaliDatePicker
-                label="تاریخ پرداخت"
+                label="تاریخ واقعی دریافت وجه"
                 value={renewPaymentDraft.payment_date}
                 onChange={(val) => setRenewPaymentDraft({ ...renewPaymentDraft, payment_date: val })}
-              />
-              <Input
-                type="number"
-                label="تعداد دستگاه"
-                value={renewPaymentDraft.device_count}
-                onChange={(e) => setRenewPaymentDraft({ ...renewPaymentDraft, device_count: e.target.value })}
               />
               <Input
                 label="توضیحات پرداخت"
@@ -1617,7 +1822,7 @@ export default function SubscriptionDetail() {
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-mono">{Number(payment.amount).toLocaleString('fa-IR')} ریال</div>
                       <div className="text-[10px] text-text-muted">
-                        {toJalali(payment.payment_date)} · {payment.device_count || 0} دستگاه
+                        {toJalali(payment.payment_date)}
                         {payment.description ? ` · ${payment.description}` : ''}
                       </div>
                     </div>
@@ -1797,23 +2002,140 @@ export default function SubscriptionDetail() {
             required
           />
           <JalaliDatePicker
-            label="تاریخ پرداخت"
+            label="تاریخ واقعی دریافت وجه"
             value={paymentForm.payment_date}
+          maxDate={todayGregorian()}
             onChange={(val) => setPaymentForm({ ...paymentForm, payment_date: val })}
             required
           />
-          <Input
-            type="number"
-            label="تعداد دستگاه"
-            value={paymentForm.device_count}
-            onChange={(e) => setPaymentForm({ ...paymentForm, device_count: e.target.value })}
+          <Select
+            label="روش تخصیص دریافتی"
+            value={paymentForm.allocation_mode}
+            onChange={(e) => setPaymentForm({ ...paymentForm, allocation_mode: e.target.value, allocations: {} })}
+            options={[
+              { value: 'automatic', label: 'خودکار؛ از قدیمی‌ترین قسط سررسیدشده' },
+              { value: 'manual', label: 'انتخاب دستی اقساط' },
+              { value: 'contract_advance', label: 'پیش‌پرداخت قرارداد؛ بدون اتصال به قسط' },
+              { value: 'credit', label: 'ثبت به‌عنوان اعتبار مشتری؛ بدون تخصیص' },
+            ]}
           />
+          {paymentForm.allocation_mode === 'manual' && (
+            <div className="space-y-2 rounded-field border border-border-base p-3">
+              <div className="text-xs font-medium text-text-secondary">مبلغی که به هر قسط تخصیص می‌دهید</div>
+              {(subscription.installment_plan?.installments || []).filter((item) => item.status === 'active' && Number(item.remaining_amount) > 0).map((item) => (
+                <div key={item.id} className="grid grid-cols-[1fr_150px] items-center gap-3">
+                  <div className="text-xs text-text-secondary">
+                    قسط {item.number} · سررسید {toPersianDigits(toJalali(item.due_date))} · مانده {Number(item.remaining_amount).toLocaleString('fa-IR')} ریال
+                  </div>
+                  <Input
+                    type="number"
+                    value={paymentForm.allocations?.[item.id] || ''}
+                    onChange={(e) => setPaymentForm((prev) => ({
+                      ...prev,
+                      allocations: { ...prev.allocations, [item.id]: e.target.value },
+                    }))}
+                    placeholder="مبلغ تخصیص"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
           <Input
             label="توضیحات"
             value={paymentForm.description}
             onChange={(e) => setPaymentForm({ ...paymentForm, description: e.target.value })}
             placeholder="مثلاً پرداخت برای ۲ دستگاه"
           />
+        </form>
+      </Modal>
+
+      <Modal
+        open={planRevisionModalOpen}
+        onClose={() => setPlanRevisionModalOpen(false)}
+        title={subscription.installment_plan ? 'بازتنظیم برنامه اقساط' : 'ایجاد برنامه اقساط'}
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setPlanRevisionModalOpen(false)} disabled={saving}>انصراف</Button>
+            <Button type="submit" form="revise-installment-plan-form" disabled={saving}>{saving ? 'در حال ذخیره...' : 'ثبت برنامه جدید'}</Button>
+          </>
+        }
+      >
+        <form id="revise-installment-plan-form" onSubmit={handleReviseInstallmentPlan} className="space-y-4">
+          {actionError && <div className="bg-danger/10 border border-danger/30 rounded-field p-3"><p className="text-xs text-danger whitespace-pre-line">{actionError}</p></div>}
+          <Input
+            label="مبلغ جدید قرارداد (ریال؛ اختیاری)"
+            value={planRevisionForm.contract_price}
+            onChange={(e) => setPlanRevisionForm({ ...planRevisionForm, contract_price: e.target.value })}
+            placeholder={Number(subscription.price || 0).toLocaleString('en-US')}
+          />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Input type="number" label="تعداد اقساط جدید" value={planRevisionForm.installment_count} onChange={(e) => setPlanRevisionForm({ ...planRevisionForm, installment_count: e.target.value })} />
+            <Input type="number" label="فاصله اقساط (ماه)" value={planRevisionForm.interval_months} onChange={(e) => setPlanRevisionForm({ ...planRevisionForm, interval_months: e.target.value })} />
+            <Select label="روش محاسبه" value={planRevisionForm.calculation_mode} onChange={(e) => setPlanRevisionForm({ ...planRevisionForm, calculation_mode: e.target.value })} options={[
+              { value: 'equal', label: 'اقساط مساوی' },
+              { value: 'custom', label: 'مبالغ دلخواه' },
+            ]} />
+            <Select label="نحوه مدیریت مازاد دریافتی" value={planRevisionForm.surplus_policy} onChange={(e) => setPlanRevisionForm({ ...planRevisionForm, surplus_policy: e.target.value })} options={[
+              { value: 'credit', label: 'نگهداری به‌عنوان اعتبار مشتری' },
+              { value: 'future', label: 'تخصیص به اقساط آینده' },
+            ]} />
+          </div>
+          <JalaliDatePicker
+            label="سررسید اولین قسط برنامه جدید"
+            value={planRevisionForm.first_due_date}
+            onChange={(value) => setPlanRevisionForm({ ...planRevisionForm, first_due_date: value })}
+          />
+          {planRevisionForm.calculation_mode === 'custom' && (
+            <Input
+              label="مبالغ اقساط به ترتیب (با نقطه‌ویرگول جدا کنید)"
+              value={planRevisionForm.custom_amounts_text}
+              onChange={(e) => setPlanRevisionForm({ ...planRevisionForm, custom_amounts_text: e.target.value })}
+              placeholder="مثلاً 20,000,000؛ 30,000,000"
+            />
+          )}
+          <p className="text-[11px] text-text-muted leading-5">
+            اگر مبلغ جدید وارد شود، مبلغ قرارداد تغییر می‌کند و برنامه بر اساس مبلغ‌های قبلاً تخصیص‌یافته دوباره محاسبه می‌شود؛ در غیر این صورت فقط مانده برنامه فعلی بازتنظیم خواهد شد. مبالغ اقساط تسویه‌شده، بخش پرداخت‌شده اقساط نیمه‌تسویه و تخصیص‌های قبلی تغییر نمی‌کنند و نسخه قبلی برای تاریخچه باقی می‌ماند.
+          </p>
+        </form>
+      </Modal>
+
+      <Modal
+        open={allocationModalOpen}
+        onClose={() => setAllocationModalOpen(false)}
+        title="تخصیص اعتبار به اقساط"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setAllocationModalOpen(false)} disabled={saving}>انصراف</Button>
+            <Button type="submit" form="allocate-credit-form" disabled={saving}>{saving ? 'در حال ذخیره...' : 'ثبت تخصیص'}</Button>
+          </>
+        }
+      >
+        <form id="allocate-credit-form" onSubmit={handleAllocateExistingReceipt} className="space-y-4">
+          {actionError && <div className="bg-danger/10 border border-danger/30 rounded-field p-3"><p className="text-xs text-danger whitespace-pre-line">{actionError}</p></div>}
+          <Select
+            label="روش تخصیص"
+            value={allocationForm.allocation_mode}
+            onChange={(e) => setAllocationForm({ allocation_mode: e.target.value, allocations: {} })}
+            options={[
+              { value: 'manual', label: 'انتخاب دستی اقساط' },
+              { value: 'automatic', label: 'خودکار؛ از قدیمی‌ترین قسط سررسیدشده' },
+            ]}
+          />
+          {allocationForm.allocation_mode === 'manual' && (
+            <div className="space-y-2">
+              {(subscription.installment_plan?.installments || []).filter((item) => item.status === 'active' && Number(item.remaining_amount) > 0).map((item) => (
+                <div key={item.id} className="grid grid-cols-[1fr_140px] items-center gap-3">
+                  <div className="text-xs text-text-secondary">قسط {item.number} · {toPersianDigits(toJalali(item.due_date))} · مانده {Number(item.remaining_amount).toLocaleString('fa-IR')} ریال</div>
+                  <Input
+                    type="number"
+                    value={allocationForm.allocations?.[item.id] || ''}
+                    onChange={(e) => setAllocationForm((prev) => ({ ...prev, allocations: { ...prev.allocations, [item.id]: e.target.value } }))}
+                    placeholder="مبلغ"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </form>
       </Modal>
 
