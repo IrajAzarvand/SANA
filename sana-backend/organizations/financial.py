@@ -153,12 +153,19 @@ def allocate_payment(payment, mode='automatic', allocations=None, allocation_typ
 
         if available <= 0:
             return
+        active_plan = SubscriptionInstallmentPlan.objects.filter(
+            subscription_id=locked_payment.subscription_id,
+            status='active',
+        ).first()
+        if not active_plan:
+            return
+
         installments = SubscriptionInstallment.objects.select_for_update().filter(
-            plan__subscription_id=locked_payment.subscription_id,
-            plan__status='active',
+            plan=active_plan,
             status='active',
         ).order_by('due_date', 'number')
-        for installment in installments:
+        due_installments = installments.filter(due_date__lte=locked_payment.payment_date)
+        for installment in due_installments:
             remaining = installment_remaining_amount(installment)
             if remaining <= 0:
                 continue
@@ -172,4 +179,21 @@ def allocate_payment(payment, mode='automatic', allocations=None, allocation_typ
             available -= amount
             if available <= 0:
                 break
+
+        # Future installments are touched only when the plan explicitly allows it.
+        if available > 0 and active_plan.surplus_policy == 'future':
+            for installment in installments.filter(due_date__gt=locked_payment.payment_date):
+                remaining = installment_remaining_amount(installment)
+                if remaining <= 0:
+                    continue
+                amount = min(available, remaining)
+                SubscriptionPaymentAllocation.objects.create(
+                    payment=locked_payment,
+                    installment=installment,
+                    allocation_type='installment',
+                    amount=amount,
+                )
+                available -= amount
+                if available <= 0:
+                    break
         # Any remaining amount is intentionally left unallocated as customer credit.
