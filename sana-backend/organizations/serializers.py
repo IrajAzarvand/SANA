@@ -248,6 +248,7 @@ class SubscriptionPaymentAllocationSerializer(serializers.ModelSerializer):
 
 
 class SubscriptionPaymentSerializer(serializers.ModelSerializer):
+    payment_date = serializers.DateField(source='received_at')
     allocations = SubscriptionPaymentAllocationSerializer(many=True, read_only=True)
     unallocated_amount = serializers.SerializerMethodField()
 
@@ -1035,7 +1036,7 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                 payment = SubscriptionPayment.objects.create(
                     subscription=subscription,
                     amount=payment_data['amount'],
-                    payment_date=payment_data['payment_date'],
+                    received_at=payment_data['payment_date'],
                     device_count=payment_data.get('device_count', 0),
                     description=payment_data.get('description', ''),
                     operation=operation,
