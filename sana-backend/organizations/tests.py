@@ -274,3 +274,39 @@ class SubscriptionWizardDeviceValidationTests(TestCase):
         self.assertIsNone(link.unassigned_at)
         self.device.refresh_from_db()
         self.assertEqual(self.device.management_status, 'sold')
+
+class SubscriptionContractNumberUniquenessTests(TestCase):
+    def test_contract_number_cannot_duplicate_any_existing_contract(self):
+        existing_number = 'PRS-TEST-DUPLICATE'
+        Subscription.objects.create(
+            contract_number=existing_number,
+            customer_type='organization',
+            start_date='2026-11-07',
+            end_date='2027-11-07',
+        )
+        device = Device.objects.create(imei='444444444444444')
+
+        payload = {
+            'customer_type': 'personal',
+            'username': 'unique-number-test-user',
+            'password': 'Password-123456',
+            'first_name': 'Test',
+            'last_name': 'User',
+            'mobile': '09120000000',
+            'contract_number': existing_number,
+            'start_date': '2026-11-07',
+            'end_date': '2027-11-07',
+            'devices': [{
+                'device_id': device.id,
+                'start_date': '2026-11-07',
+                'end_date': '2027-11-07',
+            }],
+            'payments': [],
+        }
+
+        serializer = SubscriptionWizardSerializer(data=payload)
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('contract_number', serializer.errors)
+        self.assertIn('قبلاً استفاده شده', str(serializer.errors['contract_number']))
+

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
+import Modal from '../components/Modal';
 import Button from '../components/Button';
 import Input from '../components/Input';
 import Badge from '../components/Badge';
@@ -35,6 +36,7 @@ export default function SubscriptionWizard() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [usernameAvailability, setUsernameAvailability] = useState('idle');
+  const [pendingCustomerType, setPendingCustomerType] = useState(null);
 
   const [form, setForm] = useState({
     customer_type: 'organization',
@@ -65,18 +67,37 @@ export default function SubscriptionWizard() {
 
   // تولید شماره قرارداد خودکار از Backend
   useEffect(() => {
+    let cancelled = false;
+    const customerType = form.customer_type;
+
     const fetchNextNumber = async () => {
       try {
-        const data = await subscriptionsAPI.getNextNumber(form.customer_type);
-        setForm((f) => ({ ...f, contract_number: data.contract_number }));
+        const data = await subscriptionsAPI.getNextNumber(customerType);
+        if (cancelled) return;
+
+        setForm((current) => (
+          current.customer_type === customerType
+            ? { ...current, contract_number: data.contract_number }
+            : current
+        ));
       } catch (err) {
+        if (cancelled) return;
+
         console.error('Error fetching contract number:', err);
-        const prefix = form.customer_type === 'organization' ? 'ORG' : 'PRS';
-        setForm((f) => ({ ...f, contract_number: `${prefix}-TEMP-0001` }));
+        setForm((current) => (
+          current.customer_type === customerType
+            ? { ...current, contract_number: '' }
+            : current
+        ));
+        setError('دریافت شماره قرارداد از سرور ناموفق بود؛ لطفاً دوباره تلاش کنید.');
       }
     };
 
     fetchNextNumber();
+
+    return () => {
+      cancelled = true;
+    };
   }, [form.customer_type]);
   const updateForm = (key, value) => {
     setForm((f) => {
@@ -85,6 +106,53 @@ export default function SubscriptionWizard() {
       }
       return { ...f, [key]: value };
     });
+  };
+
+  const requestCustomerTypeChange = (nextType) => {
+    if (nextType === form.customer_type) return;
+
+    const hasCustomerData = Boolean(
+      form.organization_id || form.organization_name || form.organization_code
+      || form.registration_number || form.economy_code || form.organization_phone
+      || form.organization_email || form.organization_address || form.existing_user_id
+      || form.username || form.password || form.first_name || form.last_name
+      || form.mobile || form.national_id || form.address
+    );
+
+    if (hasCustomerData) {
+      setPendingCustomerType(nextType);
+      return;
+    }
+
+    applyCustomerTypeChange(nextType);
+  };
+
+  const applyCustomerTypeChange = (nextType) => {
+    setForm((current) => ({
+      ...current,
+      customer_type: nextType,
+      contract_number: '',
+      organization_id: null,
+      organization_selection_touched: false,
+      organization_name: '',
+      organization_code: '',
+      registration_number: '',
+      economy_code: '',
+      organization_phone: '',
+      organization_email: '',
+      organization_address: '',
+      existing_user_id: null,
+      username: '',
+      password: '',
+      first_name: '',
+      last_name: '',
+      mobile: '',
+      national_id: '',
+      address: '',
+    }));
+    setUsernameAvailability('idle');
+    setPendingCustomerType(null);
+    setError('');
   };
 
   const validateStep = () => {
@@ -296,7 +364,7 @@ export default function SubscriptionWizard() {
       )}
 
       <Card>
-        {step === 1 && <Step1 form={form} updateForm={updateForm} />}
+        {step === 1 && <Step1 form={form} onRequestCustomerTypeChange={requestCustomerTypeChange} />}
         {step === 2 && (
           <Step2
             form={form}
@@ -336,6 +404,29 @@ export default function SubscriptionWizard() {
         )}
       </div>
 
+      <Modal
+        open={Boolean(pendingCustomerType)}
+        onClose={() => setPendingCustomerType(null)}
+        title="تغییر نوع مشتری"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setPendingCustomerType(null)}>
+              انصراف
+            </Button>
+            <Button onClick={() => applyCustomerTypeChange(pendingCustomerType)}>
+              تأیید و پاک‌سازی اطلاعات مشتری
+            </Button>
+          </>
+        }
+      >
+        <p className="text-sm text-text-secondary leading-7">
+          با تغییر نوع مشتری، اطلاعات سازمان، مدیر/کاربر و مشخصات مشتری فعلی پاک می‌شوند
+          و باید اطلاعات مشتری جدید را وارد کنید.
+        </p>
+        <p className="text-sm text-text-primary mt-3 leading-7">
+          اطلاعات قرارداد، تاریخ‌ها، دستگاه‌های انتخاب‌شده و پرداخت‌ها حفظ خواهند شد.
+        </p>
+      </Modal>
     </div>
   );
 }
@@ -344,7 +435,7 @@ export default function SubscriptionWizard() {
    مرحله ۱ — نوع مشتری
    ═══════════════════════════════════════════════ */
 
-function Step1({ form, updateForm }) {
+function Step1({ form, onRequestCustomerTypeChange }) {
   return (
     <div className="space-y-6">
       <div>
@@ -355,7 +446,7 @@ function Step1({ form, updateForm }) {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <button
           type="button"
-          onClick={() => updateForm('customer_type', 'organization')}
+          onClick={() => onRequestCustomerTypeChange('organization')}
           className={`p-6 rounded-card border-2 text-right transition-all
             ${form.customer_type === 'organization'
               ? 'border-brand-500 bg-brand-500/5'
@@ -378,7 +469,7 @@ function Step1({ form, updateForm }) {
 
         <button
           type="button"
-          onClick={() => updateForm('customer_type', 'personal')}
+          onClick={() => onRequestCustomerTypeChange('personal')}
           className={`p-6 rounded-card border-2 text-right transition-all
             ${form.customer_type === 'personal'
               ? 'border-info bg-info/5'
