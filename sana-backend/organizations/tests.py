@@ -9,6 +9,7 @@ from organizations.models import (
 )
 from organizations.financial import create_installment_plan, allocate_payment
 from django.core.exceptions import ValidationError
+from django.db.models import Sum
 from .serializers import SubscriptionWizardSerializer
 
 
@@ -428,7 +429,7 @@ class SubscriptionInstallmentLedgerTests(TestCase):
         )
         allocate_payment(payment)
         self.assertEqual(
-            payment.allocations.aggregate(total=__import__('django').db.models.Sum('amount'))['total'],
+            payment.allocations.aggregate(total=Sum('amount'))['total'],
             None,
         )
 
