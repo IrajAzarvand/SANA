@@ -14,6 +14,7 @@ import AddDeviceModal from '../components/AddDeviceModal';
 import { useApi } from '../hooks/useApi';
 import { devicesAPI } from '../api/services/fleet';
 import { subscriptionsAPI } from '../api/services/subscriptions';
+import { organizationsAPI } from '../api/services/organizations';
 import JalaliDatePicker from '../components/JalaliDatePicker';
 import { toJalali } from '../utils/dateUtils';
 import UserComboBox from '../components/UserComboBox';
@@ -37,6 +38,8 @@ export default function SubscriptionWizard() {
 
   const [form, setForm] = useState({
     customer_type: 'organization',
+    organization_id: null,
+    organization_selection_touched: false,
     organization_name: '',
     organization_code: '',
     registration_number: '',
@@ -96,7 +99,7 @@ export default function SubscriptionWizard() {
 
     if (step === 2) {
       if (form.customer_type === 'organization') {
-        if (!form.organization_name) {
+        if (!form.organization_name.trim()) {
           setError('نام سازمان الزامی است');
           return false;
         }
@@ -175,6 +178,7 @@ export default function SubscriptionWizard() {
       const payload = {
         customer_type: form.customer_type,
         ...(form.customer_type === 'organization' ? {
+          organization_id: form.organization_id || null,
           organization_name: form.organization_name,
           organization_code: form.organization_code,
           registration_number: form.registration_number,
@@ -382,6 +386,43 @@ function Step1({ form, updateForm }) {
 
 function Step2({ form, updateForm, setForm, onUsernameAvailabilityChange }) {
   const isOrg = form.customer_type === 'organization';
+  const [organizations, setOrganizations] = useState([]);
+  const [organizationsLoading, setOrganizationsLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isOrg) return;
+    let cancelled = false;
+    const loadOrganizations = async () => {
+      setOrganizationsLoading(true);
+      try {
+        const result = await organizationsAPI.list();
+        const list = Array.isArray(result) ? result : result.results || [];
+        if (!cancelled) setOrganizations(list);
+      } catch (err) {
+        console.error('Error loading organizations:', err);
+        if (!cancelled) setOrganizations([]);
+      } finally {
+        if (!cancelled) setOrganizationsLoading(false);
+      }
+    };
+    loadOrganizations();
+    return () => { cancelled = true; };
+  }, [isOrg]);
+
+  const applyOrganization = (organization) => {
+    setForm((f) => ({
+      ...f,
+      organization_id: organization?.id ?? null,
+      organization_selection_touched: true,
+      organization_name: organization?.name || '',
+      organization_code: organization?.code || '',
+      registration_number: organization?.registration_number || '',
+      economy_code: organization?.economy_code || '',
+      organization_phone: organization?.phone || '',
+      organization_email: organization?.email || '',
+      organization_address: organization?.address || '',
+    }));
+  };
 
   return (
     <div className="space-y-6">
@@ -391,55 +432,85 @@ function Step2({ form, updateForm, setForm, onUsernameAvailabilityChange }) {
         </h3>
         <p className="text-sm text-text-muted">
           {isOrg
-            ? 'اطلاعات شرکت و کاربر اصلی (مدیر شرکت) را وارد کنید'
+            ? 'سازمان و مدیر شرکت را مستقل از یکدیگر انتخاب کنید'
             : 'اطلاعات شخصی و اطلاعات ورود را وارد کنید'}
         </p>
       </div>
 
       {isOrg && (
         <div className="space-y-4">
-          <h4 className="text-xs font-medium text-text-muted">اطلاعات سازمان</h4>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <h4 className="text-xs font-medium text-text-muted">انتخاب سازمان</h4>
+          <div>
+            <label className="block text-sm text-text-secondary mb-2">سازمان مشتری</label>
+            <select
+              value={form.organization_id || 'new'}
+              onChange={(e) => {
+                if (e.target.value === 'new') {
+                  applyOrganization(null);
+                  return;
+                }
+                const selected = organizations.find((org) => String(org.id) === e.target.value);
+                if (selected) applyOrganization(selected);
+              }}
+              disabled={organizationsLoading}
+              className="w-full bg-bg-base border border-border-base rounded-field px-3 py-2.5 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+            >
+              <option value="new">ایجاد سازمان جدید</option>
+              {organizations.map((org) => (
+                <option key={org.id} value={org.id}>{org.name} — {org.code}</option>
+              ))}
+            </select>
+            {organizationsLoading && (
+              <p className="text-[10px] text-text-muted mt-1">در حال دریافت فهرست سازمان‌ها...</p>
+            )}
+          </div>
+
+          <div className="space-y-4">
+            <h4 className="text-xs font-medium text-text-muted">
+              {form.organization_id ? 'اطلاعات سازمان انتخاب‌شده (قابل ویرایش)' : 'اطلاعات سازمان جدید'}
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Input
+                label="نام سازمان"
+                value={form.organization_name}
+                onChange={(e) => updateForm('organization_name', e.target.value)}
+                placeholder="نام کامل شرکت"
+                required
+              />
+              <Input
+                label="شماره ثبت"
+                value={form.registration_number}
+                onChange={(e) => updateForm('registration_number', e.target.value)}
+              />
+              <Input
+                label="کد اقتصادی"
+                value={form.economy_code}
+                onChange={(e) => updateForm('economy_code', e.target.value)}
+              />
+              <Input
+                label="تلفن سازمان"
+                icon={Phone}
+                value={form.organization_phone}
+                onChange={(e) => updateForm('organization_phone', e.target.value)}
+              />
+              <Input
+                label="ایمیل سازمان"
+                value={form.organization_email}
+                onChange={(e) => updateForm('organization_email', e.target.value)}
+              />
+            </div>
             <Input
-              label="نام سازمان"
-              value={form.organization_name}
-              onChange={(e) => updateForm('organization_name', e.target.value)}
-              placeholder="نام کامل شرکت"
-              required
-            />
-            <Input
-              label="شماره ثبت"
-              value={form.registration_number}
-              onChange={(e) => updateForm('registration_number', e.target.value)}
-            />
-            <Input
-              label="کد اقتصادی"
-              value={form.economy_code}
-              onChange={(e) => updateForm('economy_code', e.target.value)}
-            />
-            <Input
-              label="تلفن سازمان"
-              icon={Phone}
-              value={form.organization_phone}
-              onChange={(e) => updateForm('organization_phone', e.target.value)}
-            />
-            <Input
-              label="ایمیل سازمان"
-              value={form.organization_email}
-              onChange={(e) => updateForm('organization_email', e.target.value)}
+              label="آدرس سازمان"
+              value={form.organization_address}
+              onChange={(e) => updateForm('organization_address', e.target.value)}
             />
           </div>
-          <Input
-            label="آدرس سازمان"
-            value={form.organization_address}
-            onChange={(e) => updateForm('organization_address', e.target.value)}
-          />
         </div>
       )}
 
       <div className="space-y-4 pt-4 border-t border-border-base">
         <h4 className="text-xs font-medium text-text-muted">
-          {isOrg ? 'اطلاعات کاربر مدیر شرکت' : 'اطلاعات کاربری و اطلاعات ورود'}
+          {isOrg ? 'انتخاب مدیر شرکت' : 'اطلاعات کاربری و اطلاعات ورود'}
         </h4>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <UserComboBox
@@ -462,9 +533,15 @@ function Step2({ form, updateForm, setForm, onUsernameAvailabilityChange }) {
                   address: user.address || '',
                 };
 
-                // اگه کاربر سازمانی بود، اطلاعات سازمان رو هم پر کن
-                if (user.account_type === 'organization' && user.organization_data) {
+                // سازمان مدیر فقط برای پیش‌انتخاب است؛ انتخاب سازمان مستقل و قابل تغییر می‌ماند.
+                if (
+                  user.account_type === 'organization' &&
+                  user.organization_data &&
+                  !f.organization_id &&
+                  !f.organization_selection_touched
+                ) {
                   const org = user.organization_data;
+                  updates.organization_id = org.id;
                   updates.organization_name = org.name || '';
                   updates.organization_code = org.code || '';
                   updates.registration_number = org.registration_number || '';
@@ -481,26 +558,16 @@ function Step2({ form, updateForm, setForm, onUsernameAvailabilityChange }) {
               setForm((f) => ({
                 ...f,
                 existing_user_id: null,
-                // پاک کردن اطلاعات کاربر
                 first_name: '',
                 last_name: '',
                 mobile: '',
                 national_id: '',
                 address: '',
-                // پاک کردن اطلاعات سازمان
-                organization_name: '',
-                organization_code: '',
-                registration_number: '',
-                economy_code: '',
-                organization_phone: '',
-                organization_email: '',
-                organization_address: '',
               }));
             }}
             required
           />
 
-          {/* رمز عبور — فقط برای کاربر جدید */}
           {!form.existing_user_id && (
             <Input
               type="password"
@@ -548,14 +615,13 @@ function Step2({ form, updateForm, setForm, onUsernameAvailabilityChange }) {
             placeholder="۱۰ رقم"
           />
 
-          {/* آدرس مشتری شخصی */}
           {!isOrg && (
-          <Input
-            label="آدرس"
-            value={form.address}
-            onChange={(e) => updateForm('address', e.target.value)}
-            placeholder="آدرس محل سکونت"
-          />
+            <Input
+              label="آدرس"
+              value={form.address}
+              onChange={(e) => updateForm('address', e.target.value)}
+              placeholder="آدرس محل سکونت"
+            />
           )}
         </div>
       </div>
@@ -1040,7 +1106,7 @@ function Step6({ form }) {
       <div className="bg-success/10 border border-success/30 rounded-field p-3 flex items-start gap-2">
         <CheckCircle2 size={16} className="text-success flex-shrink-0 mt-0.5" />
         <p className="text-xs text-text-secondary leading-relaxed">
-          با کلیک روی <span className="font-medium text-success">«ثبت قرارداد»</span>، کاربر به صورت خودکار ساخته می‌شود و می‌تواند با اطلاعات وارد شده لاگین کند.
+          با کلیک روی <span className="font-medium text-success">«ثبت قرارداد»</span>، قرارداد به سازمان و مدیر انتخاب‌شده متصل می‌شود؛ حساب موجود حفظ می‌شود یا در صورت نیاز حساب جدید ساخته خواهد شد.
         </p>
       </div>
     </div>
