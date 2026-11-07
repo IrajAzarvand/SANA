@@ -1007,6 +1007,7 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                 )
 
             # ─── ۵. ثبت دریافتی‌های واقعی زمان عقد قرارداد ───
+            advance_remaining = subscription.price
             for payment_data in payments_data:
                 payment = SubscriptionPayment.objects.create(
                     subscription=subscription,
@@ -1016,8 +1017,14 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                     description=payment_data.get('description', ''),
                     operation=operation,
                 )
-                # دریافتی اولیه از مبلغ قابل تقسیط کسر می‌شود؛ قسط محسوب نمی‌شود.
-                allocate_payment(payment, allocation_type='contract_advance')
+                # پیش‌پرداخت فقط تا سقف مبلغ قرارداد اعمال می‌شود؛ اضافه آن اعتبار می‌ماند.
+                advance_amount = min(payment.amount, max(advance_remaining, 0))
+                allocate_payment(
+                    payment,
+                    allocation_type='contract_advance',
+                    allocation_amount=advance_amount,
+                )
+                advance_remaining -= advance_amount
 
             # ─── ۶. ساخت نسخه اول برنامه اقساط ───
             if installment_plan_data:
