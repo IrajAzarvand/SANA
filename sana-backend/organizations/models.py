@@ -526,11 +526,6 @@ class SubscriptionPaymentAllocation(models.Model):
                 ),
                 name='org_allocation_type_installment_consistent',
             ),
-            models.UniqueConstraint(
-                fields=['payment', 'installment'],
-                condition=models.Q(installment__isnull=False),
-                name='org_payment_installment_allocation_uniq',
-            ),
         ]
 
     def __str__(self):
