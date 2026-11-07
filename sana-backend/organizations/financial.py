@@ -35,6 +35,10 @@ def create_installment_plan(subscription, data, created_by=None):
         raise ValidationError({'interval_months': 'فاصله اقساط باید بین ۱ تا ۱۲۰ ماه باشد'})
     if scheduled_amount <= 0:
         raise ValidationError({'scheduled_amount': 'مبلغ اقساط باید بیشتر از صفر باشد'})
+    if int(scheduled_amount) < count and mode == 'equal':
+        raise ValidationError({'installment_count': 'تعداد اقساط نمی‌تواند از کوچک‌ترین واحد مبلغ قابل تقسیط بیشتر باشد'})
+    if data.get('surplus_policy', 'credit') not in ('credit', 'future'):
+        raise ValidationError({'surplus_policy': 'نحوه مدیریت مازاد دریافتی نامعتبر است'})
 
     custom_amounts = data.get('custom_amounts') or []
     if mode == 'equal':
@@ -124,6 +128,9 @@ def allocate_payment(payment, mode='automatic', allocations=None, allocation_typ
         if mode == 'manual':
             if not allocations:
                 raise ValidationError({'allocations': 'برای تخصیص دستی حداقل یک قسط انتخاب کنید'})
+            installment_ids = [item.get('installment_id') for item in allocations]
+            if len(installment_ids) != len(set(installment_ids)):
+                raise ValidationError({'allocations': 'یک قسط را بیش از یک بار انتخاب کرده‌اید'})
             requested_total = Decimal('0')
             for item in allocations:
                 installment = SubscriptionInstallment.objects.select_for_update().select_related(
@@ -138,7 +145,7 @@ def allocate_payment(payment, mode='automatic', allocations=None, allocation_typ
                     raise ValidationError({'allocations': 'یکی از اقساط انتخاب‌شده معتبر یا فعال نیست'})
                 amount = Decimal(str(item.get('amount', 0)))
                 remaining = installment_remaining_amount(installment)
-                if amount <= 0 or amount > remaining:
+                if amount <= 0 or amount != amount.to_integral_value() or amount > remaining:
                     raise ValidationError({'allocations': f'مبلغ تخصیص قسط {installment.number} نامعتبر است'})
                 requested_total += amount
                 if requested_total > available:
