@@ -347,6 +347,14 @@ if not settings.TRACCAR_API_USERNAME or not settings.TRACCAR_API_PASSWORD:
 else:
     print("Traccar API credentials are configured for the Django backend.")
 
+with connection.cursor() as cursor:
+    cursor.execute("SELECT current_database(), current_user")
+    db, user = cursor.fetchone()
+    print("Database:", db)
+    print("Database user:", user)
+    assert db == expected_db, f"Wrong database: {db}"
+    assert user == expected_user, f"Wrong database user: {user}"
+
     cursor.execute("SELECT postgis_full_version()")
     print("PostGIS:", cursor.fetchone()[0])
 
