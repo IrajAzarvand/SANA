@@ -95,6 +95,26 @@ function createDeviceIcon(L, position) {
   });
 }
 
+const ATTRIBUTE_LABELS = {
+  priority: 'اولویت پیام', sat: 'تعداد ماهواره', event: 'کد رویداد', ignition: 'سوئیچ', motion: 'حرکت',
+  rssi: 'قدرت سیگنال GSM', gpsStatus: 'وضعیت GPS', pdop: 'PDOP', hdop: 'HDOP',
+  power: 'ولتاژ خارجی', battery: 'ولتاژ باتری', fuel: 'سوخت', fuelLevel: 'سطح سوخت',
+  odometer: 'کیلومترشمار', totalDistance: 'مسافت کل', distance: 'مسافت پیام',
+  hours: 'ساعت موتور', adc1: 'ورودی آنالوگ ۱', adc2: 'ورودی آنالوگ ۲',
+  operator: 'شناسه اپراتور', ip: 'IP دستگاه', alarm: 'هشدار', charge: 'شارژ',
+  door: 'وضعیت درب', temp1: 'دمای ۱', temp2: 'دمای ۲', deviceTemp: 'دمای دستگاه',
+};
+const COMMON_ATTRIBUTES = ['ignition','motion','sat','rssi','power','battery','fuel','odometer','hours','event','priority','gpsStatus','hdop','pdop'];
+function attributeRows(attributes = {}) {
+  const values = attributes && typeof attributes === 'object' && !Array.isArray(attributes) ? attributes : {};
+  const keys = [...new Set([...COMMON_ATTRIBUTES, ...Object.keys(values)])];
+  return keys.map((key) => {
+    const value = Object.prototype.hasOwnProperty.call(values, key) ? values[key] : undefined;
+    const display = value === undefined || value === null || value === '' ? 'در این نقطه از دستگاه دریافت نشده' : typeof value === 'boolean' ? (value ? 'بله / فعال' : 'خیر / غیرفعال') : typeof value === 'object' ? JSON.stringify(value) : String(value);
+    return '<div style="display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #ddd;padding:2px 0"><span>' + escapeHtml(ATTRIBUTE_LABELS[key] || key) + ' <small style="color:#777">(' + escapeHtml(key) + ')</small></span><strong style="overflow-wrap:anywhere">' + escapeHtml(display) + '</strong></div>';
+  }).join('');
+}
+
 function popupHtml(position) {
   const title = position.vehicle_plate || position.imei || `دستگاه ${position.device_id}`;
   const status = position.status === 'moving' ? 'در حرکت' : position.status === 'offline' ? 'آفلاین' : 'متوقف';
@@ -105,7 +125,10 @@ function popupHtml(position) {
     <div>شناسه دستگاه: ${escapeHtml(position.imei)}</div>
     <div>وضعیت: ${status}</div>
     <div>سرعت: ${escapeHtml(formatSpeed(position.speed))} km/h</div>
-    <div>آخرین ارتباط: ${escapeHtml(formatLastSeen(position.last_seen))}</div>
+    <div>زمان پیام دستگاه: ${escapeHtml(formatLastSeen(position.device_time))}</div>
+    <div>زمان دریافت Traccar: ${escapeHtml(formatLastSeen(position.last_seen))}</div>
+    <div style="font-weight:700;margin-top:8px">Attributeهای Traccar</div>
+    <div style="max-height:240px;overflow-y:auto;margin-top:4px">${attributeRows(position.attributes)}</div>
     ${positionNote}
     ${matchingNote}
   </div>`;
