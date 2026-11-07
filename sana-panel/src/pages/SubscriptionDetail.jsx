@@ -162,6 +162,8 @@ export default function SubscriptionDetail() {
     payment_date: todayGregorian(),
     device_count: 0,
     description: '',
+    allocation_mode: 'automatic',
+    allocations: {},
   });
 
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
@@ -595,6 +597,12 @@ export default function SubscriptionDetail() {
         payment_date: paymentForm.payment_date,
         device_count: Number(paymentForm.device_count) || 0,
         description: paymentForm.description,
+        allocation_mode: paymentForm.allocation_mode,
+        allocations: paymentForm.allocation_mode === 'manual'
+          ? Object.entries(paymentForm.allocations || {})
+              .filter(([, amount]) => Number(amount) > 0)
+              .map(([installment_id, amount]) => ({ installment_id: Number(installment_id), amount: Number(amount) }))
+          : undefined,
       });
       setPaymentModalOpen(false);
       setPaymentForm({
@@ -602,6 +610,8 @@ export default function SubscriptionDetail() {
         payment_date: todayGregorian(),
         device_count: 0,
         description: '',
+        allocation_mode: 'automatic',
+        allocations: {},
       });
       refetch();
     } catch (err) {
@@ -837,20 +847,20 @@ export default function SubscriptionDetail() {
 
           <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="p-4 rounded-xl bg-bg-base border border-border-base">
-              <div className="text-[10px] text-text-muted mb-1">کل مبالغ ثبت‌شده</div>
-              <div className="text-sm font-semibold text-text-primary">{Number(subscription.total_payment_amount || 0).toLocaleString('fa-IR')} ریال</div>
+              <div className="text-[10px] text-text-muted mb-1">مبلغ کل قرارداد</div>
+              <div className="text-sm font-semibold text-text-primary">{Number(subscription.price || 0).toLocaleString('fa-IR')} ریال</div>
             </div>
             <div className="p-4 rounded-xl bg-bg-base border border-border-base">
-              <div className="text-[10px] text-text-muted mb-1">پرداخت‌شده تا امروز</div>
+              <div className="text-[10px] text-text-muted mb-1">مجموع دریافتی واقعی</div>
               <div className="text-sm font-semibold text-brand-400">{Number(subscription.paid_payment_amount || 0).toLocaleString('fa-IR')} ریال</div>
             </div>
             <div className="p-4 rounded-xl bg-bg-base border border-border-base">
-              <div className="text-[10px] text-text-muted mb-1">پرداخت آینده</div>
-              <div className="text-sm font-semibold text-text-primary">{Number(subscription.future_payment_amount || 0).toLocaleString('fa-IR')} ریال</div>
+              <div className="text-[10px] text-text-muted mb-1">مانده اقساط سررسیدشده</div>
+              <div className="text-sm font-semibold text-warning">{Number(subscription.overdue_balance || 0).toLocaleString('fa-IR')} ریال</div>
             </div>
             <div className="p-4 rounded-xl bg-bg-base border border-border-base">
-              <div className="text-[10px] text-text-muted mb-1">مانده پرداخت</div>
-              <div className="text-sm font-semibold text-warning">{Number(subscription.outstanding_payment_amount || 0).toLocaleString('fa-IR')} ریال</div>
+              <div className="text-[10px] text-text-muted mb-1">اعتبار تخصیص‌نیافته مشتری</div>
+              <div className="text-sm font-semibold text-text-primary">{Number(subscription.unallocated_credit || 0).toLocaleString('fa-IR')} ریال</div>
             </div>
           </div>
 
@@ -976,6 +986,41 @@ export default function SubscriptionDetail() {
         )}
       </section>
 
+      {subscription.installment_plan && (
+        <section className={sectionClass}>
+          <div className="px-5 py-4 border-b border-border-base">
+            <h3 className="text-sm font-semibold text-text-primary">برنامه اقساط قرارداد</h3>
+            <p className="text-[11px] text-text-muted mt-1">
+              نسخه {subscription.installment_plan.version} · هر {subscription.installment_plan.interval_months} ماه · {subscription.installment_plan.calculation_mode === 'equal' ? 'اقساط مساوی' : 'مبالغ دلخواه'}
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-right">
+              <thead className="bg-bg-base text-[10px] text-text-muted">
+                <tr>
+                  <th className="px-4 py-3">قسط</th>
+                  <th className="px-4 py-3">سررسید</th>
+                  <th className="px-4 py-3">مبلغ</th>
+                  <th className="px-4 py-3">پرداخت‌شده</th>
+                  <th className="px-4 py-3">مانده</th>
+                </tr>
+              </thead>
+              <tbody>
+                {subscription.installment_plan.installments.filter((item) => item.status === 'active').map((item) => (
+                  <tr key={item.id} className="border-t border-border-base text-xs">
+                    <td className="px-4 py-3 font-mono">{item.number}</td>
+                    <td className="px-4 py-3 font-mono">{toPersianDigits(toJalali(item.due_date))}</td>
+                    <td className="px-4 py-3 font-mono">{Number(item.amount).toLocaleString('fa-IR')} ریال</td>
+                    <td className="px-4 py-3 font-mono">{Number(item.paid_amount).toLocaleString('fa-IR')} ریال</td>
+                    <td className="px-4 py-3 font-mono">{Number(item.remaining_amount).toLocaleString('fa-IR')} ریال</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
       {/* ═══ پرداخت‌های قرارداد ═══ */}
       <section className={sectionClass}>
         <div className="px-5 py-4 border-b border-border-base flex items-center justify-between gap-3">
@@ -993,24 +1038,18 @@ export default function SubscriptionDetail() {
         ) : (
           <div className="p-4 space-y-2">
             {subscription.payments.map((p) => {
-              const paymentDate = new Date(p.payment_date);
-              const today = new Date();
-              today.setHours(0, 0, 0, 0);
-              const isFuture = paymentDate > today;
-              const isToday = paymentDate.getTime() === today.getTime();
-
               return (
                 <div key={p.id} className="flex items-center justify-between gap-4 p-3.5 bg-bg-base border border-border-base rounded-xl">
                   <div className="flex items-center gap-4 min-w-0 flex-wrap">
                     <span className="text-sm font-medium text-text-primary">{Number(p.amount).toLocaleString('fa-IR')} ریال</span>
-                    <span className="text-xs text-text-muted">{p.device_count} دستگاه</span>
-                    <span className="text-xs text-text-muted">{toPersianDigits(toJalali(p.payment_date))}</span>
+                    <span className="text-xs text-text-muted">دریافت: {toPersianDigits(toJalali(p.payment_date))}</span>
                     {p.description && <span className="text-xs text-text-muted truncate">{p.description}</span>}
+                    {Number(p.unallocated_amount || 0) > 0 && (
+                      <span className="text-[10px] text-warning">اعتبار باقی‌مانده: {Number(p.unallocated_amount).toLocaleString('fa-IR')} ریال</span>
+                    )}
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
-                    {isFuture && <Badge variant="info">پرداخت در آینده</Badge>}
-                    {isToday && <Badge variant="warning">امروز</Badge>}
-                    {isSiteAdmin && !isCancelled && (
+                    {isSiteAdmin && !isCancelled && !p.allocations?.length && (
                       <button onClick={() => handleRemovePayment(p.id)} className="p-1.5 rounded-field text-text-muted hover:bg-danger/10 hover:text-danger transition-colors" title="حذف پرداخت">
                         <Trash2 size={14} />
                       </button>
@@ -1020,7 +1059,7 @@ export default function SubscriptionDetail() {
               );
             })}
             <div className="flex items-center justify-between p-4 rounded-xl bg-brand-500/10 border border-brand-500/30">
-              <span className="text-sm text-text-secondary">مجموع پرداخت‌های ثبت‌شده</span>
+              <span className="text-sm text-text-secondary">مجموع دریافتی‌های ثبت‌شده</span>
               <span className="text-base font-bold text-brand-400">{totalPayments.toLocaleString('fa-IR')} ریال</span>
             </div>
           </div>
@@ -1797,17 +1836,41 @@ export default function SubscriptionDetail() {
             required
           />
           <JalaliDatePicker
-            label="تاریخ پرداخت"
+            label="تاریخ واقعی دریافت وجه"
             value={paymentForm.payment_date}
             onChange={(val) => setPaymentForm({ ...paymentForm, payment_date: val })}
             required
           />
-          <Input
-            type="number"
-            label="تعداد دستگاه"
-            value={paymentForm.device_count}
-            onChange={(e) => setPaymentForm({ ...paymentForm, device_count: e.target.value })}
+          <Select
+            label="روش تخصیص دریافتی"
+            value={paymentForm.allocation_mode}
+            onChange={(e) => setPaymentForm({ ...paymentForm, allocation_mode: e.target.value, allocations: {} })}
+            options={[
+              { value: 'automatic', label: 'خودکار؛ از قدیمی‌ترین قسط سررسیدشده' },
+              { value: 'manual', label: 'انتخاب دستی اقساط' },
+            ]}
           />
+          {paymentForm.allocation_mode === 'manual' && (
+            <div className="space-y-2 rounded-field border border-border-base p-3">
+              <div className="text-xs font-medium text-text-secondary">مبلغی که به هر قسط تخصیص می‌دهید</div>
+              {(subscription.installment_plan?.installments || []).filter((item) => item.status === 'active' && Number(item.remaining_amount) > 0).map((item) => (
+                <div key={item.id} className="grid grid-cols-[1fr_150px] items-center gap-3">
+                  <div className="text-xs text-text-secondary">
+                    قسط {item.number} · سررسید {toPersianDigits(toJalali(item.due_date))} · مانده {Number(item.remaining_amount).toLocaleString('fa-IR')} ریال
+                  </div>
+                  <Input
+                    type="number"
+                    value={paymentForm.allocations?.[item.id] || ''}
+                    onChange={(e) => setPaymentForm((prev) => ({
+                      ...prev,
+                      allocations: { ...prev.allocations, [item.id]: e.target.value },
+                    }))}
+                    placeholder="مبلغ تخصیص"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
           <Input
             label="توضیحات"
             value={paymentForm.description}
