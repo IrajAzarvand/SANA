@@ -1278,7 +1278,7 @@ function Step6({ form }) {
       {form.payments.length > 0 && (
         <div className="pt-4 border-t border-border-base space-y-3">
           <h4 className="text-xs font-medium text-text-muted">
-            پرداخت‌ها ({form.payments.length})
+            دریافتی‌های زمان عقد ({form.payments.length})
           </h4>
           <div className="space-y-2">
             {form.payments.map((p, idx) => (
@@ -1295,6 +1295,19 @@ function Step6({ form }) {
             <span className="font-mono text-base font-bold text-brand-400">
               {totalAmount.toLocaleString('fa-IR')} ریال
             </span>
+          </div>
+        </div>
+      )}
+
+      {form.installment_plan?.enabled && (
+        <div className="pt-4 border-t border-border-base space-y-3">
+          <h4 className="text-xs font-medium text-text-muted">برنامه اقساط</h4>
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <SummaryItem label="مبلغ قابل تقسیط" value={`${Math.max(parseAmountInput(form.price) - totalAmount, 0).toLocaleString('fa-IR')} ریال`} />
+            <SummaryItem label="تعداد اقساط" value={form.installment_plan.installment_count} />
+            <SummaryItem label="فاصله اقساط" value={`${form.installment_plan.interval_months} ماه`} />
+            <SummaryItem label="روش محاسبه" value={form.installment_plan.calculation_mode === 'equal' ? 'اقساط مساوی' : 'مبالغ دلخواه'} />
+            <SummaryItem label="مازاد دریافتی" value={form.installment_plan.surplus_policy === 'future' ? 'تخصیص به اقساط آینده' : 'اعتبار مشتری'} />
           </div>
         </div>
       )}
