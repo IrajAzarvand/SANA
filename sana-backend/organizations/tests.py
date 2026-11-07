@@ -84,6 +84,39 @@ class SubscriptionWizardExistingUserTests(TestCase):
         self.assertIn('password', serializer.errors)
 
 
+    @patch('organizations.serializers.record_device_lifecycle_event')
+    def test_wizard_records_upfront_receipt_and_creates_schedule_for_remaining_amount(self, _record_event):
+        payload = self._payload(
+            payments=[{
+                'amount': '20000000',
+                'payment_date': '2026-11-07',
+                'description': 'پیش‌پرداخت',
+            }],
+            installment_plan={
+                'installment_count': 4,
+                'interval_months': 3,
+                'calculation_mode': 'equal',
+                'surplus_policy': 'credit',
+            },
+        )
+        serializer = SubscriptionWizardSerializer(data=payload)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        subscription = serializer.save()
+
+        plan = subscription.installment_plans.get(status='active')
+        self.assertEqual(subscription.price, 100000000)
+        self.assertEqual(plan.scheduled_amount, 80000000)
+        self.assertEqual(
+            list(plan.installments.order_by('number').values_list('amount', flat=True)),
+            [20000000, 20000000, 20000000, 20000000],
+        )
+        receipt = subscription.payments.get()
+        allocation = receipt.allocations.get()
+        self.assertEqual(allocation.allocation_type, 'contract_advance')
+        self.assertEqual(allocation.amount, 20000000)
+        self.assertIsNone(allocation.installment_id)
+
+
 class SubscriptionWizardOrganizationSelectionTests(TestCase):
     def setUp(self):
         self.lifecycle_patcher = patch('organizations.serializers.record_device_lifecycle_event')
