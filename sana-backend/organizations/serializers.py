@@ -511,7 +511,7 @@ class SubscriptionWizardSerializer(serializers.Serializer):
 
     # اطلاعات کاربر (مدیر شرکت یا کاربر شخصی)
     username = serializers.CharField()
-    password = serializers.CharField(min_length=8, write_only=True)
+    password = serializers.CharField(min_length=8, write_only=True, required=False)
     first_name = serializers.CharField()
     last_name = serializers.CharField()
     mobile = serializers.CharField()
@@ -555,16 +555,26 @@ class SubscriptionWizardSerializer(serializers.Serializer):
             from accounts.models import User
             try:
                 user = User.objects.get(id=existing_user_id)
-                # customer_type باید با account_type کاربر مطابقت داشته باشه
+                # customer_type باید با account_type کاربر مطابقت داشته باشه.
                 if user.account_type != data['customer_type']:
                     raise serializers.ValidationError({
                         'existing_user_id': 'نوع حساب کاربر با نوع مشتری انتخاب‌شده مطابقت ندارد'
+                    })
+                # شناسه و نام کاربری باید به یک حساب واحد اشاره کنند.
+                if user.username != data.get('username'):
+                    raise serializers.ValidationError({
+                        'username': 'نام کاربری با حساب انتخاب‌شده مطابقت ندارد'
                     })
             except User.DoesNotExist:
                 raise serializers.ValidationError({
                     'existing_user_id': 'کاربر انتخاب‌شده یافت نشد'
                 })
         else:
+            # برای ساخت حساب جدید، رمز عبور الزامی است.
+            if not data.get('password'):
+                raise serializers.ValidationError({
+                    'password': 'برای ساخت حساب جدید، رمز عبور الزامی است'
+                })
             # چک: اگه سازمانی، اطلاعات سازمانی لازمه
             if data['customer_type'] == 'organization':
                 if not data.get('organization_name'):
@@ -649,13 +659,26 @@ class SubscriptionWizardSerializer(serializers.Serializer):
             existing_user_id = validated_data.pop('existing_user_id', None)
 
             if existing_user_id:
-                # کاربر موجود رو استفاده کن
+                # حساب موجود حفظ می‌شود؛ فقط اطلاعات مجاز فرم به‌روزرسانی می‌شوند.
+                # رمز عبور عمداً دست‌نخورده باقی می‌ماند.
                 user = User.objects.get(id=existing_user_id)
+                editable_fields = (
+                    'first_name', 'last_name', 'mobile', 'national_id', 'address',
+                )
+                changed_fields = []
+                for field in editable_fields:
+                    if field in validated_data:
+                        value = validated_data[field]
+                        if getattr(user, field) != value:
+                            setattr(user, field, value)
+                            changed_fields.append(field)
+                if changed_fields:
+                    user.save(update_fields=changed_fields)
 
                 # اگه organization جدید ساخته شده (نوع سازمانی)، به User وصلش کن
                 if organization and not user.organization_id:
                     user.organization = organization
-                    user.save()
+                    user.save(update_fields=['organization'])
             else:
                 # کاربر جدید بساز
                 user = User.objects.create_user(
