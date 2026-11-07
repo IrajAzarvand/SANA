@@ -397,6 +397,7 @@ class SubscriptionSerializer(serializers.ModelSerializer):
     payments = SubscriptionPaymentSerializer(many=True, read_only=True)
     operations = SubscriptionOperationSerializer(many=True, read_only=True)
     installment_plan = serializers.SerializerMethodField()
+    installment_plan_history = serializers.SerializerMethodField()
 
     device_count = serializers.SerializerMethodField()
     active_device_count = serializers.SerializerMethodField()
@@ -425,7 +426,7 @@ class SubscriptionSerializer(serializers.ModelSerializer):
             'device_count', 'active_device_count',
             'total_payment_amount', 'paid_payment_amount', 'future_payment_amount',
             'outstanding_payment_amount', 'overdue_balance',
-            'future_due_balance', 'unallocated_credit', 'installment_plan',
+            'future_due_balance', 'unallocated_credit', 'installment_plan', 'installment_plan_history',
             'devices', 'payments', 'operations',
             'created_at', 'updated_at',
         ]
@@ -475,6 +476,10 @@ class SubscriptionSerializer(serializers.ModelSerializer):
     def get_installment_plan(self, obj):
         plan = obj.installment_plans.filter(status='active').prefetch_related('installments__allocations').first()
         return SubscriptionInstallmentPlanSerializer(plan).data if plan else None
+
+    def get_installment_plan_history(self, obj):
+        plans = obj.installment_plans.prefetch_related('installments__allocations').order_by('-version')
+        return SubscriptionInstallmentPlanSerializer(plans, many=True).data
 
     def _remaining_by_due(self, obj, overdue):
         from django.db.models import Sum
