@@ -56,6 +56,10 @@ def create_installment_plan(subscription, data, created_by=None):
     else:
         raise ValidationError({'calculation_mode': 'روش محاسبه اقساط نامعتبر است'})
 
+    start_date = subscription.start_date
+    if isinstance(start_date, str):
+        start_date = date.fromisoformat(start_date)
+
     with transaction.atomic():
         subscription.__class__.objects.select_for_update().get(pk=subscription.pk)
         previous = SubscriptionInstallmentPlan.objects.filter(
@@ -84,7 +88,7 @@ def create_installment_plan(subscription, data, created_by=None):
                 plan=plan,
                 number=index,
                 amount=amount,
-                due_date=add_months(subscription.start_date, interval * index),
+                due_date=add_months(start_date, interval * index),
             )
             for index, amount in enumerate(amounts, start=1)
         ])
