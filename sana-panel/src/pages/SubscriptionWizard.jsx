@@ -39,6 +39,7 @@ export default function SubscriptionWizard() {
   const [form, setForm] = useState({
     customer_type: 'organization',
     organization_id: null,
+    organization_selection_touched: false,
     organization_name: '',
     organization_code: '',
     registration_number: '',
@@ -412,6 +413,7 @@ function Step2({ form, updateForm, setForm, onUsernameAvailabilityChange }) {
     setForm((f) => ({
       ...f,
       organization_id: organization?.id ?? null,
+      organization_selection_touched: true,
       organization_name: organization?.name || '',
       organization_code: organization?.code || '',
       registration_number: organization?.registration_number || '',
@@ -535,7 +537,8 @@ function Step2({ form, updateForm, setForm, onUsernameAvailabilityChange }) {
                 if (
                   user.account_type === 'organization' &&
                   user.organization_data &&
-                  !f.organization_id
+                  !f.organization_id &&
+                  !f.organization_selection_touched
                 ) {
                   const org = user.organization_data;
                   updates.organization_id = org.id;
