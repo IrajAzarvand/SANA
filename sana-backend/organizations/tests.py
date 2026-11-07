@@ -3,7 +3,12 @@ from unittest.mock import patch
 
 from accounts.models import User
 from fleet.models import Device
-from organizations.models import Organization, Subscription, SubscriptionDevice, SubscriptionPayment
+from organizations.models import (
+    Organization, Subscription, SubscriptionDevice, SubscriptionPayment,
+    SubscriptionInstallmentPlan, SubscriptionInstallment, SubscriptionPaymentAllocation,
+)
+from organizations.financial import create_installment_plan, allocate_payment
+from django.core.exceptions import ValidationError
 from .serializers import SubscriptionWizardSerializer
 
 
@@ -344,3 +349,167 @@ class SubscriptionContractPriceTests(TestCase):
             sum(payment.amount for payment in subscription.payments.all()),
             50000000,
         )
+
+
+
+class SubscriptionInstallmentLedgerTests(TestCase):
+    def setUp(self):
+        self.subscription = Subscription.objects.create(
+            contract_number='INST-TEST-0001',
+            customer_type='personal',
+            start_date='2026-01-31',
+            end_date='2027-01-31',
+            price=100,
+        )
+
+    def _plan(self, **overrides):
+        data = {
+            'scheduled_amount': 100,
+            'installment_count': 3,
+            'interval_months': 1,
+            'calculation_mode': 'equal',
+            'surplus_policy': 'credit',
+        }
+        data.update(overrides)
+        return create_installment_plan(self.subscription, data)
+
+    def test_equal_installments_put_rounding_remainder_on_last(self):
+        plan = self._plan()
+        installments = list(plan.installments.order_by('number'))
+        self.assertEqual([item.amount for item in installments], [33, 33, 34])
+        self.assertEqual(sum(item.amount for item in installments), 100)
+
+    def test_due_dates_are_based_on_this_contract_start_date_and_clamp_month_end(self):
+        plan = self._plan()
+        dates = list(plan.installments.order_by('number').values_list('due_date', flat=True))
+        self.assertEqual(
+            [item.isoformat() for item in dates],
+            ['2026-02-28', '2026-03-31', '2026-04-30'],
+        )
+
+    def test_custom_installments_must_sum_to_scheduled_amount(self):
+        plan = self._plan(
+            calculation_mode='custom',
+            custom_amounts=[20, 30, 50],
+        )
+        self.assertEqual(
+            list(plan.installments.order_by('number').values_list('amount', flat=True)),
+            [20, 30, 50],
+        )
+        with self.assertRaises(ValidationError):
+            self._plan(
+                calculation_mode='custom',
+                custom_amounts=[20, 30, 49],
+            )
+
+    def test_automatic_allocation_pays_oldest_due_installments_first(self):
+        plan = self._plan(installment_count=2)
+        payment = SubscriptionPayment.objects.create(
+            subscription=self.subscription,
+            amount=60,
+            payment_date='2026-04-01',
+        )
+        allocate_payment(payment)
+        allocations = list(
+            payment.allocations.order_by('installment__number').values_list(
+                'installment__number', 'amount'
+            )
+        )
+        self.assertEqual(allocations, [(1, 50), (2, 10)])
+
+    def test_future_installments_remain_credit_by_default(self):
+        self.subscription.start_date = '2026-01-01'
+        self.subscription.save(update_fields=['start_date'])
+        plan = self._plan(installment_count=2)
+        payment = SubscriptionPayment.objects.create(
+            subscription=self.subscription,
+            amount=70,
+            payment_date='2026-01-15',
+        )
+        allocate_payment(payment)
+        self.assertEqual(
+            payment.allocations.aggregate(total=__import__('django').db.models.Sum('amount'))['total'],
+            None,
+        )
+
+    def test_future_installments_can_be_allocated_when_plan_allows_it(self):
+        self.subscription.start_date = '2026-01-01'
+        self.subscription.save(update_fields=['start_date'])
+        plan = self._plan(installment_count=2, surplus_policy='future')
+        payment = SubscriptionPayment.objects.create(
+            subscription=self.subscription,
+            amount=70,
+            payment_date='2026-01-15',
+        )
+        allocate_payment(payment)
+        self.assertEqual(
+            list(payment.allocations.order_by('installment__number').values_list('amount', flat=True)),
+            [50, 20],
+        )
+
+    def test_manual_allocation_can_target_a_selected_installment(self):
+        plan = self._plan(installment_count=2)
+        second = plan.installments.get(number=2)
+        payment = SubscriptionPayment.objects.create(
+            subscription=self.subscription,
+            amount=25,
+            payment_date='2026-01-10',
+        )
+        allocate_payment(
+            payment,
+            mode='manual',
+            allocations=[{'installment_id': second.id, 'amount': 25}],
+        )
+        allocation = payment.allocations.get()
+        self.assertEqual(allocation.installment_id, second.id)
+        self.assertEqual(allocation.amount, 25)
+
+    def test_manual_allocation_cannot_exceed_receipt_or_installment_balance(self):
+        plan = self._plan(installment_count=2)
+        first = plan.installments.get(number=1)
+        payment = SubscriptionPayment.objects.create(
+            subscription=self.subscription,
+            amount=20,
+            payment_date='2026-01-10',
+        )
+        with self.assertRaises(ValidationError):
+            allocate_payment(
+                payment,
+                mode='manual',
+                allocations=[{'installment_id': first.id, 'amount': 21}],
+            )
+
+    def test_unallocated_overpayment_remains_customer_credit(self):
+        plan = self._plan(installment_count=2)
+        payment = SubscriptionPayment.objects.create(
+            subscription=self.subscription,
+            amount=130,
+            payment_date='2026-04-01',
+        )
+        allocate_payment(payment)
+        allocated = payment.allocations.aggregate(
+            total=__import__('django').db.models.Sum('amount')
+        )['total']
+        self.assertEqual(allocated, 100)
+        self.assertEqual(payment.amount - allocated, 30)
+
+    def test_contract_advance_is_not_mistaken_for_installment_or_credit(self):
+        payment = SubscriptionPayment.objects.create(
+            subscription=self.subscription,
+            amount=20,
+            payment_date='2026-01-31',
+        )
+        allocate_payment(payment, allocation_type='contract_advance')
+        allocation = payment.allocations.get()
+        self.assertEqual(allocation.allocation_type, 'contract_advance')
+        self.assertIsNone(allocation.installment_id)
+        self.assertEqual(allocation.amount, 20)
+
+    def test_new_schedule_keeps_previous_plan_as_history(self):
+        old_plan = self._plan(installment_count=2)
+        new_plan = self._plan(installment_count=4, scheduled_amount=80)
+        old_plan.refresh_from_db()
+        self.assertEqual(old_plan.status, 'superseded')
+        self.assertEqual(new_plan.version, 2)
+        self.assertEqual(old_plan.installments.count(), 2)
+        self.assertEqual(new_plan.installments.count(), 4)
