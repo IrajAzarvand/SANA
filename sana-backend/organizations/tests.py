@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from accounts.models import User
 from fleet.models import Device
-from organizations.models import Organization, Subscription, SubscriptionDevice
+from organizations.models import Organization, Subscription, SubscriptionDevice, SubscriptionPayment
 from .serializers import SubscriptionWizardSerializer
 
 
@@ -36,6 +36,7 @@ class SubscriptionWizardExistingUserTests(TestCase):
             'contract_number': 'PRS-TEST-0001',
             'start_date': '2026-11-07',
             'end_date': '2027-11-07',
+            'price': '100000000',
             'devices': [{
                 'device_id': self.device.id,
                 'start_date': '2026-11-07',
@@ -121,6 +122,7 @@ class SubscriptionWizardOrganizationSelectionTests(TestCase):
             'contract_number': 'ORG-TEST-0001',
             'start_date': '2026-11-07',
             'end_date': '2027-11-07',
+            'price': '100000000',
             'devices': [{
                 'device_id': self.device.id,
                 'start_date': '2026-11-07',
@@ -217,6 +219,7 @@ class SubscriptionWizardDeviceValidationTests(TestCase):
             'contract_number': 'DEVICE-TEST-0001',
             'start_date': '2026-11-07',
             'end_date': '2027-11-07',
+            'price': '100000000',
             'devices': [{
                 'device_id': self.device.id,
                 'start_date': '2026-11-07',
@@ -296,6 +299,7 @@ class SubscriptionContractNumberUniquenessTests(TestCase):
             'contract_number': existing_number,
             'start_date': '2026-11-07',
             'end_date': '2027-11-07',
+            'price': '100000000',
             'devices': [{
                 'device_id': device.id,
                 'start_date': '2026-11-07',
@@ -310,3 +314,33 @@ class SubscriptionContractNumberUniquenessTests(TestCase):
         self.assertIn('contract_number', serializer.errors)
         self.assertIn('قبلاً استفاده شده', str(serializer.errors['contract_number']))
 
+
+
+
+class SubscriptionContractPriceTests(TestCase):
+    def test_receipt_does_not_change_contract_total(self):
+        subscription = Subscription.objects.create(
+            contract_number='FIN-TEST-0001',
+            customer_type='personal',
+            start_date='2026-11-07',
+            end_date='2027-11-07',
+            price=100000000,
+        )
+
+        SubscriptionPayment.objects.create(
+            subscription=subscription,
+            amount=20000000,
+            payment_date='2026-11-07',
+        )
+        SubscriptionPayment.objects.create(
+            subscription=subscription,
+            amount=30000000,
+            payment_date='2026-12-07',
+        )
+
+        subscription.refresh_from_db()
+        self.assertEqual(subscription.price, 100000000)
+        self.assertEqual(
+            sum(payment.amount for payment in subscription.payments.all()),
+            50000000,
+        )
