@@ -157,6 +157,9 @@ export default function SubscriptionDetail() {
   });
 
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [allocationModalOpen, setAllocationModalOpen] = useState(false);
+  const [allocationPaymentId, setAllocationPaymentId] = useState(null);
+  const [allocationForm, setAllocationForm] = useState({ allocation_mode: 'manual', allocations: {} });
   const [paymentForm, setPaymentForm] = useState({
     amount: '',
     payment_date: todayGregorian(),
@@ -632,6 +635,40 @@ export default function SubscriptionDetail() {
     }
   };
 
+  const openAllocationModal = (payment) => {
+    setAllocationPaymentId(payment.id);
+    setAllocationForm({ allocation_mode: 'manual', allocations: {} });
+    setActionError('');
+    setAllocationModalOpen(true);
+  };
+
+  const handleAllocateExistingReceipt = async (e) => {
+    e.preventDefault();
+    if (!allocationPaymentId) return;
+    setSaving(true);
+    setActionError('');
+    try {
+      await subscriptionPaymentsAPI.allocate(allocationPaymentId, {
+        allocation_mode: allocationForm.allocation_mode,
+        allocations: allocationForm.allocation_mode === 'manual'
+          ? Object.entries(allocationForm.allocations || {})
+              .filter(([, amount]) => Number(amount) > 0)
+              .map(([installment_id, amount]) => ({ installment_id: Number(installment_id), amount: Number(amount) }))
+          : undefined,
+      });
+      setAllocationModalOpen(false);
+      setAllocationPaymentId(null);
+      refetch();
+    } catch (err) {
+      const msg = err.response?.data
+        ? Object.entries(err.response.data).map(([key, value]) => `${key}: ${Array.isArray(value) ? value[0] : value}`).join('\n')
+        : 'خطا در تخصیص اعتبار';
+      setActionError(msg);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // ═══ حذف پرداخت ═══
   const handleRemovePayment = async (paymentId) => {
     if (!confirm('آیا از حذف این پرداخت اطمینان دارید؟')) return;
@@ -1083,8 +1120,13 @@ export default function SubscriptionDetail() {
                     )}
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
+                    {isSiteAdmin && !isCancelled && Number(p.unallocated_amount || 0) > 0 && subscription.installment_plan && (
+                      <Button size="xs" variant="secondary" onClick={() => openAllocationModal(p)}>
+                        تخصیص اعتبار
+                      </Button>
+                    )}
                     {isSiteAdmin && !isCancelled && !p.allocations?.length && (
-                      <button onClick={() => handleRemovePayment(p.id)} className="p-1.5 rounded-field text-text-muted hover:bg-danger/10 hover:text-danger transition-colors" title="حذف پرداخت">
+                      <button onClick={() => handleRemovePayment(p.id)} className="p-1.5 rounded-field text-text-muted hover:bg-danger/10 hover:text-danger transition-colors" title="حذف دریافتی">
                         <Trash2 size={14} />
                       </button>
                     )}
@@ -1920,6 +1962,46 @@ export default function SubscriptionDetail() {
             onChange={(e) => setPaymentForm({ ...paymentForm, description: e.target.value })}
             placeholder="مثلاً پرداخت برای ۲ دستگاه"
           />
+        </form>
+      </Modal>
+
+      <Modal
+        open={allocationModalOpen}
+        onClose={() => setAllocationModalOpen(false)}
+        title="تخصیص اعتبار به اقساط"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setAllocationModalOpen(false)} disabled={saving}>انصراف</Button>
+            <Button type="submit" form="allocate-credit-form" disabled={saving}>{saving ? 'در حال ذخیره...' : 'ثبت تخصیص'}</Button>
+          </>
+        }
+      >
+        <form id="allocate-credit-form" onSubmit={handleAllocateExistingReceipt} className="space-y-4">
+          {actionError && <div className="bg-danger/10 border border-danger/30 rounded-field p-3"><p className="text-xs text-danger whitespace-pre-line">{actionError}</p></div>}
+          <Select
+            label="روش تخصیص"
+            value={allocationForm.allocation_mode}
+            onChange={(e) => setAllocationForm({ allocation_mode: e.target.value, allocations: {} })}
+            options={[
+              { value: 'manual', label: 'انتخاب دستی اقساط' },
+              { value: 'automatic', label: 'خودکار؛ از قدیمی‌ترین قسط سررسیدشده' },
+            ]}
+          />
+          {allocationForm.allocation_mode === 'manual' && (
+            <div className="space-y-2">
+              {(subscription.installment_plan?.installments || []).filter((item) => item.status === 'active' && Number(item.remaining_amount) > 0).map((item) => (
+                <div key={item.id} className="grid grid-cols-[1fr_140px] items-center gap-3">
+                  <div className="text-xs text-text-secondary">قسط {item.number} · {toPersianDigits(toJalali(item.due_date))} · مانده {Number(item.remaining_amount).toLocaleString('fa-IR')} ریال</div>
+                  <Input
+                    type="number"
+                    value={allocationForm.allocations?.[item.id] || ''}
+                    onChange={(e) => setAllocationForm((prev) => ({ ...prev, allocations: { ...prev.allocations, [item.id]: e.target.value } }))}
+                    placeholder="مبلغ"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </form>
       </Modal>
 
