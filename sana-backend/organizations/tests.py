@@ -8,7 +8,7 @@ from organizations.models import (
     SubscriptionInstallmentPlan, SubscriptionInstallment, SubscriptionPaymentAllocation,
 )
 from organizations.financial import create_installment_plan, allocate_payment
-from django.core.exceptions import ValidationError
+from rest_framework.exceptions import ValidationError
 from django.db.models import Sum
 from .serializers import SubscriptionWizardSerializer
 
