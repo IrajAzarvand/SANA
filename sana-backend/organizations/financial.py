@@ -84,6 +84,7 @@ def create_installment_plan(subscription, data, created_by=None):
         if previous:
             previous.status = 'superseded'
             previous.save(update_fields=['status'])
+            previous.installments.filter(status='active').update(status='superseded')
 
         plan = SubscriptionInstallmentPlan.objects.create(
             subscription=subscription,
