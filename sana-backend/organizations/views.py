@@ -599,7 +599,7 @@ class SubscriptionDeviceViewSet(viewsets.ModelViewSet):
         return qs
 
     def get_permissions(self):
-        if self.action in ['create', 'destroy', 'update', 'partial_update']:
+        if self.action in ['create', 'destroy', 'update', 'partial_update', 'allocate']:
             return [IsSiteAdmin()]
         return super().get_permissions()
 
@@ -710,6 +710,31 @@ class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
                     allocations=allocations,
                 )
         return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'])
+    def allocate(self, request, pk=None):
+        """Apply an existing unallocated receipt to selected or oldest unpaid installments."""
+        from .financial import allocate_payment
+
+        payment = self.get_object()
+        allocation_mode = request.data.get('allocation_mode', 'automatic')
+        allocations = request.data.get('allocations')
+        with transaction.atomic():
+            SubscriptionOperation.objects.create(
+                subscription=payment.subscription,
+                operation_type='payment',
+                performed_by=request.user,
+                old_end_date=payment.subscription.end_date,
+                new_end_date=payment.subscription.end_date,
+                notes=f'تخصیص مجدد دریافتی شماره {payment.id}',
+            )
+            allocate_payment(
+                payment,
+                mode=allocation_mode,
+                allocations=allocations,
+            )
+        payment.refresh_from_db()
+        return Response(self.get_serializer(payment).data)
 
     def update(self, request, *args, **kwargs):
         instance = self.get_object()
