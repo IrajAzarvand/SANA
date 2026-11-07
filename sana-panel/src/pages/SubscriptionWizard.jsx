@@ -1114,6 +1114,7 @@ function Step5({ form, updateForm }) {
           <JalaliDatePicker
             label="تاریخ واقعی دریافت وجه"
             value={payment.payment_date}
+          maxDate={todayGregorian()}
             onChange={(val) => setPayment({ ...payment, payment_date: val })}
           />
         </div>
