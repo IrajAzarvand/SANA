@@ -255,7 +255,7 @@ class SubscriptionPaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = SubscriptionPayment
         fields = [
-            'id', 'subscription', 'amount', 'payment_date', 'device_count',
+            'id', 'subscription', 'amount', 'payment_date',
             'description', 'operation', 'allocations', 'unallocated_amount', 'created_at',
         ]
         read_only_fields = ['id', 'created_at', 'allocations', 'unallocated_amount']
@@ -615,7 +615,6 @@ class SubscriptionWizardPaymentSerializer(serializers.Serializer):
     """دریافتی واقعی هنگام عقد قرارداد"""
     amount = serializers.DecimalField(max_digits=15, decimal_places=0, min_value=1)
     payment_date = serializers.DateField()
-    device_count = serializers.IntegerField(default=0)
     description = serializers.CharField(required=False, allow_blank=True)
 
     def validate_payment_date(self, value):
@@ -1047,7 +1046,6 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                     subscription=subscription,
                     amount=payment_data['amount'],
                     received_at=payment_data['payment_date'],
-                    device_count=payment_data.get('device_count', 0),
                     description=payment_data.get('description', ''),
                     operation=operation,
                 )
