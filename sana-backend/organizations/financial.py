@@ -59,6 +59,9 @@ def create_installment_plan(subscription, data, created_by=None):
     start_date = subscription.start_date
     if isinstance(start_date, str):
         start_date = date.fromisoformat(start_date)
+    first_due_date = data.get('first_due_date')
+    if isinstance(first_due_date, str):
+        first_due_date = date.fromisoformat(first_due_date)
 
     with transaction.atomic():
         subscription.__class__.objects.select_for_update().get(pk=subscription.pk)
@@ -88,7 +91,10 @@ def create_installment_plan(subscription, data, created_by=None):
                 plan=plan,
                 number=index,
                 amount=amount,
-                due_date=add_months(start_date, interval * index),
+                due_date=(
+                    add_months(first_due_date, interval * (index - 1))
+                    if first_due_date else add_months(start_date, interval * index)
+                ),
             )
             for index, amount in enumerate(amounts, start=1)
         ])
@@ -211,3 +217,54 @@ def allocate_payment(payment, mode='automatic', allocations=None, allocation_typ
                 if available <= 0:
                     break
         # Any remaining amount is intentionally left unallocated as customer credit.
+
+
+
+def revise_installment_plan(subscription, data, created_by=None):
+    """Create a new version containing only the unpaid remainder of the current plan."""
+    from django.db.models import Sum
+    from .models import SubscriptionPayment
+
+    with transaction.atomic():
+        locked_subscription = subscription.__class__.objects.select_for_update().get(pk=subscription.pk)
+        current_plan = SubscriptionInstallmentPlan.objects.filter(
+            subscription=locked_subscription,
+            status='active',
+        ).first()
+
+        if current_plan:
+            outstanding = Decimal('0')
+            unpaid_installments = []
+            for installment in current_plan.installments.filter(status='active').order_by('due_date', 'number'):
+                remaining = installment_remaining_amount(installment)
+                if remaining > 0:
+                    outstanding += remaining
+                    unpaid_installments.append(installment)
+            default_first_due = unpaid_installments[0].due_date if unpaid_installments else None
+        else:
+            advances = SubscriptionPaymentAllocation.objects.filter(
+                payment__subscription=locked_subscription,
+                allocation_type='contract_advance',
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0')
+            outstanding = max(Decimal(locked_subscription.price) - advances, Decimal('0'))
+            default_first_due = None
+
+        if outstanding <= 0:
+            raise ValidationError({'installment_plan': 'مانده قابل تقسیطی برای ایجاد برنامه جدید وجود ندارد'})
+
+        first_due_date = data.get('first_due_date') or default_first_due
+        if first_due_date is None:
+            first_due_date = add_months(locked_subscription.start_date, int(data.get('interval_months') or 1))
+        if isinstance(first_due_date, str):
+            first_due_date = date.fromisoformat(first_due_date)
+
+        revised_data = {
+            **data,
+            'scheduled_amount': outstanding,
+            'first_due_date': first_due_date,
+        }
+        return create_installment_plan(
+            locked_subscription,
+            revised_data,
+            created_by=created_by,
+        )
