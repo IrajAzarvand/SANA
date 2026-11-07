@@ -498,6 +498,28 @@ class SubscriptionInstallmentLedgerTests(TestCase):
         self.assertEqual(allocation.installment_id, second.id)
         self.assertEqual(allocation.amount, 25)
 
+    def test_same_receipt_can_be_allocated_in_multiple_events_to_same_installment(self):
+        plan = self._plan(installment_count=2)
+        first = plan.installments.get(number=1)
+        payment = SubscriptionPayment.objects.create(
+            subscription=self.subscription,
+            amount=30,
+            received_at='2026-01-10',
+        )
+        allocate_payment(
+            payment,
+            mode='manual',
+            allocations=[{'installment_id': first.id, 'amount': 10}],
+        )
+        allocate_payment(
+            payment,
+            mode='manual',
+            allocations=[{'installment_id': first.id, 'amount': 10}],
+        )
+        self.assertEqual(payment.allocations.count(), 2)
+        self.assertEqual(first.allocations.aggregate(total=Sum('amount'))['total'], 20)
+        self.assertEqual(payment.amount - payment.allocations.aggregate(total=Sum('amount'))['total'], 10)
+
     def test_manual_allocation_cannot_exceed_receipt_or_installment_balance(self):
         plan = self._plan(installment_count=2)
         first = plan.installments.get(number=1)
