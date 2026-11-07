@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 from accounts.models import User
 from fleet.models import Device
-from organizations.models import Subscription, SubscriptionDevice
+from organizations.models import Organization, Subscription, SubscriptionDevice
 from .serializers import SubscriptionWizardSerializer
 
 
