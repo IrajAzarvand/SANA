@@ -399,3 +399,140 @@ class SubscriptionPayment(models.Model):
     def __str__(self):
         return f'{self.subscription.contract_number} — {self.amount}'
 
+
+class SubscriptionInstallmentPlan(models.Model):
+    """A versioned payment schedule for one contract."""
+
+    CALCULATION_CHOICES = [
+        ('equal', 'اقساط مساوی'),
+        ('custom', 'مبالغ دلخواه'),
+    ]
+    SURPLUS_CHOICES = [
+        ('credit', 'ثبت به‌عنوان اعتبار مشتری'),
+        ('future', 'تخصیص به اقساط آینده'),
+    ]
+    STATUS_CHOICES = [
+        ('active', 'فعال'),
+        ('superseded', 'جایگزین‌شده'),
+    ]
+
+    subscription = models.ForeignKey(
+        Subscription, on_delete=models.CASCADE,
+        related_name='installment_plans', verbose_name='قرارداد',
+    )
+    version = models.PositiveIntegerField(verbose_name='نسخه برنامه')
+    scheduled_amount = models.DecimalField(
+        max_digits=15, decimal_places=0, verbose_name='مبلغ اقساط (ریال)',
+    )
+    installment_count = models.PositiveSmallIntegerField(verbose_name='تعداد اقساط')
+    interval_months = models.PositiveSmallIntegerField(verbose_name='فاصله اقساط (ماه)')
+    calculation_mode = models.CharField(
+        max_length=10, choices=CALCULATION_CHOICES, verbose_name='روش محاسبه',
+    )
+    surplus_policy = models.CharField(
+        max_length=10, choices=SURPLUS_CHOICES, default='credit',
+        verbose_name='نحوه مازاد دریافتی',
+    )
+    status = models.CharField(
+        max_length=12, choices=STATUS_CHOICES, default='active', verbose_name='وضعیت',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        'accounts.User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='created_installment_plans', verbose_name='ایجادکننده',
+    )
+
+    class Meta:
+        verbose_name = 'برنامه اقساط'
+        verbose_name_plural = 'برنامه‌های اقساط'
+        ordering = ['-version']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['subscription', 'version'], name='org_installment_plan_version_uniq',
+            ),
+            models.UniqueConstraint(
+                fields=['subscription'], condition=models.Q(status='active'),
+                name='org_one_active_installment_plan',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.subscription.contract_number} — v{self.version}'
+
+
+class SubscriptionInstallment(models.Model):
+    """An installment in a specific immutable schedule version."""
+
+    STATUS_CHOICES = [
+        ('active', 'فعال'),
+        ('superseded', 'جایگزین‌شده'),
+    ]
+
+    plan = models.ForeignKey(
+        SubscriptionInstallmentPlan, on_delete=models.PROTECT,
+        related_name='installments', verbose_name='برنامه اقساط',
+    )
+    number = models.PositiveSmallIntegerField(verbose_name='شماره قسط')
+    amount = models.DecimalField(max_digits=15, decimal_places=0, verbose_name='مبلغ قسط (ریال)')
+    due_date = models.DateField(verbose_name='سررسید')
+    status = models.CharField(max_length=12, choices=STATUS_CHOICES, default='active')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'قسط'
+        verbose_name_plural = 'اقساط'
+        ordering = ['due_date', 'number']
+        constraints = [
+            models.UniqueConstraint(fields=['plan', 'number'], name='org_installment_plan_number_uniq'),
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name='org_installment_amount_positive'),
+        ]
+
+    def __str__(self):
+        return f'{self.plan.subscription.contract_number} — قسط {self.number}'
+
+
+class SubscriptionPaymentAllocation(models.Model):
+    """Immutable application of a real receipt to a contract advance or installment."""
+
+    ALLOCATION_CHOICES = [
+        ('installment', 'قسط'),
+        ('contract_advance', 'پیش‌پرداخت قرارداد'),
+    ]
+
+    payment = models.ForeignKey(
+        SubscriptionPayment, on_delete=models.PROTECT,
+        related_name='allocations', verbose_name='دریافتی',
+    )
+    installment = models.ForeignKey(
+        SubscriptionInstallment, on_delete=models.PROTECT,
+        null=True, blank=True, related_name='allocations', verbose_name='قسط',
+    )
+    allocation_type = models.CharField(
+        max_length=20, choices=ALLOCATION_CHOICES, verbose_name='نوع تخصیص',
+    )
+    amount = models.DecimalField(max_digits=15, decimal_places=0, verbose_name='مبلغ تخصیص (ریال)')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'تخصیص دریافتی'
+        verbose_name_plural = 'تخصیص‌های دریافتی'
+        ordering = ['created_at', 'id']
+        constraints = [
+            models.CheckConstraint(condition=models.Q(amount__gt=0), name='org_payment_allocation_positive'),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(allocation_type='installment', installment__isnull=False)
+                    | models.Q(allocation_type='contract_advance', installment__isnull=True)
+                ),
+                name='org_allocation_type_installment_consistent',
+            ),
+            models.UniqueConstraint(
+                fields=['payment', 'installment'],
+                condition=models.Q(installment__isnull=False),
+                name='org_payment_installment_allocation_uniq',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.payment_id} — {self.amount}'
+
