@@ -7,7 +7,7 @@ from organizations.models import (
     Organization, Subscription, SubscriptionDevice, SubscriptionPayment,
     SubscriptionInstallmentPlan, SubscriptionInstallment, SubscriptionPaymentAllocation,
 )
-from organizations.financial import create_installment_plan, allocate_payment
+from organizations.financial import create_installment_plan, allocate_payment, revise_installment_plan
 from rest_framework.exceptions import ValidationError
 from django.db.models import Sum
 from .serializers import SubscriptionWizardSerializer
@@ -547,3 +547,52 @@ class SubscriptionInstallmentLedgerTests(TestCase):
         self.assertEqual(new_plan.version, 2)
         self.assertEqual(old_plan.installments.count(), 2)
         self.assertEqual(new_plan.installments.count(), 4)
+
+
+    def test_schedule_revision_preserves_paid_and_partially_paid_installments(self):
+        old_plan = self._plan(installment_count=2)
+        first, second = list(old_plan.installments.order_by('number'))
+
+        full_receipt = SubscriptionPayment.objects.create(
+            subscription=self.subscription,
+            amount=50,
+            received_at=first.due_date,
+        )
+        allocate_payment(
+            full_receipt,
+            mode='manual',
+            allocations=[{'installment_id': first.id, 'amount': 50}],
+        )
+        partial_receipt = SubscriptionPayment.objects.create(
+            subscription=self.subscription,
+            amount=20,
+            received_at=second.due_date,
+        )
+        allocate_payment(
+            partial_receipt,
+            mode='manual',
+            allocations=[{'installment_id': second.id, 'amount': 20}],
+        )
+
+        revised = revise_installment_plan(
+            self.subscription,
+            {
+                'installment_count': 1,
+                'interval_months': 2,
+                'calculation_mode': 'equal',
+                'surplus_policy': 'credit',
+            },
+        )
+
+        old_plan.refresh_from_db()
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(old_plan.status, 'superseded')
+        self.assertEqual(first.amount, 50)
+        self.assertEqual(first.allocations.get().amount, 50)
+        self.assertEqual(second.amount, 50)
+        self.assertEqual(second.allocations.get().amount, 20)
+        self.assertEqual(revised.scheduled_amount, 30)
+        revised_installment = revised.installments.get()
+        self.assertEqual(revised_installment.amount, 30)
+        self.assertEqual(revised_installment.due_date, second.due_date)
