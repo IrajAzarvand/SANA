@@ -381,9 +381,6 @@ class SubscriptionPayment(models.Model):
     )
     received_at = models.DateField(verbose_name='تاریخ واقعی دریافت وجه')
 
-    device_count = models.IntegerField(
-        default=0, verbose_name='تعداد دستگاه این پرداخت'
-    )
     description = models.TextField(blank=True, verbose_name='توضیحات')
 
     operation = models.ForeignKey(SubscriptionOperation, on_delete=models.SET_NULL,
