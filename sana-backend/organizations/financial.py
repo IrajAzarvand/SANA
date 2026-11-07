@@ -95,7 +95,7 @@ def installment_remaining_amount(installment):
     return max(Decimal(installment.amount) - installment_allocated_amount(installment), Decimal('0'))
 
 
-def allocate_payment(payment, mode='automatic', allocations=None, allocation_type='installment'):
+def allocate_payment(payment, mode='automatic', allocations=None, allocation_type='installment', allocation_amount=None):
     """Allocate a receipt to installments or leave its remainder as customer credit."""
     from .models import SubscriptionPayment
 
@@ -109,12 +109,15 @@ def allocate_payment(payment, mode='automatic', allocations=None, allocation_typ
         if allocation_type == 'contract_advance':
             if mode != 'automatic' or allocations:
                 raise ValidationError('پیش‌پرداخت قرارداد به‌صورت مستقیم ثبت می‌شود')
-            if available:
+            advance_amount = available if allocation_amount is None else Decimal(str(allocation_amount))
+            if advance_amount < 0 or advance_amount > available:
+                raise ValidationError('مبلغ پیش‌پرداخت از مبلغ آزاد دریافتی بیشتر است')
+            if advance_amount:
                 SubscriptionPaymentAllocation.objects.create(
                     payment=locked_payment,
                     installment=None,
                     allocation_type='contract_advance',
-                    amount=available,
+                    amount=advance_amount,
                 )
             return
 
