@@ -1121,7 +1121,7 @@ export default function SubscriptionDetail() {
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
                     {isSiteAdmin && !isCancelled && Number(p.unallocated_amount || 0) > 0 && subscription.installment_plan && (
-                      <Button size="xs" variant="secondary" onClick={() => openAllocationModal(p)}>
+                      <Button size="sm" variant="secondary" onClick={() => openAllocationModal(p)}>
                         تخصیص اعتبار
                       </Button>
                     )}
