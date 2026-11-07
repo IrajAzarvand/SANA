@@ -25,9 +25,12 @@ def add_months(value: date, months: int) -> date:
 def create_installment_plan(subscription, data, created_by=None):
     """Create a new schedule version; never overwrite a previous version."""
     mode = data.get('calculation_mode', 'equal')
-    count = int(data.get('installment_count') or 0)
-    interval = int(data.get('interval_months') or 0)
-    scheduled_amount = Decimal(str(data.get('scheduled_amount', 0)))
+    try:
+        count = int(data.get('installment_count') or 0)
+        interval = int(data.get('interval_months') or 0)
+        scheduled_amount = Decimal(str(data.get('scheduled_amount', 0)))
+    except (TypeError, ValueError, ArithmeticError):
+        raise ValidationError({'installment_plan': 'مقادیر برنامه اقساط نامعتبر هستند'})
 
     if count < 1 or count > 120:
         raise ValidationError({'installment_count': 'تعداد اقساط باید بین ۱ تا ۱۲۰ باشد'})
@@ -48,7 +51,10 @@ def create_installment_plan(subscription, data, created_by=None):
     elif mode == 'custom':
         if len(custom_amounts) != count:
             raise ValidationError({'custom_amounts': 'تعداد مبالغ باید با تعداد اقساط برابر باشد'})
-        amounts = [Decimal(str(value)) for value in custom_amounts]
+        try:
+            amounts = [Decimal(str(value)) for value in custom_amounts]
+        except (TypeError, ValueError, ArithmeticError):
+            raise ValidationError({'custom_amounts': 'مبالغ دلخواه اقساط نامعتبر هستند'})
         if any(value <= 0 or value != value.to_integral_value() for value in amounts):
             raise ValidationError({'custom_amounts': 'مبلغ هر قسط باید عدد صحیح و بیشتر از صفر باشد'})
         if sum(amounts) != scheduled_amount:
@@ -61,7 +67,10 @@ def create_installment_plan(subscription, data, created_by=None):
         start_date = date.fromisoformat(start_date)
     first_due_date = data.get('first_due_date')
     if isinstance(first_due_date, str):
-        first_due_date = date.fromisoformat(first_due_date)
+        try:
+            first_due_date = date.fromisoformat(first_due_date)
+        except ValueError:
+            raise ValidationError({'first_due_date': 'فرمت سررسید اولین قسط نامعتبر است'})
 
     with transaction.atomic():
         subscription.__class__.objects.select_for_update().get(pk=subscription.pk)
@@ -254,9 +263,16 @@ def revise_installment_plan(subscription, data, created_by=None):
 
         first_due_date = data.get('first_due_date') or default_first_due
         if first_due_date is None:
-            first_due_date = add_months(locked_subscription.start_date, int(data.get('interval_months') or 1))
+            try:
+                interval = int(data.get('interval_months') or 1)
+            except (TypeError, ValueError):
+                raise ValidationError({'interval_months': 'فاصله اقساط باید عدد صحیح باشد'})
+            first_due_date = add_months(locked_subscription.start_date, interval)
         if isinstance(first_due_date, str):
-            first_due_date = date.fromisoformat(first_due_date)
+            try:
+                first_due_date = date.fromisoformat(first_due_date)
+            except ValueError:
+                raise ValidationError({'first_due_date': 'فرمت سررسید اولین قسط نامعتبر است'})
 
         revised_data = {
             **data,
