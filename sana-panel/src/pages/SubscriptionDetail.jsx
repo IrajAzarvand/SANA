@@ -252,12 +252,19 @@ export default function SubscriptionDetail() {
       ? editCustomer
       : editCustomer;
 
-    const payment_changes = Object.entries(editForm.payment_changes).map(([paymentId, payment]) => ({
-      id: Number(paymentId),
-      ...payment,
-      amount: Number(payment.amount),
-      device_count: Number(payment.device_count) || 0,
-    }));
+    const allocatedPaymentIds = new Set(
+      (subscription.payments || [])
+        .filter((payment) => payment.allocations?.length)
+        .map((payment) => String(payment.id))
+    );
+    const payment_changes = Object.entries(editForm.payment_changes)
+      .filter(([paymentId]) => !allocatedPaymentIds.has(String(paymentId)))
+      .map(([paymentId, payment]) => ({
+        id: Number(paymentId),
+        ...payment,
+        amount: Number(payment.amount),
+        device_count: Number(payment.device_count) || 0,
+      }));
 
     setSaving(true);
     setActionError('');
