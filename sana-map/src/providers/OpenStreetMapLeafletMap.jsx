@@ -31,6 +31,28 @@ function createDeviceIcon(position) {
   });
 }
 
+const ATTRIBUTE_LABELS = {
+  priority: 'اولویت پیام', sat: 'تعداد ماهواره', event: 'کد رویداد', ignition: 'سوئیچ', motion: 'حرکت',
+  rssi: 'قدرت سیگنال GSM', gpsStatus: 'وضعیت GPS', pdop: 'PDOP', hdop: 'HDOP',
+  power: 'ولتاژ خارجی', battery: 'ولتاژ باتری', fuel: 'سوخت', fuelLevel: 'سطح سوخت',
+  odometer: 'کیلومترشمار', totalDistance: 'مسافت کل', distance: 'مسافت پیام',
+  hours: 'ساعت موتور', adc1: 'ورودی آنالوگ ۱', adc2: 'ورودی آنالوگ ۲',
+  operator: 'شناسه اپراتور', ip: 'IP دستگاه', alarm: 'هشدار', charge: 'شارژ',
+  door: 'وضعیت درب', temp1: 'دمای ۱', temp2: 'دمای ۲', deviceTemp: 'دمای دستگاه',
+};
+const COMMON_ATTRIBUTES = ['ignition','motion','sat','rssi','power','battery','fuel','odometer','hours','event','priority','gpsStatus','hdop','pdop'];
+function formatAttributeValue(value) {
+  if (value === null || value === undefined || value === '') return 'مقدار ارسال نشده';
+  if (typeof value === 'boolean') return value ? 'بله / فعال' : 'خیر / غیرفعال';
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+function attributeRows(attributes = {}) {
+  const values = attributes && typeof attributes === 'object' && !Array.isArray(attributes) ? attributes : {};
+  const keys = [...new Set([...COMMON_ATTRIBUTES, ...Object.keys(values)])];
+  return keys.map((key) => ({ key, label: ATTRIBUTE_LABELS[key] || key, value: Object.prototype.hasOwnProperty.call(values, key) ? formatAttributeValue(values[key]) : 'در این نقطه از دستگاه دریافت نشده' }));
+}
+
 function formatLastSeen(value) {
   if (!value) return 'نامشخص';
   const date = new Date(value);
@@ -131,7 +153,12 @@ export default function OpenStreetMapLeafletMap({ positions = [], onSelectDevice
                   <div>شناسه دستگاه: {position.imei || '—'}</div>
                   <div>وضعیت: {status}</div>
                   <div>سرعت: {formatSpeed(position.speed)} km/h</div>
-                  <div>آخرین ارتباط: {formatLastSeen(position.last_seen)}</div>
+                  <div>زمان پیام دستگاه: {formatLastSeen(position.device_time)}</div>
+                  <div>زمان دریافت Traccar: {formatLastSeen(position.last_seen)}</div>
+                  <div style={{ marginTop: 8, fontWeight: 700 }}>Attributeهای Traccar</div>
+                  <div style={{ maxHeight: 240, overflowY: 'auto', marginTop: 4 }}>
+                    {attributeRows(position.attributes).map((item) => <div key={item.key} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, borderBottom: '1px solid #ddd', padding: '2px 0' }}><span>{item.label} <small style={{ color: '#777' }}>({item.key})</small></span><strong style={{ overflowWrap: 'anywhere' }}>{item.value}</strong></div>)}
+                  </div>
                   {!position.position_is_current && (
                     <div style={{ color: '#B45309' }}>آخرین مختصات معتبر (GPS فعلی فاقد Fix است)</div>
                   )}
