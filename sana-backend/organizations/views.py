@@ -15,6 +15,7 @@ from .models import (
     Subscription,
     SubscriptionDevice,
     SubscriptionPayment,
+    SubscriptionPaymentAllocation,
     SubscriptionOperation,
     SubscriptionOperationChange,
 )
@@ -177,6 +178,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             return Response({'new_end_date': 'این فیلد الزامی است'}, status=status.HTTP_400_BAD_REQUEST)
 
         from datetime import date
+        from .financial import allocate_payment
         try:
             new_end_date = date.fromisoformat(new_end_date)
         except ValueError:
@@ -256,7 +258,8 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                     data={**item, 'subscription': subscription.id, 'operation': operation.id}
                 )
                 payment_serializer.is_valid(raise_exception=True)
-                payment_serializer.save()
+                payment = payment_serializer.save()
+                allocate_payment(payment)
 
             # تغییر اطلاعات مشتری
             customer_changes = request.data.get('customer_changes', {})
@@ -432,9 +435,14 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                     setattr(target, field, new_value)
                 target.save()
 
-            # اصلاح پرداخت‌ها؛ هر اصلاح هم در همان عملیات ثبت می‌شود.
+            # دریافتی‌ای که تخصیص مالی دارد قابل ویرایش مستقیم نیست؛
+            # برای اصلاح آن باید در جریان مالی جداگانه برگشت/اصلاح ثبت شود.
             payment_fields = {'amount', 'payment_date', 'device_count', 'description'}
             for payment, item in payment_objects.values():
+                if payment.allocations.exists():
+                    raise serializers.ValidationError({
+                        'payment_changes': f'دریافتی {payment.id} تخصیص مالی دارد و قابل ویرایش مستقیم نیست'
+                    })
                 for field in payment_fields:
                     if field not in item:
                         continue
@@ -664,9 +672,13 @@ class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
         return qs
 
     def create(self, request, *args, **kwargs):
+        from .financial import allocate_payment
+
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         subscription = serializer.validated_data['subscription']
+        allocation_mode = request.data.get('allocation_mode', 'automatic')
+        allocations = request.data.get('allocations')
         with transaction.atomic():
             operation = SubscriptionOperation.objects.create(
                 subscription=subscription,
@@ -676,7 +688,24 @@ class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
                 new_end_date=subscription.end_date,
             )
             instance = serializer.save(operation=operation)
+            allocate_payment(
+                instance,
+                mode=allocation_mode,
+                allocations=allocations,
+            )
         return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.allocations.exists():
+            raise serializers.ValidationError('دریافتی دارای تخصیص مالی است و قابل ویرایش مستقیم نیست')
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.allocations.exists():
+            raise serializers.ValidationError('دریافتی دارای تخصیص مالی است و قابل حذف مستقیم نیست')
+        return super().destroy(request, *args, **kwargs)
 
     def get_permissions(self):
         if self.action in ['create', 'destroy', 'update', 'partial_update']:
