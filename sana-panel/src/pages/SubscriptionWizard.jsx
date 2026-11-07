@@ -1103,7 +1103,7 @@ function Step6({ form }) {
       <div className="bg-success/10 border border-success/30 rounded-field p-3 flex items-start gap-2">
         <CheckCircle2 size={16} className="text-success flex-shrink-0 mt-0.5" />
         <p className="text-xs text-text-secondary leading-relaxed">
-          با کلیک روی <span className="font-medium text-success">«ثبت قرارداد»</span>، کاربر به صورت خودکار ساخته می‌شود و می‌تواند با اطلاعات وارد شده لاگین کند.
+          با کلیک روی <span className="font-medium text-success">«ثبت قرارداد»</span>، قرارداد به سازمان و مدیر انتخاب‌شده متصل می‌شود؛ حساب موجود حفظ می‌شود یا در صورت نیاز حساب جدید ساخته خواهد شد.
         </p>
       </div>
     </div>
