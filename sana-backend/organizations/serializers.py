@@ -566,6 +566,10 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                     raise serializers.ValidationError({
                         'organization_id': 'سازمان انتخاب‌شده یافت نشد'
                     })
+                if not data.get('organization_name', selected_organization.name).strip():
+                    raise serializers.ValidationError({
+                        'organization_name': 'نام سازمان الزامی است'
+                    })
             elif not data.get('organization_name', '').strip():
                 raise serializers.ValidationError({
                     'organization_name': 'برای ساخت سازمان جدید، نام سازمان الزامی است'
