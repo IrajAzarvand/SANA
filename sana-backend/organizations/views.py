@@ -688,11 +688,14 @@ class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
                 new_end_date=subscription.end_date,
             )
             instance = serializer.save(operation=operation)
-            allocate_payment(
-                instance,
-                mode=allocation_mode,
-                allocations=allocations,
-            )
+            if allocation_mode == 'contract_advance':
+                allocate_payment(instance, allocation_type='contract_advance')
+            else:
+                allocate_payment(
+                    instance,
+                    mode=allocation_mode,
+                    allocations=allocations,
+                )
         return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
