@@ -101,4 +101,8 @@ export const subscriptionPaymentsAPI = {
   delete: async (id) => {
     await apiClient.delete(`/subscription-payments/${id}/`);
   },
+  allocate: async (id, data) => {
+    const response = await apiClient.post(`/subscription-payments/${id}/allocate/`, data);
+    return response.data;
+  },
 };
