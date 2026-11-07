@@ -301,6 +301,8 @@ def revise_installment_plan(subscription, data, created_by=None):
             raise ValidationError({'installment_plan': 'مانده قابل تقسیطی برای ایجاد برنامه جدید وجود ندارد'})
 
         first_due_date = data.get('first_due_date') or default_first_due
+        if price_changed and current_plan and first_due_date is None:
+            raise ValidationError({'first_due_date': 'برای مبلغ جدید پس از تسویه برنامه قبلی، سررسید اولین قسط را مشخص کنید'})
         if first_due_date is None:
             try:
                 interval = int(data.get('interval_months') or 1)
