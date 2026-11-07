@@ -150,9 +150,27 @@ export default function SubscriptionWizard() {
     }
 
     if (step === 4) {
-      if (form.devices.length === 0) {
+      if (!Array.isArray(form.devices) || form.devices.length === 0) {
         setError('حداقل یک دستگاه انتخاب کنید');
         return false;
+      }
+      for (let index = 0; index < form.devices.length; index += 1) {
+        const device = form.devices[index];
+        if (!device.start_date || !device.end_date) {
+          setError(`تاریخ شروع و پایان دستگاه ${index + 1} را مشخص کنید`);
+          return false;
+        }
+        if (device.start_date > device.end_date) {
+          setError(`تاریخ پایان دستگاه ${index + 1} باید بعد از تاریخ شروع باشد`);
+          return false;
+        }
+        if (
+          device.start_date < form.start_date
+          || device.end_date > form.end_date
+        ) {
+          setError(`بازه زمانی دستگاه ${index + 1} باید داخل بازه قرارداد باشد`);
+          return false;
+        }
       }
     }
 
@@ -171,6 +189,11 @@ export default function SubscriptionWizard() {
   };
 
   const handleSubmit = async () => {
+    if (!Array.isArray(form.devices) || form.devices.length === 0) {
+      setStep(4);
+      setError('برای ثبت قرارداد، حداقل یک دستگاه انتخاب کنید');
+      return;
+    }
     setSaving(true);
     setError('');
 

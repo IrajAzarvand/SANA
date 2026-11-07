@@ -2,11 +2,17 @@ from django.test import TestCase
 from unittest.mock import patch
 
 from accounts.models import User
+from fleet.models import Device
+from organizations.models import Organization, Subscription, SubscriptionDevice
 from .serializers import SubscriptionWizardSerializer
 
 
 class SubscriptionWizardExistingUserTests(TestCase):
     def setUp(self):
+        self.lifecycle_patcher = patch('organizations.serializers.record_device_lifecycle_event')
+        self.lifecycle_patcher.start()
+        self.addCleanup(self.lifecycle_patcher.stop)
+        self.device = Device.objects.create(imei='111111111111111')
         self.user = User.objects.create_user(
             username='existing-person',
             password='Original-Password-123',
@@ -30,7 +36,11 @@ class SubscriptionWizardExistingUserTests(TestCase):
             'contract_number': 'PRS-TEST-0001',
             'start_date': '2026-11-07',
             'end_date': '2027-11-07',
-            'devices': [],
+            'devices': [{
+                'device_id': self.device.id,
+                'start_date': '2026-11-07',
+                'end_date': '2027-11-07',
+            }],
             'payments': [],
         }
         payload.update(overrides)
@@ -69,7 +79,10 @@ class SubscriptionWizardExistingUserTests(TestCase):
 
 class SubscriptionWizardOrganizationSelectionTests(TestCase):
     def setUp(self):
-        from organizations.models import Organization
+        self.lifecycle_patcher = patch('organizations.serializers.record_device_lifecycle_event')
+        self.lifecycle_patcher.start()
+        self.addCleanup(self.lifecycle_patcher.stop)
+        self.device = Device.objects.create(imei='222222222222222')
 
         self.organization = Organization.objects.create(
             name='سازمان اولیه',
@@ -108,7 +121,11 @@ class SubscriptionWizardOrganizationSelectionTests(TestCase):
             'contract_number': 'ORG-TEST-0001',
             'start_date': '2026-11-07',
             'end_date': '2027-11-07',
-            'devices': [],
+            'devices': [{
+                'device_id': self.device.id,
+                'start_date': '2026-11-07',
+                'end_date': '2027-11-07',
+            }],
             'payments': [],
         }
         payload.update(overrides)
@@ -174,3 +191,86 @@ class SubscriptionWizardOrganizationSelectionTests(TestCase):
         serializer = SubscriptionWizardSerializer(data=payload)
         self.assertFalse(serializer.is_valid())
         self.assertIn('organization_id', serializer.errors)
+
+
+class SubscriptionWizardDeviceValidationTests(TestCase):
+    def setUp(self):
+        self.lifecycle_patcher = patch('organizations.serializers.record_device_lifecycle_event')
+        self.lifecycle_patcher.start()
+        self.addCleanup(self.lifecycle_patcher.stop)
+        self.user = User.objects.create_user(
+            username='device-test-user',
+            password='Password-123456',
+            account_type='personal',
+            role='personal_user',
+        )
+        self.device = Device.objects.create(imei='333333333333333')
+
+    def _payload(self, **overrides):
+        payload = {
+            'customer_type': 'personal',
+            'username': self.user.username,
+            'existing_user_id': self.user.id,
+            'first_name': 'Test',
+            'last_name': 'User',
+            'mobile': '09120000000',
+            'contract_number': 'DEVICE-TEST-0001',
+            'start_date': '2026-11-07',
+            'end_date': '2027-11-07',
+            'devices': [{
+                'device_id': self.device.id,
+                'start_date': '2026-11-07',
+                'end_date': '2027-11-07',
+            }],
+            'payments': [],
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_empty_device_list_is_rejected(self):
+        serializer = SubscriptionWizardSerializer(data=self._payload(devices=[]))
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('devices', serializer.errors)
+
+    def test_device_not_in_warehouse_is_rejected(self):
+        self.device.management_status = 'sold'
+        self.device.save(update_fields=['management_status'])
+        serializer = SubscriptionWizardSerializer(data=self._payload())
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('devices', serializer.errors)
+
+    def test_device_with_active_subscription_is_rejected(self):
+        existing_subscription = Subscription.objects.create(
+            contract_number='DEVICE-TEST-EXISTING',
+            customer_type='personal',
+            user=self.user,
+            start_date='2026-11-07',
+            end_date='2027-11-07',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=existing_subscription,
+            device=self.device,
+            start_date='2026-11-07',
+            end_date='2027-11-07',
+        )
+        serializer = SubscriptionWizardSerializer(data=self._payload())
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('devices', serializer.errors)
+
+    def test_device_date_range_must_be_inside_contract(self):
+        serializer = SubscriptionWizardSerializer(data=self._payload(devices=[{
+            'device_id': self.device.id,
+            'start_date': '2026-11-06',
+            'end_date': '2027-11-07',
+        }]))
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('devices', serializer.errors)
+
+    def test_valid_warehouse_device_is_assigned_to_new_contract(self):
+        serializer = SubscriptionWizardSerializer(data=self._payload())
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        subscription = serializer.save()
+        link = SubscriptionDevice.objects.get(subscription=subscription, device=self.device)
+        self.assertIsNone(link.unassigned_at)
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.management_status, 'sold')
