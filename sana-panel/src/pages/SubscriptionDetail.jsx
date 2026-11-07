@@ -1120,6 +1120,7 @@ export default function SubscriptionDetail() {
             )}
           </div>
           {subscription.installment_plan ? (
+            <>
             <div className="overflow-x-auto">
             <table className="w-full text-right">
               <thead className="bg-bg-base text-[10px] text-text-muted">
@@ -1155,6 +1156,7 @@ export default function SubscriptionDetail() {
               ))}
             </div>
           )}
+            </>
           ) : (
             <div className="px-5 py-8 text-center text-xs text-text-muted">برای این قرارداد هنوز برنامه اقساطی ثبت نشده است.</div>
           )}
