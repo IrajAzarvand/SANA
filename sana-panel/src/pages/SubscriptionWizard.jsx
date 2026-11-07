@@ -60,6 +60,7 @@ export default function SubscriptionWizard() {
     existing_user_id: null,
     start_date: '',
     end_date: '',
+    price: '',
     notes: '',
     devices: [],
     payments: [],
@@ -215,6 +216,10 @@ export default function SubscriptionWizard() {
         setError('تاریخ پایان باید بعد از تاریخ شروع باشد');
         return false;
       }
+      if (parseAmountInput(form.price) <= 0) {
+        setError('مبلغ کل قرارداد باید بیشتر از صفر باشد');
+        return false;
+      }
     }
 
     if (step === 4) {
@@ -289,6 +294,7 @@ export default function SubscriptionWizard() {
         contract_number: form.contract_number,
         start_date: form.start_date,
         end_date: form.end_date,
+        price: parseAmountInput(form.price),
         notes: form.notes,
         devices: form.devices,
         payments: form.payments,
@@ -755,7 +761,7 @@ function Step3({ form, updateForm }) {
         <p className="text-sm text-text-muted">شماره قرارداد و بازه‌ی زمانی آن را مشخص کنید</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
         <Input
           label="شماره قرارداد"
           value={form.contract_number}
@@ -774,6 +780,14 @@ function Step3({ form, updateForm }) {
           value={form.end_date}
           minDate={form.start_date || null}
           onChange={(val) => updateForm('end_date', val)}
+          required
+        />
+        <Input
+          inputMode="numeric"
+          label="مبلغ کل قرارداد (ریال)"
+          value={form.price}
+          onChange={(e) => updateForm('price', formatAmountInput(e.target.value))}
+          placeholder="مثلاً 100,000,000"
           required
         />
       </div>
@@ -1163,6 +1177,7 @@ function Step6({ form }) {
           <SummaryItem label="شماره قرارداد" value={form.contract_number} mono />
           <SummaryItem label="تاریخ شروع" value={toJalali(form.start_date)} mono />
           <SummaryItem label="تاریخ پایان" value={toJalali(form.end_date)} mono />
+          <SummaryItem label="مبلغ کل قرارداد" value={`${parseAmountInput(form.price).toLocaleString('fa-IR')} ریال`} />
         </div>
         {form.notes && (
           <div>
