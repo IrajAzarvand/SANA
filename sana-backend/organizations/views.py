@@ -154,7 +154,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         return qs
 
     def get_permissions(self):
-        if self.action in ['create', 'destroy', 'renew', 'modify']:
+        if self.action in ['create', 'destroy', 'renew', 'modify', 'revise_installment_plan']:
             return [IsSiteAdmin()]
         return super().get_permissions()
 
@@ -471,6 +471,32 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                     setattr(payment, model_field, new_value)
                 payment.save()
 
+        return Response(SubscriptionSerializer(subscription).data)
+
+    @action(detail=True, methods=['post'])
+    def revise_installment_plan(self, request, pk=None):
+        """Revise only the unpaid remainder; old schedule versions stay intact."""
+        from .financial import revise_installment_plan
+
+        subscription = self.get_object()
+        with transaction.atomic():
+            operation = SubscriptionOperation.objects.create(
+                subscription=subscription,
+                operation_type='modify',
+                performed_by=request.user,
+                old_start_date=subscription.start_date,
+                new_start_date=subscription.start_date,
+                old_end_date=subscription.end_date,
+                new_end_date=subscription.end_date,
+                old_status=subscription.status,
+                new_status=subscription.status,
+                notes='بازتنظیم برنامه اقساط؛ اقساط پرداخت‌شده و تخصیص‌های قبلی حفظ شدند.',
+            )
+            revise_installment_plan(
+                subscription,
+                request.data,
+                created_by=request.user,
+            )
         return Response(SubscriptionSerializer(subscription).data)
 
     @action(detail=True, methods=['get'])
