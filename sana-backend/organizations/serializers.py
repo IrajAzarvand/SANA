@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.utils import timezone
+from django.db.models import Sum
 from fleet.lifecycle import record_device_lifecycle_event
 from .models import (
     Organization,
@@ -456,7 +457,7 @@ class SubscriptionSerializer(serializers.ModelSerializer):
         if not plan:
             return 0
         return sum(
-            max(installment.amount - (installment.allocations.aggregate(total=__import__('django').db.models.Sum('amount'))['total'] or 0), 0)
+            max(installment.amount - (installment.allocations.aggregate(total=Sum('amount'))['total'] or 0), 0)
             for installment in plan.installments.filter(status='active', due_date__gt=today)
         )
 
@@ -550,7 +551,7 @@ class SubscriptionListSerializer(serializers.ModelSerializer):
         if not plan:
             return 0
         return sum(
-            max(item.amount - (item.allocations.aggregate(value=__import__('django').db.models.Sum('amount'))['value'] or 0), 0)
+            max(item.amount - (item.allocations.aggregate(value=Sum('amount'))['value'] or 0), 0)
             for item in plan.installments.filter(status='active', due_date__gt=timezone.localdate())
         )
 
