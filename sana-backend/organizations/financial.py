@@ -296,6 +296,8 @@ def revise_installment_plan(subscription, data, created_by=None):
                 current_plan.save(update_fields=['status'])
                 current_plan.installments.filter(status='active').update(status='superseded')
                 return None
+            if price_changed and not current_plan:
+                return None
             raise ValidationError({'installment_plan': 'مانده قابل تقسیطی برای ایجاد برنامه جدید وجود ندارد'})
 
         first_due_date = data.get('first_due_date') or default_first_due
