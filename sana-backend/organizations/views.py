@@ -700,6 +700,9 @@ class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
                     allocation_type='contract_advance',
                     allocation_amount=min(Decimal(instance.amount), contract_balance_before),
                 )
+            elif allocation_mode == 'credit':
+                # Deliberately leave the receipt unallocated as customer credit.
+                pass
             else:
                 allocate_payment(
                     instance,
