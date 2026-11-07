@@ -522,6 +522,9 @@ class SubscriptionWizardSerializer(serializers.Serializer):
 
     # اطلاعات قرارداد
     contract_number = serializers.CharField()
+    price = serializers.DecimalField(
+        max_digits=15, decimal_places=0, min_value=0, required=False, default=0
+    )
     start_date = serializers.DateField()
     end_date = serializers.DateField()
     notes = serializers.CharField(required=False, allow_blank=True)
@@ -813,6 +816,7 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                 user=user if customer_type == 'personal' else None,
                 start_date=validated_data['start_date'],
                 end_date=validated_data['end_date'],
+                price=validated_data.get('price', 0),
                 notes=validated_data.get('notes', ''),
                 status='active',
             )
