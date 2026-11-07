@@ -1890,6 +1890,7 @@ export default function SubscriptionDetail() {
               { value: 'automatic', label: 'خودکار؛ از قدیمی‌ترین قسط سررسیدشده' },
               { value: 'manual', label: 'انتخاب دستی اقساط' },
               { value: 'contract_advance', label: 'پیش‌پرداخت قرارداد؛ بدون اتصال به قسط' },
+              { value: 'credit', label: 'ثبت به‌عنوان اعتبار مشتری؛ بدون تخصیص' },
             ]}
           />
           {paymentForm.allocation_mode === 'manual' && (
