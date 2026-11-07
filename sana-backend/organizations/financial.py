@@ -178,7 +178,7 @@ def allocate_payment(payment, mode='automatic', allocations=None, allocation_typ
             plan=active_plan,
             status='active',
         ).order_by('due_date', 'number')
-        due_installments = installments.filter(due_date__lte=locked_payment.payment_date)
+        due_installments = installments.filter(due_date__lte=locked_payment.received_at)
         for installment in due_installments:
             remaining = installment_remaining_amount(installment)
             if remaining <= 0:
