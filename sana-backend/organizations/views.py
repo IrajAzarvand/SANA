@@ -689,7 +689,17 @@ class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
             )
             instance = serializer.save(operation=operation)
             if allocation_mode == 'contract_advance':
-                allocate_payment(instance, allocation_type='contract_advance')
+                from decimal import Decimal
+                from django.db.models import Sum
+                received_before = subscription.payments.exclude(pk=instance.pk).aggregate(
+                    total=Sum('amount')
+                )['total'] or Decimal('0')
+                contract_balance_before = max(Decimal(subscription.price) - received_before, Decimal('0'))
+                allocate_payment(
+                    instance,
+                    allocation_type='contract_advance',
+                    allocation_amount=min(Decimal(instance.amount), contract_balance_before),
+                )
             else:
                 allocate_payment(
                     instance,
