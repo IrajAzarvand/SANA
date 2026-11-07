@@ -1878,6 +1878,7 @@ export default function SubscriptionDetail() {
           <JalaliDatePicker
             label="تاریخ واقعی دریافت وجه"
             value={paymentForm.payment_date}
+          maxDate={todayGregorian()}
             onChange={(val) => setPaymentForm({ ...paymentForm, payment_date: val })}
             required
           />
