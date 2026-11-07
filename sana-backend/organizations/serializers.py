@@ -703,7 +703,7 @@ class SubscriptionWizardSerializer(serializers.Serializer):
             if existing_user_id:
                 # حساب موجود حفظ می‌شود؛ فقط اطلاعات مجاز فرم به‌روزرسانی می‌شوند.
                 # رمز عبور عمداً دست‌نخورده باقی می‌ماند.
-                user = User.objects.get(id=existing_user_id)
+                user = User.objects.select_for_update().get(id=existing_user_id)
                 editable_fields = (
                     'first_name', 'last_name', 'mobile', 'national_id', 'address',
                 )
