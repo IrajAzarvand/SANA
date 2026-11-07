@@ -67,18 +67,37 @@ export default function SubscriptionWizard() {
 
   // تولید شماره قرارداد خودکار از Backend
   useEffect(() => {
+    let cancelled = false;
+    const customerType = form.customer_type;
+
     const fetchNextNumber = async () => {
       try {
-        const data = await subscriptionsAPI.getNextNumber(form.customer_type);
-        setForm((f) => ({ ...f, contract_number: data.contract_number }));
+        const data = await subscriptionsAPI.getNextNumber(customerType);
+        if (cancelled) return;
+
+        setForm((current) => (
+          current.customer_type === customerType
+            ? { ...current, contract_number: data.contract_number }
+            : current
+        ));
       } catch (err) {
+        if (cancelled) return;
+
         console.error('Error fetching contract number:', err);
-        const prefix = form.customer_type === 'organization' ? 'ORG' : 'PRS';
-        setForm((f) => ({ ...f, contract_number: `${prefix}-TEMP-0001` }));
+        setForm((current) => (
+          current.customer_type === customerType
+            ? { ...current, contract_number: '' }
+            : current
+        ));
+        setError('دریافت شماره قرارداد از سرور ناموفق بود؛ لطفاً دوباره تلاش کنید.');
       }
     };
 
     fetchNextNumber();
+
+    return () => {
+      cancelled = true;
+    };
   }, [form.customer_type]);
   const updateForm = (key, value) => {
     setForm((f) => {
@@ -112,6 +131,7 @@ export default function SubscriptionWizard() {
     setForm((current) => ({
       ...current,
       customer_type: nextType,
+      contract_number: '',
       organization_id: null,
       organization_selection_touched: false,
       organization_name: '',
