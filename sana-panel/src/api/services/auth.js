@@ -16,6 +16,11 @@ export const authAPI = {
     return response.data;
   },
 
+  updateProfile: async (profile) => {
+    const response = await apiClient.patch('/users/me/', profile);
+    return response.data;
+  },
+
   changePassword: async (oldPassword, newPassword) => {
     const response = await apiClient.post('/users/change_password/', {
       old_password: oldPassword,

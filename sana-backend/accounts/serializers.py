@@ -75,6 +75,14 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         ]
 
 
+class UserProfileUpdateSerializer(serializers.ModelSerializer):
+    """Allow an authenticated user to update only their own profile fields."""
+
+    class Meta:
+        model = User
+        fields = ['email', 'mobile', 'first_name', 'last_name']
+
+
 class ChangePasswordSerializer(serializers.Serializer):
     old_password = serializers.CharField(required=True)
     new_password = serializers.CharField(required=True, min_length=8)
