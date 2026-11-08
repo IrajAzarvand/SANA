@@ -59,7 +59,10 @@ class OrganizationViewSet(viewsets.ModelViewSet):
     ordering_fields = ['name', 'created_at']
 
     def get_serializer_class(self):
-        if self.action in ['update', 'partial_update']:
+        if (
+            self.action in ['update', 'partial_update']
+            and not self.request.user.is_site_admin
+        ):
             return OrganizationSettingsSerializer
         if self.action == 'list':
             return OrganizationListSerializer
