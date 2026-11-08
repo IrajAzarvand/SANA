@@ -13,10 +13,10 @@ import Modal from '../components/Modal';
 import ActionMenu from '../components/ActionMenu';
 import SettingsNav from '../components/SettingsNav';
 import { useAuth } from '../context/AuthContext';
+import { authAPI } from '../api/services/auth';
 import apiClient from '../api/client';
 import { MAP_PROVIDERS } from '../../../sana-map/src/config';
 import {
-  currentUser,
   organization,
   branchesList,
   usersList,
@@ -66,26 +66,114 @@ export default function Settings() {
 /* ============ پروفایل ============ */
 
 function ProfileSection() {
-  const [form, setForm] = useState(currentUser);
+  const { user, updateUser } = useAuth();
+  const [form, setForm] = useState({
+    firstName: user?.first_name || '',
+    lastName: user?.last_name || '',
+    email: user?.email || '',
+    mobile: user?.mobile || '',
+  });
+  const [savedForm, setSavedForm] = useState(form);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const roleLabels = {
+    site_admin: 'ادمین کل سایت',
+    main_user: 'مدیر شرکت',
+    branch_manager: 'مدیر شعبه',
+    personal_user: 'کاربر شخصی',
+  };
+
+  const mapProfile = (data) => ({
+    firstName: data.first_name || '',
+    lastName: data.last_name || '',
+    email: data.email || '',
+    mobile: data.mobile || '',
+  });
+
+  useEffect(() => {
+    let active = true;
+
+    authAPI.me()
+      .then((data) => {
+        if (!active) return;
+        const profileData = mapProfile(data);
+        setForm(profileData);
+        setSavedForm(profileData);
+      })
+      .catch(() => {
+        if (!active) return;
+        setError('دریافت اطلاعات پروفایل با خطا مواجه شد.');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const handleChange = (field, value) => {
+    setForm((current) => ({ ...current, [field]: value }));
+    setError('');
+    setSuccess('');
+  };
+
+  const handleCancel = () => {
+    setForm(savedForm);
+    setError('');
+    setSuccess('');
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const updatedUser = await authAPI.updateProfile({
+        first_name: form.firstName,
+        last_name: form.lastName,
+        email: form.email,
+        mobile: form.mobile,
+      });
+      const profileData = mapProfile(updatedUser);
+      setForm(profileData);
+      setSavedForm(profileData);
+      updateUser(updatedUser);
+      setSuccess('اطلاعات پروفایل با موفقیت ذخیره شد.');
+    } catch (requestError) {
+      const responseData = requestError.response?.data;
+      const firstError = responseData && Object.values(responseData).flat()[0];
+      setError(firstError || 'ذخیره اطلاعات پروفایل انجام نشد. دوباره تلاش کنید.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const initials = form.firstName.trim().charAt(0) || user?.username?.charAt(0) || '?';
+  const roleLabel = roleLabels[user?.role] || '—';
 
   return (
     <Card title="پروفایل من" subtitle="اطلاعات شخصی و تماس">
       <div className="space-y-6">
-
         <div className="flex items-center gap-5">
           <div className="relative">
             <div className="w-20 h-20 rounded-full bg-brand-500 flex items-center justify-center text-bg-base text-2xl font-bold">
-              {form.firstName[0]}
+              {initials}
             </div>
-            <button className="absolute bottom-0 left-0 w-7 h-7 rounded-full bg-bg-overlay border border-border-base flex items-center justify-center hover:bg-bg-hover transition-colors">
+            <div className="absolute bottom-0 left-0 w-7 h-7 rounded-full bg-bg-overlay border border-border-base flex items-center justify-center">
               <Camera size={14} className="text-text-secondary" />
-            </button>
+            </div>
           </div>
           <div>
             <h3 className="text-base font-semibold text-text-primary">
               {form.firstName} {form.lastName}
             </h3>
-            <p className="text-xs text-text-muted mt-0.5">{form.role}</p>
+            <p className="text-xs text-text-muted mt-0.5">{roleLabel}</p>
           </div>
         </div>
 
@@ -95,32 +183,44 @@ function ProfileSection() {
           <Input
             label="نام"
             value={form.firstName}
-            onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+            onChange={(event) => handleChange('firstName', event.target.value)}
+            disabled={loading || saving}
           />
           <Input
             label="نام خانوادگی"
             value={form.lastName}
-            onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+            onChange={(event) => handleChange('lastName', event.target.value)}
+            disabled={loading || saving}
           />
           <Input
             label="ایمیل"
             icon={Mail}
+            type="email"
             value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
+            onChange={(event) => handleChange('email', event.target.value)}
+            disabled={loading || saving}
           />
           <Input
             label="موبایل"
             icon={Phone}
+            type="tel"
             value={form.mobile}
-            onChange={(e) => setForm({ ...form, mobile: e.target.value })}
+            onChange={(event) => handleChange('mobile', event.target.value)}
+            disabled={loading || saving}
           />
         </div>
 
-        <div className="flex items-center justify-end gap-2 pt-4 border-t border-border-base">
-          <Button variant="secondary">انصراف</Button>
-          <Button>ذخیره تغییرات</Button>
-        </div>
+        {error && <p className="text-sm text-danger">{error}</p>}
+        {success && <p className="text-sm text-success">{success}</p>}
 
+        <div className="flex items-center justify-end gap-2 pt-4 border-t border-border-base">
+          <Button variant="secondary" onClick={handleCancel} disabled={loading || saving}>
+            انصراف
+          </Button>
+          <Button onClick={handleSave} disabled={loading || saving}>
+            {saving ? 'در حال ذخیره...' : 'ذخیره تغییرات'}
+          </Button>
+        </div>
       </div>
     </Card>
   );
