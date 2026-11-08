@@ -9,6 +9,7 @@ from .serializers import (
     UserSerializer,
     UserCreateSerializer,
     UserUpdateSerializer,
+    UserProfileUpdateSerializer,
     ChangePasswordSerializer,
     CustomTokenObtainPairSerializer,
 )
@@ -24,7 +25,16 @@ class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.select_related('organization', 'branch').all()
     permission_classes = [IsAuthenticated, IsSiteAdminOrReadOnly]
 
+    def get_permissions(self):
+        # The self-profile endpoint is safe for every authenticated role;
+        # its serializer limits writes to the current user's contact details.
+        if getattr(self, 'action', None) == 'me':
+            return [IsAuthenticated()]
+        return super().get_permissions()
+
     def get_serializer_class(self):
+        if self.action == 'me' and self.request.method == 'PATCH':
+            return UserProfileUpdateSerializer
         if self.action == 'create':
             return UserCreateSerializer
         if self.action in ['update', 'partial_update']:
@@ -81,11 +91,18 @@ class UserViewSet(viewsets.ModelViewSet):
         exists = User.objects.filter(username=username).exists()
         return Response({'available': not exists, 'exists': exists})
 
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get', 'patch'])
     def me(self, request):
-        """اطلاعات کاربر جاری"""
-        serializer = UserSerializer(request.user)
-        return Response(serializer.data)
+        """Read or update the authenticated user's own profile."""
+        if request.method == 'PATCH':
+            serializer = UserProfileUpdateSerializer(
+                request.user,
+                data=request.data,
+                partial=True,
+            )
+            serializer.is_valid(raise_exception=True)
+            serializer.save()
+        return Response(UserSerializer(request.user).data)
 
     @action(detail=False, methods=['post'])
     def change_password(self, request):
