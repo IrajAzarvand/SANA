@@ -182,3 +182,98 @@ class UsernameAvailabilityTests(TestCase):
         response = self.client.get('/api/users/username-availability/')
 
         self.assertEqual(response.status_code, 400)
+
+
+
+class ProfileSelfServiceTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+
+    def make_user(self, role, username):
+        account_type = 'admin' if role == 'site_admin' else (
+            'personal' if role == 'personal_user' else 'organization'
+        )
+        return User.objects.create_user(
+            username=username,
+            password='test-password-123',
+            account_type=account_type,
+            role=role,
+            first_name='نام',
+            last_name='خانوادگی',
+            email=f'{username}@example.com',
+            mobile='09120000000',
+        )
+
+    def test_every_role_can_read_and_update_own_profile(self):
+        roles = [
+            ('site_admin', 'profile-admin'),
+            ('main_user', 'profile-main'),
+            ('branch_manager', 'profile-branch'),
+            ('personal_user', 'profile-personal'),
+        ]
+
+        for role, username in roles:
+            with self.subTest(role=role):
+                user = self.make_user(role, username)
+                self.client.force_authenticate(user=user)
+
+                get_response = self.client.get('/api/users/me/')
+                self.assertEqual(get_response.status_code, 200)
+                self.assertEqual(get_response.data['first_name'], 'نام')
+                self.assertEqual(get_response.data['role'], role)
+
+                patch_response = self.client.patch(
+                    '/api/users/me/',
+                    {
+                        'first_name': 'نام جدید',
+                        'last_name': 'نام خانوادگی جدید',
+                        'email': f'new-{username}@example.com',
+                        'mobile': '09129999999',
+                    },
+                    format='json',
+                )
+                self.assertEqual(patch_response.status_code, 200)
+                user.refresh_from_db()
+                self.assertEqual(user.first_name, 'نام جدید')
+                self.assertEqual(user.last_name, 'نام خانوادگی جدید')
+                self.assertEqual(user.email, f'new-{username}@example.com')
+                self.assertEqual(user.mobile, '09129999999')
+
+    def test_profile_update_ignores_fields_outside_profile_scope(self):
+        user = self.make_user('personal_user', 'profile-protected')
+        self.client.force_authenticate(user=user)
+
+        response = self.client.patch(
+            '/api/users/me/',
+            {
+                'first_name': 'نام ویرایش‌شده',
+                'username': 'changed-username',
+                'role': 'site_admin',
+                'account_type': 'admin',
+                'is_active': False,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        user.refresh_from_db()
+        self.assertEqual(user.first_name, 'نام ویرایش‌شده')
+        self.assertEqual(user.username, 'profile-protected')
+        self.assertEqual(user.role, 'personal_user')
+        self.assertEqual(user.account_type, 'personal')
+        self.assertTrue(user.is_active)
+
+    def test_user_cannot_update_another_users_profile_through_me_endpoint(self):
+        user = self.make_user('personal_user', 'profile-owner')
+        other_user = self.make_user('personal_user', 'profile-other')
+        self.client.force_authenticate(user=user)
+
+        response = self.client.patch(
+            '/api/users/me/',
+            {'first_name': 'تغییر فقط برای خودم'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        other_user.refresh_from_db()
+        self.assertEqual(other_user.first_name, 'نام')
