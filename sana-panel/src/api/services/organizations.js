@@ -21,6 +21,11 @@ export const organizationsAPI = {
     return response.data;
   },
 
+  patch: async (id, data) => {
+    const response = await apiClient.patch(`/organizations/${id}/`, data);
+    return response.data;
+  },
+
   delete: async (id) => {
     await apiClient.delete(`/organizations/${id}/`);
   },

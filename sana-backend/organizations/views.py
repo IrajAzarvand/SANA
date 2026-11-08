@@ -4,7 +4,7 @@ from datetime import timedelta
 from rest_framework import viewsets, filters, status, serializers
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, BasePermission
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -21,6 +21,7 @@ from .models import (
 )
 from .serializers import (
     OrganizationSerializer,
+    OrganizationSettingsSerializer,
     OrganizationListSerializer,
     BranchSerializer,
     BranchListSerializer,
@@ -39,6 +40,17 @@ from fleet.lifecycle import record_device_lifecycle_event
 # Organization
 # ═══════════════════════════════════════════════
 
+class CanManageOrganizationSettings(BasePermission):
+    """Only site admins and organization owners can edit organization details."""
+
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(
+            user and user.is_authenticated
+            and (user.is_site_admin or user.is_main_user)
+        )
+
+
 class OrganizationViewSet(viewsets.ModelViewSet):
     queryset = Organization.objects.all()
     permission_classes = [IsAuthenticated]
@@ -47,6 +59,11 @@ class OrganizationViewSet(viewsets.ModelViewSet):
     ordering_fields = ['name', 'created_at']
 
     def get_serializer_class(self):
+        if (
+            self.action in ['update', 'partial_update']
+            and not self.request.user.is_site_admin
+        ):
+            return OrganizationSettingsSerializer
         if self.action == 'list':
             return OrganizationListSerializer
         return OrganizationSerializer
@@ -62,6 +79,8 @@ class OrganizationViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ['create', 'destroy']:
             return [IsSiteAdmin()]
+        if self.action in ['update', 'partial_update']:
+            return [CanManageOrganizationSettings()]
         return super().get_permissions()
 
 
