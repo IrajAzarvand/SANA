@@ -229,18 +229,101 @@ function ProfileSection() {
 /* ============ امنیت ============ */
 
 function SecuritySection() {
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const resetForm = () => {
+    setOldPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
+    setError('');
+    setSuccess('');
+  };
+
+  const handleChangePassword = async () => {
+    setError('');
+    setSuccess('');
+
+    if (!oldPassword || !newPassword || !confirmPassword) {
+      setError('لطفاً هر سه فیلد رمز عبور را تکمیل کنید.');
+      return;
+    }
+    if (newPassword.length < 8) {
+      setError('رمز عبور جدید باید حداقل ۸ کاراکتر باشد.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError('تکرار رمز عبور جدید با آن مطابقت ندارد.');
+      return;
+    }
+    if (oldPassword === newPassword) {
+      setError('رمز عبور جدید باید با رمز فعلی متفاوت باشد.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const response = await authAPI.changePassword(oldPassword, newPassword);
+      setSuccess(response.detail || 'رمز عبور با موفقیت تغییر کرد.');
+      setOldPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (requestError) {
+      const data = requestError.response?.data;
+      const firstError = data && Object.values(data).flat().find((item) => typeof item === 'string');
+      setError(firstError || 'تغییر رمز عبور انجام نشد. لطفاً دوباره تلاش کنید.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
 
       <Card title="تغییر رمز عبور" subtitle="برای امنیت بیشتر، رمز قوی انتخاب کنید">
         <div className="space-y-4">
-          <Input type="password" label="رمز فعلی" icon={Shield} />
-          <Input type="password" label="رمز جدید" icon={Shield} />
-          <Input type="password" label="تکرار رمز جدید" icon={Shield} />
+          <Input
+            type="password"
+            label="رمز فعلی"
+            icon={Shield}
+            value={oldPassword}
+            onChange={(event) => { setOldPassword(event.target.value); setError(''); setSuccess(''); }}
+            disabled={saving}
+            autoComplete="current-password"
+          />
+          <Input
+            type="password"
+            label="رمز جدید"
+            icon={Shield}
+            value={newPassword}
+            onChange={(event) => { setNewPassword(event.target.value); setError(''); setSuccess(''); }}
+            disabled={saving}
+            autoComplete="new-password"
+          />
+          <Input
+            type="password"
+            label="تکرار رمز جدید"
+            icon={Shield}
+            value={confirmPassword}
+            onChange={(event) => { setConfirmPassword(event.target.value); setError(''); setSuccess(''); }}
+            disabled={saving}
+            autoComplete="new-password"
+          />
+
+          {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+          {success && <p role="status" className="text-sm text-success">{success}</p>}
 
           <div className="flex items-center justify-end gap-2 pt-4 border-t border-border-base">
-            <Button variant="secondary">انصراف</Button>
-            <Button>تغییر رمز</Button>
+            <Button variant="secondary" onClick={resetForm} disabled={saving}>
+              انصراف
+            </Button>
+            <Button onClick={handleChangePassword} disabled={saving}>
+              {saving ? 'در حال تغییر رمز...' : 'تغییر رمز'}
+            </Button>
           </div>
         </div>
       </Card>
@@ -257,7 +340,7 @@ function SecuritySection() {
             <p className="text-xs text-text-muted mb-3">
               با فعال‌سازی، هنگام ورود یک کد تأیید به موبایل شما ارسال می‌شود.
             </p>
-            <Button size="sm">فعال‌سازی</Button>
+            <Button size="sm" disabled>فعال‌سازی</Button>
           </div>
         </div>
       </Card>
