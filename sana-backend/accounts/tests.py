@@ -284,7 +284,7 @@ class ChangePasswordTests(TestCase):
     def setUp(self):
         self.client = APIClient()
         self.user = User.objects.create_user(
-            username='password-change-owner',
+            username='account-owner-001',
             password='Current-Password-123!',
             account_type='personal',
             role='personal_user',
