@@ -277,3 +277,136 @@ class ProfileSelfServiceTests(TestCase):
         self.assertEqual(response.status_code, 200)
         other_user.refresh_from_db()
         self.assertEqual(other_user.first_name, 'نام')
+
+
+
+class ChangePasswordTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username='account-owner-001',
+            password='Current-Password-123!',
+            account_type='personal',
+            role='personal_user',
+        )
+        self.other_user = User.objects.create_user(
+            username='password-change-other',
+            password='Other-Password-123!',
+            account_type='personal',
+            role='personal_user',
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def test_authenticated_user_can_change_own_password(self):
+        response = self.client.post(
+            '/api/users/change_password/',
+            {
+                'old_password': 'Current-Password-123!',
+                'new_password': 'New-Strong-Password-456!',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['detail'], 'رمز عبور با موفقیت تغییر کرد')
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('New-Strong-Password-456!'))
+        self.assertFalse(self.user.check_password('Current-Password-123!'))
+
+    def test_all_authenticated_roles_can_change_their_own_password(self):
+        roles = [
+            ('site_admin', 'admin'),
+            ('main_user', 'organization'),
+            ('branch_manager', 'organization'),
+            ('personal_user', 'personal'),
+        ]
+
+        for index, (role, account_type) in enumerate(roles):
+            with self.subTest(role=role):
+                user = User.objects.create_user(
+                    username=f'role-password-user-{index}',
+                    password='Current-Password-123!',
+                    account_type=account_type,
+                    role=role,
+                )
+                self.client.force_authenticate(user=user)
+                response = self.client.post(
+                    '/api/users/change_password/',
+                    {
+                        'old_password': 'Current-Password-123!',
+                        'new_password': 'Fresh-Strong-Password-789!',
+                    },
+                    format='json',
+                )
+
+                self.assertEqual(response.status_code, 200)
+                user.refresh_from_db()
+                self.assertTrue(user.check_password('Fresh-Strong-Password-789!'))
+
+    def test_incorrect_current_password_is_rejected(self):
+        response = self.client.post(
+            '/api/users/change_password/',
+            {
+                'old_password': 'incorrect-current-password',
+                'new_password': 'New-Strong-Password-456!',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('old_password', response.data)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('Current-Password-123!'))
+
+    def test_weak_new_password_is_rejected_by_django_validators(self):
+        response = self.client.post(
+            '/api/users/change_password/',
+            {
+                'old_password': 'Current-Password-123!',
+                'new_password': '12345678',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('new_password', response.data)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('Current-Password-123!'))
+
+    def test_missing_password_fields_are_rejected(self):
+        response = self.client.post(
+            '/api/users/change_password/',
+            {'old_password': 'Current-Password-123!'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('new_password', response.data)
+
+    def test_unauthenticated_user_cannot_change_password(self):
+        self.client.force_authenticate(user=None)
+
+        response = self.client.post(
+            '/api/users/change_password/',
+            {
+                'old_password': 'Current-Password-123!',
+                'new_password': 'New-Strong-Password-456!',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_password_change_does_not_modify_another_user(self):
+        response = self.client.post(
+            '/api/users/change_password/',
+            {
+                'old_password': 'Current-Password-123!',
+                'new_password': 'New-Strong-Password-456!',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.other_user.refresh_from_db()
+        self.assertTrue(self.other_user.check_password('Other-Password-123!'))

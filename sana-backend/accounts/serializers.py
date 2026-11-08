@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth import get_user_model
 from rest_framework.exceptions import ValidationError
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
@@ -84,8 +85,8 @@ class UserProfileUpdateSerializer(serializers.ModelSerializer):
 
 
 class ChangePasswordSerializer(serializers.Serializer):
-    old_password = serializers.CharField(required=True)
-    new_password = serializers.CharField(required=True, min_length=8)
+    old_password = serializers.CharField(required=True, write_only=True, trim_whitespace=False)
+    new_password = serializers.CharField(required=True, write_only=True, min_length=8, trim_whitespace=False)
 
     def validate_old_password(self, value):
         user = self.context['request'].user
@@ -93,10 +94,15 @@ class ChangePasswordSerializer(serializers.Serializer):
             raise serializers.ValidationError('رمز عبور فعلی اشتباه است')
         return value
 
+    def validate_new_password(self, value):
+        user = self.context['request'].user
+        validate_password(value, user=user)
+        return value
+
     def save(self):
         user = self.context['request'].user
         user.set_password(self.validated_data['new_password'])
-        user.save()
+        user.save(update_fields=['password'])
         return user
 
 

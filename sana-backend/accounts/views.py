@@ -28,7 +28,7 @@ class UserViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         # The self-profile endpoint is safe for every authenticated role;
         # its serializer limits writes to the current user's contact details.
-        if getattr(self, 'action', None) == 'me':
+        if getattr(self, 'action', None) in ['me', 'change_password']:
             return [IsAuthenticated()]
         return super().get_permissions()
 
@@ -106,9 +106,11 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'])
     def change_password(self, request):
-        """تغییر رمز عبور کاربر جاری"""
-        serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
-        if serializer.is_valid():
-            serializer.save()
-            return Response({'detail': 'رمز عبور با موفقیت تغییر کرد'})
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        """Change the authenticated user's own password."""
+        serializer = ChangePasswordSerializer(
+            data=request.data,
+            context={'request': request},
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({'detail': 'رمز عبور با موفقیت تغییر کرد'})
