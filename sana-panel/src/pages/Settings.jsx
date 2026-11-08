@@ -382,10 +382,6 @@ function OrganizationSection() {
         setOrganizations(items);
         if (items.length && !isSiteAdmin) {
           setSelectedId(String(items[0].id));
-          const mapped = mapOrganization(items[0]);
-          setForm(mapped);
-          setSavedForm(mapped);
-          setLogoUrl(items[0].logo || '');
         }
       })
       .catch(() => {
@@ -398,7 +394,7 @@ function OrganizationSection() {
   }, [isSiteAdmin]);
 
   useEffect(() => {
-    if (!isSiteAdmin || !selectedId) return undefined;
+    if (!selectedId) return undefined;
     let active = true;
     setLoading(true);
     setForm(null);
@@ -420,7 +416,7 @@ function OrganizationSection() {
         if (active) setLoading(false);
       });
     return () => { active = false; };
-  }, [isSiteAdmin, selectedId]);
+  }, [selectedId]);
 
   const handleChange = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }));
@@ -440,7 +436,7 @@ function OrganizationSection() {
     setError('');
     setSuccess('');
     try {
-      const updated = await organizationsAPI.update(selectedId, form);
+      const updated = await organizationsAPI.patch(selectedId, form);
       const mapped = mapOrganization(updated);
       setForm(mapped);
       setSavedForm(mapped);
