@@ -14,10 +14,10 @@ import ActionMenu from '../components/ActionMenu';
 import SettingsNav from '../components/SettingsNav';
 import { useAuth } from '../context/AuthContext';
 import { authAPI } from '../api/services/auth';
+import { organizationsAPI } from '../api/services/organizations';
 import apiClient from '../api/client';
 import { MAP_PROVIDERS } from '../../../sana-map/src/config';
 import {
-  organization,
   branchesList,
   usersList,
   roleMap,
@@ -352,45 +352,183 @@ function SecuritySection() {
 /* ============ سازمان ============ */
 
 function OrganizationSection() {
-  const [form, setForm] = useState(organization);
   const { isSiteAdmin } = useAuth();
+  const [organizations, setOrganizations] = useState([]);
+  const [selectedId, setSelectedId] = useState('');
+  const [form, setForm] = useState(null);
+  const [savedForm, setSavedForm] = useState(null);
+  const [logoUrl, setLogoUrl] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  const mapOrganization = (data) => ({
+    name: data.name || '',
+    registration_number: data.registration_number || '',
+    economy_code: data.economy_code || '',
+    phone: data.phone || '',
+    email: data.email || '',
+    website: data.website || '',
+    address: data.address || '',
+  });
+
+  useEffect(() => {
+    let active = true;
+    organizationsAPI.list()
+      .then((response) => {
+        if (!active) return;
+        const items = Array.isArray(response) ? response : (response.results || []);
+        setOrganizations(items);
+        if (items.length && !isSiteAdmin) {
+          setSelectedId(String(items[0].id));
+          const mapped = mapOrganization(items[0]);
+          setForm(mapped);
+          setSavedForm(mapped);
+          setLogoUrl(items[0].logo || '');
+        }
+      })
+      .catch(() => {
+        if (active) setError('دریافت اطلاعات سازمان‌ها با خطا مواجه شد.');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
+  }, [isSiteAdmin]);
+
+  useEffect(() => {
+    if (!isSiteAdmin || !selectedId) return undefined;
+    let active = true;
+    setLoading(true);
+    setForm(null);
+    setSavedForm(null);
+    setError('');
+    setSuccess('');
+    organizationsAPI.get(selectedId)
+      .then((data) => {
+        if (!active) return;
+        const mapped = mapOrganization(data);
+        setForm(mapped);
+        setSavedForm(mapped);
+        setLogoUrl(data.logo || '');
+      })
+      .catch(() => {
+        if (active) setError('دریافت اطلاعات سازمان انتخاب‌شده انجام نشد.');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
+  }, [isSiteAdmin, selectedId]);
+
+  const handleChange = (field, value) => {
+    setForm((current) => ({ ...current, [field]: value }));
+    setError('');
+    setSuccess('');
+  };
+
+  const handleCancel = () => {
+    setForm(savedForm);
+    setError('');
+    setSuccess('');
+  };
+
+  const handleSave = async () => {
+    if (!selectedId || !form) return;
+    setSaving(true);
+    setError('');
+    setSuccess('');
+    try {
+      const updated = await organizationsAPI.update(selectedId, form);
+      const mapped = mapOrganization(updated);
+      setForm(mapped);
+      setSavedForm(mapped);
+      setOrganizations((current) => current.map((item) => (
+        String(item.id) === String(updated.id) ? { ...item, ...updated } : item
+      )));
+      setSuccess('اطلاعات سازمان با موفقیت ذخیره شد.');
+    } catch (requestError) {
+      const responseData = requestError.response?.data;
+      const firstError = responseData && Object.values(responseData).flat().find((item) => typeof item === 'string');
+      setError(firstError || 'ذخیره اطلاعات سازمان انجام نشد. دوباره تلاش کنید.');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <Card
       title={isSiteAdmin ? 'اطلاعات سازمان' : 'اطلاعات سازمان شما'}
-      subtitle="اطلاعات پایه سازمان"
+      subtitle={isSiteAdmin ? 'انتخاب سازمان و ویرایش اطلاعات پایه' : 'اطلاعات پایه سازمان'}
     >
-      <div className="space-y-6">
-
-        <div className="flex items-center gap-5">
-          <div className="w-20 h-20 rounded-card bg-bg-base border border-border-base flex items-center justify-center">
-            <Building2 size={32} className="text-text-muted" />
-          </div>
+      <div className="space-y-5">
+        {isSiteAdmin && (
           <div>
-            <h3 className="text-sm font-medium text-text-primary mb-1">لوگوی سازمان</h3>
-            <p className="text-xs text-text-muted mb-2">حداکثر حجم ۲ مگابایت — PNG یا SVG</p>
-            <Button size="sm" variant="secondary">تغییر لوگو</Button>
+            <label className="block text-sm text-text-secondary mb-2">انتخاب سازمان</label>
+            <select
+              value={selectedId}
+              onChange={(event) => setSelectedId(event.target.value)}
+              disabled={loading || saving || organizations.length === 0}
+              className="w-full bg-bg-base border border-border-base rounded-field px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-brand-500/20"
+            >
+              <option value="">انتخاب کنید...</option>
+              {organizations.map((item) => (
+                <option key={item.id} value={item.id}>{item.name} — {item.code}</option>
+              ))}
+            </select>
           </div>
-        </div>
+        )}
 
-        <div className="border-t border-border-base" />
+        {loading && <p className="text-sm text-text-muted">در حال دریافت اطلاعات سازمان...</p>}
+        {!loading && !organizations.length && (
+          <p className="text-sm text-text-muted">سازمانی برای این حساب ثبت نشده است.</p>
+        )}
+        {!loading && isSiteAdmin && organizations.length > 0 && !selectedId && (
+          <p className="text-sm text-text-muted">برای مشاهده و ویرایش، یک سازمان انتخاب کنید.</p>
+        )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Input label="نام سازمان" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-          <Input label="شماره ثبت" value={form.registrationNumber} onChange={(e) => setForm({ ...form, registrationNumber: e.target.value })} />
-          <Input label="کد اقتصادی" value={form.economyCode} onChange={(e) => setForm({ ...form, economyCode: e.target.value })} />
-          <Input label="تلفن" icon={Phone} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
-          <Input label="ایمیل" icon={Mail} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-          <Input label="وبسایت" icon={Globe} value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} />
-        </div>
+        {form && !loading && (
+          <>
+            <div className="flex items-center gap-4">
+              <div className="w-16 h-16 rounded-card bg-bg-base border border-border-base flex items-center justify-center overflow-hidden">
+                {logoUrl
+                  ? <img src={logoUrl} alt="لوگوی سازمان" className="w-full h-full object-contain" />
+                  : <Building2 size={28} className="text-text-muted" />}
+              </div>
+              <div>
+                <h3 className="text-sm font-medium text-text-primary">لوگوی سازمان</h3>
+                <p className="text-xs text-text-muted mt-1">نمایش لوگوی ثبت‌شده</p>
+              </div>
+            </div>
 
-        <Input label="آدرس" icon={MapPin} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+            <div className="border-t border-border-base" />
 
-        <div className="flex items-center justify-end gap-2 pt-4 border-t border-border-base">
-          <Button variant="secondary">انصراف</Button>
-          <Button>ذخیره تغییرات</Button>
-        </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Input label="نام سازمان" value={form.name} onChange={(event) => handleChange('name', event.target.value)} disabled={saving} />
+              <Input label="شماره ثبت" value={form.registration_number} onChange={(event) => handleChange('registration_number', event.target.value)} disabled={saving} />
+              <Input label="کد اقتصادی" value={form.economy_code} onChange={(event) => handleChange('economy_code', event.target.value)} disabled={saving} />
+              <Input label="تلفن" icon={Phone} value={form.phone} onChange={(event) => handleChange('phone', event.target.value)} disabled={saving} />
+              <Input label="ایمیل" icon={Mail} type="email" value={form.email} onChange={(event) => handleChange('email', event.target.value)} disabled={saving} />
+              <Input label="وبسایت" icon={Globe} value={form.website} onChange={(event) => handleChange('website', event.target.value)} disabled={saving} />
+            </div>
 
+            <Input label="آدرس" icon={MapPin} value={form.address} onChange={(event) => handleChange('address', event.target.value)} disabled={saving} />
+
+            {error && <p role="alert" className="text-sm text-danger">{error}</p>}
+            {success && <p role="status" className="text-sm text-success">{success}</p>}
+
+            <div className="flex items-center justify-end gap-2 pt-4 border-t border-border-base">
+              <Button variant="secondary" onClick={handleCancel} disabled={saving || !savedForm}>
+                انصراف
+              </Button>
+              <Button onClick={handleSave} disabled={saving || loading}>
+                {saving ? 'در حال ذخیره...' : 'ذخیره تغییرات'}
+              </Button>
+            </div>
+          </>
+        )}
+        {error && !form && <p role="alert" className="text-sm text-danger">{error}</p>}
       </div>
     </Card>
   );
