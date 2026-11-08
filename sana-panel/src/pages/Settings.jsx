@@ -63,6 +63,13 @@ export default function Settings() {
   );
 }
 
+const mapProfileData = (data) => ({
+  firstName: data.first_name || '',
+  lastName: data.last_name || '',
+  email: data.email || '',
+  mobile: data.mobile || '',
+});
+
 /* ============ پروفایل ============ */
 
 function ProfileSection() {
@@ -86,20 +93,13 @@ function ProfileSection() {
     personal_user: 'کاربر شخصی',
   };
 
-  const mapProfile = (data) => ({
-    firstName: data.first_name || '',
-    lastName: data.last_name || '',
-    email: data.email || '',
-    mobile: data.mobile || '',
-  });
-
   useEffect(() => {
     let active = true;
 
     authAPI.me()
       .then((data) => {
         if (!active) return;
-        const profileData = mapProfile(data);
+        const profileData = mapProfileData(data);
         setForm(profileData);
         setSavedForm(profileData);
       })
@@ -140,7 +140,7 @@ function ProfileSection() {
         email: form.email,
         mobile: form.mobile,
       });
-      const profileData = mapProfile(updatedUser);
+      const profileData = mapProfileData(updatedUser);
       setForm(profileData);
       setSavedForm(profileData);
       updateUser(updatedUser);
