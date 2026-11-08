@@ -17,6 +17,11 @@ export const organizationsAPI = {
   },
 
   update: async (id, data) => {
+    const response = await apiClient.put(`/organizations/${id}/`, data);
+    return response.data;
+  },
+
+  patch: async (id, data) => {
     const response = await apiClient.patch(`/organizations/${id}/`, data);
     return response.data;
   },
