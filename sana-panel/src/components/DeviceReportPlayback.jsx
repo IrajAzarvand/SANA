@@ -44,10 +44,30 @@ const showValue = (value, suffix = '', maximumFractionDigits = 2) =>
   value === null || value === undefined || value === '' ? '—' : `${formatNumeric(value, maximumFractionDigits)}${suffix}`;
 const attributeLabels = {
   ignition: 'سوئیچ', motion: 'حرکت', satellites: 'ماهواره‌ها', sat: 'ماهواره‌ها',
-  rssi: 'قدرت سیگنال', gsm: 'قدرت GSM', battery: 'باتری', batteryVoltage: 'ولتاژ باتری',
-  power: 'ولتاژ خارجی', voltage: 'ولتاژ', odometer: 'کیلومترشمار', totalDistance: 'مسافت کل',
-  hours: 'ساعت کارکرد', engineHours: 'ساعت موتور', fuel: 'سوخت', fuelLevel: 'سطح سوخت',
+  rssi: 'سیگنال', gsm: 'سیگنال', battery: 'باتری', batteryVoltage: 'ولتاژ باتری',
+  power: 'ولتاژ', voltage: 'ولتاژ', odometer: 'کیلومترشمار', totalDistance: 'مسافت کل',
+  hours: 'کارکرد', engineHours: 'کارکرد', fuel: 'سوخت', fuelLevel: 'سطح سوخت',
   alarm: 'هشدار', status: 'وضعیت', event: 'رویداد', hdop: 'دقت افقی',
+  priority: 'اولویت', io200: 'خواب', io69: 'ماهواره', pdop: 'دقت', io68: 'جریان', operator: 'اپراتور',
+};
+const attributeDescriptions = {
+  priority: 'اولویت بسته اطلاعاتی AVL ارسالی دستگاه است، نه سطح خطر یا دکمه اضطراری. Low یعنی عادی، High یعنی ارسال فوری رویداد از طریق GPRS و Panic یعنی اولویت بالا با امکان ارسال از طریق SMS در صورت قطع GPRS، مشروط به فعال بودن ارسال SMS و تنظیم شماره مقصد.',
+  io200: 'وضعیت حالت خواب دستگاه: ۰ بدون خواب، ۱ خواب GPS، ۲ خواب عمیق، ۳ خواب آنلاین و ۴ خواب فوق‌عمیق. در حالت‌های خواب، نحوه فعالیت و ارسال اطلاعات دستگاه متفاوت است.',
+  io69: 'وضعیت گیرنده ماهواره‌ای GNSS: ۰ خاموش، ۱ روشن و دارای موقعیت معتبر، ۲ روشن بدون موقعیت معتبر و ۳ در حالت خواب GNSS.',
+  pdop: 'شاخص هندسی دقت موقعیت‌یابی ماهواره‌ای است. هرچه عدد PDOP کمتر باشد، آرایش ماهواره‌ها برای محاسبه موقعیت مناسب‌تر و دقت بالقوه بهتر است؛ این عدد درصد خطا نیست.',
+  io68: 'جریان الکتریکی باتری داخلی دستگاه را نشان می‌دهد و معمولاً با میلی‌آمپر (mA) گزارش می‌شود. برای تشخیص شارژ یا مصرف، علامت مقدار را با توجه به شیوه گزارش‌دهی دستگاه تفسیر کنید.',
+  operator: 'شناسه یا نام اپراتور شبکه تلفن همراهی که سیم‌کارت دستگاه در حال حاضر به آن متصل است.',
+  power: 'ولتاژ برق ورودی دستگاه از برق خودرو را نشان می‌دهد؛ افت این مقدار می‌تواند نشانه قطع یا کاهش تغذیه اصلی باشد.',
+  voltage: 'مقدار ولتاژ گزارش‌شده توسط دستگاه. نوع منبع آن به کلید داده بستگی دارد.',
+  rssi: 'قدرت سیگنال شبکه تلفن همراه را نشان می‌دهد. مقدار بالاتر معمولاً به معنی دریافت بهتر سیگنال است؛ مقیاس دقیق به داده ارسالی دستگاه بستگی دارد.',
+  gsm: 'قدرت سیگنال شبکه تلفن همراه را نشان می‌دهد. مقدار بالاتر معمولاً به معنی دریافت بهتر سیگنال است؛ مقیاس دقیق به داده ارسالی دستگاه بستگی دارد.',
+  odometer: 'مسافت‌سنج تجمعی گزارش‌شده توسط دستگاه است. این مقدار با مسافت محاسبه‌شده در بازه گزارش یا مسافت کل محاسباتی Traccar لزوماً یکسان نیست.',
+  totalDistance: 'مسافت تجمعی محاسبه‌شده در سامانه از داده‌های موقعیت است و ممکن است با کیلومترشمار داخلی دستگاه اختلاف داشته باشد.',
+  hours: 'مدت تجمعی کارکرد موتور یا ورودی مربوط به کارکرد را نشان می‌دهد. واحد و مبنای شمارش به منبع داده دستگاه وابسته است.',
+  engineHours: 'مدت تجمعی کارکرد موتور را نشان می‌دهد. این مقدار با مدت روشن‌بودن سوئیچ یا مدت بازه گزارش الزاماً برابر نیست.',
+  external_voltage: 'ولتاژ برق ورودی دستگاه از برق خودرو را نشان می‌دهد؛ افت این مقدار می‌تواند نشانه قطع یا کاهش تغذیه اصلی باشد.',
+  gsm_signal: 'قدرت سیگنال شبکه تلفن همراه را نشان می‌دهد. مقدار بالاتر معمولاً به معنی دریافت بهتر سیگنال است؛ مقیاس دقیق به داده ارسالی دستگاه بستگی دارد.',
+  engine_hours: 'مدت تجمعی کارکرد موتور را نشان می‌دهد. این مقدار با مدت روشن‌بودن سوئیچ یا مدت بازه گزارش الزاماً برابر نیست.',
 };
 const attributePrecision = (key = '') => {
   const normalized = String(key).replace(/([A-Z])/g, '_$1').toLowerCase();
@@ -75,6 +95,29 @@ const formatAttributeValue = (value, key = '') => {
   return String(value);
 };
 const formatAttributeLabel = (key) => attributeLabels[key] || key.replace(/([A-Z])/g, ' $1').replace(/[_-]+/g, ' ').trim();
+
+function AttributeLabel({ label, description }) {
+  const [open, setOpen] = useState(false);
+  if (!description) return <span>{label}</span>;
+  return (
+    <span className="group relative inline-block max-w-full align-middle">
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-expanded={open}
+        className="cursor-help text-right text-inherit underline decoration-dotted decoration-text-muted/50 underline-offset-2"
+      >
+        {label}
+      </button>
+      <span
+        role="tooltip"
+        className={`absolute bottom-full right-0 z-[1300] mb-1.5 hidden w-64 max-w-[80vw] whitespace-normal rounded-lg border border-border-base bg-bg-elevated px-2.5 py-2 text-[10px] font-normal leading-5 text-text-primary shadow-xl group-hover:block group-focus-within:block ${open ? 'block' : ''}`}
+      >
+        {description}
+      </span>
+    </span>
+  );
+}
 const pointCoordinates = (point) => [
   Number(point.matched_latitude ?? point.latitude),
   Number(point.matched_longitude ?? point.longitude),
@@ -743,24 +786,24 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
                 ['حرکت', currentPoint.motion === true ? 'در حرکت' : currentPoint.motion === false ? 'متوقف' : '—'],
                 ['سوئیچ', currentPoint.ignition === true ? 'روشن' : currentPoint.ignition === false ? 'خاموش' : '—'],
                 ['ولتاژ باتری', showValue(currentPoint.battery_voltage, ' V')],
-                ['ولتاژ خارجی', showValue(currentPoint.external_voltage, ' V')],
-                ['قدرت GSM', showValue(currentPoint.gsm_signal, '', 0)],
-                ['کیلومترشمار', showValue(currentPoint.odometer)],
-                ['ساعت موتور', showValue(currentPoint.engine_hours)],
+                ['ولتاژ', showValue(currentPoint.external_voltage, ' V'), 'external_voltage'],
+                ['سیگنال', showValue(currentPoint.gsm_signal, '', 0), 'gsm_signal'],
+                ['کیلومترشمار', showValue(currentPoint.odometer), 'odometer'],
+                ['کارکرد', showValue(currentPoint.engine_hours), 'engine_hours'],
                 ['سطح سوخت', showValue(currentPoint.fuel_level)],
                 ['زمان دریافت سرور', formatDate(currentPoint.server_received_at)],
                 ['منبع تطبیق', currentPoint.match_provider || '—'],
                 ['زمان تطبیق', formatDate(currentPoint.matched_at)],
                 ['زمان دستگاه', formatDate(currentPoint.device_time)],
-              ].map(([label, value]) => (
+              ].map(([label, value, _key]) => (
                 <div key={label} className="min-w-0 border-b border-border-base/70 pb-1.5">
-                  <div className="text-[10px] text-text-muted">{label}</div>
+                  <div className="text-[10px] text-text-muted"><AttributeLabel label={label} description={attributeDescriptions[_key]} /></div>
                   <div className="mt-0.5 break-words text-xs font-medium text-text-primary">{value}</div>
                 </div>
               ))}
               {Object.entries(attributes).map(([key, value]) => (
                 <div key={`attribute-${key}`} className="min-w-0 border-b border-border-base/70 pb-1.5">
-                  <div className="text-[10px] text-text-muted">{formatAttributeLabel(key)}</div>
+                  <div className="text-[10px] text-text-muted"><AttributeLabel label={formatAttributeLabel(key)} description={attributeDescriptions[key]} /></div>
                   <div className="mt-0.5 break-words text-xs font-medium text-text-primary">{formatAttributeValue(value, key)}</div>
                 </div>
               ))}
