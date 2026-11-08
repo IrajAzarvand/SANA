@@ -44,6 +44,11 @@ export function AuthProvider({ children }) {
     return data.user;
   };
 
+  const updateUser = useCallback((updatedUser) => {
+    setUser(updatedUser);
+    localStorage.setItem('sana_user', JSON.stringify(updatedUser));
+  }, []);
+
   const logout = useCallback(() => {
     localStorage.removeItem('sana_access_token');
     localStorage.removeItem('sana_refresh_token');
@@ -82,7 +87,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider value={{
-      user, loading, login, logout,
+      user, loading, login, logout, updateUser,
       isSiteAdmin, isMainUser, isBranchManager, isPersonal, isOrganization,
       can,
     }}>
