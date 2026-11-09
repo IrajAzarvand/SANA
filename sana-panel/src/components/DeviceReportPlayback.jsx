@@ -96,22 +96,24 @@ const formatAttributeValue = (value, key = '') => {
 };
 const formatAttributeLabel = (key) => attributeLabels[key] || key.replace(/([A-Z])/g, ' $1').replace(/[_-]+/g, ' ').trim();
 
-function AttributeLabel({ label, description }) {
-  const [open, setOpen] = useState(false);
+function AttributeLabel({ label, description, tooltipId, activeTooltipId, onToggle }) {
+  const open = activeTooltipId === tooltipId;
   if (!description) return <span>{label}</span>;
   return (
-    <span className="group relative inline-block max-w-full align-middle">
+    <span data-attribute-tooltip className="group relative inline-block max-w-full align-middle">
       <button
         type="button"
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => onToggle(open ? null : tooltipId)}
         aria-expanded={open}
+        aria-controls={`attribute-tooltip-${tooltipId}`}
         className="cursor-help text-right text-inherit underline decoration-dotted decoration-text-muted/50 underline-offset-2"
       >
         {label}
       </button>
       <span
+        id={`attribute-tooltip-${tooltipId}`}
         role="tooltip"
-        className={`absolute bottom-full right-0 z-[1300] mb-1.5 hidden w-64 max-w-[80vw] whitespace-normal rounded-lg border border-border-base bg-bg-elevated px-2.5 py-2 text-[10px] font-normal leading-5 text-text-primary shadow-xl group-hover:block group-focus-within:block ${open ? 'block' : ''}`}
+        className={`absolute bottom-full right-0 z-[1300] mb-1.5 ${open ? 'block' : 'hidden'} w-64 max-w-[80vw] whitespace-normal rounded-lg border border-border-base bg-bg-elevated px-2.5 py-2 text-[10px] font-normal leading-5 text-text-primary shadow-xl [@media(hover:hover)]:group-hover:block`}
       >
         {description}
       </span>
@@ -173,6 +175,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [hasUnmatchedCoordinates, setHasUnmatchedCoordinates] = useState(false);
+  const [activeAttributeTooltip, setActiveAttributeTooltip] = useState(null);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [pointIndex, setPointIndex] = useState(0);
@@ -180,6 +183,17 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
   const timerRef = useRef(null);
   const searchInputRef = useRef(null);
   const dateSelectionTouchedRef = useRef(false);
+
+  useEffect(() => {
+    if (!activeAttributeTooltip) return undefined;
+    const closeOnOutsidePointer = (event) => {
+      if (!event.target.closest?.('[data-attribute-tooltip]')) {
+        setActiveAttributeTooltip(null);
+      }
+    };
+    document.addEventListener('pointerdown', closeOnOutsidePointer);
+    return () => document.removeEventListener('pointerdown', closeOnOutsidePointer);
+  }, [activeAttributeTooltip]);
 
   useEffect(() => {
     let active = true;
@@ -797,13 +811,13 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
                 ['زمان دستگاه', formatDate(currentPoint.device_time)],
               ].map(([label, value, _key]) => (
                 <div key={label} className="min-w-0 border-b border-border-base/70 pb-1.5">
-                  <div className="text-[10px] text-text-muted"><AttributeLabel label={label} description={attributeDescriptions[_key]} /></div>
+                  <div className="text-[10px] text-text-muted"><AttributeLabel label={label} description={attributeDescriptions[_key]} tooltipId={`field-${label}`} activeTooltipId={activeAttributeTooltip} onToggle={setActiveAttributeTooltip} /></div>
                   <div className="mt-0.5 break-words text-xs font-medium text-text-primary">{value}</div>
                 </div>
               ))}
               {Object.entries(attributes).map(([key, value]) => (
                 <div key={`attribute-${key}`} className="min-w-0 border-b border-border-base/70 pb-1.5">
-                  <div className="text-[10px] text-text-muted"><AttributeLabel label={formatAttributeLabel(key)} description={attributeDescriptions[key]} /></div>
+                  <div className="text-[10px] text-text-muted"><AttributeLabel label={formatAttributeLabel(key)} description={attributeDescriptions[key]} tooltipId={`attribute-${key}`} activeTooltipId={activeAttributeTooltip} onToggle={setActiveAttributeTooltip} /></div>
                   <div className="mt-0.5 break-words text-xs font-medium text-text-primary">{formatAttributeValue(value, key)}</div>
                 </div>
               ))}
