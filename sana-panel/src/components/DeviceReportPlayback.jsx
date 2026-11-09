@@ -100,7 +100,7 @@ function AttributeLabel({ label, description, tooltipId, activeTooltipId, onTogg
   const open = activeTooltipId === tooltipId;
   if (!description) return <span>{label}</span>;
   return (
-    <span data-attribute-tooltip className="group relative inline-block max-w-full align-middle">
+    <span data-attribute-tooltip className="relative inline-block max-w-full align-middle">
       <button
         type="button"
         onClick={() => onToggle(open ? null : tooltipId)}
@@ -111,7 +111,7 @@ function AttributeLabel({ label, description, tooltipId, activeTooltipId, onTogg
       </button>
       <span
         role="tooltip"
-        className={`absolute bottom-full right-0 z-[1300] mb-1.5 ${open ? 'block' : 'hidden'} w-64 max-w-[80vw] whitespace-normal rounded-lg border border-border-base bg-bg-elevated px-2.5 py-2 text-[10px] font-normal leading-5 text-text-primary shadow-xl [@media(hover:hover)]:group-hover:block`}
+        className={`absolute bottom-full right-0 z-[1300] mb-1.5 ${open ? 'block' : 'hidden'} w-64 max-w-[80vw] whitespace-normal rounded-lg border border-border-base bg-bg-elevated px-2.5 py-2 text-[10px] font-normal leading-5 text-text-primary shadow-xl `}
       >
         {description}
       </span>
