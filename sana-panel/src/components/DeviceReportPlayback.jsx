@@ -105,13 +105,11 @@ function AttributeLabel({ label, description, tooltipId, activeTooltipId, onTogg
         type="button"
         onClick={() => onToggle(open ? null : tooltipId)}
         aria-expanded={open}
-        aria-controls={`attribute-tooltip-${tooltipId}`}
         className="cursor-help text-right text-inherit underline decoration-dotted decoration-text-muted/50 underline-offset-2"
       >
         {label}
       </button>
       <span
-        id={`attribute-tooltip-${tooltipId}`}
         role="tooltip"
         className={`absolute bottom-full right-0 z-[1300] mb-1.5 ${open ? 'block' : 'hidden'} w-64 max-w-[80vw] whitespace-normal rounded-lg border border-border-base bg-bg-elevated px-2.5 py-2 text-[10px] font-normal leading-5 text-text-primary shadow-xl [@media(hover:hover)]:group-hover:block`}
       >
