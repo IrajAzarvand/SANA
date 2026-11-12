@@ -144,7 +144,7 @@ export default function AdminDashboard() {
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <Card title="سلامت زیرساخت سرور" subtitle="اطلاعات خواندنی از سیستم‌عامل و سرویس‌های اصلی" className="xl:col-span-2">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-            <Metric label="بار سیستم (۱ دقیقه)" value={loadOne == null ? '—' : number(loadOne)} hint={server.cpu?.load_average?.length ? `۵ دقیقه: ${number(server.cpu.load_average[1])} · ۱۵ دقیقه: ${number(server.cpu.load_average[2])}` : 'Load Average؛ نه درصد CPU'} />
+            <Metric label="مصرف CPU" value={percent(server.cpu?.usage_percent)} hint={loadOne == null ? 'بار سیستم در دسترس نیست' : `Load Average یک‌دقیقه‌ای: ${number(loadOne)}`} />
             <Metric label="مصرف حافظه RAM" value={percent(memory.used_percent)} hint={`${bytes(memory.used_bytes)} از ${bytes(memory.total_bytes)}`} />
             <Metric label="فضای دیسک ریشه" value={percent(disk.used_percent)} hint={`${bytes(disk.used_bytes)} مصرف‌شده · ${bytes(disk.free_bytes)} آزاد`} />
           </div>
@@ -265,7 +265,7 @@ export default function AdminDashboard() {
       </div>
 
       <Card title="دسترسی سریع به مدیریت" subtitle="ورود به صفحات جزئیات برای پیگیری و انجام عملیات">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           <Link to="/panel/companies" className="rounded-field border border-border-base p-3 hover:bg-bg-hover transition-colors">
             <Building2 size={18} className="text-brand-400 mb-2" /><div className="text-sm font-medium text-text-primary">مدیریت شرکت‌ها</div><div className="text-[10px] text-text-muted mt-1">اطلاعات و وضعیت مشتریان</div>
           </Link>
@@ -277,6 +277,9 @@ export default function AdminDashboard() {
           </Link>
           <Link to="/panel/subscriptions" className="rounded-field border border-border-base p-3 hover:bg-bg-hover transition-colors">
             <Activity size={18} className="text-warning mb-2" /><div className="text-sm font-medium text-text-primary">مدیریت قراردادها</div><div className="text-[10px] text-text-muted mt-1">تمدید و سررسید قراردادها</div>
+          </Link>
+          <Link to="/panel/reports/live-logs" className="rounded-field border border-border-base p-3 hover:bg-bg-hover transition-colors">
+            <Server size={18} className="text-info mb-2" /><div className="text-sm font-medium text-text-primary">لاگ و پایش زنده</div><div className="text-[10px] text-text-muted mt-1">بررسی سرویس‌ها و خطاها</div>
           </Link>
         </div>
       </Card>
