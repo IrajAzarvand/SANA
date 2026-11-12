@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import {
-  Activity, AlertTriangle, Building2, Car, CheckCircle2, Clock3, Cpu,
-  Database, HardDrive, RefreshCw, Server, Users, Wifi, WifiOff, XCircle,
+  Activity, AlertTriangle, Building2, CheckCircle2, Clock3, Cpu,
+  Database, RefreshCw, Server, Users, Wifi, WifiOff, XCircle,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
@@ -123,7 +123,7 @@ export default function AdminDashboard() {
       <PageHeader
         title="مرکز مدیریت سانا"
         subtitle="نمای یکپارچه زیرساخت، ناوگان، مشتریان و قراردادها"
-        action={
+        actions={
           <button onClick={() => refetch().catch(() => {})} disabled={loading}
             className="inline-flex items-center gap-2 rounded-field border border-border-base px-3 py-2 text-xs text-text-secondary hover:bg-bg-hover disabled:opacity-50">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
@@ -184,7 +184,7 @@ export default function AdminDashboard() {
           <div className="flex items-center gap-2 mb-4">
             {traccar.status === 'connected' ? <Wifi size={18} className="text-success" /> : <WifiOff size={18} className="text-warning" />}
             <span className="text-sm font-medium text-text-primary">{traccar.status === 'connected' ? 'API ترکار در دسترس است' : 'وضعیت API ترکار نامشخص است'}</span>
-            <spacer />
+            <div className="flex-1" />
             <Badge variant={traccar.status === 'connected' ? 'success' : 'warning'}>{traccar.status === 'connected' ? 'متصل' : 'نامشخص'}</Badge>
           </div>
           <div className="grid grid-cols-2 gap-3">
