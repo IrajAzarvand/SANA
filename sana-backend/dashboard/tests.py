@@ -64,3 +64,46 @@ class SiteSettingsAPITests(TestCase):
             SiteSettings.objects.get(pk=1).map_refresh_interval_seconds,
             10,
         )
+
+
+class AdminDashboardOverviewTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin = User.objects.create_user(
+            username='overview_admin',
+            password='test-password',
+            role='site_admin',
+            account_type='admin',
+        )
+        self.member = User.objects.create_user(
+            username='overview_member',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+
+    def test_admin_can_read_overview(self):
+        from unittest.mock import patch
+
+        self.client.force_authenticate(user=self.admin)
+        with patch('dashboard.admin_overview._server_stats', return_value={
+            'database': {'status': 'connected', 'size_bytes': 1024},
+            'services': {'traccar.service': 'active'},
+        }), patch('dashboard.admin_overview.traccar_devices', return_value=[
+            {'status': 'online'}, {'status': 'offline'}, {'status': 'online'},
+        ]):
+            response = self.client.get('/api/dashboard/admin-overview/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['traccar']['registered'], 3)
+        self.assertEqual(response.data['traccar']['online'], 2)
+        self.assertEqual(response.data['traccar']['offline'], 1)
+        self.assertEqual(response.data['server']['database']['status'], 'connected')
+        self.assertIn('contracts', response.data)
+        self.assertIn('customers', response.data)
+        self.assertIn('fleet', response.data)
+
+    def test_non_admin_cannot_read_overview(self):
+        self.client.force_authenticate(user=self.member)
+        response = self.client.get('/api/dashboard/admin-overview/')
+        self.assertEqual(response.status_code, 403)
