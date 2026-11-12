@@ -385,6 +385,11 @@ class TraccarPositionTimestampTests(SimpleTestCase):
         self.assertIsNone(traccar_position_timestamp(position))
 
 
+@override_settings(
+    TRACCAR_API_URL="http://127.0.0.1:8082/api",
+    TRACCAR_API_USERNAME="reader",
+    TRACCAR_API_PASSWORD="test-secret",
+)
 class TraccarAPIClientFailureTests(SimpleTestCase):
     @patch("fleet.traccar_api.urlopen")
     def test_http_error_is_converted_to_safe_api_error(self, urlopen):
