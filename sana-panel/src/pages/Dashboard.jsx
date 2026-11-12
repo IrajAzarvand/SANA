@@ -13,11 +13,12 @@ import ErrorState from '../components/ErrorState';
 import { useAuth } from '../context/AuthContext';
 import { dashboardAPI } from '../api/services/dashboard';
 import { useApi } from '../hooks/useApi';
+import AdminDashboard from './AdminDashboard';
 
 // داده‌ی Mock نمودار (تا وقتی Ingestion Server راه بیفته)
 import { movementData, recentAlerts, recentTrips, movingVehicles } from '../data/mockData';
 
-export default function Dashboard() {
+function CustomerDashboard() {
   const { isSiteAdmin, isPersonal, isBranchManager, user } = useAuth();
 
   const fetchStats = useCallback(async () => {
@@ -308,4 +309,9 @@ export default function Dashboard() {
 
     </div>
   );
+}
+
+export default function Dashboard() {
+  const { isSiteAdmin } = useAuth();
+  return isSiteAdmin ? <AdminDashboard /> : <CustomerDashboard />;
 }
