@@ -1,7 +1,7 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Activity, AlertTriangle, Building2, CheckCircle2, Clock3, Cpu,
-  Database, RefreshCw, Server, Users, Wifi, WifiOff, XCircle,
+  Database, Server, Users, Wifi, WifiOff, XCircle,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
@@ -113,6 +113,23 @@ export default function AdminDashboard() {
     }
   }, []);
   const { data, loading, error, refetch } = useApi(fetchOverview, [], { keepDataOnRefetch: true });
+  const pollingRef = useRef(false);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(async () => {
+      if (pollingRef.current) return;
+      pollingRef.current = true;
+      try {
+        await refetch();
+      } catch {
+        // Keep the last successful dashboard data and retry on the next interval.
+      } finally {
+        pollingRef.current = false;
+      }
+    }, 5000);
+
+    return () => window.clearInterval(intervalId);
+  }, [refetch]);
 
   if (loading && !data) {
     return <div className="space-y-5"><PageHeader title="مرکز مدیریت سانا" subtitle="نمای یکپارچه وضعیت سامانه و کسب‌وکار" /><Card><LoadingSpinner /></Card></div>;
@@ -140,13 +157,6 @@ export default function AdminDashboard() {
       <PageHeader
         title="مرکز مدیریت سانا"
         subtitle="نمای یکپارچه زیرساخت، ناوگان، مشتریان و قراردادها"
-        actions={
-          <button onClick={() => refetch().catch(() => {})} disabled={loading}
-            className="inline-flex items-center gap-2 rounded-field border border-border-base px-3 py-2 text-xs text-text-secondary hover:bg-bg-hover disabled:opacity-50">
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-            بروزرسانی
-          </button>
-        }
       />
 
       {refreshError && data && <div className="rounded-field border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">بروزرسانی انجام نشد؛ اطلاعات نمایش‌داده‌شده مربوط به آخرین دریافت موفق است.</div>}
