@@ -4,6 +4,7 @@ import logging
 import os
 import shutil
 import subprocess
+import time
 from datetime import timedelta
 from pathlib import Path
 
@@ -28,6 +29,35 @@ SERVICE_UNITS = (
     "traccar.service",
     "postgresql.service",
 )
+
+
+
+def _cpu_stats():
+    def read_counters():
+        try:
+            line = Path("/proc/stat").read_text().splitlines()[0]
+            values = [int(value) for value in line.split()[1:]]
+            idle = values[3] + (values[4] if len(values) > 4 else 0)
+            return sum(values), idle
+        except (OSError, ValueError, IndexError):
+            return None
+
+    first = read_counters()
+    if first is None:
+        return {"usage_percent": None, "load_average": []}
+    time.sleep(0.12)
+    second = read_counters()
+    usage = None
+    if second is not None:
+        total_delta = second[0] - first[0]
+        idle_delta = second[1] - first[1]
+        if total_delta > 0:
+            usage = round(max(0.0, min(100.0, (1 - idle_delta / total_delta) * 100)), 1)
+    try:
+        load = [round(value, 2) for value in os.getloadavg()]
+    except (AttributeError, OSError):
+        load = []
+    return {"usage_percent": usage, "load_average": load}
 
 
 def _memory_stats():
@@ -73,10 +103,7 @@ def _service_states():
 
 
 def _server_stats():
-    try:
-        load = list(os.getloadavg())
-    except (AttributeError, OSError):
-        load = []
+    cpu = _cpu_stats()
     try:
         disk = shutil.disk_usage("/")
         disk_stats = {
@@ -104,7 +131,7 @@ def _server_stats():
         logger.warning("Could not read database health for admin dashboard", exc_info=True)
 
     return {
-        "cpu": {"load_average": [round(value, 2) for value in load]},
+        "cpu": cpu,
         "memory": _memory_stats(),
         "disk": disk_stats,
         "uptime_seconds": uptime_seconds,
