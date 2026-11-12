@@ -107,3 +107,50 @@ class AdminDashboardOverviewTests(TestCase):
         self.client.force_authenticate(user=self.member)
         response = self.client.get('/api/dashboard/admin-overview/')
         self.assertEqual(response.status_code, 403)
+
+    def test_inventory_and_active_contract_device_counts_use_current_state(self):
+        from datetime import timedelta
+        from unittest.mock import patch
+
+        from django.utils import timezone
+
+        from fleet.models import Device
+        from organizations.models import Subscription, SubscriptionDevice
+
+        today = timezone.localdate()
+        warehouse_device = Device.objects.create(imei='860000000000001', management_status='warehouse')
+        expired_link_device = Device.objects.create(imei='860000000000002', management_status='installed')
+        subscription = Subscription.objects.create(
+            contract_number='TEST-OVERVIEW-001',
+            customer_type='personal',
+            user=self.member,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        SubscriptionDevice.objects.bulk_create([
+            SubscriptionDevice(
+                subscription=subscription,
+                device=warehouse_device,
+                start_date=today - timedelta(days=1),
+                end_date=today + timedelta(days=10),
+            ),
+            SubscriptionDevice(
+                subscription=subscription,
+                device=expired_link_device,
+                start_date=today - timedelta(days=10),
+                end_date=today - timedelta(days=1),
+            ),
+        ])
+
+        self.client.force_authenticate(user=self.admin)
+        with patch('dashboard.admin_overview._server_stats', return_value={
+            'database': {'status': 'connected', 'size_bytes': 1024},
+            'services': {},
+        }), patch('dashboard.admin_overview.traccar_devices', return_value=[]):
+            response = self.client.get('/api/dashboard/admin-overview/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['fleet']['warehouse'], 1)
+        self.assertEqual(response.data['fleet']['devices_by_management_status']['warehouse'], 1)
+        self.assertEqual(response.data['contracts']['active_devices'], 1)
