@@ -153,10 +153,9 @@ class AdminDashboardOverviewView(APIView):
             row["management_status"]: row["count"]
             for row in Device.objects.values("management_status").annotate(count=Count("id"))
         }
-        warehouse_count = Device.objects.filter(management_status="warehouse").exclude(
-            subscription_links__unassigned_at__isnull=True
-        ).count()
-        device_statuses["warehouse"] = warehouse_count
+        # Management status is the source of truth for warehouse inventory.
+        # A current subscription link must not silently hide a warehouse device.
+        warehouse_count = device_statuses.get("warehouse", 0)
         org_statuses = {
             row["status"]: row["count"]
             for row in Organization.objects.values("status").annotate(count=Count("id"))
@@ -182,7 +181,9 @@ class AdminDashboardOverviewView(APIView):
             "organization": subscriptions.filter(customer_type="organization").count(),
             "personal": subscriptions.filter(customer_type="personal").count(),
             "active_devices": active_subscriptions.filter(
-                subscription_devices__unassigned_at__isnull=True
+                subscription_devices__unassigned_at__isnull=True,
+                subscription_devices__start_date__lte=today,
+                subscription_devices__end_date__gte=today,
             ).values("subscription_devices__device_id").distinct().count(),
         }
 
