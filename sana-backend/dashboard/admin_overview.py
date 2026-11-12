@@ -9,7 +9,7 @@ from datetime import timedelta
 from pathlib import Path
 
 from django.db import connection
-from django.db.models import Count, Q
+from django.db.models import Count
 from django.utils import timezone
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
