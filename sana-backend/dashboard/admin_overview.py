@@ -163,16 +163,15 @@ class AdminDashboardOverviewView(APIView):
         }
 
         subscriptions = Subscription.objects.all()
-        active_subscriptions = subscriptions.filter(
-            status="active", start_date__lte=today, end_date__gte=today
+        operational_subscriptions = subscriptions.exclude(status__in=("suspended", "cancelled"))
+        active_subscriptions = operational_subscriptions.filter(
+            start_date__lte=today, end_date__gte=today
         )
         contracts = {
             "total": subscriptions.count(),
             "active": active_subscriptions.count(),
-            "pending": subscriptions.filter(status="active", start_date__gt=today).count(),
-            "expired": subscriptions.filter(
-                Q(status="expired") | Q(status="active", end_date__lt=today)
-            ).count(),
+            "pending": operational_subscriptions.filter(start_date__gt=today).count(),
+            "expired": operational_subscriptions.filter(end_date__lt=today).count(),
             "suspended": subscriptions.filter(status="suspended").count(),
             "cancelled": subscriptions.filter(status="cancelled").count(),
             "expiring_soon": active_subscriptions.filter(end_date__lte=soon).count(),
@@ -228,7 +227,7 @@ class AdminDashboardOverviewView(APIView):
                 "vehicles": Vehicle.objects.count(),
                 "devices": Device.objects.count(),
                 "devices_by_management_status": device_statuses,
-                "warehouse": device_statuses.get("warehouse", 0),
+                "warehouse": Device.objects.filter(management_status="warehouse").exclude(\n                    subscription_links__unassigned_at__isnull=True\n                ).count(),
                 "installed": device_statuses.get("installed", 0) + device_statuses.get("active", 0),
                 "faulty": device_statuses.get("faulty", 0),
                 "lost": device_statuses.get("lost", 0),
