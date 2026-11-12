@@ -231,7 +231,7 @@ class AdminDashboardOverviewView(APIView):
                 "vehicles": Vehicle.objects.count(),
                 "devices": Device.objects.count(),
                 "devices_by_management_status": device_statuses,
-                "warehouse": Device.objects.filter(management_status="warehouse").exclude(\n                    subscription_links__unassigned_at__isnull=True\n                ).count(),
+                "warehouse": warehouse_count,
                 "installed": device_statuses.get("installed", 0) + device_statuses.get("active", 0),
                 "faulty": device_statuses.get("faulty", 0),
                 "lost": device_statuses.get("lost", 0),
