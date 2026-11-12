@@ -386,8 +386,8 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
     const end = new Date(points[points.length - 1].device_time).getTime();
     return {
       distanceKm,
-      maxSpeed: speeds.reduce((maximum, value) => Math.max(maximum, value), 0),
-      averageSpeed: speeds.length ? speeds.reduce((sum, value) => sum + value, 0) / speeds.length : 0,
+      maxSpeed: speeds.length ? speeds.reduce((maximum, value) => Math.max(maximum, value), -Infinity) : null,
+      averageSpeed: speeds.length ? speeds.reduce((sum, value) => sum + value, 0) / speeds.length : null,
       duration: end - start,
       movingPoints,
       stoppedPoints: points.length - movingPoints,
@@ -402,6 +402,8 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
     let ignitionOnMs = 0;
     let ignitionOffMs = 0;
     let unknownIgnitionMs = 0;
+    let ignoredGapCount = 0;
+    let ignoredGapMs = 0;
     let trips = 0;
     let wasMoving = false;
     let activeStop = null;
@@ -424,6 +426,10 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
         const currentTime = new Date(point.device_time).getTime();
         const delta = currentTime - previousTime;
         if (!Number.isFinite(delta) || delta <= 0 || delta > 600000) {
+          if (Number.isFinite(delta) && delta > 600000) {
+            ignoredGapCount += 1;
+            ignoredGapMs += delta;
+          }
           finishStop();
           wasMoving = false;
         } else {
@@ -457,6 +463,9 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
       ignitionOnMs,
       ignitionOffMs,
       unknownIgnitionMs,
+      ignoredGapCount,
+      ignoredGapMs,
+      speedSampleCount: speedSamples.length,
       stops: stops.sort((a, b) => b.duration - a.duration),
       sampledSpeeds,
       maxSample: Math.max(1, ...sampledSpeeds),
@@ -664,23 +673,6 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
           </div>
         </div>
 
-        {reportStats && (
-          <div className="pointer-events-none absolute right-2 top-[4.6rem] z-[1001] flex max-w-[calc(100%-1rem)] flex-wrap gap-1.5 sm:right-3 sm:top-[4.8rem]">
-            {[
-              ['مسافت', `${formatNumeric(reportStats.distanceKm, 2)} km`],
-              ['بیشترین سرعت', `${formatNumeric(reportStats.maxSpeed, 1)} km/h`],
-              ['میانگین', `${formatNumeric(reportStats.averageSpeed, 1)} km/h`],
-              ['مدت', formatDuration(reportStats.duration)],
-              ['حرکت / توقف', `${reportStats.movingPoints.toLocaleString('fa-IR')} / ${reportStats.stoppedPoints.toLocaleString('fa-IR')}`],
-            ].map(([label, value]) => (
-              <div key={label} className="rounded-lg border border-white/30 bg-bg-elevated/95 px-2.5 py-1.5 shadow-md backdrop-blur-md">
-                <div className="text-[9px] text-text-muted">{label}</div>
-                <div className="whitespace-nowrap text-[11px] font-bold tabular-nums text-text-primary">{value}</div>
-              </div>
-            ))}
-          </div>
-        )}
-
         {currentPoint && (
           <div className="pointer-events-none absolute bottom-[6.4rem] left-2 z-[1001] max-w-[calc(100%-1rem)] rounded-xl border border-white/30 bg-bg-elevated/95 px-2.5 py-1.5 shadow-lg backdrop-blur-md sm:bottom-3 sm:left-3 sm:max-w-[min(42%,420px)]">
             <div className="mb-1 text-[10px] font-semibold text-text-muted">اطلاعات نقطه انتخاب‌شده</div>
@@ -693,29 +685,29 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
           </div>
         )}
 
-        <div className="absolute inset-x-2 bottom-2 z-[1002] rounded-xl border border-white/30 bg-bg-elevated/95 p-2 shadow-xl backdrop-blur-md sm:inset-x-auto sm:bottom-3 sm:right-3 sm:w-[min(56%,520px)] sm:p-2.5">
+        <div className="absolute inset-x-2 bottom-2 z-[1002] rounded-xl border border-white/30 bg-bg-elevated/95 p-2.5 shadow-xl backdrop-blur-md sm:inset-x-auto sm:bottom-3 sm:right-3 sm:w-[min(43%,440px)] sm:p-3">
           <div className="mb-1.5 flex items-center justify-between gap-2">
-            <div className="flex min-w-0 items-center gap-1.5 text-[9px] text-text-muted">
+            <div className="flex min-w-0 items-center gap-1.5 text-[10px] text-text-muted">
               <span className="shrink-0 font-semibold text-text-primary">{points.length ? `${(pointIndex + 1).toLocaleString('fa-IR')} از ${points.length.toLocaleString('fa-IR')}` : 'بدون نقطه'}</span>
               <span className="truncate">{currentPoint ? formatDate(currentPoint.device_time) : loadingHistory ? 'در حال دریافت…' : 'آماده بازپخش'}</span>
             </div>
             <div className="flex shrink-0 items-center gap-1">
-              <label className="flex items-center gap-1 text-[9px] text-text-muted">سرعت
-                <select value={speed} onChange={(event) => setSpeed(Number(event.target.value))} className="rounded-md border border-border-base bg-bg-base px-1 py-1 text-[9px] text-text-primary">
+              <label className="flex items-center gap-1 text-[10px] text-text-muted">سرعت
+                <select value={speed} onChange={(event) => setSpeed(Number(event.target.value))} className="rounded-md border border-border-base bg-bg-base px-1.5 py-1 text-[10px] text-text-primary">
                   <option value={0.5}>۰٫۵×</option><option value={1}>۱×</option><option value={2}>۲×</option><option value={4}>۴×</option>
                 </select>
               </label>
-              <button type="button" onClick={() => { setPointIndex(0); setPlaying(false); }} disabled={!points.length} title="ابتدای مسیر" aria-label="ابتدای مسیر" className="flex h-7 w-7 items-center justify-center rounded-md border border-border-base text-text-secondary disabled:opacity-40"><SkipBack size={13} /></button>
-              <button type="button" onClick={() => moveBy(-1)} disabled={!points.length || pointIndex === 0} title="نقطه قبلی" aria-label="نقطه قبلی" className="flex h-7 w-7 items-center justify-center rounded-md border border-border-base text-text-secondary disabled:opacity-40"><ChevronLeft size={13} /></button>
-              <button type="button" onClick={() => setPlaying((value) => !value)} disabled={points.length < 2} aria-label={playing ? 'توقف بازپخش' : 'شروع بازپخش'} title={playing ? 'توقف بازپخش' : 'شروع بازپخش'} className="flex h-7 min-w-9 items-center justify-center gap-1 rounded-md bg-brand-500 px-1.5 text-[10px] font-semibold text-white disabled:opacity-40">
+              <button type="button" onClick={() => { setPointIndex(0); setPlaying(false); }} disabled={!points.length} title="ابتدای مسیر" aria-label="ابتدای مسیر" className="flex h-8 w-8 items-center justify-center rounded-md border border-border-base text-text-secondary disabled:opacity-40"><SkipBack size={13} /></button>
+              <button type="button" onClick={() => moveBy(-1)} disabled={!points.length || pointIndex === 0} title="نقطه قبلی" aria-label="نقطه قبلی" className="flex h-8 w-8 items-center justify-center rounded-md border border-border-base text-text-secondary disabled:opacity-40"><ChevronLeft size={13} /></button>
+              <button type="button" onClick={() => setPlaying((value) => !value)} disabled={points.length < 2} aria-label={playing ? 'توقف بازپخش' : 'شروع بازپخش'} title={playing ? 'توقف بازپخش' : 'شروع بازپخش'} className="flex h-8 min-w-10 items-center justify-center gap-1 rounded-md bg-brand-500 px-1.5 text-[11px] font-semibold text-white disabled:opacity-40">
                 {playing ? <span>توقف</span> : <><Play size={12} /><span>پخش</span></>}
               </button>
-              <button type="button" onClick={() => moveBy(1)} disabled={!points.length || pointIndex >= points.length - 1} title="نقطه بعدی" aria-label="نقطه بعدی" className="flex h-7 w-7 items-center justify-center rounded-md border border-border-base text-text-secondary disabled:opacity-40"><ChevronRight size={13} /></button>
-              <button type="button" onClick={() => { setPointIndex(Math.max(0, points.length - 1)); setPlaying(false); }} disabled={!points.length} title="انتهای مسیر" aria-label="انتهای مسیر" className="flex h-7 w-7 items-center justify-center rounded-md border border-border-base text-text-secondary disabled:opacity-40"><SkipForward size={13} /></button>
+              <button type="button" onClick={() => moveBy(1)} disabled={!points.length || pointIndex >= points.length - 1} title="نقطه بعدی" aria-label="نقطه بعدی" className="flex h-8 w-8 items-center justify-center rounded-md border border-border-base text-text-secondary disabled:opacity-40"><ChevronRight size={13} /></button>
+              <button type="button" onClick={() => { setPointIndex(Math.max(0, points.length - 1)); setPlaying(false); }} disabled={!points.length} title="انتهای مسیر" aria-label="انتهای مسیر" className="flex h-8 w-8 items-center justify-center rounded-md border border-border-base text-text-secondary disabled:opacity-40"><SkipForward size={13} /></button>
             </div>
           </div>
           <input aria-label="موقعیت در مسیر" type="range" min="0" max={Math.max(0, points.length - 1)} value={pointIndex} onChange={(event) => { setPlaying(false); setPointIndex(Number(event.target.value)); }} disabled={!points.length} className="block w-full accent-brand-500" style={{ backgroundSize: `${progress}% 100%` }} />
-          <div className="mt-1 flex items-center justify-between gap-2 text-[8px] text-text-muted">
+          <div className="mt-1.5 flex items-center justify-between gap-2 text-[9px] text-text-muted">
             <div className="flex flex-wrap gap-x-2 gap-y-0.5" aria-label="راهنمای رنگ مسیر بر اساس سرعت">
               {[['#2563EB','۰–۲۰'],['#16A34A','۲۰–۴۰'],['#EAB308','۴۰–۶۰'],['#F97316','۶۰–۸۰'],['#DC2626','۸۰+']].map(([color,label]) => <span key={label} className="inline-flex items-center gap-1"><span className="h-1 w-2.5 rounded-full" style={{ backgroundColor: color }} />{label}</span>)}
               <span>km/h</span>
@@ -726,47 +718,58 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
       </div>
 
       {advancedStats && (
-        <section className="space-y-3 rounded-xl border border-border-base bg-bg-elevated p-3">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="text-sm font-semibold text-text-primary">تحلیل تکمیلی مسیر</h3>
-            <span className="text-[10px] text-text-muted">برآورد از پیام‌های Traccar؛ نه داده قطعی سفر</span>
+        <section className="space-y-4 rounded-2xl border border-border-base bg-bg-elevated p-3 sm:p-4">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h3 className="text-base font-bold text-text-primary">تحلیل تکمیلی مسیر</h3>
+              <p className="mt-1 text-xs leading-5 text-text-muted">خلاصه‌ای از پیام‌های ثبت‌شده دستگاه برای بررسی حرکت، توقف‌ها و وضعیت سوئیچ.</p>
+            </div>
+            <span className="rounded-lg bg-bg-base px-2.5 py-1.5 text-[10px] text-text-muted">برآورد بر اساس داده‌های موجود</span>
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {[
-              { label: 'تعداد شروع حرکت', value: advancedStats.tripCount.toLocaleString('fa-IR'), icon: Activity },
-              { label: 'مدت حرکت', value: formatDuration(advancedStats.movingMs), icon: Clock3 },
-              { label: 'سوئیچ روشن', value: formatDuration(advancedStats.ignitionOnMs), icon: Zap },
-              { label: 'سوئیچ خاموش', value: formatDuration(advancedStats.ignitionOffMs), icon: Zap },
-            ].map((item) => {
-              const Icon = item.icon;
-              return <div key={item.label} className="rounded-lg border border-border-base bg-bg-base p-2">
-                <div className="flex items-center gap-1.5 text-[10px] text-text-muted"><Icon size={13} />{item.label}</div>
-                <div className="mt-1 text-sm font-semibold tabular-nums text-text-primary">{item.value}</div>
-              </div>;
-            })}
+          <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+            <div className="rounded-xl border border-border-base bg-bg-base p-3"><div className="text-[11px] text-text-muted">مسافت برآوردی</div><div className="mt-1 text-lg font-bold tabular-nums text-text-primary">{formatNumeric(reportStats?.distanceKm ?? 0, 2)} <span className="text-xs font-medium">کیلومتر</span></div><p className="mt-1 text-[10px] leading-4 text-text-muted">محاسبه‌شده از فاصله بین موقعیت‌های متوالی.</p></div>
+            <div className="rounded-xl border border-border-base bg-bg-base p-3"><div className="text-[11px] text-text-muted">مدت حرکت برآوردی</div><div className="mt-1 text-base font-bold tabular-nums text-text-primary">{formatDuration(advancedStats.movingMs)}</div><p className="mt-1 text-[10px] leading-4 text-text-muted">بر اساس وضعیت حرکت یا سرعت ثبت‌شده.</p></div>
+            <div className="rounded-xl border border-border-base bg-bg-base p-3"><div className="text-[11px] text-text-muted">شروع‌های حرکت</div><div className="mt-1 text-lg font-bold tabular-nums text-text-primary">{advancedStats.tripCount.toLocaleString('fa-IR')}</div><p className="mt-1 text-[10px] leading-4 text-text-muted">هر تغییر از توقف به حرکت، یک شروع شمرده می‌شود.</p></div>
+            <div className="rounded-xl border border-border-base bg-bg-base p-3"><div className="text-[11px] text-text-muted">توقف‌های ۳ دقیقه‌ای و بیشتر</div><div className="mt-1 text-lg font-bold tabular-nums text-text-primary">{advancedStats.stops.length.toLocaleString('fa-IR')}</div><p className="mt-1 text-[10px] leading-4 text-text-muted">توقف‌های کوتاه‌تر در این شمارش نیستند.</p></div>
           </div>
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
-            <div className="min-w-0 rounded-lg bg-bg-base p-2.5">
-              <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-text-primary"><Gauge size={14} /> نمونه سرعت در طول بازه</div>
-              <div className="flex h-24 items-end gap-1" role="img" aria-label="نمودار نمونه‌برداری‌شده سرعت">
-                {advancedStats.sampledSpeeds.map((value, index) => <div key={index} title={`سرعت: ${value.toFixed(1)} کیلومتر بر ساعت`} className="min-w-0 flex-1 rounded-t-sm bg-brand-500/80" style={{ height: `${Math.max(3, (value / advancedStats.maxSample) * 100)}%` }} />)}
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+            <div className="min-w-0 rounded-xl border border-border-base bg-bg-base p-3">
+              <div className="flex flex-wrap items-start justify-between gap-2"><div><h4 className="text-sm font-semibold text-text-primary">سرعت در طول بازه</h4><p className="mt-1 text-[10px] leading-4 text-text-muted">نمونه‌های سرعت به ترتیب زمان نمایش داده شده‌اند؛ از ابتدای بازه در سمت راست تا انتهای آن در سمت چپ.</p></div><Gauge size={17} className="text-text-muted" /></div>
+              {advancedStats.speedSampleCount > 0 ? (
+                <>
+                  <div className="mt-4 flex items-end gap-1"><div className="flex h-28 shrink-0 flex-col justify-between pb-1 text-[9px] tabular-nums text-text-muted"><span>{formatNumeric(advancedStats.maxSample, 0)}</span><span>۰</span></div><div className="flex h-28 min-w-0 flex-1 items-end gap-1 border-b border-r border-border-base px-1">{advancedStats.sampledSpeeds.map((value,index)=><div key={index} title={'نمونه '+(index+1)+': '+formatNumeric(value,1)+' کیلومتر بر ساعت'} className="min-w-0 flex-1 rounded-t-sm bg-brand-500/80" style={{height:String(Math.max(3,(value/advancedStats.maxSample)*100))+'%'}} />)}</div></div>
+                  <div className="mt-1 flex justify-between pr-7 text-[9px] text-text-muted"><span>ابتدای بازه</span><span>انتهای بازه</span></div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <div className="rounded-lg bg-bg-elevated p-2"><div className="text-[10px] text-text-muted">میانگین سرعت پیام‌های ثبت‌شده</div><div className="mt-0.5 text-sm font-semibold text-text-primary">{reportStats?.averageSpeed == null ? 'ثبت نشده' : formatNumeric(reportStats.averageSpeed,1)+' km/h'}</div></div>
+                    <div className="rounded-lg bg-bg-elevated p-2"><div className="text-[10px] text-text-muted">بیشترین سرعت ثبت‌شده</div><div className="mt-0.5 text-sm font-semibold text-text-primary">{reportStats?.maxSpeed == null ? 'ثبت نشده' : formatNumeric(reportStats.maxSpeed,1)+' km/h'}</div></div>
+                  </div>
+                  <p className="mt-2 text-[10px] leading-4 text-text-muted">میانگین، میانگین ساده پیام‌های دارای سرعت است و بر اساس مدت زمان وزن‌دهی نشده است. تعداد پیام‌های دارای سرعت: {advancedStats.speedSampleCount.toLocaleString('fa-IR')}.</p>
+                </>
+              ) : <p className="mt-4 rounded-lg bg-bg-elevated px-3 py-5 text-center text-xs text-text-muted">برای این بازه داده‌ای از سرعت دریافت نشده است؛ نمودار و میانگین سرعت قابل محاسبه نیست.</p>}
+            </div>
+            <div className="min-w-0 rounded-xl border border-border-base bg-bg-base p-3">
+              <h4 className="text-sm font-semibold text-text-primary">زمان وضعیت سوئیچ</h4><p className="mt-1 text-[10px] leading-4 text-text-muted">مدت هر وضعیت از فاصله زمانی بین دو پیام متوالی برآورد می‌شود.</p>
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                <div className="rounded-lg border border-border-base p-2.5"><div className="text-[10px] text-text-muted">روشن</div><div className="mt-1 text-sm font-semibold text-text-primary">{formatDuration(advancedStats.ignitionOnMs)}</div></div>
+                <div className="rounded-lg border border-border-base p-2.5"><div className="text-[10px] text-text-muted">خاموش</div><div className="mt-1 text-sm font-semibold text-text-primary">{formatDuration(advancedStats.ignitionOffMs)}</div></div>
+                <div className="rounded-lg border border-warning/30 bg-warning/5 p-2.5"><div className="text-[10px] text-text-muted">نامشخص</div><div className="mt-1 text-sm font-semibold text-text-primary">{formatDuration(advancedStats.unknownIgnitionMs)}</div></div>
               </div>
-              <div className="mt-1 flex justify-between text-[10px] text-text-muted"><span>کمینه: {formatNumeric(advancedStats.minSpeed, 1)}</span><span>بیشینه: {formatNumeric(reportStats?.maxSpeed || 0, 1)}</span></div>
-              <p className="mt-1 text-[9px] text-text-muted">حداکثر ۳۶ نمونه برای خوانایی نمایش داده می‌شود.</p>
-            </div>
-            <div className="min-w-0 rounded-lg bg-bg-base p-2.5">
-              <div className="mb-2 text-xs font-medium text-text-primary">توقف‌های حداقل ۳ دقیقه</div>
-              {advancedStats.stops.length ? <div className="max-h-40 overflow-auto">
-                <table className="w-full text-[10px]">
-                  <thead><tr className="border-b border-border-base text-right text-text-muted"><th className="py-1">شروع</th><th className="py-1">پایان</th><th className="py-1">مدت</th><th className="py-1">نقاط</th></tr></thead>
-                  <tbody>{advancedStats.stops.map((stop, index) => <tr key={`${stop.start}-${index}`} className="border-b border-border-base/60 last:border-0">
-                    <td className="py-1">{formatDate(stop.start)}</td><td className="py-1">{formatDate(stop.end)}</td><td className="py-1 font-medium">{formatDuration(stop.duration)}</td><td className="py-1">{stop.points.toLocaleString('fa-IR')}</td>
-                  </tr>)}</tbody>
-                </table>
-              </div> : <p className="py-3 text-center text-[10px] text-text-muted">توقف طولانی تشخیص داده نشد.</p>}
+              <p className="mt-2 text-[10px] leading-4 text-text-muted">نامشخص به معنی خاموش بودن سوئیچ نیست؛ یعنی دستگاه در آن فاصله وضعیت سوئیچ را گزارش نکرده است.</p>
+              <div className="mt-4 border-t border-border-base pt-3"><h4 className="text-sm font-semibold text-text-primary">توقف‌های طولانی‌تر</h4><p className="mt-1 text-[10px] leading-4 text-text-muted">توقف‌های حداقل ۳ دقیقه، از طولانی‌ترین مورد مرتب شده‌اند.</p>
+                {advancedStats.stops.length ? <div className="mt-2 max-h-48 overflow-auto"><table className="w-full text-[11px]"><thead><tr className="border-b border-border-base text-right text-text-muted"><th className="py-2 font-medium">شروع توقف</th><th className="py-2 font-medium">پایان توقف</th><th className="py-2 font-medium">مدت</th></tr></thead><tbody>{advancedStats.stops.map((stop,index)=><tr key={String(stop.start)+'-'+index} className="border-b border-border-base/60 last:border-0"><td className="py-2">{formatDate(stop.start)}</td><td className="py-2">{formatDate(stop.end)}</td><td className="py-2 font-semibold">{formatDuration(stop.duration)}</td></tr>)}</tbody></table></div> : <p className="mt-2 rounded-lg bg-bg-elevated px-3 py-4 text-center text-[11px] text-text-muted">در داده‌های این بازه توقف ۳ دقیقه‌ای یا بیشتر شناسایی نشد.</p>}
+              </div>
             </div>
           </div>
-          <p className="text-[9px] leading-4 text-text-muted">فاصله‌های زمانی نامعتبر یا بیش از ۱۰ دقیقه در برآورد مدت‌ها و توقف‌ها محاسبه نمی‌شوند. فاصله‌های مکانی با سرعت محاسباتی بیش از ۱۸۰ کیلومتر بر ساعت نیز از مسافت حذف می‌شوند. زمان سوئیچ نامشخص: {formatDuration(advancedStats.unknownIgnitionMs)}.</p>
+          <div className="rounded-xl border border-border-base bg-bg-base p-3">
+            <div className="flex items-center gap-2"><Activity size={16} className="text-text-muted" /><h4 className="text-sm font-semibold text-text-primary">کامل بودن داده‌های گزارش</h4></div>
+            <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div><div className="text-[10px] text-text-muted">پیام‌های مکانی</div><div className="mt-0.5 text-sm font-semibold text-text-primary">{points.length.toLocaleString('fa-IR')}</div></div>
+              <div><div className="text-[10px] text-text-muted">پیام‌های دارای سرعت</div><div className="mt-0.5 text-sm font-semibold text-text-primary">{advancedStats.speedSampleCount.toLocaleString('fa-IR')}</div></div>
+              <div><div className="text-[10px] text-text-muted">فاصله‌های بیش از ۱۰ دقیقه</div><div className="mt-0.5 text-sm font-semibold text-text-primary">{advancedStats.ignoredGapCount.toLocaleString('fa-IR')}</div></div>
+              <div><div className="text-[10px] text-text-muted">مدت فاصله‌های کنارگذاشته‌شده</div><div className="mt-0.5 text-sm font-semibold text-text-primary">{formatDuration(advancedStats.ignoredGapMs)}</div></div>
+            </div>
+            <p className="mt-2 text-[10px] leading-5 text-text-muted">فاصله‌های زمانی نامعتبر یا بیش از ۱۰ دقیقه در محاسبه مدت حرکت و وضعیت سوئیچ وارد نمی‌شوند. فاصله‌های مکانی با سرعت محاسباتی بیش از ۱۸۰ کیلومتر بر ساعت نیز از مسافت برآوردی حذف می‌شوند. بنابراین اعداد این بخش تخمینی‌اند و ممکن است با کیلومترشمار خودرو یا گزارش‌های دیگر تفاوت داشته باشند.</p>
+          </div>
         </section>
       )}
 
