@@ -153,6 +153,10 @@ class AdminDashboardOverviewView(APIView):
             row["management_status"]: row["count"]
             for row in Device.objects.values("management_status").annotate(count=Count("id"))
         }
+        warehouse_count = Device.objects.filter(management_status="warehouse").exclude(
+            subscription_links__unassigned_at__isnull=True
+        ).count()
+        device_statuses["warehouse"] = warehouse_count
         org_statuses = {
             row["status"]: row["count"]
             for row in Organization.objects.values("status").annotate(count=Count("id"))
