@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import {
   Activity, AlertTriangle, Building2, CheckCircle2, Clock3, Cpu,
   Database, RefreshCw, Server, Users, Wifi, WifiOff, XCircle,
@@ -55,15 +55,16 @@ const managementLabels = {
 };
 
 function ProgressRow({ label, value, total, color = 'bg-brand-500' }) {
-  const ratio = total > 0 ? Math.min(100, (value / total) * 100) : 0;
+  const hasData = value != null && total != null;
+  const ratio = hasData && total > 0 ? Math.min(100, Math.max(0, (value / total) * 100)) : 0;
   return (
     <div className="space-y-1.5">
       <div className="flex justify-between gap-3 text-xs">
         <span className="text-text-secondary">{label}</span>
-        <span className="font-mono text-text-primary">{number(value)}</span>
+        <span className="font-mono text-text-primary">{hasData ? number(value) : '—'}</span>
       </div>
       <div className="h-2 rounded-full bg-bg-hover overflow-hidden">
-        <div className={`h-full rounded-full ${color}`} style={{ width: `${ratio}%` }} />
+        {hasData && <div className={`h-full rounded-full ${color}`} style={{ width: `${ratio}%` }} />}
       </div>
     </div>
   );
@@ -85,7 +86,13 @@ function ServiceTile({ unit, state }) {
   return (
     <div className="flex items-center justify-between gap-3 rounded-field border border-border-base bg-bg-base p-3">
       <div className="flex items-center gap-2 min-w-0">
-        <Icon size={17} className={status.variant === 'success' ? 'text-success' : status.variant === 'danger' ? 'text-danger' : 'text-warning'} />
+        <Icon size={17} className={{
+          success: 'text-success',
+          danger: 'text-danger',
+          warning: 'text-warning',
+          info: 'text-info',
+          neutral: 'text-text-muted',
+        }[status.variant] || 'text-text-muted'} />
         <span className="text-sm text-text-primary truncate">{serviceNames[unit] || unit}</span>
       </div>
       <Badge variant={status.variant}>{status.label}</Badge>
@@ -94,7 +101,17 @@ function ServiceTile({ unit, state }) {
 }
 
 export default function AdminDashboard() {
-  const fetchOverview = useCallback(() => dashboardAPI.getAdminOverview(), []);
+  const [refreshError, setRefreshError] = useState(false);
+  const fetchOverview = useCallback(async () => {
+    try {
+      const result = await dashboardAPI.getAdminOverview();
+      setRefreshError(false);
+      return result;
+    } catch (requestError) {
+      setRefreshError(true);
+      throw requestError;
+    }
+  }, []);
   const { data, loading, error, refetch } = useApi(fetchOverview, [], { keepDataOnRefetch: true });
 
   if (loading && !data) {
@@ -132,7 +149,7 @@ export default function AdminDashboard() {
         }
       />
 
-      {error && data && <div className="rounded-field border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">بروزرسانی انجام نشد؛ اطلاعات نمایش‌داده‌شده مربوط به آخرین دریافت موفق است.</div>}
+      {refreshError && data && <div className="rounded-field border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">بروزرسانی انجام نشد؛ اطلاعات نمایش‌داده‌شده مربوط به آخرین دریافت موفق است.</div>}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
         <StatCard title="شرکت‌های مشتری" value={number(customers.organizations)} icon={Building2} color="brand" />
@@ -149,8 +166,8 @@ export default function AdminDashboard() {
             <Metric label="فضای دیسک ریشه" value={percent(disk.used_percent)} hint={`${bytes(disk.used_bytes)} مصرف‌شده · ${bytes(disk.free_bytes)} آزاد`} />
           </div>
           <div className="space-y-3">
-            <ProgressRow label="حافظه RAM" value={memory.used_bytes || 0} total={memory.total_bytes || 0} color="bg-info" />
-            <ProgressRow label="فضای دیسک" value={disk.used_bytes || 0} total={disk.total_bytes || 0} color="bg-brand-500" />
+            <ProgressRow label="حافظه RAM" value={memory.used_bytes} total={memory.total_bytes} color="bg-info" />
+            <ProgressRow label="فضای دیسک" value={disk.used_bytes} total={disk.total_bytes} color="bg-brand-500" />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-4">
             <div className="flex items-center gap-3 rounded-field border border-border-base p-3">
@@ -219,7 +236,9 @@ export default function AdminDashboard() {
             <Metric label="شرکت فعال" value={number(customers.active_organizations)} />
             <Metric label="شرکت تعلیق‌شده" value={number(customers.suspended_organizations)} />
             <Metric label="شعبه‌ها" value={number(customers.branches)} />
+            <Metric label="شعبه فعال" value={number(customers.active_branches)} />
             <Metric label="مشتری شخصی فعال" value={number(customers.active_personal_customers)} />
+            <Metric label="کاربران سازمانی" value={number(customers.organization_users)} />
           </div>
           <div className="flex items-center justify-between text-xs text-text-secondary border-t border-border-base pt-3">
             <span>کاربران فعال / غیرفعال</span>
