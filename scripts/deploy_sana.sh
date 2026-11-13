@@ -7,6 +7,7 @@ CURRENT_LINK="$APP_ROOT/current"
 BACKEND_ENV="/etc/sana-backend.env"
 DOMAIN="sana.etminan.net"
 SERVICE="sana-backend-production.service"
+PRODUCTION_PORT=8001
 DEPLOY_USER="$(id -un)"
 
 SWITCHED=0
@@ -18,6 +19,33 @@ fail() {
     echo
     echo "ERROR: $*" >&2
     exit 1
+}
+
+check_production_port() {
+    echo "Checking production port $PRODUCTION_PORT..."
+
+    sudo systemctl is-active --quiet "$SERVICE" ||
+        fail "Production service is not active before deployment."
+
+    local service_pid
+    local listener_info
+
+    service_pid="$(sudo systemctl show --property MainPID --value "$SERVICE")"
+
+    [[ "$service_pid" =~ ^[1-9][0-9]*$ ]] ||
+        fail "Could not determine production service PID."
+
+    listener_info="$(sudo ss -H -ltnp "sport = :$PRODUCTION_PORT")"
+
+    [[ -n "$listener_info" ]] ||
+        fail "Production port $PRODUCTION_PORT has no listener."
+
+    if ! grep -Eq "pid=${service_pid}([,)]|$)" <<< "$listener_info"; then
+        echo "$listener_info" >&2
+        fail "Port $PRODUCTION_PORT is not owned by the production service."
+    fi
+
+    echo "Production port $PRODUCTION_PORT is correctly owned by PID $service_pid."
 }
 
 rollback() {
@@ -59,6 +87,7 @@ REPO_ROOT="$(pwd)"
 git remote get-url origin | grep -q 'IrajAzarvand/SANA' || fail "Unexpected Git remote."
 
 [[ -f "$BACKEND_ENV" ]] || fail "Production backend environment file is missing."
+check_production_port
 [[ -f "sana-backend/requirements-production.lock" ]] || fail "Production requirements lock is missing."
 [[ -f "sana-panel/package-lock.json" ]] || fail "Frontend package-lock.json is missing."
 [[ -f "sana-panel/.env" ]] || fail "Frontend .env is missing on the server."
@@ -152,12 +181,27 @@ echo "Restarting production backend..."
 sudo systemctl restart "$SERVICE"
 sudo systemctl is-active --quiet "$SERVICE" || fail "Production backend service is not active."
 
-echo "Checking backend..."
-curl --fail --silent --show-error --max-time 15 \
-    -H "Host: $DOMAIN" \
-    -H "X-Forwarded-Proto: https" \
-    "http://127.0.0.1:8001/admin/login/" \
-    -o /dev/null || fail "Backend health check failed."
+echo "Waiting for backend on port $PRODUCTION_PORT..."
+
+BACKEND_READY=0
+
+for attempt in {1..30}; do
+    if curl --fail --silent --max-time 5 \
+        -H "Host: $DOMAIN" \
+        -H "X-Forwarded-Proto: https" \
+        "http://127.0.0.1:$PRODUCTION_PORT/admin/login/" \
+        -o /dev/null 2>/dev/null; then
+
+        BACKEND_READY=1
+        echo "Backend is ready (attempt $attempt)."
+        break
+    fi
+
+    sleep 1
+done
+
+[[ "$BACKEND_READY" -eq 1 ]] ||
+    fail "Backend did not become ready within 30 seconds."
 
 echo "Checking frontend through local HTTPS..."
 curl --insecure --fail --silent --show-error --max-time 15 \
