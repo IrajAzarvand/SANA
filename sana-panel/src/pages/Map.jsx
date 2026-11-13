@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Activity, MapPin, Navigation, PauseCircle, WifiOff } from 'lucide-react';
 import apiClient from '../api/client';
+import { TRACCAR_ATTRIBUTE_LABELS as ATTRIBUTE_LABELS } from '../utils/traccarAttributes';
 import LiveDeviceMap from '../../../sana-map/src/LiveDeviceMap';
 import { MAP_PROVIDER, MAP_PROVIDERS } from '../../../sana-map/src/config';
 
@@ -187,36 +188,6 @@ function Summary({ label, value, tone = 'text-text-primary', icon }) {
 }
 
 
-const ATTRIBUTE_LABELS = {
-  priority: 'اولویت پیام',
-  sat: 'تعداد ماهواره',
-  event: 'کد رویداد',
-  ignition: 'سوئیچ',
-  motion: 'حرکت',
-  rssi: 'قدرت سیگنال GSM',
-  gpsStatus: 'وضعیت GPS',
-  pdop: 'PDOP',
-  hdop: 'HDOP',
-  power: 'ولتاژ خارجی',
-  battery: 'ولتاژ باتری',
-  fuel: 'سوخت',
-  fuelLevel: 'سطح سوخت',
-  odometer: 'کیلومترشمار',
-  totalDistance: 'مسافت کل',
-  distance: 'مسافت پیام',
-  hours: 'ساعت موتور',
-  adc1: 'ورودی آنالوگ ۱',
-  adc2: 'ورودی آنالوگ ۲',
-  operator: 'شناسه اپراتور',
-  ip: 'IP دستگاه',
-  alarm: 'هشدار',
-  charge: 'شارژ',
-  door: 'وضعیت درب',
-  temp1: 'دمای ۱',
-  temp2: 'دمای ۲',
-  deviceTemp: 'دمای دستگاه',
-};
-
 const COMMON_ATTRIBUTES = [
   'ignition', 'motion', 'sat', 'rssi', 'power',
   'battery', 'fuel', 'odometer', 'hours', 'event',
@@ -284,7 +255,7 @@ function DeviceDetails({ position }) {
             {title}
           </div>
           <div className="mt-0.5 text-[10px] text-text-muted">
-            شناسه دستگاه: {position.imei || '—'}
+            شماره تلفن: {position.phone || 'ثبت نشده'}
           </div>
         </div>
 
@@ -324,11 +295,19 @@ function DeviceDetails({ position }) {
         </div>
 
         <div>
-          <div className="text-text-muted">وضعیت موقعیت</div>
+          <div className="text-text-muted">مختصات موقعیت</div>
           <div className="font-medium text-text-primary">
-            {position.position_is_current
-              ? 'مختصات فعلی'
-              : 'آخرین مختصات معتبر'}
+            عرض جغرافیایی: {Number.isFinite(Number(position.latitude))
+              ? Number(position.latitude).toLocaleString('fa-IR', { maximumFractionDigits: 6 })
+              : '—'}
+          </div>
+          <div className="font-medium text-text-primary">
+            طول جغرافیایی: {Number.isFinite(Number(position.longitude))
+              ? Number(position.longitude).toLocaleString('fa-IR', { maximumFractionDigits: 6 })
+              : '—'}
+          </div>
+          <div className="mt-0.5 text-[9px] text-text-muted">
+            {position.position_is_current ? 'موقعیت فعلی' : 'آخرین موقعیت معتبر'}
           </div>
         </div>
       </div>

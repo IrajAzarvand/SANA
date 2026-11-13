@@ -767,6 +767,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
             output.append({
                 'device_id': device.pk,
                 'imei': device.imei,
+                'phone': traccar_device.get('phone'),
                 'vehicle_id': device.vehicle_id,
                 'vehicle_plate': device.vehicle.plate if device.vehicle_id else None,
                 'latitude': match['latitude'] if match else latitude,
@@ -779,6 +780,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 'heading': position.get('course'),
                 'last_seen': server_received_at.isoformat() if server_received_at else None,
                 'device_time': position.get('fixTime') or position.get('deviceTime'),
+                'attributes': attributes,
                 'status': status,
             })
         output.sort(key=lambda item: item['device_id'])

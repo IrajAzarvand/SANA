@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, CalendarClock, ChevronLeft, ChevronRight, CircleAlert, Clock3, Download, Gauge, Play, Search, SkipBack, SkipForward, Zap } from 'lucide-react';
 import apiClient from '../api/client';
+import { TRACCAR_ATTRIBUTE_LABELS as attributeLabels } from '../utils/traccarAttributes';
 import JalaliDatePicker from './JalaliDatePicker';
 import LiveDeviceMap from '../../../sana-map/src/LiveDeviceMap';
 import { MAP_PROVIDER, MAP_PROVIDERS } from '../../../sana-map/src/config';
@@ -42,14 +43,6 @@ const formatNumeric = (value, maximumFractionDigits = 2) => {
 };
 const showValue = (value, suffix = '', maximumFractionDigits = 2) =>
   value === null || value === undefined || value === '' ? '—' : `${formatNumeric(value, maximumFractionDigits)}${suffix}`;
-const attributeLabels = {
-  ignition: 'سوئیچ', motion: 'حرکت', satellites: 'ماهواره‌ها', sat: 'ماهواره‌ها',
-  rssi: 'سیگنال', gsm: 'سیگنال', battery: 'باتری', batteryVoltage: 'ولتاژ باتری',
-  power: 'ولتاژ', voltage: 'ولتاژ', odometer: 'کیلومترشمار', totalDistance: 'مسافت کل',
-  hours: 'کارکرد', engineHours: 'کارکرد', fuel: 'سوخت', fuelLevel: 'سطح سوخت',
-  alarm: 'هشدار', status: 'وضعیت', event: 'رویداد', hdop: 'دقت افقی',
-  priority: 'اولویت', io200: 'خواب', io69: 'ماهواره', pdop: 'دقت', io68: 'جریان', operator: 'اپراتور',
-};
 const attributeDescriptions = {
   priority: 'اولویت بسته اطلاعاتی AVL ارسالی دستگاه است، نه سطح خطر یا دکمه اضطراری. Low یعنی عادی، High یعنی ارسال فوری رویداد از طریق GPRS و Panic یعنی اولویت بالا با امکان ارسال از طریق SMS در صورت قطع GPRS، مشروط به فعال بودن ارسال SMS و تنظیم شماره مقصد.',
   io200: 'وضعیت حالت خواب دستگاه: ۰ بدون خواب، ۱ خواب GPS، ۲ خواب عمیق، ۳ خواب آنلاین و ۴ خواب فوق‌عمیق. در حالت‌های خواب، نحوه فعالیت و ارسال اطلاعات دستگاه متفاوت است.',
