@@ -1,10 +1,9 @@
 import axios from 'axios';
 
-const API_BASE_URL = import.meta.env.VITE_API_URL;
-
-if (!API_BASE_URL) {
-  throw new Error('VITE_API_URL is not configured. Create sana-panel/.env before starting the frontend.');
-}
+// Development uses the local backend; production uses the same-origin API.
+const API_BASE_URL = import.meta.env.DEV
+  ? (import.meta.env.VITE_API_URL || 'http://192.168.1.132:8000/api')
+  : '/api';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
