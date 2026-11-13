@@ -1,9 +1,10 @@
 import axios from 'axios';
 
-// Development uses the local backend; production uses the same-origin API.
-const API_BASE_URL = import.meta.env.DEV
-  ? (import.meta.env.VITE_API_URL || 'http://192.168.1.132:8000/api')
-  : '/api';
+// API URL is configured per environment.
+// Development defaults to the local backend; production defaults to same-origin.
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  (import.meta.env.DEV ? 'http://192.168.1.132:8000/api' : '/api');
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
