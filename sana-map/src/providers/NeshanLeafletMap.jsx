@@ -111,7 +111,7 @@ function attributeRows(attributes = {}) {
   const keys = [...new Set([...COMMON_ATTRIBUTES, ...Object.keys(values)])];
   return keys.map((key) => {
     const value = Object.prototype.hasOwnProperty.call(values, key) ? values[key] : undefined;
-    const display = value === undefined || value === null || value === '' ? 'در این نقطه از دستگاه دریافت نشده' : typeof value === 'boolean' ? (value ? 'بله / فعال' : 'خیر / غیرفعال') : typeof value === 'object' ? JSON.stringify(value) : String(value);
+    const display = value === undefined || value === null || value === '' ? 'فاقد اطلاعات' : typeof value === 'boolean' ? (value ? 'بله / فعال' : 'خیر / غیرفعال') : typeof value === 'object' ? JSON.stringify(value) : String(value);
     return '<div style="display:flex;justify-content:space-between;gap:12px;border-bottom:1px solid #ddd;padding:2px 0"><span>' + escapeHtml(ATTRIBUTE_LABELS[key] || key) + ' <small style="color:#777">(' + escapeHtml(key) + ')</small></span><strong style="overflow-wrap:anywhere">' + escapeHtml(display) + '</strong></div>';
   }).join('');
 }
@@ -331,14 +331,12 @@ function syncMarkers(
 
     if (!marker && !shouldShow) return;
 
-    const content = popupHtml(position);
     const keepCentered = Boolean(followed && String(followed.device_id) === id);
 
     if (!marker) {
       marker = L.marker(target, {
         icon: createDeviceIcon(L, position),
       }).addTo(map);
-      marker.bindPopup(content);
       marker.on('click', () => onSelectDevice?.(position.device_id));
       markersRef.current.set(id, marker);
 
@@ -352,7 +350,6 @@ function syncMarkers(
       marker.setLatLng(target);
       if (map.hasLayer(marker)) marker.remove();
       marker.setIcon(createDeviceIcon(L, position));
-      marker.setPopupContent(content);
     } else {
       if (!map.hasLayer(marker)) marker.addTo(map);
 
@@ -363,7 +360,6 @@ function syncMarkers(
         { map, keepCentered },
       );
       marker.setIcon(createDeviceIcon(L, position));
-      marker.setPopupContent(content);
     }
   });
 

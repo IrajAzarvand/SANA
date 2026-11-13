@@ -94,6 +94,9 @@ export default function Map() {
   const moving = positions.filter((item) => item.status === 'moving').length;
   const stopped = positions.filter((item) => item.status === 'stopped').length;
   const offline = positions.filter((item) => item.status === 'offline').length;
+  const selectedDevice = positions.find(
+  (item) => String(item.device_id) === String(followedDeviceId)
+  );
 
   return (
     <div className="flex min-h-[calc(100dvh-6.5rem)] flex-col gap-3 lg:h-full lg:min-h-[560px]">
@@ -127,7 +130,10 @@ export default function Map() {
             <Summary label="دارای موقعیت" value={positions.length} icon={<MapPin size={15} />} tone="text-brand-400" />
             <Summary label="در حرکت" value={moving} icon={<Navigation size={15} />} tone="text-success" />
             <Summary label="متوقف" value={stopped} icon={<PauseCircle size={15} />} tone="text-warning" />
-            <Summary label="آفلاین" value={offline} icon={<WifiOff size={15} />} tone="text-text-muted" />
+            <div className="relative min-w-0">
+              <Summary label="آفلاین" value={offline} icon={<WifiOff size={15} />} tone="text-text-muted" />
+              {selectedDevice && <DeviceDetails position={selectedDevice} />}
+            </div>
           </div>
         </div>
 
@@ -175,6 +181,202 @@ function Summary({ label, value, tone = 'text-text-primary', icon }) {
       <div className="min-w-0">
         <div className="truncate text-[10px] leading-4 text-text-muted sm:text-[11px]">{label}</div>
         <div className={`text-sm font-bold leading-5 tabular-nums sm:text-base ${tone}`}>{value.toLocaleString('fa-IR')}</div>
+      </div>
+    </div>
+  );
+}
+
+
+const ATTRIBUTE_LABELS = {
+  priority: 'اولویت پیام',
+  sat: 'تعداد ماهواره',
+  event: 'کد رویداد',
+  ignition: 'سوئیچ',
+  motion: 'حرکت',
+  rssi: 'قدرت سیگنال GSM',
+  gpsStatus: 'وضعیت GPS',
+  pdop: 'PDOP',
+  hdop: 'HDOP',
+  power: 'ولتاژ خارجی',
+  battery: 'ولتاژ باتری',
+  fuel: 'سوخت',
+  fuelLevel: 'سطح سوخت',
+  odometer: 'کیلومترشمار',
+  totalDistance: 'مسافت کل',
+  distance: 'مسافت پیام',
+  hours: 'ساعت موتور',
+  adc1: 'ورودی آنالوگ ۱',
+  adc2: 'ورودی آنالوگ ۲',
+  operator: 'شناسه اپراتور',
+  ip: 'IP دستگاه',
+  alarm: 'هشدار',
+  charge: 'شارژ',
+  door: 'وضعیت درب',
+  temp1: 'دمای ۱',
+  temp2: 'دمای ۲',
+  deviceTemp: 'دمای دستگاه',
+};
+
+const COMMON_ATTRIBUTES = [
+  'ignition', 'motion', 'sat', 'rssi', 'power',
+  'battery', 'fuel', 'odometer', 'hours', 'event',
+  'priority', 'gpsStatus', 'hdop', 'pdop',
+];
+
+function formatDeviceTime(value) {
+  if (!value) return 'نامشخص';
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return 'نامشخص';
+
+  return new Intl.DateTimeFormat('fa-IR', {
+    dateStyle: 'short',
+    timeStyle: 'medium',
+  }).format(date);
+}
+
+function formatDeviceAttribute(value) {
+  if (value === null || value === undefined || value === '') {
+    return 'مقدار ارسال نشده';
+  }
+
+  if (typeof value === 'boolean') {
+    return value ? 'بله / فعال' : 'خیر / غیرفعال';
+  }
+
+  if (typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+
+  return String(value);
+}
+
+function DeviceDetails({ position }) {
+  const title = position.vehicle_plate
+    || position.imei
+    || `دستگاه ${position.device_id}`;
+
+  const status = position.status === 'moving'
+    ? 'در حرکت'
+    : position.status === 'offline'
+      ? 'آفلاین'
+      : 'متوقف';
+
+  const attributes = position.attributes
+    && typeof position.attributes === 'object'
+    && !Array.isArray(position.attributes)
+      ? position.attributes
+      : {};
+
+  const keys = [
+    ...new Set([...COMMON_ATTRIBUTES, ...Object.keys(attributes)]),
+  ];
+
+  return (
+    <div
+      dir="rtl"
+      className="pointer-events-auto absolute right-0 top-full z-20 mt-2 w-full min-w-0 overflow-hidden rounded-xl border border-white/10 bg-bg-elevated/95 shadow-lg backdrop-blur-md"
+    >
+      <div className="flex items-center justify-between gap-2 border-b border-white/10 px-3 py-2">
+        <div className="min-w-0">
+          <div className="truncate text-xs font-bold text-text-primary">
+            {title}
+          </div>
+          <div className="mt-0.5 text-[10px] text-text-muted">
+            شناسه دستگاه: {position.imei || '—'}
+          </div>
+        </div>
+
+        <span className={`shrink-0 rounded-md bg-bg-base px-2 py-1 text-[10px] font-semibold ${
+          position.status === 'moving'
+            ? 'text-success'
+            : position.status === 'offline'
+              ? 'text-text-muted'
+              : 'text-warning'
+        }`}>
+          {status}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 gap-y-1 px-2.5 py-2 text-[10px]">
+        <div>
+          <div className="text-text-muted">سرعت</div>
+          <div className="font-semibold text-text-primary">
+            {position.speed == null || !Number.isFinite(Number(position.speed))
+              ? '—'
+              : Number(position.speed).toFixed(1)} km/h
+          </div>
+        </div>
+
+        <div>
+          <div className="text-text-muted">زمان پیام دستگاه</div>
+          <div className="font-medium text-text-primary">
+            {formatDeviceTime(position.device_time)}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-text-muted">زمان دریافت Traccar</div>
+          <div className="font-medium text-text-primary">
+            {formatDeviceTime(position.last_seen)}
+          </div>
+        </div>
+
+        <div>
+          <div className="text-text-muted">وضعیت موقعیت</div>
+          <div className="font-medium text-text-primary">
+            {position.position_is_current
+              ? 'مختصات فعلی'
+              : 'آخرین مختصات معتبر'}
+          </div>
+        </div>
+      </div>
+
+      {!position.position_is_current && (
+        <div className="px-3 pb-1 text-[10px] text-warning">
+          GPS فعلی فاقد Fix است؛ آخرین مختصات معتبر نمایش داده شده.
+        </div>
+      )}
+
+      {position.position_is_matched && (
+        <div className="px-3 pb-1 text-[10px] text-success">
+          موقعیت منطبق‌شده با مسیر جاده
+        </div>
+      )}
+
+      <div className="border-t border-white/10 px-3 py-1.5">
+        <div className="mb-1 text-[10px] font-bold text-text-secondary">
+          Attributeهای Traccar
+        </div>
+
+        <div className="max-h-36 overflow-y-auto overscroll-contain">
+          <div className="grid grid-cols-1">
+            {keys.map((key) => {
+              const received = Object.prototype.hasOwnProperty.call(attributes, key);
+
+              const value = received
+                ? formatDeviceAttribute(attributes[key])
+                : 'فاقد اطلاعات';
+
+              return (
+                <div
+                  key={key}
+                  className="flex min-w-0 items-start justify-between gap-2 border-b border-white/5 py-1 text-[10px]"
+                >
+                  <span className="min-w-0 text-text-muted">
+                    {ATTRIBUTE_LABELS[key] || key}
+                    <span className="mr-1 opacity-60">({key})</span>
+                  </span>
+
+                  <strong className="min-w-0 break-all text-left font-medium text-text-primary">
+                    {value}
+                  </strong>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </div>
   );

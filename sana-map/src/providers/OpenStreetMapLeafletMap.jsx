@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Marker, MapContainer, Popup, TileLayer, useMap, Polyline } from 'react-leaflet';
+import { Marker, MapContainer, TileLayer, useMap, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import { animateLeafletMarker, getFollowedPosition } from '../markerAnimation';
 import DeviceMarkersLayer from './DeviceMarkersLayer';
@@ -51,7 +51,7 @@ function formatAttributeValue(value) {
 function attributeRows(attributes = {}) {
   const values = attributes && typeof attributes === 'object' && !Array.isArray(attributes) ? attributes : {};
   const keys = [...new Set([...COMMON_ATTRIBUTES, ...Object.keys(values)])];
-  return keys.map((key) => ({ key, label: ATTRIBUTE_LABELS[key] || key, value: Object.prototype.hasOwnProperty.call(values, key) ? formatAttributeValue(values[key]) : 'در این نقطه از دستگاه دریافت نشده' }));
+  return keys.map((key) => ({ key, label: ATTRIBUTE_LABELS[key] || key, value: Object.prototype.hasOwnProperty.call(values, key) ? formatAttributeValue(values[key]) : 'فاقد اطلاعات' }));
 }
 
 function formatLastSeen(value) {
@@ -130,11 +130,6 @@ export default function OpenStreetMapLeafletMap({ positions = [], onSelectDevice
   const followed = getFollowedPosition(validPositions, followPosition);
 
   const renderDeviceMarker = (position) => {
-    const status = position.status === 'moving'
-      ? 'در حرکت'
-      : position.status === 'offline' ? 'آفلاین' : 'متوقف';
-    const title = position.vehicle_plate || position.imei || `دستگاه ${position.device_id}`;
-
     return (
       <AnimatedDeviceMarker
         key={String(position.device_id)}
@@ -143,28 +138,7 @@ export default function OpenStreetMapLeafletMap({ positions = [], onSelectDevice
         onSelectDevice={onSelectDevice}
         animationDuration={Number(position.animation_duration_ms) || animationDuration}
         keepCentered={Boolean(followed && String(followed.device_id) === String(position.device_id))}
-      >
-        <Popup>
-          <div dir="rtl" style={{ minWidth: 180, fontFamily: 'Tahoma, sans-serif', lineHeight: 1.9 }}>
-            <strong>{title}</strong>
-            <div>شناسه دستگاه: {position.imei || '—'}</div>
-            <div>وضعیت: {status}</div>
-            <div>سرعت: {formatSpeed(position.speed)} km/h</div>
-            <div>زمان پیام دستگاه: {formatLastSeen(position.device_time)}</div>
-            <div>زمان دریافت Traccar: {formatLastSeen(position.last_seen)}</div>
-            <div style={{ marginTop: 8, fontWeight: 700 }}>Attributeهای Traccar</div>
-            <div style={{ maxHeight: 240, overflowY: 'auto', marginTop: 4 }}>
-              {attributeRows(position.attributes).map((item) => <div key={item.key} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, borderBottom: '1px solid #ddd', padding: '2px 0' }}><span>{item.label} <small style={{ color: '#777' }}>({item.key})</small></span><strong style={{ overflowWrap: 'anywhere' }}>{item.value}</strong></div>)}
-            </div>
-            {!position.position_is_current && (
-              <div style={{ color: '#B45309' }}>آخرین مختصات معتبر (GPS فعلی فاقد Fix است)</div>
-            )}
-            {position.position_is_matched && (
-              <div style={{ color: '#0F766E' }}>موقعیت منطبق‌شده با مسیر جاده</div>
-            )}
-          </div>
-        </Popup>
-      </AnimatedDeviceMarker>
+      />
     );
   };
 
