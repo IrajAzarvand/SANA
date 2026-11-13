@@ -119,7 +119,7 @@ mv "$BACKEND_DIR" "$RELEASE_DIR/backend"
 BACKEND_DIR="$RELEASE_DIR/backend"
 
 python3.12 -m venv "$BACKEND_DIR/.venv"
-"$BACKEND_DIR/.venv/bin/pip" install --no-cache-dir -r "$BACKEND_DIR/requirements-production.lock"
+"$BACKEND_DIR/.venv/bin/pip" install --index-url https://pypi.org/simple/ --no-cache-dir -r "$BACKEND_DIR/requirements-production.lock"
 
 [[ -d "$APP_ROOT/shared/media" ]] || fail "Shared media directory is missing."
 ln -s "$APP_ROOT/shared/media" "$BACKEND_DIR/media"
