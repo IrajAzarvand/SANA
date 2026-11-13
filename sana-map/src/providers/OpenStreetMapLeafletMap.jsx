@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Marker, MapContainer, Popup, TileLayer, useMap, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import { animateLeafletMarker, getFollowedPosition } from '../markerAnimation';
+import DeviceMarkersLayer from './DeviceMarkersLayer';
 import 'leaflet/dist/leaflet.css';
 
 const DEFAULT_CENTER = [32.4279, 53.688];
@@ -24,10 +25,10 @@ function createDeviceIcon(position) {
   const angle = headingDegrees(position);
   return L.divIcon({
     className: 'sana-map-device-icon',
-    iconSize: [36, 42],
-    iconAnchor: [18, 21],
-    popupAnchor: [0, -20],
-    html: `<div style="width:36px;height:42px;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 2px 3px #0006)"><svg width="32" height="40" viewBox="0 0 32 40" aria-hidden="true"><path d="M16 2 L29 35 L16 28 L3 35 Z" fill="${color}" stroke="#ffffff" stroke-width="2" stroke-linejoin="round" transform="rotate(${angle} 16 20)"/></svg></div>`,
+    iconSize: [32, 38],
+    iconAnchor: [16, 19],
+    popupAnchor: [0, -18],
+    html: `<div style="width:32px;height:38px;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 2px 3px #0006)"><svg width="28" height="36" viewBox="0 0 32 40" aria-hidden="true"><path d="M16 2 L29 35 L16 28 L3 35 Z" fill="${color}" stroke="#ffffff" stroke-width="2" stroke-linejoin="round" transform="rotate(${angle} 16 20)"/></svg></div>`,
   });
 }
 
@@ -63,6 +64,19 @@ function formatLastSeen(value) {
 function formatSpeed(value) {
   const speed = Number(value);
   return value == null || !Number.isFinite(speed) ? '—' : speed.toFixed(1);
+}
+
+function ClearFollowOnMapClick({ onSelectDevice }) {
+  const map = useMap();
+
+  useEffect(() => {
+    const clearFollow = () => onSelectDevice?.(null);
+
+    map.on('click', clearFollow);
+    return () => map.off('click', clearFollow);
+  }, [map, onSelectDevice]);
+
+  return null;
 }
 
 function FitInitialBounds({ positions, followPosition = false, routeSegments = [] }) {
@@ -115,6 +129,45 @@ export default function OpenStreetMapLeafletMap({ positions = [], onSelectDevice
   ));
   const followed = getFollowedPosition(validPositions, followPosition);
 
+  const renderDeviceMarker = (position) => {
+    const status = position.status === 'moving'
+      ? 'در حرکت'
+      : position.status === 'offline' ? 'آفلاین' : 'متوقف';
+    const title = position.vehicle_plate || position.imei || `دستگاه ${position.device_id}`;
+
+    return (
+      <AnimatedDeviceMarker
+        key={String(position.device_id)}
+        position={position}
+        icon={createDeviceIcon(position)}
+        onSelectDevice={onSelectDevice}
+        animationDuration={Number(position.animation_duration_ms) || animationDuration}
+        keepCentered={Boolean(followed && String(followed.device_id) === String(position.device_id))}
+      >
+        <Popup>
+          <div dir="rtl" style={{ minWidth: 180, fontFamily: 'Tahoma, sans-serif', lineHeight: 1.9 }}>
+            <strong>{title}</strong>
+            <div>شناسه دستگاه: {position.imei || '—'}</div>
+            <div>وضعیت: {status}</div>
+            <div>سرعت: {formatSpeed(position.speed)} km/h</div>
+            <div>زمان پیام دستگاه: {formatLastSeen(position.device_time)}</div>
+            <div>زمان دریافت Traccar: {formatLastSeen(position.last_seen)}</div>
+            <div style={{ marginTop: 8, fontWeight: 700 }}>Attributeهای Traccar</div>
+            <div style={{ maxHeight: 240, overflowY: 'auto', marginTop: 4 }}>
+              {attributeRows(position.attributes).map((item) => <div key={item.key} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, borderBottom: '1px solid #ddd', padding: '2px 0' }}><span>{item.label} <small style={{ color: '#777' }}>({item.key})</small></span><strong style={{ overflowWrap: 'anywhere' }}>{item.value}</strong></div>)}
+            </div>
+            {!position.position_is_current && (
+              <div style={{ color: '#B45309' }}>آخرین مختصات معتبر (GPS فعلی فاقد Fix است)</div>
+            )}
+            {position.position_is_matched && (
+              <div style={{ color: '#0F766E' }}>موقعیت منطبق‌شده با مسیر جاده</div>
+            )}
+          </div>
+        </Popup>
+      </AnimatedDeviceMarker>
+    );
+  };
+
   return (
     <div className="relative h-full min-h-80 w-full">
       <MapContainer
@@ -129,47 +182,16 @@ export default function OpenStreetMapLeafletMap({ positions = [], onSelectDevice
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           maxZoom={19}
         />
+        <ClearFollowOnMapClick onSelectDevice={onSelectDevice} />
         <FitInitialBounds positions={validPositions} followPosition={followPosition} routeSegments={routeSegments} />
         {routeSegments.map((segment, index) => segment.coordinates?.length >= 2 && (
           <Polyline key={`${segment.speedBand}-${index}`} positions={segment.coordinates} pathOptions={{ color: segment.color, weight: 5, opacity: 0.95, lineCap: 'round', lineJoin: 'round' }} />
         ))}
-        {validPositions.map((position) => {
-          const status = position.status === 'moving'
-            ? 'در حرکت'
-            : position.status === 'offline' ? 'آفلاین' : 'متوقف';
-          const title = position.vehicle_plate || position.imei || `دستگاه ${position.device_id}`;
-          return (
-            <AnimatedDeviceMarker
-              key={String(position.device_id)}
-              position={position}
-              icon={createDeviceIcon(position)}
-              onSelectDevice={onSelectDevice}
-              animationDuration={Number(position.animation_duration_ms) || animationDuration}
-              keepCentered={Boolean(followed && String(followed.device_id) === String(position.device_id))}
-            >
-              <Popup>
-                <div dir="rtl" style={{ minWidth: 180, fontFamily: 'Tahoma, sans-serif', lineHeight: 1.9 }}>
-                  <strong>{title}</strong>
-                  <div>شناسه دستگاه: {position.imei || '—'}</div>
-                  <div>وضعیت: {status}</div>
-                  <div>سرعت: {formatSpeed(position.speed)} km/h</div>
-                  <div>زمان پیام دستگاه: {formatLastSeen(position.device_time)}</div>
-                  <div>زمان دریافت Traccar: {formatLastSeen(position.last_seen)}</div>
-                  <div style={{ marginTop: 8, fontWeight: 700 }}>Attributeهای Traccar</div>
-                  <div style={{ maxHeight: 240, overflowY: 'auto', marginTop: 4 }}>
-                    {attributeRows(position.attributes).map((item) => <div key={item.key} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, borderBottom: '1px solid #ddd', padding: '2px 0' }}><span>{item.label} <small style={{ color: '#777' }}>({item.key})</small></span><strong style={{ overflowWrap: 'anywhere' }}>{item.value}</strong></div>)}
-                  </div>
-                  {!position.position_is_current && (
-                    <div style={{ color: '#B45309' }}>آخرین مختصات معتبر (GPS فعلی فاقد Fix است)</div>
-                  )}
-                  {position.position_is_matched && (
-                    <div style={{ color: '#0F766E' }}>موقعیت منطبق‌شده با مسیر جاده</div>
-                  )}
-                </div>
-              </Popup>
-            </AnimatedDeviceMarker>
-          );
-        })}
+        <DeviceMarkersLayer
+          positions={validPositions}
+          followPosition={followPosition}
+          renderDeviceMarker={renderDeviceMarker}
+        />
       </MapContainer>
     </div>
   );

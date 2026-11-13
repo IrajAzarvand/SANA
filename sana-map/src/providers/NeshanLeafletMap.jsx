@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { NESHAN_LEAFLET_CONFIG } from '../config';
 import { animateLeafletMarker, getFollowedPosition } from '../markerAnimation';
+import { getDeviceClusters, createClusterIcon } from '../deviceClusters';
 
 const SDK_SCRIPT_ID = 'sana-neshan-leaflet-sdk';
 const SDK_STYLE_ID = 'sana-neshan-leaflet-style';
@@ -88,8 +89,8 @@ function createDeviceIcon(L, position) {
   const angle = headingDegrees(position);
   return L.divIcon({
     className: 'sana-map-device-icon',
-    iconSize: [36, 42],
-    iconAnchor: [18, 21],
+    iconSize: [32, 38],
+    iconAnchor: [16, 19],
     popupAnchor: [0, -20],
     html: `<div style="width:36px;height:42px;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 2px 3px #0006)"><svg width="32" height="40" viewBox="0 0 32 40" aria-hidden="true"><path d="M16 2 L29 35 L16 28 L3 35 Z" fill="${color}" stroke="#ffffff" stroke-width="2" stroke-linejoin="round" transform="rotate(${angle} 16 20)"/></svg></div>`,
   });
@@ -138,6 +139,7 @@ export default function NeshanLeafletMap({ positions, onSelectDevice, followPosi
   const elementRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef(new Map());
+  const clusterMarkersRef = useRef(new Map());
   const routeLayersRef = useRef([]);
   const positionsRef = useRef(positions);
   const hasFitBoundsRef = useRef(false);
@@ -185,9 +187,10 @@ export default function NeshanLeafletMap({ positions, onSelectDevice, followPosi
         });
         L.control.zoom({ position: 'topleft' }).addTo(map);
         mapRef.current = map;
+        map.on('click', () => onSelectDevice?.(null));
         setMapReady(true);
         setLoadError('');
-        syncMarkers(L, map, positionsRef.current, markersRef, onSelectDevice, animationDuration, followPosition);
+        syncMarkers(L, map, positionsRef.current, markersRef, clusterMarkersRef, onSelectDevice, animationDuration, followPosition);
         const followed = getFollowedPosition(positionsRef.current, followPosition);
         if (followed) {
           map.setView([Number(followed.latitude), Number(followed.longitude)], Math.max(map.getZoom(), 14), { animate: false });
@@ -209,6 +212,8 @@ export default function NeshanLeafletMap({ positions, onSelectDevice, followPosi
         mapRef.current.remove();
         mapRef.current = null;
       }
+      clusterMarkersRef.current.forEach((marker) => marker.remove());
+      clusterMarkersRef.current.clear();
       markersRef.current.clear();
       hasFitBoundsRef.current = false;
       lastFollowKeyRef.current = null;
@@ -219,7 +224,21 @@ export default function NeshanLeafletMap({ positions, onSelectDevice, followPosi
     const map = mapRef.current;
     const L = window.L;
     if (!map || !L) return;
-    syncMarkers(L, map, positions, markersRef, onSelectDevice, animationDuration, followPosition);
+    syncMarkers(L, map, positions, markersRef, clusterMarkersRef, onSelectDevice, animationDuration, followPosition);
+
+    const refreshMarkers = () => {
+      syncMarkers(
+        L,
+        map,
+        positionsRef.current,
+        markersRef,
+        clusterMarkersRef,
+        onSelectDevice,
+        animationDuration,
+        followPosition,
+      );
+    };
+    map.on('zoomend', refreshMarkers);
 
     const followed = getFollowedPosition(positions, followPosition);
     if (followed) {
@@ -241,6 +260,10 @@ export default function NeshanLeafletMap({ positions, onSelectDevice, followPosi
         hasFitBoundsRef.current = true;
       }
     }
+
+    return () => {
+      map.off('zoomend', refreshMarkers);
+    };
   }, [positions, onSelectDevice, followPosition, animationDuration]);
 
   return (
@@ -259,8 +282,30 @@ export default function NeshanLeafletMap({ positions, onSelectDevice, followPosi
   );
 }
 
-function syncMarkers(L, map, positions, markersRef, onSelectDevice, animationDuration = 10000, followPosition = false) {
-  const visibleIds = new Set(positions.map((item) => String(item.device_id)));
+function syncMarkers(
+  L,
+  map,
+  positions,
+  markersRef,
+  clusterMarkersRef,
+  onSelectDevice,
+  animationDuration = 10000,
+  followPosition = false,
+) {
+  const validPositions = positions.filter((position) =>
+    Number.isFinite(Number(position.latitude)) &&
+    Number.isFinite(Number(position.longitude))
+  );
+  const visibleIds = new Set(validPositions.map((item) => String(item.device_id)));
+  const clusters = getDeviceClusters(map, validPositions, followPosition);
+  const individualIds = new Set(
+    clusters
+      .filter((item) => item.type === 'device')
+      .map((item) => String(item.position.device_id))
+  );
+  const clusterIds = new Set(
+    clusters.filter((item) => item.type === 'cluster').map((item) => item.id)
+  );
 
   for (const [id, marker] of markersRef.current.entries()) {
     if (!visibleIds.has(id)) {
@@ -269,34 +314,100 @@ function syncMarkers(L, map, positions, markersRef, onSelectDevice, animationDur
     }
   }
 
-  const followed = getFollowedPosition(positions, followPosition);
+  for (const [id, marker] of clusterMarkersRef.current.entries()) {
+    if (!clusterIds.has(id)) {
+      marker.remove();
+      clusterMarkersRef.current.delete(id);
+    }
+  }
 
-  positions.forEach((position) => {
-    if (!Number.isFinite(Number(position.latitude)) || !Number.isFinite(Number(position.longitude))) return;
+  const followed = getFollowedPosition(validPositions, followPosition);
+
+  validPositions.forEach((position) => {
     const id = String(position.device_id);
+    const target = [Number(position.latitude), Number(position.longitude)];
+    const shouldShow = individualIds.has(id);
     let marker = markersRef.current.get(id);
+
+    if (!marker && !shouldShow) return;
+
     const content = popupHtml(position);
     const keepCentered = Boolean(followed && String(followed.device_id) === id);
 
     if (!marker) {
-      marker = L.marker([Number(position.latitude), Number(position.longitude)], {
+      marker = L.marker(target, {
         icon: createDeviceIcon(L, position),
       }).addTo(map);
       marker.bindPopup(content);
       marker.on('click', () => onSelectDevice?.(position.device_id));
       markersRef.current.set(id, marker);
+
       if (keepCentered) {
-        animateLeafletMarker(marker, [Number(position.latitude), Number(position.longitude)], 0, {
+        animateLeafletMarker(marker, target, 0, {
           map,
           keepCentered: true,
         });
       }
-    } else {
-      animateLeafletMarker(marker, [Number(position.latitude), Number(position.longitude)], Number(position.animation_duration_ms) || animationDuration, {
-        map,
-        keepCentered,
-      });
+    } else if (!shouldShow) {
+      marker.setLatLng(target);
+      if (map.hasLayer(marker)) marker.remove();
       marker.setIcon(createDeviceIcon(L, position));
+      marker.setPopupContent(content);
+    } else {
+      if (!map.hasLayer(marker)) marker.addTo(map);
+
+      animateLeafletMarker(
+        marker,
+        target,
+        Number(position.animation_duration_ms) || animationDuration,
+        { map, keepCentered },
+      );
+      marker.setIcon(createDeviceIcon(L, position));
+      marker.setPopupContent(content);
+    }
+  });
+
+  clusters.forEach((cluster) => {
+    if (cluster.type !== 'cluster') return;
+
+    const content = `
+      <div dir="rtl" style="min-width:150px;padding:5px 8px;font-family:Tahoma,sans-serif;font-size:12px;line-height:2;color:#1f2937">
+        <strong>${cluster.total} دستگاه در این محدوده</strong>
+        <div><span style="color:#14B8A6">●</span> در حرکت: ${cluster.counts.moving}</div>
+        <div><span style="color:#F59E0B">●</span> متوقف: ${cluster.counts.stopped}</div>
+        <div><span style="color:#64748B">●</span> آفلاین: ${cluster.counts.offline}</div>
+      </div>`;
+
+    let marker = clusterMarkersRef.current.get(cluster.id);
+
+    if (!marker) {
+      marker = L.marker(
+        [cluster.latitude, cluster.longitude],
+        {
+          icon: createClusterIcon(L, cluster),
+          bubblingMouseEvents: false,
+        },
+      ).addTo(map);
+
+      marker.bindPopup(content, {
+        closeButton: false,
+        closeOnClick: true,
+        autoClose: true,
+        autoPan: false,
+        className: 'sana-cluster-popup',
+      });
+
+      marker.on('mouseover', () => marker.openPopup());
+      marker.on('mouseout', () => marker.closePopup());
+      marker.on('click', (event) => {
+        event.originalEvent?.stopPropagation();
+        marker.openPopup();
+      });
+
+      clusterMarkersRef.current.set(cluster.id, marker);
+    } else {
+      marker.setLatLng([cluster.latitude, cluster.longitude]);
+      marker.setIcon(createClusterIcon(L, cluster));
       marker.setPopupContent(content);
     }
   });

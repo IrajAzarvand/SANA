@@ -83,13 +83,11 @@ export default function Map() {
   }, [refreshIntervalSeconds]);
 
   useEffect(() => {
-    if (!positions.length) {
-      setFollowedDeviceId(null);
-      return;
-    }
     setFollowedDeviceId((current) => {
-      if (current && positions.some((item) => String(item.device_id) === String(current))) return current;
-      return positions[0].device_id;
+      if (!current) return null;
+      return positions.some((item) => String(item.device_id) === String(current))
+        ? current
+        : null;
     });
   }, [positions]);
 
