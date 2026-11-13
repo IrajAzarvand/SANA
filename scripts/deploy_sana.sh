@@ -10,6 +10,7 @@ SERVICE="sana-backend-production.service"
 DEPLOY_USER="$(id -un)"
 
 SWITCHED=0
+RELEASE_CREATED=0
 RELEASE_DIR=""
 PREVIOUS_TARGET=""
 
@@ -40,7 +41,7 @@ rollback() {
             else
                 echo "WARNING: Previous release target is unavailable."
             fi
-        elif [[ -n "$RELEASE_DIR" && -d "$RELEASE_DIR" ]]; then
+        elif [[ "$RELEASE_CREATED" -eq 1 && -n "$RELEASE_DIR" && -d "$RELEASE_DIR" ]]; then
             echo "Removing incomplete release..."
             sudo rm -rf -- "$RELEASE_DIR"
         fi
@@ -81,6 +82,7 @@ echo "Preparing release: $RELEASE_ID"
 
 sudo mkdir -p "$RELEASES_DIR"
 sudo mkdir "$RELEASE_DIR"
+RELEASE_CREATED=1
 sudo chown "$DEPLOY_USER:$DEPLOY_USER" "$RELEASE_DIR"
 
 PREVIOUS_TARGET="$(readlink -f "$CURRENT_LINK" || true)"
@@ -141,6 +143,7 @@ echo "Collecting static files..."
 run_django collectstatic --noinput
 
 echo "Activating release..."
+sudo rm -f "$APP_ROOT/current.next"
 sudo ln -s "$RELEASE_DIR" "$APP_ROOT/current.next"
 sudo mv -Tf "$APP_ROOT/current.next" "$CURRENT_LINK"
 SWITCHED=1
@@ -157,7 +160,7 @@ curl --fail --silent --show-error --max-time 15 \
     -o /dev/null || fail "Backend health check failed."
 
 echo "Checking frontend through local HTTPS..."
-curl --fail --silent --show-error --max-time 15 \
+curl --insecure --fail --silent --show-error --max-time 15 \
     --resolve "$DOMAIN:443:127.0.0.1" \
     "https://$DOMAIN/" \
     -o /dev/null || fail "Frontend health check failed."
