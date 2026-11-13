@@ -165,6 +165,10 @@ curl --insecure --fail --silent --show-error --max-time 15 \
     "https://$DOMAIN/" \
     -o /dev/null || fail "Frontend health check failed."
 
+SWITCHED=0
+
+echo "Deployment successful."
+
 echo "Pruning old releases (keeping three)..."
 mapfile -t RELEASE_NAMES < <(
     sudo find "$RELEASES_DIR" -mindepth 1 -maxdepth 1 -type d \
@@ -173,24 +177,27 @@ mapfile -t RELEASE_NAMES < <(
 
 COUNT=0
 CURRENT_NAME="$(basename "$(readlink -f "$CURRENT_LINK")")"
+PREVIOUS_NAME="$(basename "$PREVIOUS_TARGET")"
 
 for NAME in "${RELEASE_NAMES[@]}"; do
-    COUNT=$((COUNT + 1))
-    if [[ "$COUNT" -le 3 || "$NAME" == "$CURRENT_NAME" ]]; then
+    if [[ "$NAME" == "$CURRENT_NAME" || "$NAME" == "$PREVIOUS_NAME" ]]; then
+        COUNT=$((COUNT + 1))
+        continue
+    fi
+
+    if [[ "$COUNT" -lt 3 ]]; then
+        COUNT=$((COUNT + 1))
         continue
     fi
 
     TARGET="$RELEASES_DIR/$NAME"
     case "$TARGET" in
-        "$RELEASES_DIR"/20*) sudo rm -rf -- "$TARGET" ;;
-        *) fail "Refusing to remove unexpected release path: $TARGET" ;;
+        "$RELEASES_DIR"/20*) sudo rm -rf -- "$TARGET" || echo "WARNING: Could not remove $TARGET" ;;
+        *) echo "WARNING: Skipping unexpected release path: $TARGET" ;;
     esac
 done
 
-SWITCHED=0
-
 echo
-echo "Deployment successful."
 echo "Release: $RELEASE_ID"
 echo "Commit:  $COMMIT"
 echo "Current: $(readlink -f "$CURRENT_LINK")"
