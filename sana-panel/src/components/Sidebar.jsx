@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Map as MapIcon, Truck, Users, Cpu, BarChart3,
-  AlertTriangle, Settings, ChevronDown, Building2, Car, Shield, Globe,
+  AlertTriangle, Settings, ChevronDown, Building2, Shield, Globe,
   FileText, BrainCircuit,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -45,7 +45,6 @@ export default function Sidebar({ isOpen, onClose }) {
   const personalMenu = [
     { path: '/panel/dashboard',  icon: LayoutDashboard, label: 'داشبورد' },
     { path: '/panel/map',        icon: MapIcon,          label: 'نقشه' },
-    { path: '/panel/vehicles',   icon: Car,              label: 'خودروهای من' },
     { path: '/panel/devices',    icon: Cpu,               label: 'دستگاه‌های من' },
     { path: '/panel/reports',    icon: BarChart3,        label: 'گزارش‌ها', children: [{ path: '/panel/reports/trips', label: 'گزارش مسیرها' }] },
     { path: '/panel/alerts',     icon: AlertTriangle,    label: 'هشدارها', badge: 3 },
@@ -84,7 +83,7 @@ export default function Sidebar({ isOpen, onClose }) {
                         type="button"
                         aria-expanded={reportsExpanded}
                         onClick={() => setReportsExpanded((expanded) => !expanded)}
-                        className={`group flex w-full items-center gap-2.5 px-2.5 py-2.5 rounded-field text-[13px] transition-all text-right
+                        className={`group flex min-h-11 w-full items-center gap-2.5 px-2.5 py-2.5 rounded-field text-[13px] transition-all text-right
                           ${location.pathname.startsWith('/panel/reports')
                             ? 'bg-bg-hover text-text-primary font-medium'
                             : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
@@ -121,7 +120,7 @@ export default function Sidebar({ isOpen, onClose }) {
                       to={item.path}
                       onClick={onClose}
                       className={({ isActive }) =>
-                        `group flex items-center gap-2.5 px-2.5 py-2.5 rounded-field text-[13px] transition-all relative
+                        `group flex min-h-11 items-center gap-2.5 px-2.5 py-2.5 rounded-field text-[13px] transition-all relative
                          ${isActive
                            ? 'bg-bg-hover text-text-primary font-medium'
                            : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
