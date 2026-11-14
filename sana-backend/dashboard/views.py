@@ -8,7 +8,7 @@ from datetime import timedelta
 
 from accounts.models import User
 from organizations.models import Organization, Branch, Subscription
-from fleet.models import Vehicle, Device, Driver, DeviceCustomerAccessPeriod
+from fleet.models import Vehicle, Device, Driver
 from .models import SiteSettings
 
 
