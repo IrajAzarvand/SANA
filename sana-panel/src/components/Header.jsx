@@ -14,7 +14,7 @@ export default function Header({ onMenuClick }) {
       <div className="flex items-center gap-3">
         <button
           onClick={onMenuClick}
-          className="lg:hidden p-2 rounded-field text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
+          aria-label="باز کردن منو" className="lg:hidden flex min-h-11 min-w-11 items-center justify-center rounded-field text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"
         >
           <Menu size={20} />
         </button>
@@ -33,7 +33,7 @@ export default function Header({ onMenuClick }) {
           type="text"
           placeholder="جستجوی خودرو، راننده، دستگاه..."
           className="w-full bg-bg-base border border-border-base rounded-field
-                     pr-11 pl-4 py-2 text-sm text-text-primary placeholder:text-text-muted
+                     min-h-11 pr-11 pl-4 py-2 text-sm text-text-primary placeholder:text-text-muted
                      focus:outline-none focus:border-brand-500 focus:ring-2
                      focus:ring-brand-500/20 transition-all"
         />
@@ -43,7 +43,7 @@ export default function Header({ onMenuClick }) {
       <div className="flex min-w-0 items-center gap-1 sm:gap-2">
 
         {/* زنگ اعلان */}
-        <button className="relative p-2 rounded-field text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors">
+        <button aria-label="اعلان‌ها" className="relative flex min-h-11 min-w-11 items-center justify-center rounded-field text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors">
           <Bell size={20} />
           <span className="absolute top-1 right-1 w-2 h-2 bg-danger rounded-full"></span>
         </button>
@@ -52,7 +52,7 @@ export default function Header({ onMenuClick }) {
         <div className="relative">
           <button
             onClick={() => setProfileOpen(!profileOpen)}
-            className="flex items-center gap-2 p-1 pl-2 rounded-field hover:bg-bg-hover transition-colors"
+            className="flex min-h-11 items-center gap-2 p-1 pl-2 rounded-field hover:bg-bg-hover transition-colors"
           >
             <div className="w-8 h-8 rounded-full bg-brand-500 flex items-center justify-center text-bg-base font-bold text-sm">
               ا
