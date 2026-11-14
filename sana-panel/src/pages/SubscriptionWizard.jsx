@@ -9,6 +9,7 @@ import Card from '../components/Card';
 import Modal from '../components/Modal';
 import Button from '../components/Button';
 import Input from '../components/Input';
+import Select from '../components/Select';
 import Badge from '../components/Badge';
 import LoadingSpinner from '../components/LoadingSpinner';
 import AddDeviceModal from '../components/AddDeviceModal';
@@ -66,6 +67,7 @@ export default function SubscriptionWizard() {
     payments: [],
     installment_plan: {
       enabled: false,
+      saved: false,
       interval_months: 3,
       installment_count: 4,
       calculation_mode: 'equal',
@@ -231,12 +233,16 @@ export default function SubscriptionWizard() {
     }
 
     if (step === 5 && form.installment_plan?.enabled) {
+      const plan = form.installment_plan;
+      if (!plan.saved) {
+        setError('ابتدا با زدن دکمه «ثبت اقساط»، برنامه اقساط را ثبت کنید');
+        return false;
+      }
       const scheduled = parseAmountInput(form.price) - form.payments.reduce((sum, item) => sum + Number(item.amount || 0), 0);
       if (scheduled <= 0) {
         setError('پس از کسر دریافتی اولیه، مبلغی برای تقسیط باقی نمانده است');
         return false;
       }
-      const plan = form.installment_plan;
       if (!Number.isInteger(Number(plan.installment_count)) || Number(plan.installment_count) < 1 || Number(plan.installment_count) > 120) {
         setError('تعداد اقساط باید بین ۱ تا ۱۲۰ باشد');
         return false;
@@ -330,13 +336,13 @@ export default function SubscriptionWizard() {
         notes: form.notes,
         devices: form.devices,
         payments: form.payments,
-        installment_plan: form.installment_plan?.enabled ? {
+        installment_plan: form.installment_plan?.enabled && form.installment_plan?.saved ? {
           interval_months: Number(form.installment_plan.interval_months),
           installment_count: Number(form.installment_plan.installment_count),
           calculation_mode: form.installment_plan.calculation_mode,
           surplus_policy: form.installment_plan.surplus_policy,
           custom_amounts: form.installment_plan.calculation_mode === 'custom'
-            ? String(form.installment_plan.custom_amounts_text || '').split(/[،,]/).map((value) => parseAmountInput(value.trim()))
+            ? String(form.installment_plan.custom_amounts_text || '').split(/[؛;\n]/).map((value) => parseAmountInput(value.trim()))
             : [],
         } : null,
       };
@@ -422,7 +428,7 @@ export default function SubscriptionWizard() {
         )}
         {step === 3 && <Step3 form={form} updateForm={updateForm} />}
         {step === 4 && <Step4 form={form} updateForm={updateForm} />}
-        {step === 5 && <Step5 form={form} updateForm={updateForm} />}
+        {step === 5 && <Step5 form={form} updateForm={updateForm} setError={setError} />}
         {step === 6 && <Step6 form={form} />}
       </Card>
 
@@ -437,11 +443,12 @@ export default function SubscriptionWizard() {
         </Button>
 
         {step < 6 ? (
-          <Button onClick={nextStep} icon={ArrowLeft}>
+          <Button key="wizard-next-step" onClick={nextStep} icon={ArrowLeft}>
             مرحله بعد
           </Button>
         ) : (
           <Button
+            key="wizard-submit-contract"
             onClick={handleSubmit}
             disabled={saving}
             icon={Check}
@@ -1049,12 +1056,19 @@ function formatAmountInput(value) {
   return digits ? digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',') : '';
 }
 
+function formatCustomInstallmentAmounts(value) {
+  return String(value ?? '').split(/([؛;\n])/).map((part) => {
+    if (part === '؛' || part === ';' || part === '\n') return part;
+    return formatAmountInput(part);
+  }).join('');
+}
+
 function parseAmountInput(value) {
   const digits = String(value ?? '').replace(/[^0-9]/g, '');
   return digits ? Number(digits) : 0;
 }
 
-function Step5({ form, updateForm }) {
+function Step5({ form, updateForm, setError }) {
   const [payment, setPayment] = useState({
     amount: '',
     payment_date: todayGregorian(),
@@ -1064,7 +1078,10 @@ function Step5({ form, updateForm }) {
     enabled: false, interval_months: 3, installment_count: 4,
     calculation_mode: 'equal', surplus_policy: 'credit', custom_amounts_text: '',
   };
-  const updatePlan = (field, value) => updateForm('installment_plan', { ...plan, [field]: value });
+  const updatePlan = (field, value) => {
+    setError('');
+    updateForm('installment_plan', { ...plan, [field]: value, saved: false });
+  };
 
   const addPayment = () => {
     if (!payment.amount || parseAmountInput(payment.amount) <= 0) return;
@@ -1072,6 +1089,9 @@ function Step5({ form, updateForm }) {
       ...payment,
       amount: parseAmountInput(payment.amount),
     }]);
+    if (plan.enabled) {
+      updateForm('installment_plan', { ...plan, saved: false });
+    }
     setPayment({
       amount: '',
       payment_date: new Date().toISOString().split('T')[0],
@@ -1081,6 +1101,9 @@ function Step5({ form, updateForm }) {
 
   const removePayment = (idx) => {
     updateForm('payments', form.payments.filter((_, i) => i !== idx));
+    if (plan.enabled) {
+      updateForm('installment_plan', { ...plan, saved: false });
+    }
   };
 
   const totalAmount = form.payments.reduce((sum, item) => sum + Number(item.amount), 0);
@@ -1088,6 +1111,30 @@ function Step5({ form, updateForm }) {
   const count = Math.max(Number(plan.installment_count) || 1, 1);
   const equalBase = Math.floor(scheduledAmount / count);
   const equalLast = scheduledAmount - equalBase * (count - 1);
+
+  const saveInstallmentPlan = () => {
+    if (scheduledAmount <= 0) {
+      setError('پس از کسر دریافتی‌ها، مبلغی برای تقسیط باقی نمانده است');
+      return;
+    }
+    if (!Number.isInteger(Number(plan.installment_count)) || Number(plan.installment_count) < 1 || Number(plan.installment_count) > 120) {
+      setError('تعداد اقساط باید بین ۱ تا ۱۲۰ باشد');
+      return;
+    }
+    if (!Number.isInteger(Number(plan.interval_months)) || Number(plan.interval_months) < 1 || Number(plan.interval_months) > 120) {
+      setError('فاصله اقساط باید بین ۱ تا ۱۲۰ ماه باشد');
+      return;
+    }
+    if (plan.calculation_mode === 'custom') {
+      const amounts = String(plan.custom_amounts_text || '').split(/[؛;\n]/).map((value) => parseAmountInput(value.trim()));
+      if (amounts.length !== Number(plan.installment_count) || amounts.some((value) => value <= 0) || amounts.reduce((sum, value) => sum + value, 0) !== scheduledAmount) {
+        setError('مبالغ اقساط باید به تعداد اقساط وارد شوند و مجموعشان دقیقاً برابر مبلغ قابل تقسیط باشد');
+        return;
+      }
+    }
+    setError('');
+    updateForm('installment_plan', { ...plan, enabled: true, saved: true });
+  };
 
   return (
     <div className="space-y-6">
@@ -1160,8 +1207,8 @@ function Step5({ form, updateForm }) {
               <strong className="font-mono text-text-primary">{scheduledAmount.toLocaleString('fa-IR')} ریال</strong>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <Input type="number" label="تعداد اقساط" value={plan.installment_count} onChange={(e) => updatePlan('installment_count', e.target.value)} />
-              <Input type="number" label="فاصله هر قسط (ماه)" value={plan.interval_months} onChange={(e) => updatePlan('interval_months', e.target.value)} />
+              <Input type="number" min={1} max={120} step={1} label="تعداد اقساط" value={plan.installment_count} onChange={(e) => updatePlan('installment_count', e.target.value)} onBlur={(e) => updatePlan('installment_count', String(Math.min(120, Math.max(1, Math.floor(Number(e.target.value) || 1)))))} />
+              <Input type="number" min={1} max={120} step={1} label="فاصله هر قسط (ماه)" value={plan.interval_months} onChange={(e) => updatePlan('interval_months', e.target.value)} onBlur={(e) => updatePlan('interval_months', String(Math.min(120, Math.max(1, Math.floor(Number(e.target.value) || 1)))))} />
               <Select label="روش محاسبه مبلغ اقساط" value={plan.calculation_mode} onChange={(e) => updatePlan('calculation_mode', e.target.value)} options={[
                 { value: 'equal', label: 'اقساط مساوی' },
                 { value: 'custom', label: 'مبلغ دلخواه برای هر قسط' },
@@ -1172,7 +1219,7 @@ function Step5({ form, updateForm }) {
               ]} />
             </div>
             {plan.calculation_mode === 'custom' ? (
-              <Input label="مبالغ اقساط به ترتیب (با نقطه‌ویرگول جدا کنید)" value={plan.custom_amounts_text || ''} onChange={(e) => updatePlan('custom_amounts_text', e.target.value)} placeholder="مثلاً 20,000,000؛ 20,000,000؛ 40,000,000" />
+              <Input label="مبالغ اقساط به ترتیب (با نقطه‌ویرگول جدا کنید)" value={plan.custom_amounts_text || ''} onChange={(e) => updatePlan('custom_amounts_text', formatCustomInstallmentAmounts(e.target.value))} placeholder="مثلاً 20,000,000؛ 20,000,000؛ 40,000,000" />
             ) : (
               <div className="text-xs text-text-secondary bg-bg-base rounded-field p-3">
                 مبلغ هر یک از {count - 1} قسط اول: {equalBase.toLocaleString('fa-IR')} ریال
@@ -1183,6 +1230,10 @@ function Step5({ form, updateForm }) {
             <p className="text-[10px] text-text-muted leading-5">
               سررسید اولین قسط از تاریخ شروع همین قرارداد و به‌اندازه فاصله انتخاب‌شده محاسبه می‌شود؛ سررسید اقساط بعدی نیز با همان فاصله ادامه پیدا می‌کند.
             </p>
+            <div className="flex items-center justify-end gap-3">
+              {plan.saved && <span className="text-xs text-success">برنامه اقساط ثبت شده است</span>}
+              <Button type="button" onClick={saveInstallmentPlan} icon={Check} size="sm">ثبت اقساط</Button>
+            </div>
           </>
         )}
       </div>
@@ -1297,7 +1348,7 @@ function Step6({ form }) {
         </div>
       )}
 
-      {form.installment_plan?.enabled && (
+      {form.installment_plan?.enabled && form.installment_plan?.saved && (
         <div className="pt-4 border-t border-border-base space-y-3">
           <h4 className="text-xs font-medium text-text-muted">برنامه اقساط</h4>
           <div className="grid grid-cols-2 gap-3 text-sm">

@@ -6,49 +6,6 @@ from django.db import migrations, models
 from django.utils import timezone
 
 
-def backfill_device_history(apps, schema_editor):
-    Device = apps.get_model('fleet', 'Device')
-    DeviceOwnershipHistory = apps.get_model('fleet', 'DeviceOwnershipHistory')
-    DeviceCustomerAccessPeriod = apps.get_model('fleet', 'DeviceCustomerAccessPeriod')
-
-    for device in Device.objects.all().iterator():
-        organization_id = device.organization_id or device.current_holder_organization_id
-        user_id = device.owner_user_id or device.current_holder_user_id
-
-        if organization_id:
-            DeviceOwnershipHistory.objects.get_or_create(
-                device_id=device.id,
-                ended_at__isnull=True,
-                defaults={
-                    'organization_id': organization_id,
-                    'owner_user_id': None,
-                    'reason': 'migration',
-                },
-            )
-        elif user_id:
-            DeviceOwnershipHistory.objects.get_or_create(
-                device_id=device.id,
-                ended_at__isnull=True,
-                defaults={
-                    'organization_id': None,
-                    'owner_user_id': user_id,
-                    'reason': 'migration',
-                },
-            )
-
-        active_link = device.subscription_links.filter(unassigned_at__isnull=True).first()
-        if (organization_id or user_id) and device.management_status not in {'warehouse', 'disposed'}:
-            DeviceCustomerAccessPeriod.objects.get_or_create(
-                device_id=device.id,
-                ended_at__isnull=True,
-                defaults={
-                    'organization_id': organization_id,
-                    'user_id': None if organization_id else user_id,
-                    'subscription_id': active_link.subscription_id if active_link else None,
-                    'branch_id': device.branch_id,
-                    'reason': 'migration',
-                },
-            )
 
 
 class Migration(migrations.Migration):
@@ -523,7 +480,6 @@ class Migration(migrations.Migration):
                 name='device_access_one_customer',
             ),
         ),
-        migrations.RunPython(backfill_device_history, migrations.RunPython.noop),
         migrations.RenameIndex(
             model_name='devicecustomeraccessperiod',
             new_name='fleet_devic_device__208b12_idx',

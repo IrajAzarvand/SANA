@@ -1,5 +1,15 @@
-from django.db import migrations, models
+# Squashed fleet migrations 0003 through 0015.
+#
+# Fresh installations get the final fleet schema directly. Historical GPS
+# telemetry tables and temporary free-text device fields are intentionally
+# absent. Existing databases that have applied the replaced migrations are
+# recognized by Django and do not rerun this migration.
+#
+# Keep the replaced migration files until every deployed database has crossed
+# this migration boundary; Django uses them for partially migrated databases.
 
+import django.db.models.deletion
+from django.db import migrations, models
 
 SOURCE_URL = "https://www.traccar.org/devices/"
 TRACCAR_VERSION = "6.16.0"
@@ -224,12 +234,56 @@ def unseed_catalog(apps, schema_editor):
         ).delete()
 
 
+
 class Migration(migrations.Migration):
     dependencies = [
-        ("fleet", "0011_remove_device_brand_model_name"),
+        ("fleet", "0002_initial"),
     ]
 
     operations = [
+        migrations.CreateModel(
+            name="DriverVehicleAssignment",
+            fields=[
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("started_at", models.DateTimeField(verbose_name="شروع تخصیص")),
+                ("ended_at", models.DateTimeField(blank=True, null=True, verbose_name="پایان تخصیص")),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("driver", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="vehicle_assignments", to="fleet.driver", verbose_name="راننده")),
+                ("vehicle", models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name="driver_assignments", to="fleet.vehicle", verbose_name="خودرو")),
+            ],
+            options={
+                "verbose_name": "تخصیص راننده به خودرو",
+                "verbose_name_plural": "تخصیص‌های راننده به خودرو",
+                "ordering": ["-started_at", "-id"],
+                "indexes": [
+                    models.Index(fields=["driver", "started_at", "ended_at"], name="fleet_drive_driver__66f323_idx"),
+                    models.Index(fields=["vehicle", "started_at", "ended_at"], name="fleet_drive_vehicle_1a6d4e_idx"),
+                ],
+            },
+        ),
+        migrations.AlterField(
+            model_name="device",
+            name="device_model",
+            field=models.ForeignKey(
+                blank=True,
+                null=True,
+                on_delete=django.db.models.deletion.SET_NULL,
+                related_name="devices",
+                to="fleet.devicemodel",
+                verbose_name="مدل دستگاه",
+            ),
+        ),
+        migrations.AddField(
+            model_name="device",
+            name="protocol",
+            field=models.CharField(blank=True, default="", max_length=50, verbose_name="پروتکل گزارش‌شده توسط Traccar",
+                help_text="از فیلد protocol آخرین موقعیت دریافت‌شده از Traccar به‌روزرسانی می‌شود."),
+        ),
+        migrations.AlterField(
+            model_name='devicelifecycleevent',
+            name='event_type',
+            field=models.CharField(choices=[('received', 'دریافت در سانا'), ('sold', 'فروش'), ('assigned_to_contract', 'اتصال به قرارداد'), ('removed_from_contract', 'خروج از قرارداد'), ('returned', 'بازگشت به سانا'), ('sent_to_repair', 'ارسال برای تعمیر'), ('repaired', 'اتمام تعمیر'), ('replaced', 'تعویض'), ('transferred', 'انتقال'), ('lost', 'گم\u200cشدن'), ('found', 'پیدا شدن'), ('disposition', 'تعیین تکلیف'), ('stolen', 'سرقت'), ('retired', 'بازنشستگی'), ('disposed', 'امحاء')], max_length=30, verbose_name='نوع رویداد'),
+        ),
         migrations.AddField(
             model_name="devicemodel",
             name="port",
@@ -256,6 +310,11 @@ class Migration(migrations.Migration):
                 fields=("manufacturer", "name", "traccar_version"),
                 name="fleet_dmodel_brand_ver_uniq",
             ),
+        ),
+        migrations.AlterField(
+            model_name="devicemodel",
+            name="protocol",
+            field=models.CharField(max_length=50, verbose_name="پروتکل Traccar"),
         ),
         migrations.RunPython(seed_catalog, unseed_catalog),
     ]

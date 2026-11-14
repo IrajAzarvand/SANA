@@ -85,6 +85,12 @@ die() {
     exit 1
 }
 
+# Run Django commands against the exact database being rebuilt.
+run_manage() {
+    DB_NAME="$DB_NAME" DB_USER="$DB_OWNER" \
+        "$PYTHON" "$MANAGE" "$@"
+}
+
 # Ensure the Traccar credentials are available to both the GPS worker and Django.
 # Secrets are written only to the root-owned /etc/sana-gps.env, never committed here.
 TRACCAR_ENV_FILE="/etc/sana-gps.env"
@@ -111,7 +117,29 @@ configure_traccar_credentials() {
     fi
 
     local username password
-    echo "برای اتصال Backend به Traccar، مشخصات حساب را وارد کن."
+    local existing_username existing_password
+    local existing_gps_username existing_gps_password
+
+    existing_username="$(read_env_value TRACCAR_API_USERNAME)"
+    existing_password="$(read_env_value TRACCAR_API_PASSWORD)"
+    existing_gps_username="$(read_env_value SANA_GPS_TRACCAR_API_USERNAME)"
+    existing_gps_password="$(read_env_value SANA_GPS_TRACCAR_API_PASSWORD)"
+
+    if [[ -n "$existing_username" && -n "$existing_password" &&
+          -n "$existing_gps_username" && -n "$existing_gps_password" ]]; then
+        if ! sudo test -f "$BACKEND_ENV_DROPIN"; then
+            sudo install -d -o root -g root -m 755 "$(dirname "$BACKEND_ENV_DROPIN")"
+            printf '[Service]\\nEnvironmentFile=%s\\n' "$TRACCAR_ENV_FILE" \
+                | sudo tee "$BACKEND_ENV_DROPIN" >/dev/null
+            sudo chown root:root "$BACKEND_ENV_DROPIN"
+            sudo chmod 644 "$BACKEND_ENV_DROPIN"
+            sudo systemctl daemon-reload
+        fi
+        echo "✅ تنظیمات Traccar موجود و کامل هستند؛ مقادیر محرمانه حفظ شدند."
+        return
+    fi
+
+    echo "تنظیمات Traccar کامل نیست؛ برای تکمیل آن مشخصات حساب را وارد کن."
     read -r -p "نام کاربری Traccar: " username
     [[ -n "$username" ]] || die "نام کاربری Traccar نمی‌تواند خالی باشد."
     read -r -s -p "رمز عبور Traccar: " password
@@ -174,10 +202,9 @@ command -v systemctl >/dev/null || die "systemctl پیدا نشد."
 # 0000_roles.sql پیش از migrationهای Django اجرا می‌شود. پس از آن فقط یک
 # schema SQL رسمی اجرا می‌شود که جدول‌های Neshan Map Matching را می‌سازد و
 # ساختارهای خام/تاریخچه GPS قدیمی را باقی نمی‌گذارد.
-# Migration تجمیعی fleet (0003_squashed_0015_traccar_authoritative) مسیر نصب تازه را
-# مستقیماً به schema نهایی می‌رساند و جدول‌های telemetry قدیمی را ایجاد نمی‌کند.
-# Migrationهای جایگزین‌شده برای تشخیص دیتابیس‌های قدیمی/نیمه‌ارتقایافته حفظ می‌شوند؛
-# Django فقط در صورت نیاز از زنجیره تاریخی آن‌ها استفاده خواهد کرد.
+# زنجیره migration فعلی fleet شامل 0001_initial، 0002_initial و
+# 0003_current_state است. نصب تازه باید همین graph واقعی را اجرا کند.
+# جدول‌های GPS خارج از migrationهای Django و با SQL رسمی پایین ساخته می‌شوند.
 SQL_FILES=(
     "0001_traccar_authoritative_schema.sql"
 )
@@ -281,22 +308,22 @@ echo "✅ نقش sana_user و schema پایه آماده شدند."
 # ۶. اجرای migrationهای Django؛ Django وابستگی‌ها را از graph واقعی می‌خواند.
 step "۶/۱۲ - اجرای migrationهای Django"
 cd "$BACKEND"
-"$PYTHON" "$MANAGE" migrate --noinput
+run_manage migrate --noinput
 echo "✅ اجرای migrationها کامل شد."
 
 # پرکردن کاتالوگ مدل‌های قابل انتخاب Traccar بعد از ساخت جدول‌ها و پیش از آزمون نهایی.
 # در صورت شکست دریافت یا ذخیره کاتالوگ، set -e مانع ادامه بازسازی و راه‌اندازی سرویس‌ها می‌شود.
 step "۷/۱۲ - پرکردن کاتالوگ مدل‌های Traccar"
 cd "$BACKEND"
-"$PYTHON" "$MANAGE" sync_traccar_device_catalog
+run_manage sync_traccar_device_catalog
 echo "✅ کاتالوگ مدل‌های Traccar همگام شد."
 
 # ۶. بررسی Django و وضعیت migrationها
 step "۸/۱۲ - آزمون تنظیمات Django"
 
-"$PYTHON" "$MANAGE" check
+run_manage check
 
-"$PYTHON" "$MANAGE" makemigrations --check --dry-run
+run_manage makemigrations --check --dry-run
 
 echo "✅ بررسی Django موفق بود."
 
@@ -324,7 +351,9 @@ step "۱۰/۱۲ - آزمون اتصال دیتابیس و migrationها"
 cd "$BACKEND"
 
 EXPECTED_DB="$DB_NAME" EXPECTED_USER="$DB_OWNER" \
-"$PYTHON" "$MANAGE" shell -c '
+TRACCAR_API_USERNAME="$(read_env_value TRACCAR_API_USERNAME)" \
+TRACCAR_API_PASSWORD="$(read_env_value TRACCAR_API_PASSWORD)" \
+run_manage shell -c '
 import os
 from django.db import connection
 from django.db.migrations.loader import MigrationLoader
@@ -343,9 +372,8 @@ unapplied_leaves = [
 assert not unapplied_leaves, f"Unapplied migration leaves: {unapplied_leaves}"
 print("Django migration leaves:", sorted(loader.graph.leaf_nodes()))
 if not settings.TRACCAR_API_USERNAME or not settings.TRACCAR_API_PASSWORD:
-    print("WARNING: TRACCAR_API_USERNAME/PASSWORD are not configured; live map and reports will return 503.")
-else:
-    print("Traccar API credentials are configured for the Django backend.")
+    raise AssertionError("Traccar API credentials are not configured for the Django backend.")
+print("Traccar API credentials are configured for the Django backend.")
 
 with connection.cursor() as cursor:
     cursor.execute("SELECT current_database(), current_user")
@@ -358,7 +386,21 @@ with connection.cursor() as cursor:
     cursor.execute("SELECT postgis_full_version()")
     print("PostGIS:", cursor.fetchone()[0])
 
-print("✅ Database connection, Django migration state and PostGIS passed.")
+    cursor.execute(
+        "SELECT to_regclass(%s), to_regclass(%s), to_regclass(%s)",
+        (
+            "gps.map_matched_position",
+            "gps.map_matching_watchers",
+            "gps.current_state",
+        ),
+    )
+    matched_table, watchers_table, legacy_current_state = cursor.fetchone()
+    assert matched_table is not None, "gps.map_matched_position is missing"
+    assert watchers_table is not None, "gps.map_matching_watchers is missing"
+    assert legacy_current_state is None, "Legacy gps.current_state must not exist"
+    print("GPS schema: map-matched tables exist; legacy current_state is absent.")
+
+print("✅ Database connection, Django migrations, PostGIS, Traccar credentials and GPS schema passed.")
 '
 
 echo "✅ اتصال دیتابیس و وضعیت migrationها تأیید شدند."
@@ -369,7 +411,7 @@ step "۱۱/۱۲ - ساخت سوپریوزر سایت"
 echo "نام کاربری و رمز عبور حساب مدیر سایت را در پرسش‌های Django وارد کن."
 echo "رمز در فایل اسکریپت یا گزارش ذخیره نمی‌شود."
 
-"$PYTHON" "$MANAGE" createsuperuser
+run_manage createsuperuser
 
 echo "✅ مرحله ساخت سوپریوزر پایان یافت."
 
