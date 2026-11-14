@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react';
 import {
-  Activity, ArrowLeft, Bell, Clock3, Cpu, FileBarChart,
+  Activity, ArrowLeft, Clock3, Cpu, FileBarChart,
   MapPinned, ShieldAlert, Wifi, WifiOff,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -108,7 +108,7 @@ function PersonalDashboard() {
         <Card><ErrorState error={devicesError} onRetry={refetchDevices} /></Card>
       ) : (
         <>
-          <section aria-label="خلاصه دستگاه‌ها" className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <section aria-label="خلاصه دستگاه‌ها" className="grid min-w-0 grid-cols-2 gap-3 xl:grid-cols-4">
             <StatCard title="دستگاه‌های من" value={devices.length.toLocaleString('fa-IR')} icon={Cpu} color="brand" />
             <StatCard title="دارای مجوز سرویس GPS" value={activeCount.toLocaleString('fa-IR')} icon={Wifi} color="success" />
             <StatCard title="نیازمند بررسی" value={attentionCount.toLocaleString('fa-IR')} icon={ShieldAlert} color={attentionCount ? 'warning' : 'muted'} />
@@ -141,6 +141,7 @@ function PersonalDashboard() {
                           <Badge variant={device.data_active ? 'success' : 'muted'}>
                             {device.data_active ? 'سرویس فعال' : 'سرویس غیرفعال'}
                           </Badge>
+                          <span className="text-[11px] text-text-muted">{managementLabels[device.management_status] || 'وضعیت نامشخص'}</span>
                         </div>
                         <p className="mt-1 truncate text-xs text-text-secondary">
                           {device.vehicle_plate ? `خودرو: ${device.vehicle_plate}` : (device.device_model_name || device.traccar_model || 'مدل نامشخص')}
