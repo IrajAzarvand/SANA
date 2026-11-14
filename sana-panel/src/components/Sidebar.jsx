@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Map as MapIcon, Truck, Users, Cpu, BarChart3,
-  AlertTriangle, Settings, ChevronDown, Building2, Car, Shield, Globe,
+  AlertTriangle, Settings, ChevronDown, Building2, Shield, Globe,
   FileText, BrainCircuit,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
