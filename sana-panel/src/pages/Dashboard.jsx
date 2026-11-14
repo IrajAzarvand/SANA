@@ -71,6 +71,90 @@ function CustomerDashboard() {
   const isDevicesOffline = (deviceStatus.disconnected || 0) + (deviceStatus.lost || 0) + (deviceStatus.stolen || 0);
   const isDevicesFaulty = deviceStatus.faulty || 0;
 
+  if (isPersonal) {
+    const totalDevices = Number(stats?.devices || 0);
+    const activeDevices = Number(isDevicesActive || 0);
+    const offlineDevices = Number(isDevicesOffline || 0);
+    const faultyDevices = Number(isDevicesFaulty || 0);
+
+    return (
+      <div className="space-y-5 sm:space-y-6">
+        <PageHeader title="داشبورد شخصی" subtitle="نمای کلی دستگاه‌ها و وضعیت اشتراک شما" />
+        {stats?.current_subscription?.is_expiring_soon && (
+          <div className="flex items-start gap-3 rounded-card border border-warning/30 bg-warning/10 p-4">
+            <AlertTriangle size={20} className="mt-0.5 shrink-0 text-warning" />
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-warning">اشتراک شما به‌زودی منقضی می‌شود</h2>
+              <p className="mt-1 text-xs leading-6 text-text-secondary">
+                قرارداد <span className="mx-1 font-mono">{stats.current_subscription.contract_number}</span>
+                تا {stats.current_subscription.days_until_expiry} روز دیگر اعتبار دارد.
+              </p>
+            </div>
+          </div>
+        )}
+
+        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <StatCard title="دستگاه‌های من" value={totalDevices} icon={Cpu} color="brand" />
+          <StatCard title="دستگاه‌های فعال" value={activeDevices} icon={Navigation} color="success" />
+          <StatCard title="دستگاه‌های آفلاین" value={offlineDevices} icon={WifiOff} color="muted" />
+          <StatCard title="دستگاه‌های نیازمند بررسی" value={faultyDevices} icon={AlertTriangle} color="danger" />
+        </section>
+
+        <section className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+          <Card title="وضعیت دستگاه‌ها" subtitle="بر اساس آخرین وضعیت ثبت‌شده در سامانه" className="lg:col-span-3">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-text-secondary">فعال و در دسترس</span>
+                <strong className="font-mono text-success">{activeDevices}</strong>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-bg-hover">
+                <div className="h-full rounded-full bg-success" style={{ width: totalDevices ? `${Math.min(100, activeDevices / totalDevices * 100)}%` : '0%' }} />
+              </div>
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-text-secondary">آفلاین یا قطع ارتباط</span>
+                <strong className="font-mono text-text-primary">{offlineDevices}</strong>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-bg-hover">
+                <div className="h-full rounded-full bg-text-muted" style={{ width: totalDevices ? `${Math.min(100, offlineDevices / totalDevices * 100)}%` : '0%' }} />
+              </div>
+              <div className="flex items-center justify-between gap-3 text-sm">
+                <span className="text-text-secondary">خراب</span>
+                <strong className="font-mono text-danger">{faultyDevices}</strong>
+              </div>
+            </div>
+          </Card>
+
+          <Card title="دسترسی سریع" subtitle="مدیریت و مشاهده اطلاعات" className="lg:col-span-2">
+            <div className="grid grid-cols-1 gap-2">
+              <Link to="/panel/devices" className="flex min-h-12 items-center justify-between rounded-field border border-border-base px-3 py-3 text-sm text-text-primary transition-colors hover:bg-bg-hover">
+                <span className="flex items-center gap-2"><Cpu size={17} className="text-brand-500" /> مشاهده دستگاه‌های من</span>
+                <span aria-hidden="true">←</span>
+              </Link>
+              <Link to="/panel/map" className="flex min-h-12 items-center justify-between rounded-field border border-border-base px-3 py-3 text-sm text-text-primary transition-colors hover:bg-bg-hover">
+                <span className="flex items-center gap-2"><Navigation size={17} className="text-brand-500" /> مشاهده نقشه زنده</span>
+                <span aria-hidden="true">←</span>
+              </Link>
+              <Link to="/panel/reports/trips" className="flex min-h-12 items-center justify-between rounded-field border border-border-base px-3 py-3 text-sm text-text-primary transition-colors hover:bg-bg-hover">
+                <span className="flex items-center gap-2"><Truck size={17} className="text-brand-500" /> گزارش مسیرها</span>
+                <span aria-hidden="true">←</span>
+              </Link>
+            </div>
+          </Card>
+        </section>
+
+        {stats?.current_subscription && (
+          <Card title="اشتراک من" subtitle="اطلاعات قرارداد فعال">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div><div className="text-xs text-text-muted">شماره قرارداد</div><div className="mt-1 break-all font-mono text-sm text-text-primary">{stats.current_subscription.contract_number}</div></div>
+              <div><div className="text-xs text-text-muted">تاریخ پایان</div><div className="mt-1 text-sm text-text-primary">{stats.current_subscription.end_date || '—'}</div></div>
+              <div><div className="text-xs text-text-muted">روزهای باقی‌مانده</div><div className="mt-1 text-sm font-semibold text-text-primary">{stats.current_subscription.days_until_expiry ?? '—'}</div></div>
+            </div>
+          </Card>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
 
