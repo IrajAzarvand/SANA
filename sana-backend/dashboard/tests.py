@@ -154,3 +154,79 @@ class AdminDashboardOverviewTests(TestCase):
         self.assertEqual(response.data['fleet']['warehouse'], 1)
         self.assertEqual(response.data['fleet']['devices_by_management_status']['warehouse'], 1)
         self.assertEqual(response.data['contracts']['active_devices'], 1)
+
+
+
+class PersonalDashboardDeviceAccessTests(TestCase):
+    def setUp(self):
+        from fleet.models import Device, DeviceCustomerAccessPeriod
+
+        self.client = APIClient()
+        self.member = User.objects.create_user(
+            username='personal_dashboard_member',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        self.other_member = User.objects.create_user(
+            username='personal_dashboard_other',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        self.Device = Device
+        self.DeviceCustomerAccessPeriod = DeviceCustomerAccessPeriod
+
+    def test_personal_dashboard_counts_current_access_periods_not_device_ownership(self):
+        from django.utils import timezone
+        from datetime import timedelta
+
+        accessible_device = self.Device.objects.create(
+            imei='860000000000101',
+            management_status='active',
+            owner_user=self.other_member,
+        )
+        self.DeviceCustomerAccessPeriod.objects.create(
+            device=accessible_device,
+            user=self.member,
+            started_at=timezone.now() - timedelta(days=1),
+        )
+
+        owned_but_not_accessible = self.Device.objects.create(
+            imei='860000000000102',
+            management_status='faulty',
+            owner_user=self.member,
+        )
+        self.DeviceCustomerAccessPeriod.objects.create(
+            device=owned_but_not_accessible,
+            user=self.other_member,
+            started_at=timezone.now() - timedelta(days=1),
+        )
+
+        ended_device = self.Device.objects.create(
+            imei='860000000000103',
+            management_status='disconnected',
+        )
+        self.DeviceCustomerAccessPeriod.objects.create(
+            device=ended_device,
+            user=self.member,
+            started_at=timezone.now() - timedelta(days=3),
+            ended_at=timezone.now() - timedelta(days=1),
+        )
+
+        future_device = self.Device.objects.create(
+            imei='860000000000104',
+            management_status='installed',
+        )
+        self.DeviceCustomerAccessPeriod.objects.create(
+            device=future_device,
+            user=self.member,
+            started_at=timezone.now() + timedelta(days=1),
+        )
+
+        self.client.force_authenticate(user=self.member)
+        response = self.client.get('/api/dashboard/stats/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['devices'], 1)
+        self.assertEqual(response.data['devices_by_status'], {'active': 1})
