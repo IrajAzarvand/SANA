@@ -8,7 +8,7 @@ from datetime import timedelta
 
 from accounts.models import User
 from organizations.models import Organization, Branch, Subscription
-from fleet.models import Vehicle, Device, Driver
+from fleet.models import Vehicle, Device, Driver, DeviceCustomerAccessPeriod
 from .models import SiteSettings
 
 
@@ -110,6 +110,12 @@ class DashboardStatsView(APIView):
         # مشتری شخصی
         if user.is_personal_user:
             subscriptions = Subscription.objects.filter(user=user)
+            now = timezone.now()
+            accessible_devices = Device.objects.filter(
+                customer_access_periods__user=user,
+                customer_access_periods__started_at__lte=now,
+                customer_access_periods__ended_at__isnull=True,
+            ).distinct()
             active_sub = subscriptions.filter(
                 status='active',
                 end_date__gte=today,
@@ -117,7 +123,7 @@ class DashboardStatsView(APIView):
 
             return Response({
                 'vehicles': Vehicle.objects.filter(owner_user=user).count(),
-                'devices': Device.objects.filter(owner_user=user).count(),
+                'devices': accessible_devices.count(),
                 'subscriptions_total': subscriptions.count(),
                 'current_subscription': {
                     'contract_number': active_sub.contract_number,
@@ -125,7 +131,7 @@ class DashboardStatsView(APIView):
                     'days_until_expiry': active_sub.days_until_expiry,
                     'is_expiring_soon': active_sub.is_expiring_soon,
                 } if active_sub else None,
-                'devices_by_status': self.get_devices_by_status(owner=user),
+                'devices_by_status': self.get_devices_by_status(access_user=user),
                 'vehicles_by_status': self.get_vehicles_by_status(owner=user),
             })
 
@@ -134,7 +140,7 @@ class DashboardStatsView(APIView):
             'devices': 0,
         })
 
-    def get_devices_by_status(self, org=None, branch=None, owner=None):
+    def get_devices_by_status(self, org=None, branch=None, owner=None, access_user=None):
         qs = Device.objects.all()
         if org:
             qs = qs.filter(organization_id=org)
@@ -142,8 +148,15 @@ class DashboardStatsView(APIView):
             qs = qs.filter(branch_id=branch)
         if owner:
             qs = qs.filter(owner_user=owner)
+        if access_user:
+            now = timezone.now()
+            qs = qs.filter(
+                customer_access_periods__user=access_user,
+                customer_access_periods__started_at__lte=now,
+                customer_access_periods__ended_at__isnull=True,
+            ).distinct()
 
-        result = qs.values('management_status').annotate(count=Count('id'))
+        result = qs.values('management_status').annotate(count=Count('id', distinct=True))
         return {item['management_status']: item['count'] for item in result}
 
     def get_vehicles_by_status(self, org=None, branch=None, owner=None):
