@@ -45,7 +45,6 @@ export default function Sidebar({ isOpen, onClose }) {
   const personalMenu = [
     { path: '/panel/dashboard',  icon: LayoutDashboard, label: 'داشبورد' },
     { path: '/panel/map',        icon: MapIcon,          label: 'نقشه' },
-    { path: '/panel/vehicles',   icon: Car,              label: 'خودروهای من' },
     { path: '/panel/devices',    icon: Cpu,               label: 'دستگاه‌های من' },
     { path: '/panel/reports',    icon: BarChart3,        label: 'گزارش‌ها', children: [{ path: '/panel/reports/trips', label: 'گزارش مسیرها' }] },
     { path: '/panel/alerts',     icon: AlertTriangle,    label: 'هشدارها', badge: 3 },
