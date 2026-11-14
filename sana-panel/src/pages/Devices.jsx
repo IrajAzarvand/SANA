@@ -89,13 +89,14 @@ const managementStatusMap = {
 };
 
 export default function Devices() {
+  const { isPersonal } = useAuth();
   return (
     <div className="space-y-4">
       <header className="flex shrink-0 items-center gap-3">
         <div className="min-w-0">
-          <h1 className="text-base font-semibold text-text-primary sm:text-lg">دستگاه‌ها</h1>
+          <h1 className="text-base font-semibold text-text-primary sm:text-lg">{isPersonal ? "دستگاه‌های من" : "دستگاه‌ها"}</h1>
           <p className="mt-0.5 text-[11px] text-text-muted sm:text-xs">
-            ثبت، جستجو و مدیریت دستگاه‌های GPS
+            {isPersonal ? 'فهرست دستگاه‌های اختصاص‌یافته به حساب شما و وضعیت واقعی دریافت GPS' : 'ثبت، جستجو و مدیریت دستگاه‌های GPS'}
           </p>
         </div>
       </header>
