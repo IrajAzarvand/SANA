@@ -14,6 +14,7 @@ import { useAuth } from '../context/AuthContext';
 import { dashboardAPI } from '../api/services/dashboard';
 import { useApi } from '../hooks/useApi';
 import AdminDashboard from './AdminDashboard';
+import PersonalDashboard from './PersonalDashboard';
 
 // داده‌ی Mock نمودار (تا وقتی Ingestion Server راه بیفته)
 import { movementData, recentAlerts, recentTrips, movingVehicles } from '../data/mockData';
@@ -312,6 +313,8 @@ function CustomerDashboard() {
 }
 
 export default function Dashboard() {
-  const { isSiteAdmin } = useAuth();
-  return isSiteAdmin ? <AdminDashboard /> : <CustomerDashboard />;
+  const { isSiteAdmin, isPersonal } = useAuth();
+  if (isSiteAdmin) return <AdminDashboard />;
+  if (isPersonal) return <PersonalDashboard />;
+  return <CustomerDashboard />;
 }
