@@ -53,7 +53,7 @@ export default function App() {
 
             {/* خودروها */}
             <Route path="vehicles" element={
-              <ProtectedRoute allowRoles={['main_user', 'branch_manager', 'personal_user']}>
+              <ProtectedRoute allowRoles={['main_user', 'branch_manager']}>
                 <Vehicles />
               </ProtectedRoute>
             } />
