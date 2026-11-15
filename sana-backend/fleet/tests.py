@@ -9,6 +9,7 @@ from django.utils.dateparse import parse_datetime
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from accounts.models import User
+from organizations.models import Subscription, SubscriptionDevice
 from .models import Device, DeviceCustomerAccessPeriod
 from types import SimpleNamespace
 
@@ -587,3 +588,35 @@ class PersonalDeviceAccessQueryTests(TestCase):
         visible_ids = set(view.get_queryset().values_list('id', flat=True))
 
         self.assertEqual(visible_ids, {active.id, ending_later.id})
+
+    def test_personal_device_list_includes_current_active_contract_links_without_access_period(self):
+        today = timezone.localdate()
+        device = Device.objects.create(
+            imei='860000000000106',
+            management_status='sold',
+        )
+        subscription = Subscription.objects.create(
+            contract_number='PERSONAL-ACCESS-TEST-001',
+            customer_type='personal',
+            user=self.user,
+            start_date=today - timedelta(days=1),
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=today - timedelta(days=1),
+            end_date=today + timedelta(days=30),
+        )
+
+        request = APIRequestFactory().get('/api/devices/')
+        force_authenticate(request, user=self.user)
+        view = DeviceViewSet()
+        view.action_map = {'get': 'list'}
+        view.request = view.initialize_request(request)
+
+        visible_ids = set(view.get_queryset().values_list('id', flat=True))
+
+        self.assertEqual(visible_ids, {device.id})
+        self.assertFalse(DeviceCustomerAccessPeriod.objects.filter(device=device).exists())
