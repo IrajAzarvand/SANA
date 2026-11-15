@@ -620,3 +620,56 @@ class PersonalDeviceAccessQueryTests(TestCase):
 
         self.assertEqual(visible_ids, {device.id})
         self.assertFalse(DeviceCustomerAccessPeriod.objects.filter(device=device).exists())
+
+
+    def test_personal_report_history_accepts_current_contract_link_without_access_period(self):
+        today = timezone.localdate()
+        device = Device.objects.create(
+            imei='860000000000107',
+            management_status='sold',
+        )
+        subscription = Subscription.objects.create(
+            contract_number='PERSONAL-REPORT-TEST-001',
+            customer_type='personal',
+            user=self.user,
+            start_date=today - timedelta(days=2),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=today - timedelta(days=1),
+            end_date=today + timedelta(days=20),
+        )
+
+        request = APIRequestFactory().get(
+            '/api/devices/report-history/',
+            {'device_id': str(device.pk), 'metadata': 'true'},
+        )
+        force_authenticate(request, user=self.user)
+        response = DeviceViewSet.as_view({'get': 'report_history'})(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNotNone(response.data['range_start'])
+        self.assertIsNotNone(response.data['range_end'])
+        self.assertFalse(response.data['unrestricted'])
+
+    def test_personal_report_history_accepts_current_access_period_without_contract_link(self):
+        device = self.make_device(
+            '860000000000108',
+            self.user,
+            self.now - timedelta(days=3),
+        )
+
+        request = APIRequestFactory().get(
+            '/api/devices/report-history/',
+            {'device_id': str(device.pk), 'metadata': 'true'},
+        )
+        force_authenticate(request, user=self.user)
+        response = DeviceViewSet.as_view({'get': 'report_history'})(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNotNone(response.data['range_start'])
+        self.assertIsNotNone(response.data['range_end'])
+        self.assertFalse(response.data['unrestricted'])
