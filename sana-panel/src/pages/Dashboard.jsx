@@ -95,23 +95,23 @@ function CustomerDashboard() {
 
         <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard title="دستگاه‌های من" value={totalDevices} icon={Cpu} color="brand" />
-          <StatCard title="دستگاه‌های فعال" value={activeDevices} icon={Navigation} color="success" />
-          <StatCard title="دستگاه‌های آفلاین" value={offlineDevices} icon={WifiOff} color="muted" />
+          <StatCard title="دستگاه‌های نصب‌شده یا فعال" value={activeDevices} icon={Navigation} color="success" />
+          <StatCard title="قطع سرویس، مفقود یا سرقت‌شده" value={offlineDevices} icon={WifiOff} color="muted" />
           <StatCard title="دستگاه‌های نیازمند بررسی" value={faultyDevices} icon={AlertTriangle} color="danger" />
         </section>
 
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-          <Card title="وضعیت دستگاه‌ها" subtitle="بر اساس آخرین وضعیت ثبت‌شده در سامانه" className="lg:col-span-3">
+          <Card title="وضعیت مدیریتی دستگاه‌ها" subtitle="بر اساس آخرین وضعیت ثبت‌شده در سامانه" className="lg:col-span-3">
             <div className="space-y-4">
               <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="text-text-secondary">فعال و در دسترس</span>
+                <span className="text-text-secondary">نصب‌شده یا فعال</span>
                 <strong className="font-mono text-success">{activeDevices}</strong>
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-bg-hover">
                 <div className="h-full rounded-full bg-success" style={{ width: totalDevices ? `${Math.min(100, activeDevices / totalDevices * 100)}%` : '0%' }} />
               </div>
               <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="text-text-secondary">آفلاین یا قطع ارتباط</span>
+                <span className="text-text-secondary">قطع سرویس، مفقود یا سرقت‌شده</span>
                 <strong className="font-mono text-text-primary">{offlineDevices}</strong>
               </div>
               <div className="h-2 overflow-hidden rounded-full bg-bg-hover">
