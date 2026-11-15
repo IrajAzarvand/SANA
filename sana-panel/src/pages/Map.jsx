@@ -115,7 +115,7 @@ export default function Map() {
         </div>
       )}
 
-      <section className="relative flex min-h-[480px] flex-1 flex-col overflow-hidden rounded-2xl border border-border-base bg-bg-elevated shadow-sm sm:min-h-[540px]">
+      <section className="relative isolate z-0 flex min-h-[480px] flex-1 flex-col overflow-hidden rounded-2xl border border-border-base bg-bg-elevated shadow-sm sm:min-h-[540px]">
         <div className="absolute inset-0">
           <LiveDeviceMap
             positions={positions}
