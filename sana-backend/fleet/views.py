@@ -489,6 +489,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
 
         range_start = range_end = None
         if not request.user.is_site_admin:
+            now = timezone.now()
+            today = timezone.localdate()
             links = list(
                 SubscriptionDevice.objects.filter(
                     device=device,
@@ -497,42 +499,80 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 ).select_related('subscription').order_by('-start_date', '-id')
             )
             access_query = DeviceCustomerAccessPeriod.objects.filter(
-                device=device, ended_at__isnull=True,
+                device=device,
+                started_at__lte=now,
+            ).filter(
+                Q(ended_at__isnull=True) | Q(ended_at__gte=now)
             )
+
             if request.user.is_personal_user:
-                access_query = access_query.filter(user=request.user)
-                links = [link for link in links if link.subscription.user_id == request.user.pk]
-            elif request.user.is_branch_manager:
-                access_query = access_query.filter(
-                    organization_id=request.user.organization_id,
-                    branch_id=request.user.branch_id,
-                )
-                links = [
+                # Personal device visibility is granted by either a current
+                # customer-access period or a current active contract link.
+                # Report authorization must follow the same rule as get_queryset().
+                access = access_query.filter(user=request.user).order_by('-started_at').first()
+                personal_links = [
                     link for link in links
-                    if link.subscription.organization_id == request.user.organization_id
+                    if link.subscription.user_id == request.user.pk
+                    and link.subscription.status == 'active'
+                    and link.start_date <= today <= link.end_date
+                    and link.subscription.start_date <= today <= link.subscription.end_date
                 ]
-            elif request.user.is_main_user:
-                access_query = access_query.filter(organization_id=request.user.organization_id)
-                links = [
-                    link for link in links
-                    if link.subscription.organization_id == request.user.organization_id
-                ]
+                link = personal_links[0] if personal_links else None
+
+                if link is None and access is None:
+                    return Response({'detail': 'برای این دستگاه قرارداد و دسترسی فعال پیدا نشد.'}, status=403)
+
+                allowed_starts = []
+                allowed_ends = []
+                if link is not None:
+                    contract_start = timezone.make_aware(datetime.combine(
+                        max(link.start_date, link.subscription.start_date),
+                        datetime_time.min,
+                    ))
+                    contract_end = timezone.make_aware(datetime.combine(
+                        min(link.end_date, link.subscription.end_date),
+                        datetime_time.max,
+                    ))
+                    allowed_starts.append(contract_start)
+                    allowed_ends.append(contract_end)
+                if access is not None:
+                    allowed_starts.append(access.started_at)
+                    allowed_ends.append(access.ended_at or now)
+
+                range_start = max(allowed_starts)
+                range_end = min(allowed_ends)
             else:
-                links = []
+                if request.user.is_branch_manager:
+                    access_query = access_query.filter(
+                        organization_id=request.user.organization_id,
+                        branch_id=request.user.branch_id,
+                    )
+                    links = [
+                        link for link in links
+                        if link.subscription.organization_id == request.user.organization_id
+                    ]
+                elif request.user.is_main_user:
+                    access_query = access_query.filter(organization_id=request.user.organization_id)
+                    links = [
+                        link for link in links
+                        if link.subscription.organization_id == request.user.organization_id
+                    ]
+                else:
+                    links = []
 
-            access = access_query.order_by('-started_at').first()
-            if not links or access is None:
-                return Response({'detail': 'برای این دستگاه قرارداد و دسترسی فعال پیدا نشد.'}, status=403)
+                access = access_query.order_by('-started_at').first()
+                if not links or access is None:
+                    return Response({'detail': 'برای این دستگاه قرارداد و دسترسی فعال پیدا نشد.'}, status=403)
 
-            link = links[0]
-            start_date = max(link.start_date, link.subscription.start_date, timezone.localdate(access.started_at))
-            end_date = min(link.end_date, link.subscription.end_date)
-            if access.ended_at:
-                end_date = min(end_date, timezone.localdate(access.ended_at))
-            contract_start = timezone.make_aware(datetime.combine(start_date, datetime_time.min))
-            contract_end = timezone.make_aware(datetime.combine(end_date, datetime_time.max))
-            range_start = max(contract_start, access.started_at)
-            range_end = min(contract_end, access.ended_at) if access.ended_at else contract_end
+                link = links[0]
+                start_date = max(link.start_date, link.subscription.start_date, timezone.localdate(access.started_at))
+                end_date = min(link.end_date, link.subscription.end_date)
+                if access.ended_at:
+                    end_date = min(end_date, timezone.localdate(access.ended_at))
+                contract_start = timezone.make_aware(datetime.combine(start_date, datetime_time.min))
+                contract_end = timezone.make_aware(datetime.combine(end_date, datetime_time.max))
+                range_start = max(contract_start, access.started_at)
+                range_end = min(contract_end, access.ended_at) if access.ended_at else contract_end
 
         if request.query_params.get('metadata') == 'true':
             return Response({
