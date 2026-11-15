@@ -253,7 +253,15 @@ class DeviceViewSet(viewsets.ModelViewSet):
         elif user.is_branch_manager and user.branch:
             qs = qs.filter(customer_access_periods__organization=user.organization, customer_access_periods__branch=user.branch, customer_access_periods__ended_at__isnull=True).distinct()
         elif user.is_personal_user:
-            qs = qs.filter(customer_access_periods__user=user, customer_access_periods__ended_at__isnull=True).distinct()
+            now = timezone.now()
+            active_access = DeviceCustomerAccessPeriod.objects.filter(
+                device=OuterRef('pk'),
+                user=user,
+                started_at__lte=now,
+            ).filter(
+                Q(ended_at__isnull=True) | Q(ended_at__gte=now)
+            )
+            qs = qs.filter(Exists(active_access))
         else:
             qs = qs.none()
 
