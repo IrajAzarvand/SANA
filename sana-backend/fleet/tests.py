@@ -1,11 +1,15 @@
-from datetime import date
+from datetime import date, timedelta
 from types import SimpleNamespace
 from urllib.error import HTTPError, URLError
 from unittest.mock import MagicMock, patch
 
-from django.test import SimpleTestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
+from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework.test import APIRequestFactory, force_authenticate
+
+from accounts.models import User
+from .models import Device, DeviceCustomerAccessPeriod
 from types import SimpleNamespace
 
 from .traccar_api import TraccarAPIError, traccar_device_positions, traccar_devices
@@ -513,3 +517,73 @@ class ReportHistoryRequestSecurityTests(SimpleTestCase):
         response = DeviceViewSet.as_view({"get": "report_history"})(request)
 
         self.assertEqual(response.status_code, 400)
+
+
+
+class PersonalDeviceAccessQueryTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='personal_device_access',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        self.other_user = User.objects.create_user(
+            username='other_personal_device_access',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        self.now = timezone.now()
+
+    def make_device(self, imei, user, started_at, ended_at=None):
+        device = Device.objects.create(
+            imei=imei,
+            management_status='active',
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            user=user,
+            started_at=started_at,
+            ended_at=ended_at,
+        )
+        return device
+
+    def test_personal_device_list_contains_only_current_access_periods(self):
+        active = self.make_device(
+            '860000000000101',
+            self.user,
+            self.now - timedelta(days=1),
+        )
+        ending_later = self.make_device(
+            '860000000000102',
+            self.user,
+            self.now - timedelta(days=2),
+            self.now + timedelta(days=1),
+        )
+        self.make_device(
+            '860000000000103',
+            self.user,
+            self.now + timedelta(days=1),
+        )
+        self.make_device(
+            '860000000000104',
+            self.user,
+            self.now - timedelta(days=2),
+            self.now - timedelta(seconds=1),
+        )
+        self.make_device(
+            '860000000000105',
+            self.other_user,
+            self.now - timedelta(days=1),
+        )
+
+        request = APIRequestFactory().get('/api/devices/')
+        force_authenticate(request, user=self.user)
+        view = DeviceViewSet()
+        view.action = 'list'
+        view.request = view.initialize_request(request)
+
+        visible_ids = set(view.get_queryset().values_list('id', flat=True))
+
+        self.assertEqual(visible_ids, {active.id, ending_later.id})
