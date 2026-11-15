@@ -5,14 +5,14 @@
 DO $roles$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'sana_user') THEN
-        EXECUTE 'CREATE ROLE sana_user LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT';
+        EXECUTE 'CREATE ROLE sana_user LOGIN NOSUPERUSER CREATEDB NOCREATEROLE INHERIT';
     END IF;
 END
 $roles$;
 
 -- Normalize the single application role. Its password is set during local/server
 -- provisioning, not embedded in version-controlled SQL.
-ALTER ROLE sana_user LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT;
+ALTER ROLE sana_user LOGIN NOSUPERUSER CREATEDB NOCREATEROLE INHERIT;
 
 DO $dbgrant$
 BEGIN
