@@ -2,12 +2,12 @@ from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
-from django.db.models import Count, Q
+from django.db.models import Count, Exists, OuterRef, Q
 from django.utils import timezone
 from datetime import timedelta
 
 from accounts.models import User
-from organizations.models import Organization, Branch, Subscription
+from organizations.models import Organization, Branch, Subscription, SubscriptionDevice
 from fleet.models import Vehicle, Device, Driver, DeviceCustomerAccessPeriod
 from .models import SiteSettings
 
@@ -110,13 +110,24 @@ class DashboardStatsView(APIView):
         # مشتری شخصی
         if user.is_personal_user:
             now = timezone.now()
-            accessible_device_ids = DeviceCustomerAccessPeriod.objects.filter(
+            active_access = DeviceCustomerAccessPeriod.objects.filter(
+                device=OuterRef('pk'),
                 user=user,
                 started_at__lte=now,
             ).filter(
                 Q(ended_at__isnull=True) | Q(ended_at__gte=now)
-            ).values_list('device_id', flat=True).distinct()
-            personal_devices = Device.objects.filter(pk__in=accessible_device_ids)
+            )
+            active_contract_link = SubscriptionDevice.objects.filter(
+                device=OuterRef('pk'),
+                subscription__user=user,
+                subscription__status='active',
+                unassigned_at__isnull=True,
+                start_date__lte=today,
+                end_date__gte=today,
+            )
+            personal_devices = Device.objects.filter(
+                Q(Exists(active_access)) | Q(Exists(active_contract_link))
+            )
             subscriptions = Subscription.objects.filter(user=user)
             active_sub = subscriptions.filter(
                 status='active',
@@ -152,13 +163,25 @@ class DashboardStatsView(APIView):
             qs = qs.filter(owner_user=owner)
         if access_user:
             now = timezone.now()
-            accessible_ids = DeviceCustomerAccessPeriod.objects.filter(
+            today = timezone.localdate()
+            active_access = DeviceCustomerAccessPeriod.objects.filter(
+                device=OuterRef('pk'),
                 user=access_user,
                 started_at__lte=now,
             ).filter(
                 Q(ended_at__isnull=True) | Q(ended_at__gte=now)
-            ).values_list('device_id', flat=True).distinct()
-            qs = qs.filter(pk__in=accessible_ids)
+            )
+            active_contract_link = SubscriptionDevice.objects.filter(
+                device=OuterRef('pk'),
+                subscription__user=access_user,
+                subscription__status='active',
+                unassigned_at__isnull=True,
+                start_date__lte=today,
+                end_date__gte=today,
+            )
+            qs = qs.filter(
+                Q(Exists(active_access)) | Q(Exists(active_contract_link))
+            )
 
         result = qs.values('management_status').annotate(count=Count('id'))
         return {item['management_status']: item['count'] for item in result}
