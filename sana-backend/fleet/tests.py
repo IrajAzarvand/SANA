@@ -581,7 +581,7 @@ class PersonalDeviceAccessQueryTests(TestCase):
         request = APIRequestFactory().get('/api/devices/')
         force_authenticate(request, user=self.user)
         view = DeviceViewSet()
-        view.action = 'list'
+        view.action_map = {'get': 'list'}
         view.request = view.initialize_request(request)
 
         visible_ids = set(view.get_queryset().values_list('id', flat=True))
