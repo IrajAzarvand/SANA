@@ -512,6 +512,21 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
   };
 
   const attributes = currentPoint?.attributes && typeof currentPoint.attributes === 'object' ? currentPoint.attributes : {};
+  const localToday = new Date();
+  const todayDate = `${localToday.getFullYear()}-${String(localToday.getMonth() + 1).padStart(2, '0')}-${String(localToday.getDate()).padStart(2, '0')}`;
+  const allowedStartDate = !isSiteAdmin && metadata?.range_start
+    ? datePart(dateTimeLocal(metadata.range_start))
+    : null;
+  const metadataEndDate = !isSiteAdmin && metadata?.range_end
+    ? datePart(dateTimeLocal(metadata.range_end))
+    : todayDate;
+  const allowedEndDate = !isSiteAdmin
+    ? (metadataEndDate < todayDate ? metadataEndDate : todayDate)
+    : null;
+  const selectedStartDate = datePart(from);
+  const endPickerMinDate = allowedStartDate && selectedStartDate
+    ? (selectedStartDate > allowedStartDate ? selectedStartDate : allowedStartDate)
+    : selectedStartDate || allowedStartDate;
 
 
   return (
@@ -588,8 +603,8 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
               }}
               minTime={!isSiteAdmin && metadata?.range_start && datePart(from) === datePart(dateTimeLocal(metadata.range_start)) ? timePart(dateTimeLocal(metadata.range_start)) : null}
               maxTime={!isSiteAdmin && metadata?.range_end && datePart(from) === datePart(dateTimeLocal(metadata.range_end)) ? timePart(dateTimeLocal(metadata.range_end)) : null}
-              minDate={!isSiteAdmin && metadata?.range_start ? datePart(dateTimeLocal(metadata.range_start)) : null}
-              maxDate={!isSiteAdmin && metadata?.range_end ? datePart(dateTimeLocal(metadata.range_end)) : null}
+              minDate={allowedStartDate}
+              maxDate={allowedEndDate}
               placeholder="انتخاب تاریخ و ساعت شروع"
               className="[&>div>input]:!py-2"
             />
@@ -614,8 +629,8 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
               }}
               minTime={!isSiteAdmin && metadata?.range_start && datePart(to) === datePart(dateTimeLocal(metadata.range_start)) ? timePart(dateTimeLocal(metadata.range_start)) : null}
               maxTime={!isSiteAdmin && metadata?.range_end && datePart(to) === datePart(dateTimeLocal(metadata.range_end)) ? timePart(dateTimeLocal(metadata.range_end)) : null}
-              minDate={!isSiteAdmin && metadata?.range_start ? datePart(dateTimeLocal(metadata.range_start)) : null}
-              maxDate={!isSiteAdmin && metadata?.range_end ? datePart(dateTimeLocal(metadata.range_end)) : null}
+              minDate={endPickerMinDate}
+              maxDate={allowedEndDate}
               placeholder="انتخاب تاریخ و ساعت پایان"
               className="[&>div>input]:!py-2"
             />
