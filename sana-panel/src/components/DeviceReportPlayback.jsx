@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { formatJalaliDateTime } from '../utils/dateUtils';
 import { Activity, CalendarClock, ChevronLeft, ChevronRight, CircleAlert, Clock3, Download, Gauge, Play, Search, SkipBack, SkipForward, Zap } from 'lucide-react';
 import apiClient from '../api/client';
 import { TRACCAR_ATTRIBUTE_LABELS as attributeLabels } from '../utils/traccarAttributes';
@@ -31,7 +32,7 @@ const toApiDate = (value) => {
   const date = parseLocalDateTime(value);
   return date ? date.toISOString() : ''; 
 };
-const formatDate = (value) => value ? new Date(value).toLocaleString('fa-IR') : '—';
+const formatDate = (value) => value ? formatJalaliDateTime(value) : '—';
 const formatNumeric = (value, maximumFractionDigits = 2) => {
   if (value === null || value === undefined || value === '') return '—';
   const numeric = Number(value);
