@@ -10,7 +10,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from accounts.models import User
 from organizations.models import Subscription, SubscriptionDevice
-from .models import Device, DeviceCustomerAccessPeriod
+from .models import Device, DeviceCustomerAccessPeriod, DeviceLifecycleEvent
 from types import SimpleNamespace
 
 from .traccar_api import TraccarAPIError, traccar_device_positions, traccar_devices
@@ -673,3 +673,89 @@ class PersonalDeviceAccessQueryTests(TestCase):
         self.assertIsNotNone(response.data['range_start'])
         self.assertIsNotNone(response.data['range_end'])
         self.assertFalse(response.data['unrestricted'])
+
+
+class PersonalLifecycleEventAccessTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='personal_lifecycle_access',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        self.other_user = User.objects.create_user(
+            username='other_personal_lifecycle_access',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        self.today = timezone.localdate()
+        self.now = timezone.now()
+
+    def make_contract_event(self, *, user, imei, event_date=None):
+        device = Device.objects.create(
+            imei=imei,
+            management_status='sold',
+        )
+        subscription = Subscription.objects.create(
+            contract_number=f'PERSONAL-LIFECYCLE-{imei[-4:]}',
+            customer_type='personal',
+            user=user,
+            start_date=self.today - timedelta(days=2),
+            end_date=self.today + timedelta(days=20),
+            status='active',
+        )
+        link = SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=self.today - timedelta(days=1),
+            end_date=self.today + timedelta(days=20),
+        )
+        event = DeviceLifecycleEvent.objects.create(
+            device=device,
+            event_type='assigned_to_contract',
+            event_date=event_date or self.now,
+            subscription=subscription,
+        )
+        return device, link, event
+
+    def get_visible_event_ids(self, user):
+        request = APIRequestFactory().get('/api/device-lifecycle-events/')
+        force_authenticate(request, user=user)
+        view = DeviceLifecycleEventViewSet()
+        view.action_map = {'get': 'list'}
+        view.request = view.initialize_request(request)
+        return set(view.get_queryset().values_list('id', flat=True))
+
+    def test_personal_user_sees_events_for_contract_link_without_access_period(self):
+        _, _, event = self.make_contract_event(
+            user=self.user,
+            imei='860000000000201',
+        )
+
+        self.assertFalse(
+            DeviceCustomerAccessPeriod.objects.filter(device=event.device).exists()
+        )
+        self.assertEqual(self.get_visible_event_ids(self.user), {event.id})
+
+    def test_personal_user_cannot_see_another_users_contract_events(self):
+        _, _, own_event = self.make_contract_event(
+            user=self.user,
+            imei='860000000000202',
+        )
+        self.make_contract_event(
+            user=self.other_user,
+            imei='860000000000203',
+        )
+
+        self.assertEqual(self.get_visible_event_ids(self.user), {own_event.id})
+
+    def test_contract_event_is_hidden_after_device_assignment_ended(self):
+        _, link, event = self.make_contract_event(
+            user=self.user,
+            imei='860000000000204',
+        )
+        link.unassigned_at = self.now - timedelta(minutes=1)
+        link.save(update_fields=['unassigned_at'])
+
+        self.assertEqual(self.get_visible_event_ids(self.user), set())
