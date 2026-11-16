@@ -820,6 +820,7 @@ function Step3({ form, updateForm }) {
         <JalaliDatePicker
           label="تاریخ شروع"
           value={form.start_date}
+          maxDate={todayGregorian()}
           onChange={(val) => updateForm('start_date', val)}
           required
         />
@@ -827,6 +828,7 @@ function Step3({ form, updateForm }) {
           label="تاریخ پایان"
           value={form.end_date}
           minDate={form.start_date || null}
+          maxDate={todayGregorian()}
           onChange={(val) => updateForm('end_date', val)}
           required
         />
@@ -900,7 +902,11 @@ function Step4({ form, updateForm }) {
 
   const updateDeviceDates = (deviceId, key, value) => {
     updateForm('devices', form.devices.map((d) =>
-      d.device_id === deviceId ? { ...d, [key]: value } : d
+      d.device_id === deviceId
+        ? key === 'start_date'
+          ? { ...d, start_date: value, end_date: d.end_date && value && d.end_date < value ? '' : d.end_date }
+          : { ...d, [key]: value }
+        : d
     ));
   };
 
@@ -1019,14 +1025,14 @@ function Step4({ form, updateForm }) {
                         label="تاریخ شروع دستگاه"
                         value={selectedData.start_date}
                         minDate={form.start_date}
-                        maxDate={form.end_date}
+                        maxDate={form.end_date && form.end_date < todayGregorian() ? form.end_date : todayGregorian()}
                         onChange={(val) => updateDeviceDates(device.id, 'start_date', val)}
                       />
                       <JalaliDatePicker
                         label="تاریخ پایان دستگاه"
                         value={selectedData.end_date}
-                        minDate={form.start_date}
-                        maxDate={form.end_date}
+                        minDate={selectedData.start_date || form.start_date}
+                        maxDate={form.end_date && form.end_date < todayGregorian() ? form.end_date : todayGregorian()}
                         onChange={(val) => updateDeviceDates(device.id, 'end_date', val)}
                       />
                     </div>
