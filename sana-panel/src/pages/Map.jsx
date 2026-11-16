@@ -144,13 +144,6 @@ export default function Map() {
     };
   }, [refreshIntervalSeconds, refreshKey]);
 
-  useEffect(() => {
-    if (!followedDeviceId) return;
-    if (!positions.some((item) => String(item.device_id) === String(followedDeviceId))) {
-      setFollowedDeviceId(null);
-    }
-  }, [positions, followedDeviceId]);
-
   const counts = useMemo(() => positions.reduce((result, item) => {
     result.total += 1;
     if (Object.prototype.hasOwnProperty.call(result, item.status)) result[item.status] += 1;
@@ -169,8 +162,12 @@ export default function Map() {
     });
   }, [positions, search, statusFilter]);
 
-  const selectedDevice = positions.find(
+  const activeFollowedDeviceId = positions.some(
     (item) => String(item.device_id) === String(followedDeviceId),
+  ) ? followedDeviceId : null;
+
+  const selectedDevice = positions.find(
+    (item) => String(item.device_id) === String(activeFollowedDeviceId),
   );
 
   const selectDevice = (id) => {
@@ -219,7 +216,7 @@ export default function Map() {
           <LiveDeviceMap
             positions={positions}
             provider={mapProvider}
-            followPosition={followedDeviceId || false}
+            followPosition={activeFollowedDeviceId || false}
             onSelectDevice={setFollowedDeviceId}
             animationDuration={refreshIntervalSeconds * 1000}
           />
@@ -241,7 +238,7 @@ export default function Map() {
             <div className="absolute right-2 top-[126px] z-[1000] hidden w-[276px] bottom-[72px] flex-col overflow-hidden rounded-xl border border-white/10 bg-bg-elevated/95 shadow-xl backdrop-blur-md lg:flex">
               <DeviceList
                 devices={filteredDevices}
-                selectedId={followedDeviceId}
+                selectedId={activeFollowedDeviceId}
                 search={search}
                 setSearch={setSearch}
                 statusFilter={statusFilter}
@@ -265,7 +262,7 @@ export default function Map() {
               <div className="absolute inset-x-2 bottom-[68px] top-[172px] z-[1000] flex flex-col overflow-hidden rounded-xl border border-white/10 bg-bg-elevated/95 shadow-xl backdrop-blur-md lg:hidden">
                 <DeviceList
                   devices={filteredDevices}
-                  selectedId={followedDeviceId}
+                  selectedId={activeFollowedDeviceId}
                   search={search}
                   setSearch={setSearch}
                   statusFilter={statusFilter}
