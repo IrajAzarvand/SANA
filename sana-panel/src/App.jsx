@@ -81,7 +81,7 @@ export default function App() {
             } />
 
             <Route path="subscriptions/:id" element={
-              <ProtectedRoute allowRoles={['site_admin']}>
+              <ProtectedRoute allowRoles={['site_admin', 'personal_user']}>
                 <SubscriptionDetail />
               </ProtectedRoute>
             } />
