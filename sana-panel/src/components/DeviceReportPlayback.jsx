@@ -282,7 +282,6 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
     setHasUnmatchedCoordinates(false);
     setPoints([]);
     setPointIndex(0);
-    setProgress(0);
     try {
       const allPoints = [];
       let cursor = null;
@@ -369,8 +368,8 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
     if (!points.length) return null;
     let distanceKm = 0;
     for (let index = 1; index < points.length; index += 1) {
-      const previousTime = new Date(points[index - 1].device_time).getTime();
-      const currentTime = new Date(points[index].device_time).getTime();
+      const previousTime = new Date(points[index - 1].server_received_at).getTime();
+      const currentTime = new Date(points[index].server_received_at).getTime();
       const elapsedHours = (currentTime - previousTime) / 3600000;
       if (!Number.isFinite(elapsedHours) || elapsedHours <= 0 || elapsedHours > (10 / 60)) continue;
       const segmentKm = distanceBetween(points[index - 1], points[index]);
@@ -380,8 +379,8 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
       .map((point) => Number(point.speed)).filter(Number.isFinite);
     const movingPoints = points.filter((point) => point.motion === true
       || (point.motion == null && Number(point.speed) >= 3)).length;
-    const start = new Date(points[0].device_time).getTime();
-    const end = new Date(points[points.length - 1].device_time).getTime();
+    const start = new Date(points[0].server_received_at).getTime();
+    const end = new Date(points[points.length - 1].server_received_at).getTime();
     return {
       distanceKm,
       maxSpeed: speeds.length ? speeds.reduce((maximum, value) => Math.max(maximum, value), -Infinity) : null,
@@ -442,7 +441,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
       if (moving && !wasMoving) trips += 1;
       wasMoving = moving;
       if (!moving) {
-        if (!activeStop) activeStop = { start: point.device_time, end: point.device_time, points: 0 };
+        if (!activeStop) activeStop = { start: point.server_received_at, end: point.device_time, points: 0 };
         activeStop.end = point.device_time;
         activeStop.points += 1;
       } else {
@@ -693,7 +692,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
             <div className="mb-1 text-[10px] font-semibold text-text-muted">اطلاعات نقطه انتخاب‌شده</div>
             <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-text-primary">
               <span>سرعت: <b>{showValue(currentPoint.speed, ' km/h', 1)}</b></span>
-              <span>زمان: <b>{formatDate(currentPoint.device_time)}</b></span>
+              <span>زمان: <b>{formatDate(currentPoint.server_received_at)}</b></span>
               <span>GPS: <b>{currentPoint.gps_valid ? 'معتبر' : 'نامعتبر'}</b></span>
               <span>ماهواره: <b>{showValue(currentPoint.satellites, '', 0)}</b></span>
             </div>
