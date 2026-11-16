@@ -10,10 +10,10 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from accounts.models import User
 from organizations.models import Subscription, SubscriptionDevice
-from .models import Device, DeviceCustomerAccessPeriod, DeviceLifecycleEvent
+from .models import Device, DeviceAlertState, DeviceCustomerAccessPeriod, DeviceLifecycleEvent
 from types import SimpleNamespace
 
-from .traccar_api import TraccarAPIError, traccar_device_positions, traccar_devices
+from .traccar_api import TraccarAPIError, traccar_device_events, traccar_device_positions, traccar_devices
 from .views import (
     DeviceViewSet,
     DeviceLifecycleEventViewSet,
@@ -74,6 +74,24 @@ class TraccarAPIClientTests(SimpleTestCase):
 
         self.assertEqual(result["id"], 42)
         self.assertIn("uniqueId=860000000000107", urlopen.call_args.args[0].full_url)
+
+    @patch("fleet.traccar_api.urlopen")
+    def test_events_request_uses_device_and_time_range(self, urlopen):
+        response = MagicMock()
+        response.read.return_value = b'[{"id": 9, "type": "deviceOffline"}]'
+        response.__enter__.return_value = response
+        urlopen.return_value = response
+
+        result = traccar_device_events(
+            42, "2026-11-01T00:00:00Z", "2026-11-02T00:00:00Z"
+        )
+
+        url = urlopen.call_args.args[0].full_url
+        self.assertIn("/reports/events?", url)
+        self.assertIn("deviceId=42", url)
+        self.assertIn("from=2026-11-01T00%3A00%3A00Z", url)
+        self.assertIn("to=2026-11-02T00%3A00%3A00Z", url)
+        self.assertEqual(result[0]["type"], "deviceOffline")
 
     @patch("fleet.traccar_api.urlopen")
     def test_history_request_includes_server_side_limit(self, urlopen):
