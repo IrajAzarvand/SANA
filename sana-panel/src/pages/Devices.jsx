@@ -768,10 +768,10 @@ function PersonalDevicesView({ devices, onOpenHistory, deviceHistoryId, onCloseH
     () => new Map(positions.map((item) => [Number(item.device_id), item])),
     [positions],
   );
-  const getGpsStatus = (device) => {
+  const getGpsStatus = useCallback((device) => {
     if (gpsAvailable === false) return 'unknown';
     return positionByDevice.get(Number(device.id))?.status || 'unknown';
-  };
+  }, [gpsAvailable, positionByDevice]);
 
   const counts = useMemo(() => {
     const values = devices.map(getGpsStatus);
@@ -782,7 +782,7 @@ function PersonalDevicesView({ devices, onOpenHistory, deviceHistoryId, onCloseH
       stopped: values.filter((value) => value === 'stopped').length,
       offline: values.filter((value) => value === 'offline').length,
     };
-  }, [devices, positions, gpsAvailable, positionByDevice]);
+  }, [devices, getGpsStatus]);
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -796,7 +796,7 @@ function PersonalDevicesView({ devices, onOpenHistory, deviceHistoryId, onCloseH
       if (statusFilter && getGpsStatus(device) !== statusFilter) return false;
       return true;
     });
-  }, [devices, search, statusFilter, positions, gpsAvailable, positionByDevice]);
+  }, [devices, search, statusFilter, getGpsStatus]);
 
   const statusOptions = [
     { value: '', label: 'همه وضعیت‌ها' },
