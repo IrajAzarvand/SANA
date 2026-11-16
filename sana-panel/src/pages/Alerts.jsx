@@ -283,54 +283,115 @@ function LegacyAlerts() {
 }
 
 const personalEventTypes = {
-  deviceOffline: { label: 'قطع ارتباط', icon: '📡', severity: 'warning', message: 'ارتباط دستگاه قطع شد' },
-  deviceOnline: { label: 'اتصال مجدد', icon: '🟢', severity: 'info', message: 'ارتباط دستگاه برقرار شد' },
-  alarm: { label: 'هشدار دستگاه', icon: '🆘', severity: 'critical', message: 'هشدار توسط دستگاه ثبت شد' },
-  overspeed: { label: 'سرعت غیرمجاز', icon: '⚡', severity: 'critical', message: 'هشدار سرعت غیرمجاز ثبت شد' },
-  geofenceEnter: { label: 'ورود به محدوده', icon: '📍', severity: 'warning', message: 'خودرو وارد محدوده شد' },
-  geofenceExit: { label: 'خروج از محدوده', icon: '📍', severity: 'warning', message: 'خودرو از محدوده خارج شد' },
-  ignitionOn: { label: 'روشن شدن خودرو', icon: '🔑', severity: 'info', message: 'سوئیچ خودرو روشن شد' },
-  ignitionOff: { label: 'خاموش شدن خودرو', icon: '🔑', severity: 'info', message: 'سوئیچ خودرو خاموش شد' },
+  commandResult: { label: 'نتیجه اجرای فرمان', icon: '🧾', severity: 'info', message: 'نتیجه اجرای فرمان دستگاه دریافت شد' },
+  deviceOnline: { label: 'اتصال مجدد دستگاه', icon: '🟢', severity: 'info', message: 'ارتباط دستگاه برقرار شد' },
+  deviceUnknown: { label: 'وضعیت ارتباط نامشخص', icon: '❔', severity: 'warning', message: 'وضعیت ارتباط دستگاه نامشخص است' },
+  deviceOffline: { label: 'قطع ارتباط دستگاه', icon: '📡', severity: 'warning', message: 'ارتباط دستگاه قطع شد' },
+  deviceInactive: { label: 'عدم فعالیت دستگاه', icon: '⚠️', severity: 'warning', message: 'دستگاه برای مدت طولانی موقعیتی ارسال نکرده است' },
+  queuedCommandSent: { label: 'ارسال فرمان در صف', icon: '📤', severity: 'info', message: 'فرمان در صف ارسال به دستگاه قرار گرفت' },
   deviceMoving: { label: 'شروع حرکت', icon: '🚗', severity: 'info', message: 'حرکت خودرو آغاز شد' },
   deviceStopped: { label: 'توقف خودرو', icon: '🛑', severity: 'info', message: 'خودرو متوقف شد' },
+  deviceOverspeed: { label: 'سرعت غیرمجاز', icon: '⚡', severity: 'critical', message: 'سرعت خودرو از حد مجاز عبور کرد' },
+  overspeed: { label: 'سرعت غیرمجاز', icon: '⚡', severity: 'critical', message: 'هشدار سرعت غیرمجاز ثبت شد' },
+  deviceFuelDrop: { label: 'کاهش ناگهانی سوخت', icon: '⛽', severity: 'warning', message: 'کاهش ناگهانی سطح سوخت تشخیص داده شد' },
+  deviceFuelIncrease: { label: 'افزایش ناگهانی سوخت', icon: '⛽', severity: 'info', message: 'افزایش ناگهانی سطح سوخت تشخیص داده شد' },
+  geofenceEnter: { label: 'ورود به محدوده', icon: '📍', severity: 'info', message: 'خودرو وارد محدوده جغرافیایی شد' },
+  geofenceExit: { label: 'خروج از محدوده', icon: '📍', severity: 'warning', message: 'خودرو از محدوده جغرافیایی خارج شد' },
+  geofenceCrossed: { label: 'عبور از محدوده', icon: '🗺️', severity: 'warning', message: 'خودرو از مرز محدوده جغرافیایی عبور کرد' },
+  proximityEnter: { label: 'ورود به محدوده نزدیکی', icon: '↔️', severity: 'info', message: 'دستگاه به دستگاه مرتبط نزدیک شد' },
+  proximityExit: { label: 'خروج از محدوده نزدیکی', icon: '↔️', severity: 'warning', message: 'دستگاه از دستگاه مرتبط دور شد' },
+  unaccompaniedMotion: { label: 'حرکت بدون همراه', icon: '🚨', severity: 'warning', message: 'حرکت دستگاه بدون حضور دستگاه همراه تشخیص داده شد' },
+  alarm: { label: 'هشدار دستگاه', icon: '🆘', severity: 'critical', message: 'هشدار توسط خود دستگاه ارسال شد' },
+  ignitionOn: { label: 'روشن شدن سوئیچ', icon: '🔑', severity: 'info', message: 'سوئیچ خودرو روشن شد' },
+  ignitionOff: { label: 'خاموش شدن سوئیچ', icon: '🔑', severity: 'info', message: 'سوئیچ خودرو خاموش شد' },
+  maintenance: { label: 'یادآوری سرویس', icon: '🛠️', severity: 'warning', message: 'موعد سرویس دوره‌ای فرا رسیده است' },
+  driverChanged: { label: 'تغییر راننده', icon: '👤', severity: 'info', message: 'راننده دستگاه تغییر کرد' },
+  media: { label: 'رسانه جدید', icon: '📷', severity: 'info', message: 'رسانه‌ای از دستگاه دریافت شد' },
 };
 
 const alarmLabels = {
+  general: 'هشدار عمومی',
   sos: 'دکمه اضطراری',
-  powerCut: 'قطع برق اصلی',
-  lowBattery: 'باتری ضعیف',
-  lowPower: 'ولتاژ پایین',
-  tampering: 'دست‌کاری دستگاه',
   vibration: 'لرزش',
+  movement: 'حرکت غیرمجاز',
+  lowspeed: 'سرعت پایین',
+  overspeed: 'سرعت غیرمجاز',
+  fallDown: 'سقوط',
+  lowPower: 'ولتاژ برق پایین',
+  lowBattery: 'باتری ضعیف',
+  fault: 'خطای دستگاه',
+  powerOff: 'خاموشی برق',
+  powerOn: 'وصل شدن برق',
+  door: 'باز شدن در',
+  lock: 'قفل شدن',
+  unlock: 'باز شدن قفل',
+  geofence: 'هشدار محدوده جغرافیایی',
+  geofenceEnter: 'ورود به محدوده',
+  geofenceExit: 'خروج از محدوده',
+  gpsAntennaCut: 'قطع آنتن GPS',
   accident: 'تصادف',
   tow: 'یدک‌کش شدن',
-  jamming: 'اختلال سیگنال',
-  door: 'باز شدن در',
+  idle: 'درجا کار کردن موتور',
+  highRpm: 'دور موتور بالا',
+  hardAcceleration: 'شتاب‌گیری شدید',
+  hardBraking: 'ترمز شدید',
+  hardCornering: 'پیچیدن شدید',
+  laneChange: 'تغییر ناگهانی خط',
+  fatigueDriving: 'خستگی راننده',
+  powerCut: 'قطع برق اصلی',
+  powerRestored: 'برقراری مجدد برق',
+  jamming: 'اختلال یا مسدودسازی سیگنال',
+  temperature: 'دمای غیرعادی',
+  parking: 'هشدار پارک',
   bonnet: 'باز شدن کاپوت',
-  fuel: 'هشدار سوخت',
+  footBrake: 'فشار پدال ترمز',
+  fuelLeak: 'نشت سوخت',
+  tampering: 'دست‌کاری دستگاه',
+  removing: 'جدا شدن دستگاه',
 };
 
 function getPersonalEventPresentation(alert) {
-  const config = personalEventTypes[alert.type] || {
-    label: 'رویداد دستگاه',
+  const config = personalEventTypes[alert.type];
+  const attributes = alert.attributes || {};
+  const rawAlarm = attributes.alarm;
+  const alarmNames = typeof rawAlarm === 'string'
+    ? rawAlarm.split(',').map((item) => item.trim()).filter(Boolean)
+    : [];
+  const alarmLabelsText = alarmNames
+    .map((alarm) => alarmLabels[alarm] || `هشدار دستگاه (${alarm})`)
+    .join('، ');
+
+  const fallback = {
+    label: alert.type
+      ? `رویداد Traccar: ${alert.type}`
+      : 'رویداد ناشناخته',
     icon: '🔔',
     severity: 'info',
-    message: 'رویداد جدیدی توسط دستگاه ثبت شد',
+    message: alert.type
+      ? `رویداد ${alert.type} از Traccar دریافت شد`
+      : 'یک رویداد با نوع نامشخص دریافت شد',
   };
-  const attributes = alert.attributes || {};
-  const alarm = attributes.alarm;
-  const alarmLabel = alarmLabels[alarm] || alarm;
-
-  let message = config.message;
-  if (alert.type === 'alarm' && alarmLabel) message = `هشدار دستگاه: ${alarmLabel}`;
+  const presentation = config || fallback;
+  let message = presentation.message;
+  if (alert.type === 'alarm' && alarmLabelsText) {
+    message = `هشدار دستگاه: ${alarmLabelsText}`;
+  }
 
   const details = [];
   if (attributes.geofence) details.push(`محدوده: ${attributes.geofence}`);
   if (attributes.speed !== undefined && attributes.speed !== null) {
     details.push(`سرعت: ${attributes.speed}`);
   }
-  if (attributes.address) details.push(`موقعیت: ${attributes.address}`);
+  if (attributes.speedLimit !== undefined && attributes.speedLimit !== null) {
+    details.push(`حد مجاز سرعت: ${attributes.speedLimit}`);
+  }
+  if (attributes.fuel !== undefined && attributes.fuel !== null) {
+    details.push(`سوخت: ${attributes.fuel}`);
+  }
   if (attributes.result) details.push(`نتیجه: ${attributes.result}`);
+  if (attributes.command) details.push(`فرمان: ${attributes.command}`);
+  if (attributes.driverName) details.push(`راننده: ${attributes.driverName}`);
+  if (attributes.address) details.push(`موقعیت: ${attributes.address}`);
 
   const status = alert.status === 'new' ? 'active' : alert.status;
   return {
@@ -339,9 +400,9 @@ function getPersonalEventPresentation(alert) {
     detail: details.join(' • '),
     vehicle: alert.vehicle_plate || 'خودرو بدون پلاک',
     time: formatJalaliDateTime(alert.event_time),
-    typeLabel: config.label,
-    icon: config.icon,
-    severity: config.severity,
+    typeLabel: presentation.label,
+    icon: presentation.icon,
+    severity: presentation.severity,
     status,
   };
 }
