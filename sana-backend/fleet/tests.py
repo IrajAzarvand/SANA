@@ -16,6 +16,7 @@ from types import SimpleNamespace
 from .traccar_api import TraccarAPIError, traccar_device_positions, traccar_devices
 from .views import (
     DeviceViewSet,
+    DeviceLifecycleEventViewSet,
     normalize_traccar_history_positions,
     parse_report_history_cursor,
     traccar_position_protocol,
