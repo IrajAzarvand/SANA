@@ -146,7 +146,7 @@ export function toJalali(gregorianDate, separator = '/') {
     const jy = j.jy;
     const jm = String(j.jm).padStart(2, '0');
     const jd = String(j.jd).padStart(2, '0');
-    return `${jy}${separator}${jm}${separator}${jd}`;
+    return toPersianDigits(`${jy}${separator}${jm}${separator}${jd}`);
   } catch (e) {
     console.error('Error converting to Jalali:', e, gregorianDate);
     return '';
