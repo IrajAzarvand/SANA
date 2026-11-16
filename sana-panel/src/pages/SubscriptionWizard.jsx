@@ -1100,7 +1100,7 @@ function Step5({ form, updateForm, setError }) {
     }
     setPayment({
       amount: '',
-      payment_date: new Date().toISOString().split('T')[0],
+      payment_date: todayGregorian(),
       description: '',
     });
   };
