@@ -145,6 +145,7 @@ class DashboardStatsView(APIView):
                 'devices': len(personal_device_list),
                 'subscriptions_total': subscriptions.count(),
                 'current_subscription': {
+                    'id': active_sub.id,
                     'contract_number': active_sub.contract_number,
                     'end_date': active_sub.end_date,
                     'days_until_expiry': active_sub.days_until_expiry,
