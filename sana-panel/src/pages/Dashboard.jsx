@@ -1,7 +1,8 @@
 import { useCallback } from 'react';
 import { formatJalaliDate } from '../utils/dateUtils';
 import {
-  Truck, Navigation, WifiOff, AlertTriangle, Building2, Cpu, Car, Bell, Users,\n  Activity, Radio, Signal, FileText, ArrowUpLeft,
+  Truck, Navigation, WifiOff, AlertTriangle, Building2, Cpu, Car, Bell, Users,
+  Activity, Radio, Signal, FileText, ArrowUpLeft,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
