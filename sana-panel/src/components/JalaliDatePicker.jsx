@@ -5,6 +5,8 @@ import {
   toJalali,
   toGregorian,
   toJalaaliNum,
+  parseGregorianDate,
+  toPersianDigits,
   getJalaliMonthName,
   getJalaliMonthDays,
   todayJalali,
@@ -13,7 +15,8 @@ import {
 
 function getFirstWeekdayOfMonth(jy, jm) {
   const g = toGregorian(`${jy}/${String(jm).padStart(2, '0')}/01`);
-  const date = new Date(g);
+  const [year, month, day] = g.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
   const jsDay = date.getDay();
   return (jsDay + 1) % 7;
 }
@@ -57,8 +60,8 @@ export default function JalaliDatePicker({
   const selected = useMemo(() => {
     if (!value) return null;
     try {
-      const d = new Date(value);
-      if (isNaN(d.getTime())) return null;
+      const d = parseGregorianDate(value);
+      if (!d) return null;
       const j = toJalaaliNum(d.getFullYear(), d.getMonth() + 1, d.getDate());
       return { jy: j.jy, jm: j.jm, jd: j.jd };
     } catch {
@@ -73,7 +76,7 @@ export default function JalaliDatePicker({
   useEffect(() => {
     // Keep the editable draft synchronized when the parent value changes.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (value) setDisplayValue(toJalali(value));
+    if (value) setDisplayValue(toPersianDigits(toJalali(value)));
     else setDisplayValue('');
   }, [value]);
 
@@ -150,8 +153,11 @@ export default function JalaliDatePicker({
   }, [open]);
 
   const handleInputChange = (e) => {
-    let input = e.target.value.replace(/[^0-9/]/g, '');
-    setDisplayValue(input);
+    const input = e.target.value
+      .replace(/[۰-۹]/g, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)))
+      .replace(/[٠-٩]/g, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
+      .replace(/[^0-9/]/g, '');
+    setDisplayValue(toPersianDigits(input));
 
     if (input.length === 10) {
       const g = toGregorian(input);
