@@ -4,11 +4,13 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.db.models import Count, Exists, OuterRef, Q
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from datetime import timedelta
 
 from accounts.models import User
 from organizations.models import Organization, Branch, Subscription, SubscriptionDevice
 from fleet.models import Vehicle, Device, Driver, DeviceCustomerAccessPeriod
+from fleet.traccar_api import TraccarAPIError, traccar_current_positions, traccar_devices
 from .models import SiteSettings
 
 
@@ -134,9 +136,13 @@ class DashboardStatsView(APIView):
                 end_date__gte=today,
             ).order_by('-end_date').first()
 
+            personal_device_list = list(personal_devices.only('id', 'imei'))
+            management_status = self.get_devices_by_status(access_user=user)
+            gps_status = self.get_personal_gps_status(personal_device_list)
+
             return Response({
                 'vehicles': Vehicle.objects.filter(owner_user=user).count(),
-                'devices': personal_devices.count(),
+                'devices': len(personal_device_list),
                 'subscriptions_total': subscriptions.count(),
                 'current_subscription': {
                     'contract_number': active_sub.contract_number,
@@ -144,7 +150,9 @@ class DashboardStatsView(APIView):
                     'days_until_expiry': active_sub.days_until_expiry,
                     'is_expiring_soon': active_sub.is_expiring_soon,
                 } if active_sub else None,
-                'devices_by_status': self.get_devices_by_status(access_user=user),
+                'devices_by_status': management_status,
+                'devices_by_management_status': management_status,
+                'gps_status': gps_status,
                 'vehicles_by_status': self.get_vehicles_by_status(owner=user),
             })
 
@@ -152,6 +160,94 @@ class DashboardStatsView(APIView):
             'vehicles': 0,
             'devices': 0,
         })
+
+    @staticmethod
+    def get_personal_gps_status(devices):
+        """Summarize live GPS connectivity for only the customer's authorized devices."""
+        total = len(devices)
+        unavailable = {
+            'available': False,
+            'total': total,
+            'online': None,
+            'offline': None,
+            'moving': None,
+            'stopped': None,
+        }
+        if not total:
+            return {
+                **unavailable,
+                'available': True,
+                'online': 0,
+                'offline': 0,
+                'moving': 0,
+                'stopped': 0,
+            }
+
+        try:
+            traccar_device_list = traccar_devices()
+            positions = traccar_current_positions()
+        except TraccarAPIError:
+            return unavailable
+
+        authorized_by_imei = {str(device.imei).strip(): device for device in devices}
+        traccar_by_id = {}
+        for item in traccar_device_list:
+            try:
+                traccar_id = int(item['id'])
+            except (KeyError, TypeError, ValueError):
+                continue
+            imei = str(item.get('uniqueId') or '').strip()
+            if imei in authorized_by_imei:
+                traccar_by_id[traccar_id] = item
+
+        position_by_device = {}
+        for position in positions:
+            try:
+                traccar_id = int(position['deviceId'])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if traccar_id not in traccar_by_id:
+                continue
+            received_at = parse_datetime(str(position.get('serverTime') or ''))
+            if received_at is None:
+                continue
+            if timezone.is_naive(received_at):
+                received_at = timezone.make_aware(received_at)
+            previous = position_by_device.get(traccar_id)
+            if previous is None or received_at > previous[0]:
+                position_by_device[traccar_id] = (received_at, position)
+
+        now = timezone.now()
+        online = moving = stopped = 0
+        for traccar_id, traccar_device in traccar_by_id.items():
+            current = position_by_device.get(traccar_id)
+            if (
+                str(traccar_device.get('status') or '').lower() != 'online'
+                or current is None
+                or not 0 <= (now - current[0]).total_seconds() <= 300
+            ):
+                continue
+
+            online += 1
+            position = current[1]
+            attributes = position.get('attributes') if isinstance(position.get('attributes'), dict) else {}
+            try:
+                speed_kmh = float(position.get('speed') or 0) * 1.852
+            except (TypeError, ValueError):
+                speed_kmh = 0
+            if attributes.get('motion') is True or speed_kmh >= 3:
+                moving += 1
+            else:
+                stopped += 1
+
+        return {
+            'available': True,
+            'total': total,
+            'online': online,
+            'offline': total - online,
+            'moving': moving,
+            'stopped': stopped,
+        }
 
     def get_devices_by_status(self, org=None, branch=None, owner=None, access_user=None):
         qs = Device.objects.all()
