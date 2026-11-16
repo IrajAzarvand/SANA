@@ -171,11 +171,9 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [pointIndex, setPointIndex] = useState(0);
-  const timerRef = useRef(null);
   const searchInputRef = useRef(null);
   const dateSelectionTouchedRef = useRef(false);
-  const pointIndexRef = useRef(0);
-  pointIndexRef.current = pointIndex;
+  const isPlaying = playing && pointIndex < points.length - 1;
   const progress = points.length > 1 ? (pointIndex / (points.length - 1)) * 100 : 0;
 
   const resetReportState = () => {
@@ -323,16 +321,12 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
   }, [deviceId, from, to]);
 
   useEffect(() => {
-    if (!playing || points.length < 2) return undefined;
-    timerRef.current = window.setInterval(() => {
-      if (pointIndexRef.current >= points.length - 1) {
-        setPlaying(false);
-        return;
-      }
+    if (!playing || points.length < 2 || pointIndex >= points.length - 1) return undefined;
+    const timer = window.setTimeout(() => {
       setPointIndex((current) => Math.min(current + 1, points.length - 1));
     }, Math.max(150, 900 / speed));
-    return () => { if (timerRef.current) window.clearInterval(timerRef.current); };
-  }, [playing, points.length, speed]);
+    return () => window.clearTimeout(timer);
+  }, [playing, points.length, pointIndex, speed]);
 
   const routeSegments = useMemo(() => {
     const colorForSpeed = (value) => {
@@ -713,8 +707,8 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
               </label>
               <button type="button" onClick={() => { setPointIndex(0); setPlaying(false); }} disabled={!points.length} title="ابتدای مسیر" aria-label="ابتدای مسیر" className="flex h-8 w-8 items-center justify-center rounded-md border border-border-base text-text-secondary disabled:opacity-40"><SkipBack size={13} /></button>
               <button type="button" onClick={() => moveBy(-1)} disabled={!points.length || pointIndex === 0} title="نقطه قبلی" aria-label="نقطه قبلی" className="flex h-8 w-8 items-center justify-center rounded-md border border-border-base text-text-secondary disabled:opacity-40"><ChevronLeft size={13} /></button>
-              <button type="button" onClick={() => setPlaying((value) => !value)} disabled={points.length < 2} aria-label={playing ? 'توقف بازپخش' : 'شروع بازپخش'} title={playing ? 'توقف بازپخش' : 'شروع بازپخش'} className="flex h-8 min-w-10 items-center justify-center gap-1 rounded-md bg-brand-500 px-1.5 text-[11px] font-semibold text-white disabled:opacity-40">
-                {playing ? <span>توقف</span> : <><Play size={12} /><span>پخش</span></>}
+              <button type="button" onClick={() => { if (pointIndex >= points.length - 1) { setPointIndex(0); setPlaying(true); } else setPlaying((value) => !value); }} disabled={points.length < 2} aria-label={isPlaying ? 'توقف بازپخش' : 'شروع بازپخش'} title={isPlaying ? 'توقف بازپخش' : 'شروع بازپخش'} className="flex h-8 min-w-10 items-center justify-center gap-1 rounded-md bg-brand-500 px-1.5 text-[11px] font-semibold text-white disabled:opacity-40">
+                {isPlaying ? <span>توقف</span> : <><Play size={12} /><span>پخش</span></>}
               </button>
               <button type="button" onClick={() => moveBy(1)} disabled={!points.length || pointIndex >= points.length - 1} title="نقطه بعدی" aria-label="نقطه بعدی" className="flex h-8 w-8 items-center justify-center rounded-md border border-border-base text-text-secondary disabled:opacity-40"><ChevronRight size={13} /></button>
               <button type="button" onClick={() => { setPointIndex(Math.max(0, points.length - 1)); setPlaying(false); }} disabled={!points.length} title="انتهای مسیر" aria-label="انتهای مسیر" className="flex h-8 w-8 items-center justify-center rounded-md border border-border-base text-text-secondary disabled:opacity-40"><SkipForward size={13} /></button>
