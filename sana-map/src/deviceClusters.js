@@ -16,8 +16,12 @@ export function getDeviceClusters(map, positions = [], followPosition = false) {
   const zoom = map.getZoom();
 
   const validPositions = positions.filter((position) => (
-    Number.isFinite(Number(position.latitude))
+    position.latitude !== null && position.latitude !== undefined && position.latitude !== ''
+    && position.longitude !== null && position.longitude !== undefined && position.longitude !== ''
+    && Number.isFinite(Number(position.latitude))
     && Number.isFinite(Number(position.longitude))
+    && Number(position.latitude) >= -90 && Number(position.latitude) <= 90
+    && Number(position.longitude) >= -180 && Number(position.longitude) <= 180
   ));
 
   if (zoom >= CLUSTER_ZOOM_LIMIT || validPositions.length < 2) {
@@ -126,11 +130,12 @@ export function getDeviceClusters(map, positions = [], followPosition = false) {
   return result;
 }
 export function createClusterIcon(L, cluster) {
-  const { moving, stopped, offline } = cluster.counts;
+  const { moving, stopped, offline, unknown } = cluster.counts;
   const total = cluster.total;
 
   const movingPercent = (moving / total) * 100;
   const stoppedPercent = (stopped / total) * 100;
+  const offlinePercent = (offline / total) * 100;
 
   const iconSize = Math.min(54, 42 + Math.log2(total) * 2);
 
@@ -143,7 +148,8 @@ export function createClusterIcon(L, cluster) {
       background:conic-gradient(
         #14B8A6 0% ${movingPercent}%,
         #F59E0B ${movingPercent}% ${movingPercent + stoppedPercent}%,
-        #64748B ${movingPercent + stoppedPercent}% 100%
+        #64748B ${movingPercent + stoppedPercent}% ${movingPercent + stoppedPercent + offlinePercent}%,
+        #CBD5E1 ${movingPercent + stoppedPercent + offlinePercent}% 100%
       );
       display:flex;
       align-items:center;
@@ -179,7 +185,7 @@ export function createClusterIcon(L, cluster) {
   });
 }
 export function createClusterSummary(cluster) {
-  const { moving, stopped, offline } = cluster.counts;
+  const { moving, stopped, offline, unknown } = cluster.counts;
 
   return `
     <div dir="rtl" style="
@@ -199,6 +205,7 @@ export function createClusterSummary(cluster) {
       <div><span style="color:#14B8A6">●</span> در حرکت: ${moving}</div>
       <div><span style="color:#F59E0B">●</span> متوقف: ${stopped}</div>
       <div><span style="color:#64748B">●</span> آفلاین: ${offline}</div>
+      <div><span style="color:#94A3B8">●</span> نامشخص: ${unknown}</div>
     </div>
   `;
 }
