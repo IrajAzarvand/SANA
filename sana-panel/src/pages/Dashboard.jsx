@@ -66,16 +66,31 @@ function CustomerDashboard() {
   }
 
   // محاسبه آمار
-  const deviceStatus = stats?.devices_by_status || {};
+  const deviceStatus = stats?.devices_by_management_status || stats?.devices_by_status || {};
   const isDevicesActive = (deviceStatus.active || 0) + (deviceStatus.installed || 0);
   const isDevicesOffline = (deviceStatus.disconnected || 0) + (deviceStatus.lost || 0) + (deviceStatus.stolen || 0);
   const isDevicesFaulty = deviceStatus.faulty || 0;
 
   if (isPersonal) {
-    const totalDevices = Number(stats?.devices || 0);
-    const activeDevices = Number(isDevicesActive || 0);
-    const offlineDevices = Number(isDevicesOffline || 0);
-    const faultyDevices = Number(isDevicesFaulty || 0);
+    const gpsStatus = stats?.gps_status;
+    const gpsAvailable = gpsStatus?.available === true;
+    const gpsValue = (key) => gpsAvailable ? Number(gpsStatus?.[key] ?? 0) : '—';
+    const managementStatusLabels = [
+      ['warehouse', 'در انبار'],
+      ['sold', 'فروخته‌شده'],
+      ['installed', 'نصب‌شده'],
+      ['active', 'فعال'],
+      ['ready', 'آماده تعیین تکلیف'],
+      ['faulty', 'خراب'],
+      ['lost', 'گمشده'],
+      ['stolen', 'سرقت‌شده'],
+      ['disconnected', 'قطع سرویس'],
+      ['retired', 'بازنشسته'],
+      ['disposed', 'امحاءشده'],
+    ];
+    const managementEntries = managementStatusLabels
+      .map(([key, label]) => ({ key, label, count: Number(deviceStatus[key] || 0) }))
+      .filter((item) => item.count > 0);
 
     return (
       <div className="space-y-5 sm:space-y-6">
@@ -94,34 +109,31 @@ function CustomerDashboard() {
         )}
 
         <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard title="دستگاه‌های من" value={totalDevices} icon={Cpu} color="brand" />
-          <StatCard title="دستگاه‌های نصب‌شده یا فعال" value={activeDevices} icon={Navigation} color="success" />
-          <StatCard title="قطع سرویس، مفقود یا سرقت‌شده" value={offlineDevices} icon={WifiOff} color="muted" />
-          <StatCard title="دستگاه‌های نیازمند بررسی" value={faultyDevices} icon={AlertTriangle} color="danger" />
+          <StatCard title="آنلاین" value={gpsValue('online')} icon={Cpu} color="success" />
+          <StatCard title="آفلاین" value={gpsValue('offline')} icon={WifiOff} color="muted" />
+          <StatCard title="در حال حرکت" value={gpsValue('moving')} icon={Navigation} color="brand" />
+          <StatCard title="متوقف" value={gpsValue('stopped')} icon={Car} color="warning" />
         </section>
+        {!gpsAvailable && (
+          <div className="rounded-field border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-text-secondary">
+            دریافت وضعیت زنده GPS از Traccar در حال حاضر ممکن نیست؛ این وضعیت به معنی آفلاین بودن دستگاه‌ها نیست.
+          </div>
+        )}
 
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-          <Card title="وضعیت مدیریتی دستگاه‌ها" subtitle="بر اساس آخرین وضعیت ثبت‌شده در سامانه" className="lg:col-span-3">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="text-text-secondary">نصب‌شده یا فعال</span>
-                <strong className="font-mono text-success">{activeDevices}</strong>
+          <Card title="وضعیت مدیریتی دستگاه‌ها" subtitle={`تعداد کل دستگاه‌های مجاز: ${Number(stats?.devices || 0)}`} className="lg:col-span-3">
+            {managementEntries.length ? (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {managementEntries.map((item) => (
+                  <div key={item.key} className="rounded-field border border-border-base bg-bg-base px-3 py-3">
+                    <div className="text-xs text-text-secondary">{item.label}</div>
+                    <div className="mt-1 font-mono text-lg font-semibold text-text-primary">{item.count}</div>
+                  </div>
+                ))}
               </div>
-              <div className="h-2 overflow-hidden rounded-full bg-bg-hover">
-                <div className="h-full rounded-full bg-success" style={{ width: totalDevices ? `${Math.min(100, activeDevices / totalDevices * 100)}%` : '0%' }} />
-              </div>
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="text-text-secondary">قطع سرویس، مفقود یا سرقت‌شده</span>
-                <strong className="font-mono text-text-primary">{offlineDevices}</strong>
-              </div>
-              <div className="h-2 overflow-hidden rounded-full bg-bg-hover">
-                <div className="h-full rounded-full bg-text-muted" style={{ width: totalDevices ? `${Math.min(100, offlineDevices / totalDevices * 100)}%` : '0%' }} />
-              </div>
-              <div className="flex items-center justify-between gap-3 text-sm">
-                <span className="text-text-secondary">خراب</span>
-                <strong className="font-mono text-danger">{faultyDevices}</strong>
-              </div>
-            </div>
+            ) : (
+              <p className="text-sm text-text-muted">هنوز دستگاهی برای نمایش ثبت نشده است.</p>
+            )}
           </Card>
 
           <Card title="دسترسی سریع" subtitle="مدیریت و مشاهده اطلاعات" className="lg:col-span-2">
