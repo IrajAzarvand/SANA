@@ -567,6 +567,24 @@ class ReportHistoryRequestSecurityTests(SimpleTestCase):
 
 
 
+class PersonalAlertsEndpointSecurityTests(SimpleTestCase):
+    def test_alerts_endpoint_is_not_available_to_non_personal_roles(self):
+        request = APIRequestFactory().get('/api/devices/alerts/')
+        force_authenticate(
+            request,
+            user=SimpleNamespace(
+                is_authenticated=True,
+                is_personal_user=False,
+            ),
+        )
+
+        response = DeviceViewSet.as_view({'get': 'alerts'})(request)
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn('فقط برای مشتری شخصی', response.data['detail'])
+
+
+
 class PersonalDeviceAccessQueryTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
