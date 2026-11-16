@@ -737,7 +737,7 @@ class PersonalDeviceAccessQueryTests(TestCase):
             device_end,
         )
 
-    def test_personal_report_history_accepts_current_access_period_without_contract_link(self):
+    def test_personal_report_history_rejects_access_period_without_contract_link(self):
         device = self.make_device(
             '860000000000108',
             self.user,
@@ -751,10 +751,11 @@ class PersonalDeviceAccessQueryTests(TestCase):
         force_authenticate(request, user=self.user)
         response = DeviceViewSet.as_view({'get': 'report_history'})(request)
 
-        self.assertEqual(response.status_code, 200)
-        self.assertIsNotNone(response.data['range_start'])
-        self.assertIsNotNone(response.data['range_end'])
-        self.assertFalse(response.data['unrestricted'])
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(
+            response.data['detail'],
+            'گزارش این دستگاه فقط در بازه قرارداد فعال قابل مشاهده است.',
+        )
 
 
 class PersonalLifecycleEventAccessTests(TestCase):
