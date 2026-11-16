@@ -10,7 +10,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
-from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation, DeviceCustomerAccessPeriod, DriverVehicleAssignment
+from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation, DeviceCustomerAccessPeriod, DeviceAlertState, DriverVehicleAssignment
 from .serializers import (
     VehicleTypeSerializer,
     VehicleSerializer,
@@ -26,7 +26,7 @@ from .serializers import (
 )
 from organizations.models import SubscriptionDevice
 from accounts.permissions import IsSiteAdmin, IsOrganizationMember
-from .traccar_api import TraccarAPIError, traccar_current_positions, traccar_device_by_unique_id, traccar_device_positions, traccar_devices
+from .traccar_api import TraccarAPIError, traccar_current_positions, traccar_device_by_unique_id, traccar_device_positions, traccar_device_events, traccar_devices
 
 
 def traccar_position_timestamp(position):
@@ -469,6 +469,149 @@ class DeviceViewSet(viewsets.ModelViewSet):
         if page is not None:
             return self.get_paginated_response(serializer.data)
         return Response(serializer.data)
+
+    @action(detail=False, methods=['get', 'post'], url_path='alerts')
+    def alerts(self, request):
+        """Read authorized Traccar events and persist only per-user workflow state."""
+        if not request.user.is_personal_user:
+            return Response({'detail': 'این سرویس در حال حاضر فقط برای مشتری شخصی فعال است.'}, status=403)
+
+        if request.method == 'POST':
+            raw_device_id = request.data.get('device_id')
+            event_id = str(request.data.get('event_id') or '').strip()
+            requested_status = str(request.data.get('status') or '').strip()
+            if requested_status not in {'acknowledged', 'resolved'} or not event_id:
+                return Response({'detail': 'شناسه رویداد و وضعیت معتبر الزامی است.'}, status=400)
+            try:
+                device_id = int(raw_device_id)
+            except (TypeError, ValueError):
+                return Response({'detail': 'شناسه دستگاه نامعتبر است.'}, status=400)
+
+            device = self.get_queryset().filter(pk=device_id).first()
+            if device is None:
+                return Response({'detail': 'دستگاه یافت نشد یا مجوز مشاهده آن را ندارید.'}, status=404)
+            state = DeviceAlertState.objects.filter(
+                user=request.user, device=device, traccar_event_id=event_id
+            ).first()
+            if state is None:
+                return Response({'detail': 'رویداد موردنظر یافت نشد.'}, status=404)
+            state.status = requested_status
+            if requested_status == 'acknowledged':
+                state.acknowledged_at = timezone.now()
+            else:
+                state.resolved_at = timezone.now()
+            state.save(update_fields=['status', 'acknowledged_at', 'resolved_at'])
+            return Response({
+                'device_id': device.pk,
+                'event_id': state.traccar_event_id,
+                'status': state.status,
+                'acknowledged_at': state.acknowledged_at,
+                'resolved_at': state.resolved_at,
+            })
+
+        now = timezone.now()
+        default_start = now - timedelta(days=30)
+        raw_start = parse_datetime(request.query_params.get('from', '')) if request.query_params.get('from') else default_start
+        raw_end = parse_datetime(request.query_params.get('to', '')) if request.query_params.get('to') else now
+        if raw_start is None or raw_end is None:
+            return Response({'detail': 'بازه زمانی هشدارها نامعتبر است.'}, status=400)
+        if timezone.is_naive(raw_start):
+            raw_start = timezone.make_aware(raw_start)
+        if timezone.is_naive(raw_end):
+            raw_end = timezone.make_aware(raw_end)
+        if raw_start > raw_end or raw_end > now + timedelta(minutes=1):
+            return Response({'detail': 'بازه زمانی انتخاب‌شده معتبر نیست.'}, status=400)
+
+        devices = list(self.get_queryset().select_related('vehicle'))
+        if not devices:
+            return Response({'results': [], 'counts': {'all': 0, 'new': 0, 'acknowledged': 0, 'resolved': 0}})
+
+        today = timezone.localdate()
+        links = list(SubscriptionDevice.objects.filter(
+            device__in=devices,
+            unassigned_at__isnull=True,
+            subscription__user=request.user,
+            subscription__status='active',
+            start_date__lte=today,
+            end_date__gte=today,
+            subscription__start_date__lte=today,
+            subscription__end_date__gte=today,
+        ).select_related('subscription'))
+        contract_by_device = {link.device_id: link for link in links}
+
+        results = []
+        try:
+            for device in devices:
+                link = contract_by_device.get(device.pk)
+                if link is None:
+                    continue
+                contract_start = timezone.make_aware(datetime.combine(
+                    max(link.start_date, link.subscription.start_date), datetime_time.min
+                ))
+                contract_end = timezone.make_aware(datetime.combine(
+                    min(link.end_date, link.subscription.end_date), datetime_time.max
+                ))
+                event_start = max(raw_start, contract_start)
+                event_end = min(raw_end, contract_end, now)
+                if event_start > event_end:
+                    continue
+
+                traccar_device = traccar_device_by_unique_id(device.imei)
+                if not traccar_device or traccar_device.get('id') is None:
+                    continue
+                events = traccar_device_events(
+                    int(traccar_device['id']),
+                    event_start.isoformat().replace('+00:00', 'Z'),
+                    event_end.isoformat().replace('+00:00', 'Z'),
+                )
+                for event in sorted(events, key=lambda item: str(item.get('eventTime') or '')):
+                    event_id = str(event.get('id') or '').strip()
+                    event_type = str(event.get('type') or '').strip()
+                    event_time = parse_datetime(str(event.get('eventTime') or ''))
+                    if not event_id or not event_type or event_time is None:
+                        continue
+                    if timezone.is_naive(event_time):
+                        event_time = timezone.make_aware(event_time)
+
+                    state, _created = DeviceAlertState.objects.update_or_create(
+                        user=request.user,
+                        device=device,
+                        traccar_event_id=event_id,
+                        defaults={'event_type': event_type, 'event_time': event_time},
+                    )
+                    if event_type == 'deviceOnline':
+                        DeviceAlertState.objects.filter(
+                            user=request.user,
+                            device=device,
+                            event_type='deviceOffline',
+                            event_time__lt=event_time,
+                        ).exclude(status='resolved').update(
+                            status='resolved', resolved_at=event_time
+                        )
+
+                    results.append({
+                        'id': state.traccar_event_id,
+                        'device_id': device.pk,
+                        'device_imei': device.imei,
+                        'vehicle_plate': device.vehicle.plate if device.vehicle_id else None,
+                        'type': state.event_type,
+                        'event_time': state.event_time,
+                        'status': state.status,
+                        'acknowledged_at': state.acknowledged_at,
+                        'resolved_at': state.resolved_at,
+                        'attributes': event.get('attributes') if isinstance(event.get('attributes'), dict) else {},
+                    })
+        except TraccarAPIError:
+            return Response({'detail': 'دریافت رویدادها از Traccar در حال حاضر ممکن نیست.'}, status=503)
+
+        results.sort(key=lambda item: (item['event_time'], item['id']), reverse=True)
+        counts = {
+            'all': len(results),
+            'new': sum(item['status'] == 'new' for item in results),
+            'acknowledged': sum(item['status'] == 'acknowledged' for item in results),
+            'resolved': sum(item['status'] == 'resolved' for item in results),
+        }
+        return Response({'results': results, 'counts': counts})
 
     @action(detail=False, methods=['get'], url_path='report-history')
     def report_history(self, request):
