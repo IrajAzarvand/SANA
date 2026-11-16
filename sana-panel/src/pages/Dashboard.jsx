@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { formatJalaliDate } from '../utils/dateUtils';
 import {
   Truck, Navigation, WifiOff, AlertTriangle, Building2, Cpu, Car, Bell, Users,
 } from 'lucide-react';
@@ -159,7 +160,7 @@ function CustomerDashboard() {
           <Card title="اشتراک من" subtitle="اطلاعات قرارداد فعال">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div><div className="text-xs text-text-muted">شماره قرارداد</div><div className="mt-1 break-all font-mono text-sm text-text-primary">{stats.current_subscription.contract_number}</div></div>
-              <div><div className="text-xs text-text-muted">تاریخ پایان</div><div className="mt-1 text-sm text-text-primary">{stats.current_subscription.end_date || '—'}</div></div>
+              <div><div className="text-xs text-text-muted">تاریخ پایان</div><div className="mt-1 text-sm text-text-primary">{stats.current_subscription.end_date ? formatJalaliDate(stats.current_subscription.end_date) : '—'}</div></div>
               <div><div className="text-xs text-text-muted">روزهای باقی‌مانده</div><div className="mt-1 text-sm font-semibold text-text-primary">{stats.current_subscription.days_until_expiry ?? '—'}</div></div>
             </div>
           </Card>
