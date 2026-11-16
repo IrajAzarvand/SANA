@@ -874,6 +874,120 @@ class PersonalDeviceAccessQueryTests(TestCase):
         )
 
 
+class PersonalTraccarAlertsTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='personal_traccar_alerts',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        self.other_user = User.objects.create_user(
+            username='other_personal_traccar_alerts',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        today = timezone.localdate()
+        self.device = Device.objects.create(
+            imei='860000000000301',
+            management_status='active',
+        )
+        self.subscription = Subscription.objects.create(
+            contract_number='PERSONAL-ALERTS-TEST-001',
+            customer_type='personal',
+            user=self.user,
+            start_date=today - timedelta(days=20),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=self.subscription,
+            device=self.device,
+            start_date=today - timedelta(days=20),
+            end_date=today + timedelta(days=20),
+        )
+
+    @patch('fleet.views.traccar_device_events')
+    @patch('fleet.views.traccar_device_by_unique_id')
+    def test_get_returns_real_traccar_events_for_contract_device(
+        self, lookup_device, fetch_events
+    ):
+        event_time = timezone.now().replace(microsecond=0)
+        lookup_device.return_value = {'id': 42}
+        fetch_events.return_value = [{
+            'id': 701,
+            'type': 'deviceOffline',
+            'eventTime': event_time.isoformat(),
+            'attributes': {},
+        }]
+        request = APIRequestFactory().get('/api/devices/alerts/')
+        force_authenticate(request, user=self.user)
+
+        response = DeviceViewSet.as_view({'get': 'alerts'})(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['counts']['new'], 1)
+        self.assertEqual(response.data['results'][0]['id'], '701')
+        self.assertEqual(response.data['results'][0]['status'], 'new')
+        self.assertEqual(fetch_events.call_args.args[0], 42)
+
+    @patch('fleet.views.traccar_device_events')
+    @patch('fleet.views.traccar_device_by_unique_id')
+    def test_online_event_resolves_previous_offline_event(
+        self, lookup_device, fetch_events
+    ):
+        offline_time = timezone.now() - timedelta(hours=2)
+        online_time = timezone.now()
+        lookup_device.return_value = {'id': 42}
+        fetch_events.return_value = [
+            {'id': 702, 'type': 'deviceOffline', 'eventTime': offline_time.isoformat()},
+            {'id': 703, 'type': 'deviceOnline', 'eventTime': online_time.isoformat()},
+        ]
+        request = APIRequestFactory().get('/api/devices/alerts/')
+        force_authenticate(request, user=self.user)
+
+        response = DeviceViewSet.as_view({'get': 'alerts'})(request)
+
+        offline_alert = next(
+            item for item in response.data['results'] if item['id'] == '702'
+        )
+        self.assertEqual(offline_alert['status'], 'resolved')
+        self.assertIsNotNone(offline_alert['resolved_at'])
+
+    def test_post_cannot_change_alert_state_for_another_customers_device(self):
+        today = timezone.localdate()
+        other_device = Device.objects.create(
+            imei='860000000000302',
+            management_status='active',
+        )
+        other_subscription = Subscription.objects.create(
+            contract_number='PERSONAL-ALERTS-TEST-002',
+            customer_type='personal',
+            user=self.other_user,
+            start_date=today - timedelta(days=2),
+            end_date=today + timedelta(days=2),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=other_subscription,
+            device=other_device,
+            start_date=today - timedelta(days=2),
+            end_date=today + timedelta(days=2),
+        )
+        request = APIRequestFactory().post(
+            '/api/devices/alerts/',
+            {'device_id': other_device.pk, 'event_id': '999', 'status': 'resolved'},
+            format='json',
+        )
+        force_authenticate(request, user=self.user)
+
+        response = DeviceViewSet.as_view({'post': 'alerts'})(request)
+
+        self.assertEqual(response.status_code, 404)
+
+
+
 class PersonalLifecycleEventAccessTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
