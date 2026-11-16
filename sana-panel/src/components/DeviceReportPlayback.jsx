@@ -248,10 +248,13 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
         if (!isSiteAdmin && data.range_start && data.range_end && !dateSelectionTouchedRef.current) {
           const rangeStart = dateTimeLocal(data.range_start);
           const rangeEnd = dateTimeLocal(data.range_end);
+          const now = new Date();
+          const todayDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+          const initialEnd = datePart(rangeEnd) > todayDate ? `${todayDate}T23:59` : rangeEnd;
           setFrom(rangeStart);
-          setTo(rangeEnd);
+          setTo(initialEnd);
           setFromTime(timePart(rangeStart) || '00:00');
-          setToTime(timePart(rangeEnd) || '23:59');
+          setToTime(timePart(initialEnd) || '23:59');
         }
       })
       .catch((err) => { if (active) setError(err.response?.data?.detail || 'دریافت محدوده مجاز دستگاه ناموفق بود.'); });
