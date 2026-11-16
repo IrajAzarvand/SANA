@@ -173,7 +173,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         return qs
 
     def get_permissions(self):
-        if self.action in ['create', 'destroy', 'renew', 'modify', 'revise_installment_plan']:
+        if self.action in ['create', 'destroy', 'update', 'partial_update', 'renew', 'modify', 'revise_installment_plan', 'suspend', 'activate', 'cancel']:
             return [IsSiteAdmin()]
         return super().get_permissions()
 
