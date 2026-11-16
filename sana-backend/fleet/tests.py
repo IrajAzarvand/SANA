@@ -62,6 +62,33 @@ class TraccarAPIClientTests(SimpleTestCase):
         self.assertIn("to=2026-10-21T08%3A00%3A00Z", url)
         self.assertEqual(result, [])
 
+    @patch("fleet.traccar_api.urlopen")
+    def test_device_lookup_filters_by_unique_id(self, urlopen):
+        response = MagicMock()
+        response.read.return_value = b'[{"id": 42, "uniqueId": "860000000000107"}]'
+        response.__enter__.return_value = response
+        urlopen.return_value = response
+
+        from .traccar_api import traccar_device_by_unique_id
+        result = traccar_device_by_unique_id("860000000000107")
+
+        self.assertEqual(result["id"], 42)
+        self.assertIn("uniqueId=860000000000107", urlopen.call_args.args[0].full_url)
+
+    @patch("fleet.traccar_api.urlopen")
+    def test_history_request_includes_server_side_limit(self, urlopen):
+        response = MagicMock()
+        response.read.return_value = b'[]'
+        response.__enter__.return_value = response
+        urlopen.return_value = response
+
+        traccar_device_positions(
+            42, "2026-10-21T07:00:00Z", "2026-10-21T08:00:00Z", limit=5001
+        )
+
+        self.assertIn("limit=5001", urlopen.call_args.args[0].full_url)
+
+
     @override_settings(
         TRACCAR_API_URL="http://127.0.0.1:8082/api",
         TRACCAR_API_USERNAME="",
@@ -655,6 +682,60 @@ class PersonalDeviceAccessQueryTests(TestCase):
         self.assertIsNotNone(response.data['range_start'])
         self.assertIsNotNone(response.data['range_end'])
         self.assertFalse(response.data['unrestricted'])
+
+    def test_personal_report_range_uses_contract_dates_not_narrower_access_period(self):
+        today = timezone.localdate()
+        contract_start = today - timedelta(days=12)
+        contract_end = today + timedelta(days=18)
+        device_start = today - timedelta(days=10)
+        device_end = today + timedelta(days=15)
+        access_start = timezone.make_aware(
+            datetime.combine(today - timedelta(days=2), datetime.min.time())
+        )
+        access_end = timezone.make_aware(
+            datetime.combine(today + timedelta(days=3), datetime.max.time())
+        )
+        device = Device.objects.create(
+            imei='860000000000109',
+            management_status='sold',
+        )
+        subscription = Subscription.objects.create(
+            contract_number='PERSONAL-REPORT-RANGE-TEST-001',
+            customer_type='personal',
+            user=self.user,
+            start_date=contract_start,
+            end_date=contract_end,
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=device_start,
+            end_date=device_end,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            user=self.user,
+            started_at=access_start,
+            ended_at=access_end,
+        )
+
+        request = APIRequestFactory().get(
+            '/api/devices/report-history/',
+            {'device_id': str(device.pk), 'metadata': 'true'},
+        )
+        force_authenticate(request, user=self.user)
+        response = DeviceViewSet.as_view({'get': 'report_history'})(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            parse_datetime(response.data['range_start']).date(),
+            device_start,
+        )
+        self.assertEqual(
+            parse_datetime(response.data['range_end']).date(),
+            device_end,
+        )
 
     def test_personal_report_history_accepts_current_access_period_without_contract_link(self):
         device = self.make_device(
