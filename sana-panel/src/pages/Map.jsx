@@ -43,8 +43,8 @@ function formatAttribute(value) {
 }
 
 function hasCoordinates(position) {
-  return position?.latitude !== null && position?.latitude !== undefined
-    && position?.longitude !== null && position?.longitude !== undefined
+  return position?.latitude !== null && position?.latitude !== undefined && position?.latitude !== ''
+    && position?.longitude !== null && position?.longitude !== undefined && position?.longitude !== ''
     && Number.isFinite(Number(position.latitude))
     && Number.isFinite(Number(position.longitude))
     && Number(position.latitude) >= -90 && Number(position.latitude) <= 90
@@ -226,8 +226,9 @@ export default function Map() {
         </div>
 
         <div className="pointer-events-none absolute inset-x-2 top-2 z-[1000] sm:inset-x-3 sm:top-3">
-          <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5 sm:gap-2">
+          <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6 sm:gap-2">
             <Summary label="کل دستگاه‌ها" value={counts.total} icon={<CarFront size={15} />} />
+            <Summary label="دارای موقعیت" value={counts.withPosition} icon={<MapPin size={15} />} tone="text-brand-400" />
             <Summary label="در حرکت" value={counts.moving} icon={<Navigation size={15} />} tone="text-success" />
             <Summary label="متوقف" value={counts.stopped} icon={<PauseCircle size={15} />} tone="text-warning" />
             <Summary label="آفلاین" value={counts.offline} icon={<WifiOff size={15} />} tone="text-text-muted" />
