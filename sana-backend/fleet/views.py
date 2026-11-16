@@ -44,7 +44,7 @@ def traccar_position_protocol(position):
 
 
 def parse_report_history_cursor(raw_cursor_time, raw_cursor_id):
-    """Parse a strict (serverTime, Traccar position ID) pagination cursor."""
+    """Parse a strict (fixTime, Traccar position ID) API pagination cursor."""
     if not raw_cursor_time:
         if raw_cursor_id not in (None, '', '0'):
             raise ValueError('cursor_id بدون cursor_time معتبر نیست.')
@@ -610,20 +610,19 @@ class DeviceViewSet(viewsets.ModelViewSet):
         except ValueError:
             return Response({'detail': 'نشانگر صفحه‌بندی نامعتبر است.'}, status=400)
 
-        # Traccar filters historical positions by fixTime and supports a
-        # server-side result limit. Fetch the next older page by moving the
-        # upper boundary to the previous page's oldest fixTime; do not refetch
-        # the complete selected period on every page.
+        # Traccar filters historical positions by fixTime and returns them
+        # oldest-first. Continue from the last fixTime of the previous page;
+        # do not refetch the complete selected period on every page.
         limit = 5000
-        query_end = cursor_fix_time or raw_end
+        query_start = cursor_fix_time or raw_start
         try:
             traccar_device = traccar_device_by_unique_id(device.imei)
             if traccar_device is None or traccar_device.get('id') is None:
                 return Response({'detail': 'دستگاه در Traccar ثبت نشده است.'}, status=404)
             positions = traccar_device_positions(
                 int(traccar_device['id']),
-                raw_start.isoformat().replace('+00:00', 'Z'),
-                query_end.isoformat().replace('+00:00', 'Z'),
+                query_start.isoformat().replace('+00:00', 'Z'),
+                raw_end.isoformat().replace('+00:00', 'Z'),
                 limit=limit + 1,
             )
         except TraccarAPIError:
@@ -646,18 +645,18 @@ class DeviceViewSet(viewsets.ModelViewSet):
             if fix_time_key(item) is not None
             and (
                 cursor_fix_time is None
-                or fix_time_key(item) < (cursor_fix_time, cursor_id)
+                or fix_time_key(item) > (cursor_fix_time, cursor_id)
             )
         ]
-        positions.sort(key=fix_time_key, reverse=True)
+        positions.sort(key=fix_time_key)
         has_more = len(positions) > limit
         page_positions = positions[:limit]
         next_cursor = None
         if has_more and page_positions:
-            oldest_key = fix_time_key(page_positions[-1])
+            latest_key = fix_time_key(page_positions[-1])
             next_cursor = {
-                'cursor_fix_time': oldest_key[0].isoformat(),
-                'cursor_id': oldest_key[1],
+                'cursor_fix_time': latest_key[0].isoformat(),
+                'cursor_id': latest_key[1],
             }
 
         normalized = normalize_traccar_history_positions(
