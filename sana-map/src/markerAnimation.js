@@ -2,10 +2,17 @@ const activeAnimations = new WeakMap();
 
 export function getFollowedPosition(positions, followPosition) {
   if (!followPosition || !Array.isArray(positions) || !positions.length) return null;
+  const validPositions = positions.filter((item) => (
+    item.latitude !== null && item.latitude !== undefined && item.latitude !== ''
+    && item.longitude !== null && item.longitude !== undefined && item.longitude !== ''
+    && Number.isFinite(Number(item.latitude)) && Number.isFinite(Number(item.longitude))
+    && Number(item.latitude) >= -90 && Number(item.latitude) <= 90
+    && Number(item.longitude) >= -180 && Number(item.longitude) <= 180
+  ));
   if (followPosition === true) {
-    return positions.length === 1 ? positions[0] : null;
+    return validPositions.length === 1 ? validPositions[0] : null;
   }
-  return positions.find((item) => String(item.device_id) === String(followPosition)) || null;
+  return validPositions.find((item) => String(item.device_id) === String(followPosition)) || null;
 }
 
 function centerMapOn(map, lat, lng, zoom) {
