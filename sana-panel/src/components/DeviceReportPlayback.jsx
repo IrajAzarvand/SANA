@@ -291,12 +291,20 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
           to: toApiDate(to),
         };
         if (cursor) Object.assign(params, cursor);
-        const { data } = await apiClient.get('/devices/report-history/', { params });
+        const { data } = await apiClient.get('/devices/report-history/', {
+          params,
+          timeout: 60000,
+        });
         allPoints.push(...(data.points || []));
         cursor = data.next_cursor || null;
         page += 1;
         if (page > 200) throw new Error('بازه انتخابی بیش از حد بزرگ است؛ بازه کوتاه‌تری انتخاب کنید.');
       } while (cursor);
+      allPoints.sort((left, right) => {
+        const timeDifference = new Date(left.server_received_at).getTime()
+          - new Date(right.server_received_at).getTime();
+        return timeDifference || Number(left.id) - Number(right.id);
+      });
       const validPoints = allPoints.filter((point) => {
         const isValidPair = (latitude, longitude) => {
           const lat = Number(latitude);
