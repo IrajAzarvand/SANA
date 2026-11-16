@@ -650,6 +650,86 @@ class PersonalDeviceAccessQueryTests(TestCase):
         self.assertFalse(DeviceCustomerAccessPeriod.objects.filter(device=device).exists())
 
 
+    @patch('fleet.views.traccar_device_positions')
+    @patch('fleet.views.traccar_device_by_unique_id')
+    def test_report_history_paginates_from_last_fix_time_without_refetching_earlier_rows(
+        self, lookup_device, fetch_positions
+    ):
+        today = timezone.localdate()
+        device = Device.objects.create(
+            imei='860000000000110',
+            management_status='sold',
+        )
+        subscription = Subscription.objects.create(
+            contract_number='PERSONAL-REPORT-PAGING-TEST-001',
+            customer_type='personal',
+            user=self.user,
+            start_date=today - timedelta(days=2),
+            end_date=today + timedelta(days=2),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=today - timedelta(days=2),
+            end_date=today + timedelta(days=2),
+        )
+        lookup_device.return_value = {'id': 42}
+
+        base_time = timezone.now().replace(microsecond=0)
+        first_page = [
+            {
+                'id': index + 1,
+                'fixTime': (base_time + timedelta(seconds=index)).isoformat(),
+                'serverTime': (base_time + timedelta(seconds=index)).isoformat(),
+                'latitude': 91,
+                'longitude': 0,
+            }
+            for index in range(5001)
+        ]
+        fetch_positions.side_effect = [
+            first_page,
+            first_page[4999:],
+        ]
+
+        query_start = base_time.isoformat().replace('+00:00', 'Z')
+        query_end = (base_time + timedelta(hours=2)).isoformat().replace('+00:00', 'Z')
+        first_request = APIRequestFactory().get(
+            '/api/devices/report-history/',
+            {
+                'device_id': str(device.pk),
+                'from': query_start,
+                'to': query_end,
+            },
+        )
+        force_authenticate(first_request, user=self.user)
+        first_response = DeviceViewSet.as_view({'get': 'report_history'})(first_request)
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(first_response.data['next_cursor']['cursor_id'], 5000)
+        self.assertEqual(fetch_positions.call_args.kwargs['limit'], 5001)
+
+        cursor = first_response.data['next_cursor']
+        second_request = APIRequestFactory().get(
+            '/api/devices/report-history/',
+            {
+                'device_id': str(device.pk),
+                'from': query_start,
+                'to': query_end,
+                **cursor,
+            },
+        )
+        force_authenticate(second_request, user=self.user)
+        second_response = DeviceViewSet.as_view({'get': 'report_history'})(second_request)
+
+        self.assertEqual(second_response.status_code, 200)
+        self.assertIsNone(second_response.data['next_cursor'])
+        self.assertEqual(fetch_positions.call_count, 2)
+        self.assertEqual(
+            fetch_positions.call_args_list[1].args[1],
+            cursor['cursor_fix_time'].replace('+00:00', 'Z'),
+        )
+
     def test_personal_report_history_accepts_current_contract_link_without_access_period(self):
         today = timezone.localdate()
         device = Device.objects.create(
