@@ -118,7 +118,7 @@ function attributeRows(attributes = {}) {
 
 function popupHtml(position) {
   const title = position.vehicle_plate || position.imei || `دستگاه ${position.device_id}`;
-  const status = position.status === 'moving' ? 'در حرکت' : position.status === 'offline' ? 'آفلاین' : 'متوقف';
+  const status = position.status === 'moving' ? 'در حرکت' : position.status === 'offline' ? 'آفلاین' : position.status === 'stopped' ? 'متوقف' : 'نامشخص';
   const positionNote = position.position_is_current ? '' : '<div style="color:#F59E0B;margin-top:6px">آخرین مختصات معتبر (GPS فعلی فاقد Fix است)</div>';
   const matchingNote = position.position_is_matched ? '<div style="color:#0F766E;margin-top:6px">موقعیت منطبق‌شده با مسیر جاده</div>' : '';
   return `<div dir="rtl" style="font-family:Tahoma,sans-serif;min-width:190px;color:#111">
@@ -196,8 +196,8 @@ export default function NeshanLeafletMap({ positions, onSelectDevice, followPosi
           map.setView([Number(followed.latitude), Number(followed.longitude)], Math.max(map.getZoom(), 14), { animate: false });
           lastFollowKeyRef.current = String(followed.device_id);
           hasFitBoundsRef.current = true;
-        } else if (!hasFitBoundsRef.current && positionsRef.current.length) {
-          const bounds = L.latLngBounds(positionsRef.current.map((item) => [item.latitude, item.longitude]));
+        } else if (!hasFitBoundsRef.current && positionsRef.current.some(hasValidCoordinates)) {
+          const bounds = L.latLngBounds(positionsRef.current.filter(hasValidCoordinates).map((item) => [Number(item.latitude), Number(item.longitude)]));
           map.fitBounds(bounds, { padding: [36, 36], maxZoom: 14 });
           hasFitBoundsRef.current = true;
         }
@@ -254,8 +254,8 @@ export default function NeshanLeafletMap({ positions, onSelectDevice, followPosi
       }
     } else {
       lastFollowKeyRef.current = null;
-      if (!hasFitBoundsRef.current && positions.length) {
-        const bounds = L.latLngBounds(positions.map((item) => [item.latitude, item.longitude]));
+      if (!hasFitBoundsRef.current && positions.some(hasValidCoordinates)) {
+        const bounds = L.latLngBounds(positions.filter(hasValidCoordinates).map((item) => [Number(item.latitude), Number(item.longitude)]));
         map.fitBounds(bounds, { padding: [36, 36], maxZoom: 14 });
         hasFitBoundsRef.current = true;
       }
@@ -282,6 +282,14 @@ export default function NeshanLeafletMap({ positions, onSelectDevice, followPosi
   );
 }
 
+function hasValidCoordinates(position) {
+  return position.latitude !== null && position.latitude !== undefined && position.latitude !== ''
+    && position.longitude !== null && position.longitude !== undefined && position.longitude !== ''
+    && Number.isFinite(Number(position.latitude)) && Number.isFinite(Number(position.longitude))
+    && Number(position.latitude) >= -90 && Number(position.latitude) <= 90
+    && Number(position.longitude) >= -180 && Number(position.longitude) <= 180;
+}
+
 function syncMarkers(
   L,
   map,
@@ -292,10 +300,7 @@ function syncMarkers(
   animationDuration = 10000,
   followPosition = false,
 ) {
-  const validPositions = positions.filter((position) =>
-    Number.isFinite(Number(position.latitude)) &&
-    Number.isFinite(Number(position.longitude))
-  );
+  const validPositions = positions.filter(hasValidCoordinates);
   const visibleIds = new Set(validPositions.map((item) => String(item.device_id)));
   const clusters = getDeviceClusters(map, validPositions, followPosition);
   const individualIds = new Set(
@@ -372,6 +377,7 @@ function syncMarkers(
         <div><span style="color:#14B8A6">●</span> در حرکت: ${cluster.counts.moving}</div>
         <div><span style="color:#F59E0B">●</span> متوقف: ${cluster.counts.stopped}</div>
         <div><span style="color:#64748B">●</span> آفلاین: ${cluster.counts.offline}</div>
+        <div><span style="color:#94A3B8">●</span> نامشخص: ${cluster.counts.unknown}</div>
       </div>`;
 
     let marker = clusterMarkersRef.current.get(cluster.id);
