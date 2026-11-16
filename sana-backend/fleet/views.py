@@ -963,8 +963,30 @@ class DeviceLifecycleEventViewSet(viewsets.ModelViewSet):
             access = DeviceCustomerAccessPeriod.objects.filter(device=OuterRef('device_id'), organization_id=user.organization_id, branch_id=user.branch_id, started_at__lte=OuterRef('event_date')).filter(Q(ended_at__isnull=True) | Q(ended_at__gte=OuterRef('event_date')))
             qs = qs.filter(Exists(access))
         elif user.is_personal_user:
-            access = DeviceCustomerAccessPeriod.objects.filter(device=OuterRef('device_id'), user_id=user.id, started_at__lte=OuterRef('event_date')).filter(Q(ended_at__isnull=True) | Q(ended_at__gte=OuterRef('event_date')))
-            qs = qs.filter(Exists(access))
+            # A personal customer may see lifecycle events from either an
+            # access period or a subscription-device assignment that covered
+            # the event timestamp. Keep this historical check independent
+            # from the subscription's current status.
+            access = DeviceCustomerAccessPeriod.objects.filter(
+                device=OuterRef('device_id'),
+                user_id=user.id,
+                started_at__lte=OuterRef('event_date'),
+            ).filter(
+                Q(ended_at__isnull=True) | Q(ended_at__gte=OuterRef('event_date'))
+            )
+            contract_access = SubscriptionDevice.objects.filter(
+                device=OuterRef('device_id'),
+                subscription__user_id=user.id,
+                subscription__start_date__lte=OuterRef('event_date__date'),
+                subscription__end_date__gte=OuterRef('event_date__date'),
+                start_date__lte=OuterRef('event_date__date'),
+                end_date__gte=OuterRef('event_date__date'),
+                assigned_at__lte=OuterRef('event_date'),
+            ).filter(
+                Q(unassigned_at__isnull=True)
+                | Q(unassigned_at__gte=OuterRef('event_date'))
+            )
+            qs = qs.filter(Exists(access) | Exists(contract_access))
         else:
             qs = qs.none()
 
