@@ -1,4 +1,5 @@
 from django.test import TestCase
+from rest_framework.test import APIClient
 from unittest.mock import patch
 
 from accounts.models import User
@@ -707,3 +708,82 @@ class SubscriptionInstallmentLedgerTests(TestCase):
         revised_installment = revised.installments.get()
         self.assertEqual(revised_installment.amount, 30)
         self.assertEqual(revised_installment.due_date, second.due_date)
+
+
+class PersonalSubscriptionReadOnlyAccessTests(TestCase):
+    def setUp(self):
+        from datetime import timedelta
+
+        self.client = APIClient()
+        self.personal_user = User.objects.create_user(
+            username='contract-view-owner',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        self.other_user = User.objects.create_user(
+            username='contract-view-other',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        today = timezone.localdate()
+        self.own_subscription = Subscription.objects.create(
+            contract_number='PERSONAL-VIEW-001',
+            customer_type='personal',
+            user=self.personal_user,
+            start_date=today - timedelta(days=10),
+            end_date=today + timedelta(days=100),
+            price=1000000,
+        )
+        self.other_subscription = Subscription.objects.create(
+            contract_number='PERSONAL-VIEW-002',
+            customer_type='personal',
+            user=self.other_user,
+            start_date=today - timedelta(days=10),
+            end_date=today + timedelta(days=100),
+            price=1000000,
+        )
+
+    def test_personal_customer_can_view_own_contract_details(self):
+        self.client.force_authenticate(user=self.personal_user)
+
+        response = self.client.get(f'/api/subscriptions/{self.own_subscription.id}/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['id'], self.own_subscription.id)
+        self.assertEqual(response.data['contract_number'], self.own_subscription.contract_number)
+
+    def test_personal_customer_cannot_view_another_customers_contract(self):
+        self.client.force_authenticate(user=self.personal_user)
+
+        response = self.client.get(f'/api/subscriptions/{self.other_subscription.id}/')
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_personal_customer_cannot_modify_or_change_contract_status(self):
+        self.client.force_authenticate(user=self.personal_user)
+
+        update_response = self.client.patch(
+            f'/api/subscriptions/{self.own_subscription.id}/',
+            {'notes': 'تغییر غیرمجاز'},
+            format='json',
+        )
+        suspend_response = self.client.post(
+            f'/api/subscriptions/{self.own_subscription.id}/suspend/',
+            {},
+            format='json',
+        )
+        cancel_response = self.client.post(
+            f'/api/subscriptions/{self.own_subscription.id}/cancel/',
+            {},
+            format='json',
+        )
+
+        self.assertEqual(update_response.status_code, 403)
+        self.assertEqual(suspend_response.status_code, 403)
+        self.assertEqual(cancel_response.status_code, 403)
+
+        self.own_subscription.refresh_from_db()
+        self.assertEqual(self.own_subscription.status, 'active')
+        self.assertEqual(self.own_subscription.notes, '')
