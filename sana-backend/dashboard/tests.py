@@ -265,12 +265,12 @@ class PersonalDashboardGPSStatusTests(TestCase):
     def test_personal_stats_report_gps_unavailable_without_marking_devices_offline(self):
         from unittest.mock import patch
 
+        from fleet.traccar_api import TraccarAPIError
+
         self.make_accessible_device('860000000000306')
         self.client.force_authenticate(user=self.user)
 
-        with patch('dashboard.views.traccar_devices', side_effect=__import__(
-            'fleet.traccar_api', fromlist=['TraccarAPIError']
-        ).TraccarAPIError('unavailable')):
+        with patch('dashboard.views.traccar_devices', side_effect=TraccarAPIError('unavailable')):
             response = self.client.get('/api/dashboard/stats/')
 
         self.assertEqual(response.status_code, 200)
