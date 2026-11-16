@@ -781,8 +781,12 @@ class DeviceViewSet(viewsets.ModelViewSet):
             if traccar_id not in traccar_by_id:
                 continue
             received_at = traccar_position_timestamp(position)
+            if received_at is not None and timezone.is_naive(received_at):
+                received_at = timezone.make_aware(received_at)
             previous = position_by_traccar_id.get(traccar_id)
             previous_at = traccar_position_timestamp(previous) if previous else None
+            if previous_at is not None and timezone.is_naive(previous_at):
+                previous_at = timezone.make_aware(previous_at)
             if previous is None or (
                 received_at is not None and (previous_at is None or received_at > previous_at)
             ):
@@ -874,9 +878,9 @@ class DeviceViewSet(viewsets.ModelViewSet):
             has_position = latitude is not None and longitude is not None
             if not traccar_device:
                 status = 'unknown'
-            elif not is_online:
+            elif traccar_status == 'offline' or (server_received_at is not None and not fresh):
                 status = 'offline'
-            elif not has_position:
+            elif traccar_status != 'online' or not is_online or not has_position:
                 status = 'unknown'
             else:
                 motion = attributes.get('motion')
