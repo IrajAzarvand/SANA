@@ -27,7 +27,7 @@ def traccar_request(path: str, *, params: dict | None = None):
         method="GET",
     )
     try:
-        with urlopen(request, timeout=8.0) as response:
+        with urlopen(request, timeout=20.0) as response:
             payload = response.read()
             return json.loads(payload.decode("utf-8")) if payload else None
     except HTTPError as exc:
@@ -43,6 +43,20 @@ def traccar_devices() -> list[dict]:
     return [item for item in result if isinstance(item, dict)]
 
 
+def traccar_device_by_unique_id(unique_id: str) -> dict | None:
+    result = traccar_request("devices", params={"uniqueId": str(unique_id).strip()})
+    if not isinstance(result, list):
+        raise TraccarAPIError("Traccar /devices returned an unexpected response")
+    return next(
+        (
+            item for item in result
+            if isinstance(item, dict)
+            and str(item.get("uniqueId") or "").strip() == str(unique_id).strip()
+        ),
+        None,
+    )
+
+
 def traccar_current_positions() -> list[dict]:
     result = traccar_request("positions")
     if not isinstance(result, list):
@@ -50,10 +64,13 @@ def traccar_current_positions() -> list[dict]:
     return [item for item in result if isinstance(item, dict)]
 
 
-def traccar_device_positions(device_id: int, start: str, end: str) -> list[dict]:
+def traccar_device_positions(device_id: int, start: str, end: str, *, limit: int | None = None) -> list[dict]:
+    params = {"deviceId": int(device_id), "from": start, "to": end}
+    if limit is not None:
+        params["limit"] = max(1, int(limit))
     result = traccar_request(
         "positions",
-        params={"deviceId": int(device_id), "from": start, "to": end},
+        params=params,
     )
     if not isinstance(result, list):
         raise TraccarAPIError("Traccar position history returned an unexpected response")
