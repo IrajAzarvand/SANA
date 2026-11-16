@@ -672,3 +672,49 @@ class DeviceLifecycleEvent(models.Model):
 
     def __str__(self):
         return f'{self.device.imei} — {self.get_event_type_display()}'
+
+
+
+class DeviceAlertState(models.Model):
+    """Per-user workflow state for a Traccar event; raw telemetry stays in Traccar."""
+
+    STATUS_CHOICES = [
+        ('new', 'جدید'),
+        ('acknowledged', 'بررسی‌شده'),
+        ('resolved', 'رفع‌شده'),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='device_alert_states',
+        verbose_name='کاربر',
+    )
+    device = models.ForeignKey(
+        Device,
+        on_delete=models.CASCADE,
+        related_name='alert_states',
+        verbose_name='دستگاه',
+    )
+    traccar_event_id = models.CharField(max_length=64, verbose_name='شناسه رویداد Traccar')
+    event_type = models.CharField(max_length=64, verbose_name='نوع رویداد')
+    event_time = models.DateTimeField(verbose_name='زمان رویداد')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new')
+    acknowledged_at = models.DateTimeField(null=True, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = 'وضعیت پیگیری هشدار'
+        verbose_name_plural = 'وضعیت‌های پیگیری هشدار'
+        ordering = ['-event_time', '-id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'device', 'traccar_event_id'],
+                name='fleet_alert_user_device_event_uniq',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['user', 'status', 'event_time']),
+            models.Index(fields=['device', 'event_type', 'event_time']),
+        ]
