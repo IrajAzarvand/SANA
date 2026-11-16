@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Activity, CarFront, Clock3, MapPin, Navigation, PauseCircle,
+  CarFront, Clock3, MapPin, Navigation, PauseCircle,
   RefreshCw, Search, WifiOff, X, CircleHelp,
 } from 'lucide-react';
 import apiClient from '../api/client';
