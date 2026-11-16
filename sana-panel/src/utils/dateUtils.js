@@ -124,7 +124,7 @@ export function parseGregorianDate(value) {
   if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
 
   // Date-only API values are calendar dates, not UTC instants.
-  const dateOnly = /^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(String(value));
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value));
   if (dateOnly) {
     const [, year, month, day] = dateOnly.map((part, index) => index ? Number(part) : part);
     const date = new Date(year, month - 1, day);
