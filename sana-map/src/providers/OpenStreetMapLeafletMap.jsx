@@ -120,7 +120,9 @@ function FitInitialBounds({ positions, followPosition = false, routeSegments = [
 
 export default function OpenStreetMapLeafletMap({ positions = [], onSelectDevice, followPosition = false, animationDuration = 10000, routeSegments = [] }) {
   const validPositions = positions.filter((item) => (
-    Number.isFinite(Number(item.latitude))
+    item.latitude !== null && item.latitude !== undefined && item.latitude !== ''
+    && item.longitude !== null && item.longitude !== undefined && item.longitude !== ''
+    && Number.isFinite(Number(item.latitude))
     && Number.isFinite(Number(item.longitude))
     && Number(item.latitude) >= -90
     && Number(item.latitude) <= 90
