@@ -82,7 +82,7 @@ export default function SubscriptionDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { isSiteAdmin } = useAuth();
+  const { isSiteAdmin, isPersonal } = useAuth();
 
   const fetchSubscription = useCallback(async () => {
     return await subscriptionsAPI.get(id);
@@ -133,7 +133,7 @@ export default function SubscriptionDetail() {
 
   // Open the renewal modal when the URL requests it.
   useEffect(() => {
-    if (searchParams.get('renew') === 'true' && subscription && subscription.status !== 'cancelled') {
+    if (isSiteAdmin && searchParams.get('renew') === 'true' && subscription && subscription.status !== 'cancelled') {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setRenewForm({
         new_end_date: subscription.end_date,
@@ -146,7 +146,7 @@ export default function SubscriptionDetail() {
       setRenewModalOpen(true);
       setSearchParams({}, { replace: true });
     }
-  }, [subscription, searchParams, setSearchParams]);
+  }, [isSiteAdmin, subscription, searchParams, setSearchParams]);
 
   const [deviceModalOpen, setDeviceModalOpen] = useState(false);
   const [deviceForm, setDeviceForm] = useState({
@@ -792,7 +792,7 @@ export default function SubscriptionDetail() {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3 min-w-0">
           <button
-            onClick={() => navigate('/panel/subscriptions')}
+            onClick={() => navigate(isPersonal ? '/panel/dashboard' : '/panel/subscriptions')}
             className="p-2.5 rounded-xl text-text-muted hover:bg-bg-hover hover:text-text-primary transition-colors"
             aria-label="بازگشت"
           >
