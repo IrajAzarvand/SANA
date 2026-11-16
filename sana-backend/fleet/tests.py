@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 from urllib.error import HTTPError, URLError
 from unittest.mock import MagicMock, patch
