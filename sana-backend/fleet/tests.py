@@ -715,7 +715,7 @@ class PersonalLifecycleEventAccessTests(TestCase):
         event = DeviceLifecycleEvent.objects.create(
             device=device,
             event_type='assigned_to_contract',
-            event_date=event_date or self.now,
+            event_date=event_date or timezone.now(),
             subscription=subscription,
         )
         return device, link, event
@@ -756,7 +756,7 @@ class PersonalLifecycleEventAccessTests(TestCase):
             user=self.user,
             imei='860000000000204',
         )
-        link.unassigned_at = self.now - timedelta(minutes=1)
+        link.unassigned_at = event.event_date - timedelta(minutes=1)
         link.save(update_fields=['unassigned_at'])
 
         self.assertEqual(self.get_visible_event_ids(self.user), set())
