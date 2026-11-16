@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import { formatJalaliDateTime } from '../utils/dateUtils';
 import {
-  Search, Plus, Cpu, Pencil, Trash2, Hash, Phone, Eye, History, Activity, Package, Truck,
+  Search, Plus, Cpu, Pencil, Trash2, Hash, Phone, Eye, History, Activity, Package, Truck, Wifi, WifiOff, MapPin, CarFront, Clock3, RefreshCw,
 } from 'lucide-react';
 import Card from '../components/Card';
 import Badge from '../components/Badge';
@@ -85,13 +85,14 @@ const managementStatusMap = {
 };
 
 export default function Devices() {
+  const { isPersonal } = useAuth();
   return (
     <div className="space-y-4">
       <header className="flex shrink-0 items-center gap-3">
         <div className="min-w-0">
-          <h1 className="text-base font-semibold text-text-primary sm:text-lg">دستگاه‌ها</h1>
+          <h1 className="text-base font-semibold text-text-primary sm:text-lg">{isPersonal ? "دستگاه‌های من" : "دستگاه‌ها"}</h1>
           <p className="mt-0.5 text-[11px] text-text-muted sm:text-xs">
-            ثبت، جستجو و مدیریت دستگاه‌های GPS
+            {isPersonal ? "وضعیت ارتباط، اطلاعات و سوابق دستگاه‌های شما" : "ثبت، جستجو و مدیریت دستگاه‌های GPS"}
           </p>
         </div>
       </header>
@@ -388,6 +389,7 @@ function DevicesTab() {
 
   if (loading) return <Card><LoadingSpinner /></Card>;
   if (error) return <Card><ErrorState error={error} onRetry={refetch} /></Card>;
+  if (isPersonal) return <PersonalDevicesView devices={devices || []} onOpenHistory={setDeviceHistoryId} deviceHistoryId={deviceHistoryId} onCloseHistory={() => setDeviceHistoryId(null)} onRefresh={refetch} />;
 
   return (
     <div className="space-y-6">
@@ -698,6 +700,267 @@ function DevicesTab() {
           </form>
         </Modal>
       )}
+    </div>
+  );
+}
+
+
+const personalGpsStatus = {
+  moving: { label: 'در حال حرکت', variant: 'success', icon: CarFront },
+  stopped: { label: 'متوقف', variant: 'info', icon: MapPin },
+  offline: { label: 'آفلاین', variant: 'danger', icon: WifiOff },
+  unknown: { label: 'وضعیت نامشخص', variant: 'muted', icon: Wifi },
+};
+
+function PersonalDevicesView({ devices, onOpenHistory, deviceHistoryId, onCloseHistory, onRefresh }) {
+  const [positions, setPositions] = useState([]);
+  const [gpsAvailable, setGpsAvailable] = useState(null);
+  const [gpsLoading, setGpsLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+
+  const loadPositions = useCallback(async (showLoading = false) => {
+    if (showLoading) setRefreshing(true);
+    try {
+      const result = await devicesAPI.mapPositions();
+      setPositions(Array.isArray(result) ? result : []);
+      setGpsAvailable(true);
+    } catch (err) {
+      console.error('Unable to load personal device GPS status:', err);
+      setGpsAvailable(false);
+    } finally {
+      setGpsLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timer = null;
+    const poll = async () => {
+      try {
+        const result = await devicesAPI.mapPositions();
+        if (!cancelled) {
+          setPositions(Array.isArray(result) ? result : []);
+          setGpsAvailable(true);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error('Unable to refresh personal device GPS status:', err);
+          setGpsAvailable(false);
+        }
+      } finally {
+        if (!cancelled) {
+          setGpsLoading(false);
+          timer = window.setTimeout(poll, 15000);
+        }
+      }
+    };
+    poll();
+    return () => {
+      cancelled = true;
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, []);
+
+  const positionByDevice = useMemo(
+    () => new Map(positions.map((item) => [Number(item.device_id), item])),
+    [positions],
+  );
+  const getGpsStatus = (device) => {
+    if (gpsAvailable === false) return 'unknown';
+    return positionByDevice.get(Number(device.id))?.status || 'unknown';
+  };
+
+  const counts = useMemo(() => {
+    const values = devices.map(getGpsStatus);
+    return {
+      total: devices.length,
+      online: values.filter((value) => value === 'moving' || value === 'stopped').length,
+      moving: values.filter((value) => value === 'moving').length,
+      stopped: values.filter((value) => value === 'stopped').length,
+      offline: values.filter((value) => value === 'offline').length,
+    };
+  }, [devices, positions, gpsAvailable, positionByDevice]);
+
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return devices.filter((device) => {
+      const matchesSearch = !needle || [
+        device.imei, device.sim_number, device.vehicle_plate,
+        device.device_model_manufacturer, device.device_model_name,
+        device.traccar_model, device.subscription_number,
+      ].some((value) => String(value || '').toLowerCase().includes(needle));
+      if (!matchesSearch) return false;
+      if (statusFilter && getGpsStatus(device) !== statusFilter) return false;
+      return true;
+    });
+  }, [devices, search, statusFilter, positions, gpsAvailable, positionByDevice]);
+
+  const statusOptions = [
+    { value: '', label: 'همه وضعیت‌ها' },
+    { value: 'moving', label: 'در حال حرکت' },
+    { value: 'stopped', label: 'متوقف' },
+    { value: 'offline', label: 'آفلاین' },
+    { value: 'unknown', label: 'نامشخص' },
+  ];
+
+  return (
+    <div className="space-y-5">
+      <section className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        <DeviceMetric label="دستگاه‌های من" value={counts.total} icon={Cpu} />
+        <DeviceMetric label="متصل به GPS" value={counts.online} icon={Wifi} />
+        <DeviceMetric label="در حال حرکت" value={counts.moving} icon={CarFront} />
+        <DeviceMetric label="آفلاین" value={counts.offline} icon={WifiOff} />
+      </section>
+
+      {gpsAvailable === false && (
+        <div className="flex items-start gap-3 rounded-xl border border-warning/30 bg-warning/5 px-4 py-3">
+          <WifiOff size={18} className="mt-0.5 shrink-0 text-warning" />
+          <div className="min-w-0 flex-1 text-xs leading-6 text-text-secondary">
+            در حال حاضر دریافت وضعیت زنده GPS ممکن نیست. فهرست دستگاه‌ها همچنان نمایش داده می‌شود؛ وضعیت اتصال تا برقراری ارتباط مجدد نامشخص است.
+          </div>
+          <Button size="sm" variant="secondary" icon={RefreshCw} onClick={() => loadPositions(true)} disabled={refreshing}>
+            تلاش مجدد
+          </Button>
+        </div>
+      )}
+
+      <Card>
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_220px]">
+          <Input
+            icon={Search}
+            placeholder="جستجوی IMEI، سیم‌کارت، مدل، پلاک یا قرارداد..."
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <Select
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+            options={statusOptions}
+          />
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border-base pt-3 text-[11px] text-text-muted">
+          <span>
+            نمایش {filtered.length.toLocaleString('fa-IR')} از {devices.length.toLocaleString('fa-IR')} دستگاه
+            {gpsLoading ? ' · در حال دریافت وضعیت GPS' : ''}
+          </span>
+          <div className="flex items-center gap-3">
+            <span>متوقف: {counts.stopped.toLocaleString('fa-IR')}</span>
+            <button
+              type="button"
+              onClick={() => { setSearch(''); setStatusFilter(''); }}
+              className="text-brand-400 transition-colors hover:text-brand-300 disabled:opacity-40"
+              disabled={!search && !statusFilter}
+            >
+              پاک‌کردن فیلترها
+            </button>
+            <button
+              type="button"
+              onClick={() => loadPositions(true)}
+              disabled={refreshing}
+              className="inline-flex items-center gap-1 text-text-secondary transition-colors hover:text-brand-400 disabled:opacity-50"
+            >
+              <RefreshCw size={13} className={refreshing ? 'animate-spin' : ''} />
+              به‌روزرسانی
+            </button>
+          </div>
+        </div>
+      </Card>
+
+      {filtered.length === 0 ? (
+        <EmptyState
+          icon={Cpu}
+          title={devices.length ? 'دستگاهی با این مشخصات پیدا نشد' : 'هنوز دستگاهی به حساب شما متصل نشده است'}
+          description={devices.length ? 'عبارت جستجو یا فیلتر وضعیت را تغییر دهید.' : 'پس از اتصال دستگاه به قرارداد یا حساب شما، اطلاعات آن در این بخش نمایش داده می‌شود.'}
+        />
+      ) : (
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+          {filtered.map((device) => {
+            const position = positionByDevice.get(Number(device.id));
+            const statusKey = getGpsStatus(device);
+            const status = personalGpsStatus[statusKey] || personalGpsStatus.unknown;
+            const StatusIcon = status.icon;
+            return (
+              <article key={device.id} className="overflow-hidden rounded-2xl border border-border-base bg-bg-elevated shadow-sm transition-colors hover:border-brand/30">
+                <div className="flex items-start justify-between gap-3 border-b border-border-base px-4 py-4">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono text-sm font-semibold text-text-primary">{device.imei}</span>
+                      <Badge variant={status.variant}>
+                        <span className="inline-flex items-center gap-1.5">
+                          <StatusIcon size={12} />
+                          {status.label}
+                        </span>
+                      </Badge>
+                    </div>
+                    <div className="mt-2 text-sm font-medium text-text-secondary">{formatDeviceModel(device)}</div>
+                    {device.vehicle_plate && (
+                      <div className="mt-1 flex items-center gap-1.5 text-xs text-text-muted">
+                        <CarFront size={13} />
+                        پلاک {device.vehicle_plate}
+                      </div>
+                    )}
+                  </div>
+                  <Button size="sm" variant="secondary" icon={History} onClick={() => onOpenHistory(device.id)}>
+                    سوابق
+                  </Button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-x-4 gap-y-4 px-4 py-4 sm:grid-cols-3">
+                  <div className="min-w-0">
+                    <div className="text-[11px] text-text-muted">شماره سیم‌کارت</div>
+                    <div className="mt-1 truncate font-mono text-xs text-text-primary" dir="ltr">{device.sim_number || '—'}</div>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[11px] text-text-muted">آخرین دریافت GPS</div>
+                    <div className="mt-1 flex items-center gap-1 text-xs text-text-primary">
+                      <Clock3 size={12} className="shrink-0 text-text-muted" />
+                      <span>{position?.last_seen ? formatReceivedAt(position.last_seen) : (gpsAvailable === false ? 'در دسترس نیست' : 'داده‌ای ثبت نشده')}</span>
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[11px] text-text-muted">سرعت فعلی</div>
+                    <div className="mt-1 text-xs font-semibold tabular-nums text-text-primary">
+                      {position && statusKey !== 'unknown' ? Number(position.speed || 0).toLocaleString('fa-IR', { maximumFractionDigits: 1 }) + ' کیلومتر بر ساعت' : '—'}
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[11px] text-text-muted">قرارداد</div>
+                    <div className="mt-1 truncate font-mono text-xs text-text-primary">{device.subscription_number || '—'}</div>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[11px] text-text-muted">نوع دستگاه در قرارداد</div>
+                    <div className="mt-1 text-xs text-text-primary">{device.subscription_device_type_display || '—'}</div>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[11px] text-text-muted">مجوز سرویس</div>
+                    <div className="mt-1">
+                      <Badge variant={device.data_active ? 'success' : 'muted'}>
+                        {device.data_active ? 'فعال' : 'غیرفعال'}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+
+                {!device.data_active && device.data_inactive_reason && (
+                  <div className="border-t border-border-base bg-bg-base/60 px-4 py-2.5 text-[11px] leading-5 text-text-muted">
+                    {device.data_inactive_reason}
+                  </div>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
+
+      <DeviceHistoryModal
+        open={Boolean(deviceHistoryId)}
+        deviceId={deviceHistoryId}
+        onClose={onCloseHistory}
+        onOperationSaved={onRefresh}
+      />
     </div>
   );
 }
