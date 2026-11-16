@@ -588,6 +588,14 @@ class DeviceViewSet(viewsets.ModelViewSet):
                         ).exclude(status='resolved').update(
                             status='resolved', resolved_at=event_time
                         )
+                        for previous_alert in results:
+                            if (
+                                previous_alert['device_id'] == device.pk
+                                and previous_alert['type'] == 'deviceOffline'
+                                and previous_alert['event_time'] < event_time
+                            ):
+                                previous_alert['status'] = 'resolved'
+                                previous_alert['resolved_at'] = event_time
 
                     results.append({
                         'id': state.traccar_event_id,
