@@ -26,7 +26,7 @@ from .serializers import (
 )
 from organizations.models import SubscriptionDevice
 from accounts.permissions import IsSiteAdmin, IsOrganizationMember
-from .traccar_api import TraccarAPIError, traccar_current_positions, traccar_device_positions, traccar_devices
+from .traccar_api import TraccarAPIError, traccar_current_positions, traccar_device_by_unique_id, traccar_device_positions, traccar_devices
 
 
 def traccar_position_timestamp(position):
@@ -522,25 +522,23 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 if link is None and access is None:
                     return Response({'detail': 'برای این دستگاه قرارداد و دسترسی فعال پیدا نشد.'}, status=403)
 
-                allowed_starts = []
-                allowed_ends = []
                 if link is not None:
-                    contract_start = timezone.make_aware(datetime.combine(
+                    # Contract dates are the reporting boundary. A current
+                    # operational access period may authorize visibility, but
+                    # must not narrow the customer's contractual report history.
+                    range_start = timezone.make_aware(datetime.combine(
                         max(link.start_date, link.subscription.start_date),
                         datetime_time.min,
                     ))
-                    contract_end = timezone.make_aware(datetime.combine(
+                    range_end = timezone.make_aware(datetime.combine(
                         min(link.end_date, link.subscription.end_date),
                         datetime_time.max,
                     ))
-                    allowed_starts.append(contract_start)
-                    allowed_ends.append(contract_end)
-                if access is not None:
-                    allowed_starts.append(access.started_at)
-                    allowed_ends.append(access.ended_at or now)
-
-                range_start = max(allowed_starts)
-                range_end = min(allowed_ends)
+                else:
+                    # Preserve access-period-only devices that are visible to
+                    # personal users without a linked subscription contract.
+                    range_start = access.started_at
+                    range_end = access.ended_at or now
             else:
                 if request.user.is_branch_manager:
                     access_query = access_query.filter(
@@ -605,37 +603,66 @@ class DeviceViewSet(viewsets.ModelViewSet):
             }, status=403)
 
         try:
-            cursor_time, cursor_id = parse_report_history_cursor(
-                request.query_params.get('cursor_time'),
+            cursor_fix_time, cursor_id = parse_report_history_cursor(
+                request.query_params.get('cursor_fix_time'),
                 request.query_params.get('cursor_id'),
             )
         except ValueError:
             return Response({'detail': 'نشانگر صفحه‌بندی نامعتبر است.'}, status=400)
 
+        # Traccar filters historical positions by fixTime and supports a
+        # server-side result limit. Fetch the next older page by moving the
+        # upper boundary to the previous page's oldest fixTime; do not refetch
+        # the complete selected period on every page.
         limit = 5000
+        query_end = cursor_fix_time or raw_end
         try:
-            traccar_device = next(
-                (
-                    item for item in traccar_devices()
-                    if str(item.get('uniqueId') or '').strip() == str(device.imei).strip()
-                ),
-                None,
-            )
+            traccar_device = traccar_device_by_unique_id(device.imei)
             if traccar_device is None or traccar_device.get('id') is None:
                 return Response({'detail': 'دستگاه در Traccar ثبت نشده است.'}, status=404)
             positions = traccar_device_positions(
                 int(traccar_device['id']),
                 raw_start.isoformat().replace('+00:00', 'Z'),
-                raw_end.isoformat().replace('+00:00', 'Z'),
+                query_end.isoformat().replace('+00:00', 'Z'),
+                limit=limit + 1,
             )
         except TraccarAPIError:
             return Response({'detail': 'دریافت تاریخچه از Traccar موقتاً ممکن نیست.'}, status=503)
 
+        def fix_time_key(item):
+            value = parse_datetime(str(item.get('fixTime') or ''))
+            if value is None:
+                return None
+            if timezone.is_naive(value):
+                value = timezone.make_aware(value)
+            try:
+                position_id = int(item.get('id') or 0)
+            except (TypeError, ValueError):
+                position_id = 0
+            return value, position_id
+
+        positions = [
+            item for item in positions
+            if fix_time_key(item) is not None
+            and (
+                cursor_fix_time is None
+                or fix_time_key(item) < (cursor_fix_time, cursor_id)
+            )
+        ]
+        positions.sort(key=fix_time_key, reverse=True)
+        has_more = len(positions) > limit
+        page_positions = positions[:limit]
+        next_cursor = None
+        if has_more and page_positions:
+            oldest_key = fix_time_key(page_positions[-1])
+            next_cursor = {
+                'cursor_fix_time': oldest_key[0].isoformat(),
+                'cursor_id': oldest_key[1],
+            }
+
         normalized = normalize_traccar_history_positions(
-            positions, raw_start, raw_end, cursor_time=cursor_time, cursor_id=cursor_id,
+            page_positions, raw_start, raw_end,
         )
-        has_more = len(normalized) > limit
-        normalized = normalized[:limit]
         point_ids = [row[1] for row in normalized]
         matches = {}
         if point_ids:
@@ -691,10 +718,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 'attributes': attributes,
             })
 
-        next_cursor = None
-        if has_more and points:
-            last = points[-1]
-            next_cursor = {'cursor_time': last['device_time'], 'cursor_id': last['id']}
         return Response({
             'device': {
                 'id': device.pk,
