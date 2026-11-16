@@ -435,8 +435,8 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
       if (moving && !wasMoving) trips += 1;
       wasMoving = moving;
       if (!moving) {
-        if (!activeStop) activeStop = { start: point.server_received_at, end: point.device_time, points: 0 };
-        activeStop.end = point.device_time;
+        if (!activeStop) activeStop = { start: point.server_received_at, end: point.server_received_at, points: 0 };
+        activeStop.end = point.server_received_at;
         activeStop.points += 1;
       } else {
         finishStop();
@@ -697,7 +697,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
           <div className="mb-1.5 flex items-center justify-between gap-2">
             <div className="flex min-w-0 items-center gap-1.5 text-[10px] text-text-muted">
               <span className="shrink-0 font-semibold text-text-primary">{points.length ? `${(pointIndex + 1).toLocaleString('fa-IR')} از ${points.length.toLocaleString('fa-IR')}` : 'بدون نقطه'}</span>
-              <span className="truncate">{currentPoint ? formatDate(currentPoint.device_time) : loadingHistory ? 'در حال دریافت…' : 'آماده بازپخش'}</span>
+              <span className="truncate">{currentPoint ? formatDate(currentPoint.server_received_at) : loadingHistory ? 'در حال دریافت…' : 'آماده بازپخش'}</span>
             </div>
             <div className="flex shrink-0 items-center gap-1">
               <label className="flex items-center gap-1 text-[10px] text-text-muted">سرعت
@@ -817,7 +817,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
                 ['زمان دریافت سرور', formatDate(currentPoint.server_received_at)],
                 ['منبع تطبیق', currentPoint.match_provider || '—'],
                 ['زمان تطبیق', formatDate(currentPoint.matched_at)],
-                ['زمان دستگاه', formatDate(currentPoint.device_time)],
+                ['زمان دریافت سرور', formatDate(currentPoint.server_received_at)],
               ].map(([label, value, _key]) => (
                 <div key={label} className="min-w-0 border-b border-border-base/70 pb-1.5">
                   <div className="text-[10px] text-text-muted"><AttributeLabel label={label} description={attributeDescriptions[_key]} tooltipId={`field-${label}`} activeTooltipId={activeAttributeTooltip} onToggle={setActiveAttributeTooltip} /></div>
