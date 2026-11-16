@@ -760,3 +760,50 @@ class PersonalLifecycleEventAccessTests(TestCase):
         link.save(update_fields=['unassigned_at'])
 
         self.assertEqual(self.get_visible_event_ids(self.user), set())
+
+
+class LiveMapDeviceCoverageTests(SimpleTestCase):
+    @patch("fleet.views.traccar_current_positions", return_value=[])
+    @patch(
+        "fleet.views.traccar_devices",
+        return_value=[{
+            "id": 17,
+            "uniqueId": "352016703005868",
+            "status": "online",
+            "lastUpdate": "2026-11-16T18:00:00Z",
+        }],
+    )
+    @patch(
+        "fleet.views.timezone.now",
+        return_value=parse_datetime("2026-11-16T18:01:00Z"),
+    )
+    def test_map_returns_authorized_devices_without_positions_as_unknown(
+        self, _now, _traccar_devices, _positions
+    ):
+        first = SimpleNamespace(
+            pk=1, imei="352016703005868", vehicle_id=None, vehicle=None
+        )
+        second = SimpleNamespace(
+            pk=2, imei="352016703005869", vehicle_id=None, vehicle=None
+        )
+        queryset = MagicMock()
+        queryset.select_related.return_value = [first, second]
+
+        view = DeviceViewSet()
+        view.get_queryset = MagicMock(return_value=queryset)
+        view.filter_queryset = MagicMock(return_value=queryset)
+
+        response = view.map_positions(SimpleNamespace())
+
+        self.assertEqual(len(response.data), 2)
+        self.assertEqual(
+            [item["device_id"] for item in response.data],
+            [1, 2],
+        )
+        self.assertEqual(
+            [item["status"] for item in response.data],
+            ["unknown", "unknown"],
+        )
+        self.assertTrue(all(item["latitude"] is None for item in response.data))
+        self.assertTrue(all(item["longitude"] is None for item in response.data))
+        self.assertTrue(all(item["has_position"] is False for item in response.data))
