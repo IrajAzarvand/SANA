@@ -715,6 +715,6 @@ class DeviceAlertState(models.Model):
             ),
         ]
         indexes = [
-            models.Index(fields=['user', 'status', 'event_time']),
-            models.Index(fields=['device', 'event_type', 'event_time']),
+            models.Index(fields=['user', 'status', 'event_time'], name='fleet_alert_user_status_idx'),
+            models.Index(fields=['device', 'event_type', 'event_time'], name='fleet_alert_device_type_idx'),
         ]
