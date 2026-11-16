@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { formatJalaliDate } from '../utils/dateUtils';
 import {
-  Truck, Navigation, WifiOff, AlertTriangle, Building2, Cpu, Car, Bell, Users,
+  Truck, Navigation, WifiOff, AlertTriangle, Building2, Cpu, Car, Bell, Users,\n  Activity, Radio, Signal, FileText, ArrowUpLeft,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
@@ -75,105 +75,273 @@ function CustomerDashboard() {
   if (isPersonal) {
     const gpsStatus = stats?.gps_status;
     const gpsAvailable = gpsStatus?.available === true;
+    const gpsTotal = Number(gpsStatus?.total ?? stats?.devices ?? 0);
     const gpsValue = (key) => gpsAvailable ? Number(gpsStatus?.[key] ?? 0) : '—';
-    const managementStatusLabels = [
-      ['warehouse', 'در انبار'],
-      ['sold', 'فروخته‌شده'],
-      ['installed', 'نصب‌شده'],
-      ['active', 'فعال'],
-      ['ready', 'آماده تعیین تکلیف'],
-      ['faulty', 'خراب'],
-      ['lost', 'گمشده'],
-      ['stolen', 'سرقت‌شده'],
-      ['disconnected', 'قطع سرویس'],
-      ['retired', 'بازنشسته'],
-      ['disposed', 'امحاءشده'],
+    const onlineCount = gpsAvailable ? Number(gpsStatus?.online ?? 0) : 0;
+    const offlineCount = gpsAvailable ? Number(gpsStatus?.offline ?? 0) : 0;
+    const onlinePercent = gpsAvailable && gpsTotal > 0
+      ? Math.min(100, Math.round((onlineCount / gpsTotal) * 100))
+      : 0;
+    const daysLeft = stats?.current_subscription?.days_until_expiry;
+    const subscriptionExpiring = stats?.current_subscription?.is_expiring_soon;
+
+    const quickLinks = [
+      {
+        to: '/panel/map',
+        icon: Navigation,
+        title: 'نقشه زنده',
+        description: 'مشاهده موقعیت خودروها',
+        tone: 'text-brand-400 bg-brand-500/10',
+      },
+      {
+        to: '/panel/devices',
+        icon: Cpu,
+        title: 'دستگاه‌های من',
+        description: 'مشاهده مشخصات و وضعیت',
+        tone: 'text-info bg-info/10',
+      },
+      {
+        to: '/panel/reports/trips',
+        icon: Truck,
+        title: 'گزارش مسیرها',
+        description: 'بررسی سفرها و مسیرها',
+        tone: 'text-success bg-success/10',
+      },
     ];
-    const managementEntries = managementStatusLabels
-      .map(([key, label]) => ({ key, label, count: Number(deviceStatus[key] || 0) }))
-      .filter((item) => item.count > 0);
 
     return (
-      <div className="space-y-5 sm:space-y-6">
-        <PageHeader title="داشبورد شخصی" subtitle="نمای کلی دستگاه‌ها و وضعیت اشتراک شما" />
-        {stats?.current_subscription?.is_expiring_soon && (
-          <div className="flex items-start gap-3 rounded-card border border-warning/30 bg-warning/10 p-4">
-            <AlertTriangle size={20} className="mt-0.5 shrink-0 text-warning" />
-            <div className="min-w-0">
-              <h2 className="text-sm font-semibold text-warning">اشتراک شما به‌زودی منقضی می‌شود</h2>
-              <p className="mt-1 text-xs leading-6 text-text-secondary">
-                قرارداد <span className="mx-1 font-mono">{stats.current_subscription.contract_number}</span>
-                تا {stats.current_subscription.days_until_expiry} روز دیگر اعتبار دارد.
+      <div className="space-y-6 pb-8">
+        <PageHeader
+          title="داشبورد شخصی"
+          subtitle="نمای یکپارچه وضعیت خودروها، دستگاه‌ها و خدمات شما"
+        />
+
+        <section className="relative isolate overflow-hidden rounded-3xl border border-border-base bg-bg-elevated">
+          <div className="pointer-events-none absolute -left-16 -top-24 h-64 w-64 rounded-full bg-brand-500/10 blur-3xl" />
+          <div className="pointer-events-none absolute -bottom-28 right-1/3 h-56 w-56 rounded-full bg-info/10 blur-3xl" />
+          <div className="relative flex flex-col gap-6 p-5 sm:p-7 lg:flex-row lg:items-center lg:justify-between">
+            <div className="max-w-2xl">
+              <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-brand-500/20 bg-brand-500/10 px-3 py-1.5 text-xs font-medium text-brand-300">
+                <Activity size={14} />
+                مرکز کنترل خودروی شما
+              </div>
+              <h2 className="text-xl font-bold leading-9 text-text-primary sm:text-2xl">
+                همه‌چیز درباره خودروی شما، یک‌جا
+              </h2>
+              <p className="mt-2 max-w-xl text-sm leading-7 text-text-secondary">
+                وضعیت اتصال دستگاه‌ها را بررسی کنید، موقعیت خودرو را ببینید و به گزارش مسیرها و اطلاعات قرارداد دسترسی داشته باشید.
               </p>
             </div>
-          </div>
-        )}
-
-        <section className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard title="آنلاین" value={gpsValue('online')} icon={Cpu} color="success" />
-          <StatCard title="آفلاین" value={gpsValue('offline')} icon={WifiOff} color="muted" />
-          <StatCard title="در حال حرکت" value={gpsValue('moving')} icon={Navigation} color="brand" />
-          <StatCard title="متوقف" value={gpsValue('stopped')} icon={Car} color="warning" />
-        </section>
-        <p className="text-xs text-text-muted">در حال حرکت و متوقف، زیرمجموعه دستگاه‌های آنلاین هستند.</p>
-        {!gpsAvailable && (
-          <div className="rounded-field border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-text-secondary">
-            دریافت وضعیت زنده GPS از Traccar در حال حاضر ممکن نیست؛ این وضعیت به معنی آفلاین بودن دستگاه‌ها نیست.
-          </div>
-        )}
-
-        <section className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-          <Card title="وضعیت مدیریتی دستگاه‌ها" subtitle={`تعداد کل دستگاه‌های مجاز: ${Number(stats?.devices || 0)}`} className="lg:col-span-3">
-            {managementEntries.length ? (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {managementEntries.map((item) => (
-                  <div key={item.key} className="rounded-field border border-border-base bg-bg-base px-3 py-3">
-                    <div className="text-xs text-text-secondary">{item.label}</div>
-                    <div className="mt-1 font-mono text-lg font-semibold text-text-primary">{item.count}</div>
-                  </div>
-                ))}
+            <div className="flex shrink-0 items-center gap-4 rounded-2xl border border-border-base bg-bg-base/80 px-5 py-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-brand-500/10 text-brand-400">
+                <Car size={25} />
               </div>
-            ) : (
-              <p className="text-sm text-text-muted">هنوز دستگاهی برای نمایش ثبت نشده است.</p>
-            )}
-          </Card>
-
-          <Card title="دسترسی سریع" subtitle="مدیریت و مشاهده اطلاعات" className="lg:col-span-2">
-            <div className="grid grid-cols-1 gap-2">
-              <Link to="/panel/devices" className="flex min-h-12 items-center justify-between rounded-field border border-border-base px-3 py-3 text-sm text-text-primary transition-colors hover:bg-bg-hover">
-                <span className="flex items-center gap-2"><Cpu size={17} className="text-brand-500" /> مشاهده دستگاه‌های من</span>
-                <span aria-hidden="true">←</span>
-              </Link>
-              <Link to="/panel/map" className="flex min-h-12 items-center justify-between rounded-field border border-border-base px-3 py-3 text-sm text-text-primary transition-colors hover:bg-bg-hover">
-                <span className="flex items-center gap-2"><Navigation size={17} className="text-brand-500" /> مشاهده نقشه زنده</span>
-                <span aria-hidden="true">←</span>
-              </Link>
-              <Link to="/panel/reports/trips" className="flex min-h-12 items-center justify-between rounded-field border border-border-base px-3 py-3 text-sm text-text-primary transition-colors hover:bg-bg-hover">
-                <span className="flex items-center gap-2"><Truck size={17} className="text-brand-500" /> گزارش مسیرها</span>
-                <span aria-hidden="true">←</span>
-              </Link>
+              <div>
+                <div className="text-xs text-text-muted">خودروهای ثبت‌شده</div>
+                <div className="mt-1 text-3xl font-bold tabular-nums text-text-primary">
+                  {Number(stats?.vehicles || 0).toLocaleString('fa-IR')}
+                </div>
+              </div>
+              <div className="mx-1 h-10 w-px bg-border-base" />
+              <div>
+                <div className="text-xs text-text-muted">دستگاه‌های تحت دسترسی</div>
+                <div className="mt-1 text-3xl font-bold tabular-nums text-text-primary">
+                  {gpsTotal.toLocaleString('fa-IR')}
+                </div>
+              </div>
             </div>
-          </Card>
+          </div>
         </section>
 
-        {stats?.current_subscription && (
-          <Card title="اشتراک من" subtitle="اطلاعات قرارداد فعال">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {subscriptionExpiring && (
+          <section className="flex items-start gap-3 rounded-2xl border border-warning/30 bg-warning/10 p-4">
+            <AlertTriangle size={20} className="mt-0.5 shrink-0 text-warning" />
+            <div className="min-w-0">
+              <h3 className="text-sm font-semibold text-warning">زمان تمدید قرارداد نزدیک است</h3>
+              <p className="mt-1 text-xs leading-6 text-text-secondary">
+                قرارداد شما {daysLeft} روز دیگر به پایان می‌رسد. برای پیگیری تمدید با پشتیبانی سانا در ارتباط باشید.
+              </p>
+            </div>
+          </section>
+        )}
+
+        <section>
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h2 className="text-base font-bold text-text-primary">وضعیت زنده دستگاه‌ها</h2>
+              <p className="mt-1 text-xs text-text-muted">اطلاعات اتصال و حرکت دریافت‌شده از سامانه GPS</p>
+            </div>
+            {gpsAvailable && (
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-success/20 bg-success/10 px-2.5 py-1 text-[11px] font-medium text-success">
+                <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                اطلاعات به‌روز
+              </span>
+            )}
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {[
+              { key: 'online', title: 'آنلاین', detail: 'دارای ارتباط با سرور', icon: Radio, tone: 'success' },
+              { key: 'offline', title: 'آفلاین', detail: 'بدون ارتباط اخیر', icon: WifiOff, tone: 'muted' },
+              { key: 'moving', title: 'در حال حرکت', detail: 'از دستگاه‌های آنلاین', icon: Navigation, tone: 'brand' },
+              { key: 'stopped', title: 'متوقف', detail: 'از دستگاه‌های آنلاین', icon: Car, tone: 'warning' },
+            ].map((item) => {
+              const Icon = item.icon;
+              const tones = {
+                success: 'bg-success/10 text-success border-success/20',
+                muted: 'bg-bg-hover text-text-secondary border-border-base',
+                brand: 'bg-brand-500/10 text-brand-400 border-brand-500/20',
+                warning: 'bg-warning/10 text-warning border-warning/20',
+              };
+              return (
+                <div key={item.key} className="group rounded-2xl border border-border-base bg-bg-elevated p-4 transition-colors hover:border-border-strong">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-text-secondary">{item.title}</span>
+                    <span className={`flex h-10 w-10 items-center justify-center rounded-xl border ${tones[item.tone]}`}>
+                      <Icon size={19} />
+                    </span>
+                  </div>
+                  <div className="mt-3 text-3xl font-bold tabular-nums tracking-tight text-text-primary">
+                    {gpsValue(item.key) === '—' ? '—' : Number(gpsValue(item.key)).toLocaleString('fa-IR')}
+                  </div>
+                  <p className="mt-1 text-[11px] text-text-muted">{item.detail}</p>
+                </div>
+              );
+            })}
+          </div>
+          {!gpsAvailable && (
+            <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-warning/25 bg-warning/5 px-4 py-3 text-xs leading-6 text-text-secondary">
+              <AlertTriangle size={16} className="mt-1 shrink-0 text-warning" />
+              <span>
+                در حال حاضر دریافت وضعیت زنده GPS ممکن نیست. به همین دلیل وضعیت آنلاین و آفلاین نمایش داده نمی‌شود؛ این موضوع به معنی قطع بودن دستگاه‌ها نیست.
+              </span>
+            </div>
+          )}
+        </section>
+
+        <section className="grid grid-cols-1 gap-4 xl:grid-cols-5">
+          <div className="rounded-2xl border border-border-base bg-bg-elevated p-5 xl:col-span-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-bold text-text-primary">کیفیت اتصال دستگاه‌ها</h2>
+                <p className="mt-1 text-xs text-text-muted">نمای کلی دسترسی دستگاه‌ها به شبکه GPS</p>
+              </div>
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500/10 text-brand-400">
+                <Signal size={20} />
+              </div>
+            </div>
+            {gpsAvailable ? (
+              gpsTotal > 0 ? (
+                <>
+                  <div className="mt-6 flex items-end justify-between gap-3">
+                    <div>
+                      <div className="text-3xl font-bold tabular-nums text-text-primary">{onlinePercent.toLocaleString('fa-IR')}٪</div>
+                      <div className="mt-1 text-xs text-text-muted">دستگاه‌های آنلاین</div>
+                    </div>
+                    <div className="text-left text-xs leading-6 text-text-secondary">
+                      <div><span className="font-semibold text-success">{onlineCount.toLocaleString('fa-IR')}</span> آنلاین</div>
+                      <div><span className="font-semibold text-text-primary">{offlineCount.toLocaleString('fa-IR')}</span> آفلاین</div>
+                    </div>
+                  </div>
+                  <div className="mt-4 h-3 overflow-hidden rounded-full bg-bg-hover">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-l from-success to-brand-400 transition-all"
+                      style={{ width: `${onlinePercent}%` }}
+                    />
+                  </div>
+                  <p className="mt-3 text-[11px] leading-5 text-text-muted">
+                    مبنای محاسبه، وضعیت ارتباط و آخرین زمان دریافت‌شده در سرور است؛ نه وضعیت انبار یا چرخه مدیریتی دستگاه.
+                  </p>
+                </>
+              ) : (
+                <div className="mt-6 rounded-xl bg-bg-base px-4 py-6 text-center">
+                  <Cpu size={24} className="mx-auto text-text-muted" />
+                  <p className="mt-2 text-sm text-text-secondary">در حال حاضر دستگاهی برای این حساب ثبت نشده است.</p>
+                </div>
+              )
+            ) : (
+              <div className="mt-6 rounded-xl bg-bg-base px-4 py-6 text-center">
+                <WifiOff size={24} className="mx-auto text-text-muted" />
+                <p className="mt-2 text-sm text-text-secondary">اطلاعات اتصال فعلاً در دسترس نیست.</p>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-border-base bg-bg-elevated p-5 xl:col-span-2">
+            <h2 className="text-base font-bold text-text-primary">دسترسی سریع</h2>
+            <p className="mt-1 text-xs text-text-muted">بخش موردنظر را انتخاب کنید</p>
+            <div className="mt-4 space-y-2">
+              {quickLinks.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    className="group flex items-center gap-3 rounded-xl border border-border-base bg-bg-base p-3 transition-all hover:border-border-strong hover:bg-bg-hover"
+                  >
+                    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${item.tone}`}>
+                      <Icon size={19} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-semibold text-text-primary">{item.title}</span>
+                      <span className="mt-0.5 block text-[11px] text-text-muted">{item.description}</span>
+                    </span>
+                    <span className="text-text-muted transition-transform group-hover:-translate-x-1" aria-hidden="true">←</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-2xl border border-border-base bg-bg-elevated">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-base px-5 py-4">
+            <div className="flex items-center gap-3">
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-brand-500/10 text-brand-400">
+                <FileText size={20} />
+              </span>
+              <div>
+                <h2 className="text-base font-bold text-text-primary">قرارداد و اشتراک</h2>
+                <p className="mt-1 text-xs text-text-muted">اطلاعات اعتبار خدمات شما</p>
+              </div>
+            </div>
+            {stats?.current_subscription && (
+              <Badge variant={subscriptionExpiring ? 'warning' : 'success'}>
+                {subscriptionExpiring ? 'نزدیک به پایان' : 'فعال'}
+              </Badge>
+            )}
+          </div>
+          {stats?.current_subscription ? (
+            <div className="grid grid-cols-1 gap-5 p-5 sm:grid-cols-3 sm:items-center">
               <div>
                 <div className="text-xs text-text-muted">شماره قرارداد</div>
                 <Link
                   to={`/panel/subscriptions/${stats.current_subscription.id}`}
-                  className="mt-1 inline-flex break-all font-mono text-sm font-semibold text-brand-400 transition-colors hover:text-brand-300 hover:underline underline-offset-4"
+                  className="mt-1 inline-flex items-center gap-2 font-mono text-base font-bold text-brand-400 transition-colors hover:text-brand-300 hover:underline underline-offset-4"
                   aria-label={`مشاهده جزئیات قرارداد ${stats.current_subscription.contract_number}`}
                 >
                   {stats.current_subscription.contract_number}
+                  <ArrowUpLeft size={14} />
                 </Link>
               </div>
-              <div><div className="text-xs text-text-muted">تاریخ پایان</div><div className="mt-1 text-sm text-text-primary">{stats.current_subscription.end_date ? formatJalaliDate(stats.current_subscription.end_date) : '—'}</div></div>
-              <div><div className="text-xs text-text-muted">روزهای باقی‌مانده</div><div className="mt-1 text-sm font-semibold text-text-primary">{stats.current_subscription.days_until_expiry ?? '—'}</div></div>
+              <div>
+                <div className="text-xs text-text-muted">تاریخ پایان اعتبار</div>
+                <div className="mt-1 text-sm font-semibold text-text-primary">
+                  {stats.current_subscription.end_date ? formatJalaliDate(stats.current_subscription.end_date) : '—'}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-text-muted">زمان باقی‌مانده</div>
+                <div className={`mt-1 text-sm font-semibold ${subscriptionExpiring ? 'text-warning' : 'text-text-primary'}`}>
+                  {daysLeft == null ? '—' : daysLeft < 0 ? 'پایان‌یافته' : daysLeft === 0 ? 'آخرین روز اعتبار' : `${Number(daysLeft).toLocaleString('fa-IR')} روز`}
+                </div>
+              </div>
             </div>
-          </Card>
-        )}
+          ) : (
+            <div className="p-5 text-sm text-text-secondary">
+              در حال حاضر قرارداد فعال برای این حساب ثبت نشده است.
+            </div>
+          )}
+        </section>
       </div>
     );
   }
