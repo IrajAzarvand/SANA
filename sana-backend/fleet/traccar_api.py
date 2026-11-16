@@ -75,3 +75,14 @@ def traccar_device_positions(device_id: int, start: str, end: str, *, limit: int
     if not isinstance(result, list):
         raise TraccarAPIError("Traccar position history returned an unexpected response")
     return [item for item in result if isinstance(item, dict)]
+
+
+def traccar_device_events(device_id: int, start: str, end: str) -> list[dict]:
+    """Return Traccar events for one device and a bounded time range."""
+    result = traccar_request(
+        "reports/events",
+        params={"deviceId": int(device_id), "from": start, "to": end},
+    )
+    if not isinstance(result, list):
+        raise TraccarAPIError("Traccar event report returned an unexpected response")
+    return [item for item in result if isinstance(item, dict)]
