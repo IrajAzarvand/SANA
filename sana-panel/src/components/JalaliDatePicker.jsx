@@ -155,7 +155,13 @@ export default function JalaliDatePicker({
 
     if (input.length === 10) {
       const g = toGregorian(input);
-      if (g) onChange(g);
+      if (
+        g &&
+        (!minDate || jalaliCompare(g, minDate)) &&
+        (!maxDate || g <= maxDate)
+      ) {
+        onChange(g);
+      }
     } else if (input === '') {
       onChange('');
     }
