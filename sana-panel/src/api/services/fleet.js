@@ -40,6 +40,21 @@ export const deviceModelsAPI = {
   },
 };
 
+export const alertsAPI = {
+  list: async (params = {}) => {
+    const response = await apiClient.get('/devices/alerts/', { params });
+    return response.data;
+  },
+  updateStatus: async ({ deviceId, eventId, status }) => {
+    const response = await apiClient.post('/devices/alerts/', {
+      device_id: deviceId,
+      event_id: eventId,
+      status,
+    });
+    return response.data;
+  },
+};
+
 export const devicesAPI = {
   list: async (params = {}) => {
     const response = await apiClient.get('/devices/', { params });
