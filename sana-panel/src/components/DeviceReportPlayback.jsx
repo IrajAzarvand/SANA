@@ -817,7 +817,6 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
                 ['زمان دریافت سرور', formatDate(currentPoint.server_received_at)],
                 ['منبع تطبیق', currentPoint.match_provider || '—'],
                 ['زمان تطبیق', formatDate(currentPoint.matched_at)],
-                ['زمان دریافت سرور', formatDate(currentPoint.server_received_at)],
               ].map(([label, value, _key]) => (
                 <div key={label} className="min-w-0 border-b border-border-base/70 pb-1.5">
                   <div className="text-[10px] text-text-muted"><AttributeLabel label={label} description={attributeDescriptions[_key]} tooltipId={`field-${label}`} activeTooltipId={activeAttributeTooltip} onToggle={setActiveAttributeTooltip} /></div>
