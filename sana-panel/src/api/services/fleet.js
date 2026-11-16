@@ -62,6 +62,10 @@ export const devicesAPI = {
       data: { confirm_imei: confirmImei },
     });
   },
+  mapPositions: async () => {
+    const response = await apiClient.get('/devices/map-positions/');
+    return response.data;
+  },
 };
 
 export const driversAPI = {
