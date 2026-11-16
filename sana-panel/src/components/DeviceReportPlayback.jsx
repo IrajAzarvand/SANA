@@ -529,10 +529,6 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
   const allowedEndDate = !isSiteAdmin
     ? (metadataEndDate < todayDate ? metadataEndDate : todayDate)
     : null;
-  const selectedStartDate = datePart(from);
-  const endPickerMinDate = allowedStartDate && selectedStartDate
-    ? (selectedStartDate > allowedStartDate ? selectedStartDate : allowedStartDate)
-    : selectedStartDate || allowedStartDate;
 
 
   return (
@@ -637,7 +633,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
               }}
               minTime={!isSiteAdmin && metadata?.range_start && datePart(to) === datePart(dateTimeLocal(metadata.range_start)) ? timePart(dateTimeLocal(metadata.range_start)) : null}
               maxTime={!isSiteAdmin && metadata?.range_end && datePart(to) === datePart(dateTimeLocal(metadata.range_end)) ? timePart(dateTimeLocal(metadata.range_end)) : null}
-              minDate={endPickerMinDate}
+              minDate={allowedStartDate}
               maxDate={allowedEndDate}
               placeholder="انتخاب تاریخ و ساعت پایان"
               className="[&>div>input]:!py-2"
