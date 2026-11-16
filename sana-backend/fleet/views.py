@@ -757,7 +757,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 status=503,
             )
 
-        traccar_by_id = {}
         traccar_by_imei = {}
         for item in traccar_devices_list:
             try:
@@ -765,19 +764,25 @@ class DeviceViewSet(viewsets.ModelViewSet):
             except (TypeError, ValueError):
                 continue
             unique_id = str(item.get('uniqueId') or '').strip()
-            traccar_by_id[traccar_id] = item
             if unique_id:
                 traccar_by_imei[unique_id] = (traccar_id, item)
 
+        eligible_traccar_ids = {
+            traccar_id
+            for unique_id, (traccar_id, _item) in traccar_by_imei.items()
+            if unique_id in sana_by_imei
+        }
+
         # Traccar normally returns one latest position per device. Keep the
         # newest server-received point if an API/proxy ever returns duplicates.
+        # Ignore every Traccar device outside this user's authorized SANA set.
         position_by_traccar_id = {}
         for position in traccar_positions:
             try:
                 traccar_id = int(position.get('deviceId'))
             except (TypeError, ValueError):
                 continue
-            if traccar_id not in traccar_by_id:
+            if traccar_id not in eligible_traccar_ids:
                 continue
             received_at = traccar_position_timestamp(position)
             if received_at is not None and timezone.is_naive(received_at):
