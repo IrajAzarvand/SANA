@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { formatJalaliDateTime } from '../utils/dateUtils';
 import {
   Activity, AlertTriangle, Building2, CheckCircle2, Clock3, Cpu,
   Database, Server, Users, Wifi, WifiOff, XCircle,
@@ -312,7 +313,7 @@ export default function AdminDashboard() {
           </Link>
         </div>
       </Card>
-      <div className="text-[10px] text-text-muted text-left">آخرین دریافت: {data?.generated_at ? new Date(data.generated_at).toLocaleString('fa-IR') : '—'}</div>
+      <div className="text-[10px] text-text-muted text-left">آخرین دریافت: {data?.generated_at ? formatJalaliDateTime(data.generated_at) : '—'}</div>
     </div>
   );
 }
