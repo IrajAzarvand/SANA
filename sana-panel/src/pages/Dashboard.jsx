@@ -114,6 +114,7 @@ function CustomerDashboard() {
           <StatCard title="در حال حرکت" value={gpsValue('moving')} icon={Navigation} color="brand" />
           <StatCard title="متوقف" value={gpsValue('stopped')} icon={Car} color="warning" />
         </section>
+        <p className="text-xs text-text-muted">در حال حرکت و متوقف، زیرمجموعه دستگاه‌های آنلاین هستند.</p>
         {!gpsAvailable && (
           <div className="rounded-field border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-text-secondary">
             دریافت وضعیت زنده GPS از Traccar در حال حاضر ممکن نیست؛ این وضعیت به معنی آفلاین بودن دستگاه‌ها نیست.
