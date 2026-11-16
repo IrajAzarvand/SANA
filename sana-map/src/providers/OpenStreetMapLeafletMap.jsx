@@ -10,6 +10,7 @@ const DEFAULT_ZOOM = 5;
 
 function markerColor(position) {
   if (position.status === 'offline') return '#64748B';
+  if (position.status === 'unknown') return '#94A3B8';
   if (position.status === 'moving') return '#14B8A6';
   return '#F59E0B';
 }
