@@ -5,11 +5,11 @@ export function getDeviceStatusCounts(positions = []) {
   return positions.reduce((counts, position) => {
     if (position.status === 'moving') counts.moving += 1;
     else if (position.status === 'offline') counts.offline += 1;
-    else counts.stopped += 1;
+    else if (position.status === 'stopped') counts.stopped += 1;
+    else counts.unknown += 1;
     return counts;
-  }, { moving: 0, stopped: 0, offline: 0 });
+  }, { moving: 0, stopped: 0, offline: 0, unknown: 0 });
 }
-
 export function getDeviceClusters(map, positions = [], followPosition = false) {
   if (!map || !Array.isArray(positions)) return [];
 
