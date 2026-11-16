@@ -742,7 +742,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='map-positions')
     def map_positions(self, request):
-        """Return live positions from Traccar; only Neshan match overlays come from SANA."""
+        """Return one live-map record for every device the current user may access."""
         devices = list(self.filter_queryset(self.get_queryset()).select_related('vehicle'))
         if not devices:
             return Response([])
@@ -757,35 +757,46 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 status=503,
             )
 
-        traccar_by_id = {
-            int(item['id']): item
-            for item in traccar_devices_list
-            if item.get('id') is not None
-        }
-        eligible = {}
-        for traccar_id, traccar_device in traccar_by_id.items():
-            unique_id = str(traccar_device.get('uniqueId') or '').strip()
-            sana_device = sana_by_imei.get(unique_id)
-            if sana_device is not None:
-                eligible[traccar_id] = (sana_device, traccar_device)
+        traccar_by_id = {}
+        traccar_by_imei = {}
+        for item in traccar_devices_list:
+            try:
+                traccar_id = int(item.get('id'))
+            except (TypeError, ValueError):
+                continue
+            unique_id = str(item.get('uniqueId') or '').strip()
+            traccar_by_id[traccar_id] = item
+            if unique_id:
+                traccar_by_imei[unique_id] = (traccar_id, item)
 
-        current = []
+        # Traccar normally returns one latest position per device. Keep the
+        # newest server-received point if an API/proxy ever returns duplicates.
+        position_by_traccar_id = {}
         for position in traccar_positions:
             try:
-                traccar_id = int(position['deviceId'])
-                position_id = int(position['id'])
-                latitude = float(position['latitude'])
-                longitude = float(position['longitude'])
+                traccar_id = int(position.get('deviceId'))
+                position_id = int(position.get('id'))
+            except (TypeError, ValueError):
+                continue
+            if traccar_id not in traccar_by_id:
+                continue
+            received_at = traccar_position_timestamp(position)
+            previous = position_by_traccar_id.get(traccar_id)
+            previous_at = traccar_position_timestamp(previous) if previous else None
+            if previous is None or (
+                received_at is not None and (previous_at is None or received_at > previous_at)
+            ):
+                position_by_traccar_id[traccar_id] = position
+
+        matched_position_ids = []
+        for position in position_by_traccar_id.values():
+            try:
+                matched_position_ids.append(int(position['id']))
             except (KeyError, TypeError, ValueError):
                 continue
-            if traccar_id not in eligible or not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
-                continue
-            sana_device, traccar_device = eligible[traccar_id]
-            current.append((position_id, traccar_id, sana_device, traccar_device, position, latitude, longitude))
 
-        position_ids = [row[0] for row in current]
         matches = {}
-        if position_ids:
+        if matched_position_ids:
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
@@ -793,7 +804,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     FROM gps.map_matched_position
                     WHERE traccar_position_id = ANY(%s)
                     """,
-                    [position_ids],
+                    [matched_position_ids],
                 )
                 matches = {
                     int(row[0]): {
@@ -807,41 +818,92 @@ class DeviceViewSet(viewsets.ModelViewSet):
 
         now = timezone.now()
         output = []
-        for position_id, traccar_id, device, traccar_device, position, latitude, longitude in current:
-            server_received_at = traccar_position_timestamp(position)
+        for device in devices:
+            traccar_link = traccar_by_imei.get(str(device.imei).strip())
+            traccar_id, traccar_device = traccar_link if traccar_link else (None, None)
+            position = position_by_traccar_id.get(traccar_id) if traccar_id is not None else None
+
+            server_received_at = traccar_position_timestamp(position) if position else None
+            if server_received_at is None and traccar_device:
+                server_received_at = parse_datetime(str(traccar_device.get('lastUpdate') or ''))
             if server_received_at is not None and timezone.is_naive(server_received_at):
                 server_received_at = timezone.make_aware(server_received_at)
-            is_online = (
-                str(traccar_device.get('status') or '').lower() == 'online'
-                and server_received_at is not None
+
+            fresh = (
+                server_received_at is not None
                 and 0 <= (now - server_received_at).total_seconds() <= 300
             )
-            attributes = position.get('attributes') if isinstance(position.get('attributes'), dict) else {}
-            match = matches.get(position_id)
-            valid = bool(position.get('valid', True))
-            speed_kmh_raw = float(position.get('speed') or 0) * 1.852
-            speed_kmh = round(speed_kmh_raw, 1)
-            motion = attributes.get('motion')
-            status = 'offline' if not is_online else ('moving' if motion is True or speed_kmh_raw >= 3 else 'stopped')
+            traccar_status = str((traccar_device or {}).get('status') or '').lower()
+            is_online = traccar_status == 'online' and fresh
+
+            latitude = longitude = None
+            position_id = None
+            valid = False
+            attributes = {}
+            match = None
+            speed_kmh = None
+            heading = None
+            device_time = None
+
+            if position:
+                try:
+                    position_id = int(position['id'])
+                    raw_latitude = float(position.get('latitude'))
+                    raw_longitude = float(position.get('longitude'))
+                    if (
+                        math.isfinite(raw_latitude) and math.isfinite(raw_longitude)
+                        and -90 <= raw_latitude <= 90
+                        and -180 <= raw_longitude <= 180
+                    ):
+                        latitude, longitude = raw_latitude, raw_longitude
+                except (KeyError, TypeError, ValueError, OverflowError):
+                    pass
+
+                attributes = position.get('attributes') if isinstance(position.get('attributes'), dict) else {}
+                valid = bool(position.get('valid', True))
+                try:
+                    speed_kmh = round(float(position.get('speed') or 0) * 1.852, 1)
+                except (TypeError, ValueError, OverflowError):
+                    speed_kmh = None
+                heading = position.get('course')
+                device_time = position.get('fixTime') or position.get('deviceTime')
+                match = matches.get(position_id) if position_id is not None else None
+                if match:
+                    latitude, longitude = match['latitude'], match['longitude']
+
+            has_position = latitude is not None and longitude is not None
+            if not traccar_device:
+                status = 'unknown'
+            elif not is_online:
+                status = 'offline'
+            elif not has_position:
+                status = 'unknown'
+            else:
+                motion = attributes.get('motion')
+                status = 'moving' if motion is True or (speed_kmh is not None and speed_kmh >= 3) else 'stopped'
+
             output.append({
                 'device_id': device.pk,
                 'imei': device.imei,
-                'phone': traccar_device.get('phone'),
+                'phone': (traccar_device or {}).get('phone'),
                 'vehicle_id': device.vehicle_id,
                 'vehicle_plate': device.vehicle.plate if device.vehicle_id else None,
-                'latitude': match['latitude'] if match else latitude,
-                'longitude': match['longitude'] if match else longitude,
-                'position_is_current': valid,
+                'latitude': latitude,
+                'longitude': longitude,
+                'has_position': has_position,
+                'position_is_current': valid if position else False,
                 'position_is_matched': match is not None,
                 'match_provider': match['provider'] if match else None,
                 'matched_at': match['matched_at'] if match else None,
                 'speed': speed_kmh,
-                'heading': position.get('course'),
+                'heading': heading,
                 'last_seen': server_received_at.isoformat() if server_received_at else None,
-                'device_time': position.get('fixTime') or position.get('deviceTime'),
+                'device_time': device_time,
                 'attributes': attributes,
+                'traccar_status': traccar_status or None,
                 'status': status,
             })
+
         output.sort(key=lambda item: item['device_id'])
         return Response(output)
 
