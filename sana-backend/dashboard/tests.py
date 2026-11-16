@@ -154,3 +154,127 @@ class AdminDashboardOverviewTests(TestCase):
         self.assertEqual(response.data['fleet']['warehouse'], 1)
         self.assertEqual(response.data['fleet']['devices_by_management_status']['warehouse'], 1)
         self.assertEqual(response.data['contracts']['active_devices'], 1)
+
+
+class PersonalDashboardGPSStatusTests(TestCase):
+    def setUp(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+        from fleet.models import Device, DeviceCustomerAccessPeriod
+
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username='personal_dashboard_gps',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        self.other_user = User.objects.create_user(
+            username='other_dashboard_gps',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        self.now = timezone.now()
+        self.Device = Device
+        self.DeviceCustomerAccessPeriod = DeviceCustomerAccessPeriod
+        self.timedelta = timedelta
+
+    def make_accessible_device(self, imei, *, user=None, management_status='installed'):
+        device = self.Device.objects.create(
+            imei=imei,
+            management_status=management_status,
+        )
+        self.DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            user=user or self.user,
+            started_at=self.now - self.timedelta(days=1),
+        )
+        return device
+
+    def test_personal_stats_separate_live_gps_from_management_status(self):
+        from unittest.mock import patch
+
+        moving = self.make_accessible_device('860000000000301', management_status='installed')
+        stopped = self.make_accessible_device('860000000000302', management_status='faulty')
+        stale = self.make_accessible_device('860000000000303', management_status='sold')
+        no_position = self.make_accessible_device('860000000000304', management_status='warehouse')
+        other = self.make_accessible_device(
+            '860000000000305',
+            user=self.other_user,
+            management_status='active',
+        )
+
+        traccar_devices_data = [
+            {'id': 301, 'uniqueId': moving.imei, 'status': 'online'},
+            {'id': 302, 'uniqueId': stopped.imei, 'status': 'online'},
+            {'id': 303, 'uniqueId': stale.imei, 'status': 'online'},
+            {'id': 304, 'uniqueId': no_position.imei, 'status': 'online'},
+            {'id': 305, 'uniqueId': other.imei, 'status': 'online'},
+        ]
+        positions_data = [
+            {
+                'deviceId': 301,
+                'serverTime': self.now.isoformat(),
+                'speed': 5,
+                'attributes': {'motion': False},
+            },
+            {
+                'deviceId': 302,
+                'serverTime': self.now.isoformat(),
+                'speed': 0,
+                'attributes': {'motion': False},
+            },
+            {
+                'deviceId': 303,
+                'serverTime': (self.now - self.timedelta(minutes=6)).isoformat(),
+                'speed': 0,
+                'attributes': {'motion': False},
+            },
+            {
+                'deviceId': 305,
+                'serverTime': self.now.isoformat(),
+                'speed': 10,
+                'attributes': {'motion': True},
+            },
+        ]
+
+        self.client.force_authenticate(user=self.user)
+        with patch('dashboard.views.traccar_devices', return_value=traccar_devices_data), patch(
+            'dashboard.views.traccar_current_positions',
+            return_value=positions_data,
+        ):
+            response = self.client.get('/api/dashboard/stats/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['devices'], 4)
+        self.assertEqual(response.data['gps_status'], {
+            'available': True,
+            'total': 4,
+            'online': 2,
+            'offline': 2,
+            'moving': 1,
+            'stopped': 1,
+        })
+        self.assertEqual(response.data['devices_by_management_status']['installed'], 1)
+        self.assertEqual(response.data['devices_by_management_status']['faulty'], 1)
+        self.assertEqual(response.data['devices_by_management_status']['sold'], 1)
+        self.assertEqual(response.data['devices_by_management_status']['warehouse'], 1)
+
+    def test_personal_stats_report_gps_unavailable_without_marking_devices_offline(self):
+        from unittest.mock import patch
+
+        self.make_accessible_device('860000000000306')
+        self.client.force_authenticate(user=self.user)
+
+        with patch('dashboard.views.traccar_devices', side_effect=__import__(
+            'fleet.traccar_api', fromlist=['TraccarAPIError']
+        ).TraccarAPIError('unavailable')):
+            response = self.client.get('/api/dashboard/stats/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data['gps_status']['available'])
+        self.assertEqual(response.data['gps_status']['total'], 1)
+        self.assertIsNone(response.data['gps_status']['online'])
+        self.assertIsNone(response.data['gps_status']['offline'])
