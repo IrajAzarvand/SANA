@@ -509,7 +509,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 # Personal device visibility is granted by either a current
                 # customer-access period or a current active contract link.
                 # Report authorization must follow the same rule as get_queryset().
-                access = access_query.filter(user=request.user).order_by('-started_at').first()
                 personal_links = [
                     link for link in links
                     if link.subscription.user_id == request.user.pk
@@ -519,26 +518,19 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 ]
                 link = personal_links[0] if personal_links else None
 
-                if link is None and access is None:
-                    return Response({'detail': 'برای این دستگاه قرارداد و دسترسی فعال پیدا نشد.'}, status=403)
+                if link is None:
+                    return Response({'detail': 'گزارش این دستگاه فقط در بازه قرارداد فعال قابل مشاهده است.'}, status=403)
 
-                if link is not None:
-                    # Contract dates are the reporting boundary. A current
-                    # operational access period may authorize visibility, but
-                    # must not narrow the customer's contractual report history.
-                    range_start = timezone.make_aware(datetime.combine(
-                        max(link.start_date, link.subscription.start_date),
-                        datetime_time.min,
-                    ))
-                    range_end = timezone.make_aware(datetime.combine(
-                        min(link.end_date, link.subscription.end_date),
-                        datetime_time.max,
-                    ))
-                else:
-                    # Preserve access-period-only devices that are visible to
-                    # personal users without a linked subscription contract.
-                    range_start = access.started_at
-                    range_end = access.ended_at or now
+                # Contract dates are the sole reporting boundary for personal
+                # users. Operational access periods do not extend or narrow it.
+                range_start = timezone.make_aware(datetime.combine(
+                    max(link.start_date, link.subscription.start_date),
+                    datetime_time.min,
+                ))
+                range_end = timezone.make_aware(datetime.combine(
+                    min(link.end_date, link.subscription.end_date),
+                    datetime_time.max,
+                ))
             else:
                 if request.user.is_branch_manager:
                     access_query = access_query.filter(
