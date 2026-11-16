@@ -226,7 +226,7 @@ export default function Map() {
         </div>
 
         <div className="pointer-events-none absolute inset-x-2 top-2 z-[1000] sm:inset-x-3 sm:top-3">
-          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-5 sm:gap-2">
+          <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5 sm:gap-2">
             <Summary label="کل دستگاه‌ها" value={counts.total} icon={<CarFront size={15} />} />
             <Summary label="در حرکت" value={counts.moving} icon={<Navigation size={15} />} tone="text-success" />
             <Summary label="متوقف" value={counts.stopped} icon={<PauseCircle size={15} />} tone="text-warning" />
@@ -277,7 +277,7 @@ export default function Map() {
           </>
         )}
 
-        {selectedDevice && (
+        {selectedDevice && !mobileListOpen && (
           <div className="absolute bottom-[68px] left-2 z-[1000] w-[min(320px,calc(100%-16px))] sm:left-3">
             <DeviceDetails position={selectedDevice} onClose={() => setFollowedDeviceId(null)} />
           </div>
