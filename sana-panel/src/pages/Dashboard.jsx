@@ -159,7 +159,16 @@ function CustomerDashboard() {
         {stats?.current_subscription && (
           <Card title="اشتراک من" subtitle="اطلاعات قرارداد فعال">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <div><div className="text-xs text-text-muted">شماره قرارداد</div><div className="mt-1 break-all font-mono text-sm text-text-primary">{stats.current_subscription.contract_number}</div></div>
+              <div>
+                <div className="text-xs text-text-muted">شماره قرارداد</div>
+                <Link
+                  to={`/panel/subscriptions/${stats.current_subscription.id}`}
+                  className="mt-1 inline-flex break-all font-mono text-sm font-semibold text-brand-400 transition-colors hover:text-brand-300 hover:underline underline-offset-4"
+                  aria-label={`مشاهده جزئیات قرارداد ${stats.current_subscription.contract_number}`}
+                >
+                  {stats.current_subscription.contract_number}
+                </Link>
+              </div>
               <div><div className="text-xs text-text-muted">تاریخ پایان</div><div className="mt-1 text-sm text-text-primary">{stats.current_subscription.end_date ? formatJalaliDate(stats.current_subscription.end_date) : '—'}</div></div>
               <div><div className="text-xs text-text-muted">روزهای باقی‌مانده</div><div className="mt-1 text-sm font-semibold text-text-primary">{stats.current_subscription.days_until_expiry ?? '—'}</div></div>
             </div>
