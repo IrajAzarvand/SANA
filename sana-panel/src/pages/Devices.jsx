@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
+import { formatJalaliDateTime } from '../utils/dateUtils';
 import {
   Search, Plus, Cpu, Pencil, Trash2, Hash, Phone, Eye, History, Activity, Package, Truck,
 } from 'lucide-react';
@@ -25,12 +26,7 @@ const protocolLabelMap = {
   'hq*': 'HQ',
 };
 
-const formatReceivedAt = (value) => {
-  if (!value) return 'هنوز داده‌ای دریافت نشده';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '—';
-  return date.toLocaleString('fa-IR', { dateStyle: 'short', timeStyle: 'medium' });
-};
+const formatReceivedAt = (value) => value ? formatJalaliDateTime(value) : 'هنوز داده‌ای دریافت نشده';
 
 const hasDeviceModel = (device) => Boolean(
   device.device_model_manufacturer && device.device_model_name
