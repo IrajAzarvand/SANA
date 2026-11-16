@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { formatJalaliDateTime } from '../utils/dateUtils';
 import { Activity, MapPin, Navigation, PauseCircle, WifiOff } from 'lucide-react';
 import apiClient from '../api/client';
 import { TRACCAR_ATTRIBUTE_LABELS as ATTRIBUTE_LABELS } from '../utils/traccarAttributes';
@@ -195,16 +196,7 @@ const COMMON_ATTRIBUTES = [
 ];
 
 function formatDeviceTime(value) {
-  if (!value) return 'نامشخص';
-
-  const date = new Date(value);
-
-  if (Number.isNaN(date.getTime())) return 'نامشخص';
-
-  return new Intl.DateTimeFormat('fa-IR', {
-    dateStyle: 'short',
-    timeStyle: 'medium',
-  }).format(date);
+  return value ? formatJalaliDateTime(value) : 'نامشخص';
 }
 
 function formatDeviceAttribute(value) {
