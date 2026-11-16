@@ -775,7 +775,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
         for position in traccar_positions:
             try:
                 traccar_id = int(position.get('deviceId'))
-                position_id = int(position.get('id'))
             except (TypeError, ValueError):
                 continue
             if traccar_id not in traccar_by_id:
