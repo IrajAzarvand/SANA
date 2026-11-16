@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { formatJalaliDateTime } from '../utils/dateUtils';
-import { Activity, CalendarClock, ChevronLeft, ChevronRight, CircleAlert, Clock3, Download, Gauge, Play, Search, SkipBack, SkipForward, Zap } from 'lucide-react';
+import { Activity, CalendarClock, ChevronLeft, ChevronRight, CircleAlert, Download, Gauge, Play, Search, SkipBack, SkipForward } from 'lucide-react';
 import apiClient from '../api/client';
 import { TRACCAR_ATTRIBUTE_LABELS as attributeLabels } from '../utils/traccarAttributes';
 import JalaliDatePicker from './JalaliDatePicker';
@@ -171,10 +171,27 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState(1);
   const [pointIndex, setPointIndex] = useState(0);
-  const [progress, setProgress] = useState(0);
   const timerRef = useRef(null);
   const searchInputRef = useRef(null);
   const dateSelectionTouchedRef = useRef(false);
+  const pointIndexRef = useRef(0);
+  pointIndexRef.current = pointIndex;
+  const progress = points.length > 1 ? (pointIndex / (points.length - 1)) * 100 : 0;
+
+  const resetReportState = () => {
+    dateSelectionTouchedRef.current = false;
+    setMetadata(null);
+    setFrom('');
+    setTo('');
+    setFromTime('00:00');
+    setToTime('23:59');
+    setPoints([]);
+    setPointIndex(0);
+    setPlaying(false);
+    setNotice('');
+    setHasUnmatchedCoordinates(false);
+    setError('');
+  };
 
   useEffect(() => {
     if (!activeAttributeTooltip) return undefined;
@@ -224,19 +241,6 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
   ].filter(Boolean).join(' · ');
 
   useEffect(() => {
-    dateSelectionTouchedRef.current = false;
-    setMetadata(null);
-    setFrom('');
-    setTo('');
-    setFromTime('00:00');
-    setToTime('23:59');
-    setPoints([]);
-    setPointIndex(0);
-    setProgress(0);
-    setPlaying(false);
-    setNotice('');
-    setHasUnmatchedCoordinates(false);
-    setError('');
     if (!deviceId) return undefined;
     let active = true;
     apiClient.get('/devices/report-history/', { params: { device_id: deviceId, metadata: 'true' } })
@@ -296,10 +300,17 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
         page += 1;
         if (page > 200) throw new Error('بازه انتخابی بیش از حد بزرگ است؛ بازه کوتاه‌تری انتخاب کنید.');
       } while (cursor);
-      const validPoints = allPoints.filter((point) =>
-        (point.matched_latitude !== null && point.matched_latitude !== undefined && point.matched_longitude !== null && point.matched_longitude !== undefined) ||
-        (point.latitude !== null && point.latitude !== undefined && point.longitude !== null && point.longitude !== undefined)
-      );
+      const validPoints = allPoints.filter((point) => {
+        const isValidPair = (latitude, longitude) => {
+          const lat = Number(latitude);
+          const lng = Number(longitude);
+          return latitude !== null && latitude !== undefined && longitude !== null && longitude !== undefined
+            && Number.isFinite(lat) && Number.isFinite(lng)
+            && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+        };
+        return isValidPair(point.matched_latitude, point.matched_longitude)
+          || isValidPair(point.latitude, point.longitude);
+      });
       setPoints(validPoints);
       if (validPoints.length === 0) setNotice('در این بازه نقطه مکانی معتبر ثبت نشده است.');
       setHasUnmatchedCoordinates(validPoints.some((point) =>
@@ -315,21 +326,14 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
   useEffect(() => {
     if (!playing || points.length < 2) return undefined;
     timerRef.current = window.setInterval(() => {
-      setPointIndex((current) => {
-        const next = current + 1;
-        return Math.min(next, points.length - 1);
-      });
+      if (pointIndexRef.current >= points.length - 1) {
+        setPlaying(false);
+        return;
+      }
+      setPointIndex((current) => Math.min(current + 1, points.length - 1));
     }, Math.max(150, 900 / speed));
     return () => { if (timerRef.current) window.clearInterval(timerRef.current); };
   }, [playing, points.length, speed]);
-
-  useEffect(() => {
-    setProgress(points.length > 1 ? (pointIndex / (points.length - 1)) * 100 : 0);
-  }, [pointIndex, points.length]);
-
-  useEffect(() => {
-    if (playing && points.length > 0 && pointIndex >= points.length - 1) setPlaying(false);
-  }, [playing, pointIndex, points.length]);
 
   const routeSegments = useMemo(() => {
     const colorForSpeed = (value) => {
@@ -416,8 +420,8 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
       const moving = isMoving(point);
       if (index > 0) {
         const previous = points[index - 1];
-        const previousTime = new Date(previous.device_time).getTime();
-        const currentTime = new Date(point.device_time).getTime();
+        const previousTime = new Date(previous.server_received_at).getTime();
+        const currentTime = new Date(point.server_received_at).getTime();
         const delta = currentTime - previousTime;
         if (!Number.isFinite(delta) || delta <= 0 || delta > 600000) {
           if (Number.isFinite(delta) && delta > 600000) {
@@ -469,7 +473,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
 
   const exportCsv = () => {
     if (!points.length) return;
-    const columns = ['device_time', 'server_received_at', 'latitude', 'longitude', 'matched_latitude', 'matched_longitude', 'speed', 'heading', 'altitude', 'accuracy', 'gps_valid', 'motion', 'ignition', 'satellites', 'battery_voltage', 'external_voltage', 'gsm_signal', 'odometer', 'engine_hours', 'fuel_level', 'attributes'];
+    const columns = ['server_received_at', 'latitude', 'longitude', 'matched_latitude', 'matched_longitude', 'speed', 'heading', 'altitude', 'accuracy', 'gps_valid', 'motion', 'ignition', 'satellites', 'battery_voltage', 'external_voltage', 'gsm_signal', 'odometer', 'engine_hours', 'fuel_level', 'attributes'];
     const escapeCsv = (value) => {
       const raw = value && typeof value === 'object' ? JSON.stringify(value) : String(value ?? '');
       return `"${raw.replace(/"/g, '""')}"`;
@@ -498,7 +502,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
       longitude: Number(longitude),
       speed: Number(currentPoint.speed || 0),
       heading: currentPoint.heading === null ? null : Number(currentPoint.heading),
-      device_time: currentPoint.device_time,
+      device_time: currentPoint.server_received_at,
       last_seen: currentPoint.server_received_at,
       attributes: currentPoint.attributes && typeof currentPoint.attributes === 'object' ? currentPoint.attributes : {},
       position_is_current: Boolean(currentPoint.gps_valid),
@@ -550,6 +554,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
                 onFocus={() => setDevicePickerOpen(true)}
                 onBlur={() => setDevicePickerOpen(false)}
                 onChange={(event) => {
+                  resetReportState();
                   setSearch(event.target.value);
                   setDeviceId('');
                   setDevicePickerOpen(true);
@@ -568,6 +573,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
                       aria-selected={String(device.id) === String(deviceId)}
                       onMouseDown={(event) => event.preventDefault()}
                       onClick={() => {
+                        resetReportState();
                         setDeviceId(String(device.id));
                         setSearch(deviceLabel(device));
                         setDevicePickerOpen(false);
