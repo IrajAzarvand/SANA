@@ -1468,8 +1468,8 @@ export default function SubscriptionDetail() {
           <div className="border border-border-base rounded-card p-4 space-y-4">
             <h3 className="text-sm font-semibold text-text-primary">اطلاعات قرارداد</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <JalaliDatePicker label="تاریخ شروع قرارداد" value={editForm.start_date} onChange={(val) => setEditForm({...editForm, start_date: val})} required />
-              <JalaliDatePicker label="تاریخ پایان قرارداد" value={editForm.end_date} minDate={editForm.start_date} onChange={(val) => setEditForm({...editForm, end_date: val})} required />
+              <JalaliDatePicker label="تاریخ شروع قرارداد" value={editForm.start_date} maxDate={todayGregorian()} onChange={(val) => setEditForm((prev) => ({...prev, start_date: val, end_date: prev.end_date && val && prev.end_date < val ? '' : prev.end_date}))} required />
+              <JalaliDatePicker label="تاریخ پایان قرارداد" value={editForm.end_date} minDate={editForm.start_date} maxDate={todayGregorian()} onChange={(val) => setEditForm({...editForm, end_date: val})} required />
             </div>
             <Input label="یادداشت قرارداد" value={editForm.notes} onChange={(e) => setEditForm({...editForm, notes: e.target.value})} />
           </div>
@@ -1894,8 +1894,8 @@ export default function SubscriptionDetail() {
             options={warehouseOptions.filter((option) => !editForm.add_devices.some((item) => Number(item.device_id) === Number(option.value)))}
           />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <JalaliDatePicker label="شروع دستگاه" value={editNewDevice.start_date} minDate={editForm.start_date} maxDate={editForm.end_date} onChange={(val) => setEditNewDevice({...editNewDevice,start_date:val})} required />
-            <JalaliDatePicker label="پایان دستگاه" value={editNewDevice.end_date} minDate={editForm.start_date} maxDate={editForm.end_date} onChange={(val) => setEditNewDevice({...editNewDevice,end_date:val})} required />
+            <JalaliDatePicker label="شروع دستگاه" value={editNewDevice.start_date} minDate={editForm.start_date} maxDate={editForm.end_date && editForm.end_date < todayGregorian() ? editForm.end_date : todayGregorian()} onChange={(val) => setEditNewDevice((prev) => ({...prev, start_date: val, end_date: prev.end_date && val && prev.end_date < val ? '' : prev.end_date}))} required />
+            <JalaliDatePicker label="پایان دستگاه" value={editNewDevice.end_date} minDate={editNewDevice.start_date || editForm.start_date} maxDate={editForm.end_date && editForm.end_date < todayGregorian() ? editForm.end_date : todayGregorian()} onChange={(val) => setEditNewDevice({...editNewDevice,end_date:val})} required />
           </div>
         </div>
       </Modal>
@@ -1958,12 +1958,15 @@ export default function SubscriptionDetail() {
           <JalaliDatePicker
             label="تاریخ شروع"
             value={deviceForm.start_date}
-            onChange={(val) => setDeviceForm({ ...deviceForm, start_date: val })}
+            maxDate={todayGregorian()}
+            onChange={(val) => setDeviceForm((prev) => ({ ...prev, start_date: val, end_date: prev.end_date && val && prev.end_date < val ? '' : prev.end_date }))}
             required
           />
           <JalaliDatePicker
             label="تاریخ پایان"
             value={deviceForm.end_date}
+            minDate={deviceForm.start_date || null}
+            maxDate={todayGregorian()}
             onChange={(val) => setDeviceForm({ ...deviceForm, end_date: val })}
             required
           />
