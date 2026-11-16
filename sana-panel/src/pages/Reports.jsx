@@ -46,7 +46,7 @@ export default function Reports() {
               </p>
             </div>
           </div>
-          <Button onClick={() => navigate('/panel/reports/trips')} className="shrink-0">
+          <Button onClick={() => navigate('/panel/reports/trips')}>
             مشاهده گزارش مسیرها
             <ArrowLeft size={15} />
           </Button>
