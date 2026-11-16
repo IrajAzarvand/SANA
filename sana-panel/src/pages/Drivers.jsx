@@ -40,7 +40,8 @@ export default function Drivers() {
   const [assignmentModalOpen, setAssignmentModalOpen] = useState(false);
   const [assignmentDriver, setAssignmentDriver] = useState(null);
   const [assignmentVehicle, setAssignmentVehicle] = useState('');
-  const [assignmentStart, setAssignmentStart] = useState('');
+  const [assignmentStartDate, setAssignmentStartDate] = useState('');
+  const [assignmentStartTime, setAssignmentStartTime] = useState('');
   const [assignmentSaving, setAssignmentSaving] = useState(false);
   const [driverAssignments, setDriverAssignments] = useState([]);
 
@@ -191,18 +192,19 @@ export default function Drivers() {
 
   const handleCreateAssignment = async (e) => {
     e.preventDefault();
-    if (!assignmentDriver || !assignmentVehicle || !assignmentStart) return;
+    if (!assignmentDriver || !assignmentVehicle || !assignmentStartDate || !assignmentStartTime) return;
 
     setAssignmentSaving(true);
     try {
       await driverVehicleAssignmentsAPI.create({
         driver: assignmentDriver.id,
         vehicle: Number(assignmentVehicle),
-        started_at: new Date(assignmentStart).toISOString(),
+        started_at: new Date(`${assignmentStartDate}T${assignmentStartTime}:00`).toISOString(),
       });
       await loadDriverAssignments(assignmentDriver.id);
       setAssignmentVehicle('');
-      setAssignmentStart('');
+      setAssignmentStartDate('');
+      setAssignmentStartTime('');
       alert('تخصیص راننده با موفقیت ثبت شد.');
     } catch (err) {
       const errData = err.response?.data;
@@ -511,11 +513,13 @@ export default function Drivers() {
                     label: vehicle.plate,
                   }))}
               />
-              <Input
-                label="شروع تخصیص"
-                type="datetime-local"
-                value={assignmentStart}
-                onChange={(e) => setAssignmentStart(e.target.value)}
+              <JalaliDatePicker
+                label="تاریخ و ساعت شروع تخصیص"
+                value={assignmentStartDate}
+                onChange={setAssignmentStartDate}
+                showTime
+                timeValue={assignmentStartTime}
+                onTimeChange={setAssignmentStartTime}
                 required
               />
               <div className="flex justify-end gap-2">
@@ -526,7 +530,7 @@ export default function Drivers() {
                 >
                   بستن
                 </Button>
-                <Button type="submit" disabled={assignmentSaving || !assignmentVehicle || !assignmentStart}>
+                <Button type="submit" disabled={assignmentSaving || !assignmentVehicle || !assignmentStartDate || !assignmentStartTime}>
                   {assignmentSaving ? 'در حال ذخیره...' : 'ثبت تخصیص'}
                 </Button>
               </div>
