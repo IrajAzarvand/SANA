@@ -83,6 +83,10 @@ export default function DeviceMarkersLayer({
               <span style={{ color: '#64748B' }}>●</span>
               {' '}آفلاین: {cluster.counts.offline}
             </div>
+            <div>
+              <span style={{ color: '#94A3B8' }}>●</span>
+              {' '}نامشخص: {cluster.counts.unknown}
+            </div>
           </div>
         </Popup>
       </Marker>
