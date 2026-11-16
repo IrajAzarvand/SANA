@@ -119,14 +119,29 @@ export function getJalaliMonthName(month) {
   return months[month - 1] || '';
 }
 
+export function parseGregorianDate(value) {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+
+  // Date-only API values are calendar dates, not UTC instants.
+  const dateOnly = /^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(String(value));
+  if (dateOnly) {
+    const [, year, month, day] = dateOnly.map((part, index) => index ? Number(part) : part);
+    const date = new Date(year, month - 1, day);
+    return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day
+      ? date
+      : null;
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 export function toJalali(gregorianDate, separator = '/') {
   if (!gregorianDate) return '';
   try {
-    let date;
-    if (gregorianDate instanceof Date) date = gregorianDate;
-    else date = new Date(gregorianDate);
-    if (isNaN(date.getTime())) return '';
-
+    const date = parseGregorianDate(gregorianDate);
+    if (!date) return '';
     const j = toJalaaliNum(date.getFullYear(), date.getMonth() + 1, date.getDate());
     const jy = j.jy;
     const jm = String(j.jm).padStart(2, '0');
@@ -136,6 +151,24 @@ export function toJalali(gregorianDate, separator = '/') {
     console.error('Error converting to Jalali:', e, gregorianDate);
     return '';
   }
+}
+
+export function formatJalaliDate(value, separator = '/') {
+  const formatted = toJalali(value, separator);
+  return formatted ? toPersianDigits(formatted) : '';
+}
+
+export function formatJalaliDateTime(value, separator = '/') {
+  const date = parseGregorianDate(value);
+  if (!date) return '';
+  const jalaliDate = formatJalaliDate(date, separator);
+  const time = new Intl.DateTimeFormat('fa-IR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).format(date);
+  return `${jalaliDate}، ${time}`;
 }
 
 export function toGregorian(jalaliDate) {
