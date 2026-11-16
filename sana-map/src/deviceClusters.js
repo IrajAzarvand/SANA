@@ -130,7 +130,7 @@ export function getDeviceClusters(map, positions = [], followPosition = false) {
   return result;
 }
 export function createClusterIcon(L, cluster) {
-  const { moving, stopped, offline, unknown } = cluster.counts;
+  const { moving, stopped, offline } = cluster.counts;
   const total = cluster.total;
 
   const movingPercent = (moving / total) * 100;
