@@ -32,7 +32,7 @@ from .serializers import (
     SubscriptionPaymentSerializer,
     SubscriptionOperationSerializer,
 )
-from accounts.permissions import IsSiteAdmin
+from accounts.permissions import IsSiteAdmin, IsMainUserOrSiteAdmin
 from fleet.lifecycle import record_device_lifecycle_event
 
 
@@ -118,6 +118,28 @@ class BranchViewSet(viewsets.ModelViewSet):
             qs = qs.filter(organization_id=org)
 
         return qs
+
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsMainUserOrSiteAdmin()]
+        return super().get_permissions()
+
+    def perform_create(self, serializer):
+        user = self.request.user
+        if user.is_main_user:
+            if not user.organization_id:
+                raise serializers.ValidationError('حساب مدیر شرکت به سازمان معتبری متصل نیست.')
+            serializer.save(organization=user.organization)
+            return
+        serializer.save()
+
+    def perform_update(self, serializer):
+        user = self.request.user
+        if user.is_main_user:
+            # Never allow a company manager to move a branch into another tenant.
+            serializer.save(organization=user.organization)
+            return
+        serializer.save()
 
 
 # ═══════════════════════════════════════════════
@@ -804,6 +826,6 @@ class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
         return super().destroy(request, *args, **kwargs)
 
     def get_permissions(self):
-        if self.action in ['create', 'destroy', 'update', 'partial_update']:
+        if self.action in ['create', 'destroy', 'update', 'partial_update', 'allocate']:
             return [IsSiteAdmin()]
         return super().get_permissions()
