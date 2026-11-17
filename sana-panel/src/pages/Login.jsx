@@ -134,7 +134,7 @@ export default function Login() {
               </div>
             </div>
 
-            <div className="flex items-center justify-between">
+            <div className="flex items-center">
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
                   type="checkbox"
@@ -147,9 +147,6 @@ export default function Login() {
                 <span className="text-sm text-text-secondary">مرا به خاطر بسپار</span>
               </label>
 
-              <a href="#" className="text-sm text-text-secondary hover:text-brand-400 transition-colors">
-                رمز را فراموش کرده‌اید؟
-              </a>
             </div>
 
             {error && (
