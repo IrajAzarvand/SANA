@@ -24,7 +24,7 @@ export default function Login() {
 
     setLoading(true);
     try {
-      await login(form.username, form.password);
+      await login(form.username, form.password, remember);
       navigate('/panel/dashboard');
     } catch (err) {
       console.error('Login error:', err);
