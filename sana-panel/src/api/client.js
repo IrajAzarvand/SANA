@@ -52,28 +52,52 @@ export function saveAuthSession(data, remember) {
 // درخواست‌های هم‌زمان فقط یک بار توکن را تمدید می‌کنند.
 let refreshInFlight = null;
 
+async function rotateRefreshToken(expectedRefreshToken) {
+  const storage = getAuthStorage();
+  const refreshToken = storage.getItem('sana_refresh_token');
+  if (!refreshToken) {
+    throw new Error('No refresh token');
+  }
+
+  // Another browser tab may have rotated the shared token while this tab
+  // waited for the cross-tab lock. Reuse its new access token instead.
+  if (refreshToken !== expectedRefreshToken) {
+    const currentAccess = storage.getItem('sana_access_token');
+    if (currentAccess) return currentAccess;
+  }
+
+  const response = await axios.post(
+    `${API_BASE_URL}/auth/refresh/`,
+    { refresh: refreshToken },
+    { timeout: 15000 },
+  );
+  const access = response.data?.access;
+  if (!access) {
+    throw new Error('Refresh response did not contain an access token');
+  }
+
+  storage.setItem('sana_access_token', access);
+  if (response.data?.refresh) {
+    storage.setItem('sana_refresh_token', response.data.refresh);
+  }
+  return access;
+}
+
 export function refreshAccessToken() {
   if (!refreshInFlight) {
     refreshInFlight = (async () => {
-      const storage = getAuthStorage();
-      const refreshToken = storage.getItem('sana_refresh_token');
-      if (!refreshToken) {
+      const initialRefreshToken = getAuthStorage().getItem('sana_refresh_token');
+      if (!initialRefreshToken) {
         throw new Error('No refresh token');
       }
 
-      const response = await axios.post(`${API_BASE_URL}/auth/refresh/`, {
-        refresh: refreshToken,
-      });
-      const access = response.data?.access;
-      if (!access) {
-        throw new Error('Refresh response did not contain an access token');
+      const rotate = () => rotateRefreshToken(initialRefreshToken);
+      // localStorage is shared by tabs when "remember me" is enabled. The
+      // Web Locks API ensures only one tab rotates that shared refresh token.
+      if (typeof navigator !== 'undefined' && navigator.locks?.request) {
+        return navigator.locks.request('sana-auth-refresh', rotate);
       }
-
-      storage.setItem('sana_access_token', access);
-      if (response.data?.refresh) {
-        storage.setItem('sana_refresh_token', response.data.refresh);
-      }
-      return access;
+      return rotate();
     })().finally(() => {
       refreshInFlight = null;
     });
