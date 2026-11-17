@@ -189,3 +189,39 @@ class User(AbstractBaseUser, PermissionsMixin):
     def can_write(self):
         """آیا می‌تونه عملیات جدید انجام بده؟"""
         return self.can_login
+
+
+class UserSession(models.Model):
+    """Server-side lifecycle record for one authenticated browser/device session."""
+
+    id = models.UUIDField(primary_key=True, editable=False, default=__import__('uuid').uuid4)
+    user = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.CASCADE,
+        related_name='auth_sessions',
+        verbose_name='کاربر',
+    )
+    created_at = models.DateTimeField(default=timezone.now, verbose_name='زمان ورود')
+    last_activity_at = models.DateTimeField(default=timezone.now, verbose_name='آخرین فعالیت')
+    expires_at = models.DateTimeField(verbose_name='انقضای نشست')
+    revoked_at = models.DateTimeField(null=True, blank=True, verbose_name='زمان ابطال')
+    current_refresh_jti = models.CharField(max_length=255, blank=True, verbose_name='شناسه Refresh فعلی')
+    ip_address = models.GenericIPAddressField(null=True, blank=True, verbose_name='IP ورود')
+    user_agent = models.CharField(max_length=512, blank=True, verbose_name='مرورگر/دستگاه')
+
+    class Meta:
+        verbose_name = 'نشست ورود'
+        verbose_name_plural = 'نشست‌های ورود'
+        indexes = [
+            models.Index(fields=['user', 'revoked_at'], name='accounts_sess_user_rev_idx'),
+            models.Index(fields=['expires_at'], name='accounts_sess_expires_idx'),
+        ]
+
+    @property
+    def is_active(self):
+        now = timezone.now()
+        return (
+            self.revoked_at is None
+            and self.expires_at > now
+            and self.last_activity_at > now - timezone.timedelta(minutes=30)
+        )
