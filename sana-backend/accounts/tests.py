@@ -355,6 +355,45 @@ class ChangePasswordTests(TestCase):
                 user.refresh_from_db()
                 self.assertTrue(user.check_password('Fresh-Strong-Password-789!'))
 
+    def test_new_password_must_differ_from_current_password(self):
+        response = self.client.post(
+            '/api/users/change_password/',
+            {
+                'old_password': 'Current-Password-123!',
+                'new_password': 'Current-Password-123!',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('new_password', response.data)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('Current-Password-123!'))
+
+    def test_password_change_revokes_all_active_sessions(self):
+        sessions = [
+            UserSession.objects.create(
+                user=self.user,
+                expires_at=timezone.now() + timedelta(hours=12),
+                current_refresh_jti=f'active-session-{index}',
+            )
+            for index in range(2)
+        ]
+
+        response = self.client.post(
+            '/api/users/change_password/',
+            {
+                'old_password': 'Current-Password-123!',
+                'new_password': 'New-Strong-Password-456!',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        for session in sessions:
+            session.refresh_from_db()
+            self.assertIsNotNone(session.revoked_at)
+
     def test_incorrect_current_password_is_rejected(self):
         response = self.client.post(
             '/api/users/change_password/',
