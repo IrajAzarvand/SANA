@@ -217,7 +217,7 @@ function ProfileSection() {
           <Button variant="secondary" onClick={handleCancel} disabled={loading || saving}>
             انصراف
           </Button>
-          <Button onClick={handleSave} disabled={loading || saving || !preferencesLoaded}>
+          <Button onClick={handleSave} disabled={loading || saving}>
             {saving ? 'در حال ذخیره...' : 'ذخیره تغییرات'}
           </Button>
         </div>
@@ -863,7 +863,7 @@ function NotificationsSection() {
       {success && <p role="status" className="mt-4 text-sm text-success">{success}</p>}
       <div className="flex items-center justify-end gap-2 pt-4 mt-5 border-t border-border-base">
         <Button variant="secondary" onClick={handleCancel} disabled={loading || saving || !preferencesLoaded}>انصراف</Button>
-        <Button onClick={handleSave} disabled={loading || saving}>
+        <Button onClick={handleSave} disabled={loading || saving || !preferencesLoaded}>
           {saving ? 'در حال ذخیره...' : 'ذخیره تغییرات'}
         </Button>
       </div>
