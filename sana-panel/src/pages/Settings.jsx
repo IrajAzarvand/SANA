@@ -15,6 +15,7 @@ import SettingsNav from '../components/SettingsNav';
 import { useAuth } from '../context/AuthContext';
 import { authAPI } from '../api/services/auth';
 import { organizationsAPI } from '../api/services/organizations';
+import { alertsAPI } from '../api/services/fleet';
 import apiClient, { getAuthToken } from '../api/client';
 import { MAP_PROVIDERS } from '../../../sana-map/src/config';
 import {
@@ -763,7 +764,7 @@ function NotificationsSection() {
 
   useEffect(() => {
     let active = true;
-    apiClient.get('/devices/alert-preferences/')
+    alertsAPI.preferences()
       .then(({ data }) => {
         if (!active) return;
         const disabled = Array.isArray(data?.disabled_event_types) ? data.disabled_event_types : [];
@@ -796,9 +797,7 @@ function NotificationsSection() {
     setError('');
     setSuccess('');
     try {
-      const { data } = await apiClient.put('/devices/alert-preferences/', {
-        disabled_event_types: disabledTypes,
-      });
+      const { data } = await alertsAPI.updatePreferences({ disabled_event_types: disabledTypes });
       const disabled = Array.isArray(data?.disabled_event_types) ? data.disabled_event_types : [];
       setDisabledTypes(disabled);
       setSavedDisabledTypes(disabled);
