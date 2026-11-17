@@ -16,6 +16,9 @@ class AuthEndpointThrottleTests(TestCase):
             role='personal_user',
         )
 
+    def tearDown(self):
+        cache.clear()
+
     @override_settings(REST_FRAMEWORK={
         'DEFAULT_THROTTLE_RATES': {'auth_login': '2/min'},
     })
