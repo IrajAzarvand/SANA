@@ -98,6 +98,8 @@ class ChangePasswordSerializer(serializers.Serializer):
 
     def validate_new_password(self, value):
         user = self.context['request'].user
+        if user.check_password(value):
+            raise serializers.ValidationError('رمز عبور جدید باید با رمز فعلی متفاوت باشد')
         validate_password(value, user=user)
         return value
 
