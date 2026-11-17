@@ -6,6 +6,8 @@ const API_BASE_URL =
   import.meta.env.VITE_API_URL ||
   (import.meta.env.DEV ? 'http://192.168.1.132:8000/api' : '/api');
 
+const AUTH_KEYS = ['sana_access_token', 'sana_refresh_token', 'sana_user'];
+
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   headers: {
@@ -14,13 +16,47 @@ const apiClient = axios.create({
   timeout: 15000,
 });
 
+// نشست موقت در sessionStorage و نشست ماندگار در localStorage نگهداری می‌شود.
+export function getAuthStorage() {
+  if (
+    sessionStorage.getItem('sana_access_token') ||
+    sessionStorage.getItem('sana_refresh_token')
+  ) {
+    return sessionStorage;
+  }
+  return localStorage;
+}
+
+export function getAuthToken() {
+  return getAuthStorage().getItem('sana_access_token');
+}
+
+export function setAuthItem(key, value) {
+  getAuthStorage().setItem(key, value);
+}
+
+export function clearAuthData() {
+  for (const storage of [localStorage, sessionStorage]) {
+    AUTH_KEYS.forEach((key) => storage.removeItem(key));
+  }
+}
+
+export function saveAuthSession(data, remember) {
+  clearAuthData();
+  const storage = remember ? localStorage : sessionStorage;
+  storage.setItem('sana_access_token', data.access);
+  storage.setItem('sana_refresh_token', data.refresh);
+  storage.setItem('sana_user', JSON.stringify(data.user));
+}
+
 // درخواست‌های هم‌زمان فقط یک بار توکن را تمدید می‌کنند.
 let refreshInFlight = null;
 
 export function refreshAccessToken() {
   if (!refreshInFlight) {
     refreshInFlight = (async () => {
-      const refreshToken = localStorage.getItem('sana_refresh_token');
+      const storage = getAuthStorage();
+      const refreshToken = storage.getItem('sana_refresh_token');
       if (!refreshToken) {
         throw new Error('No refresh token');
       }
@@ -33,9 +69,9 @@ export function refreshAccessToken() {
         throw new Error('Refresh response did not contain an access token');
       }
 
-      localStorage.setItem('sana_access_token', access);
+      storage.setItem('sana_access_token', access);
       if (response.data?.refresh) {
-        localStorage.setItem('sana_refresh_token', response.data.refresh);
+        storage.setItem('sana_refresh_token', response.data.refresh);
       }
       return access;
     })().finally(() => {
@@ -47,16 +83,14 @@ export function refreshAccessToken() {
 }
 
 export function clearAuthSession() {
-  localStorage.removeItem('sana_access_token');
-  localStorage.removeItem('sana_refresh_token');
-  localStorage.removeItem('sana_user');
+  clearAuthData();
   window.location.href = '/login';
 }
 
 // Interceptor برای افزودن توکن به همه درخواست‌ها
 apiClient.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('sana_access_token');
+    const token = getAuthToken();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
