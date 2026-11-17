@@ -931,13 +931,13 @@ class DeviceViewSet(viewsets.ModelViewSet):
             if active:
                 cursor.execute(
                     """
-                    INSERT INTO gps.map_matching_watchers
+                    INSERT INTO gps.map_matching_watchers AS watcher
                         (session_id, user_id, expires_at, updated_at)
                     VALUES (%s, %s, CURRENT_TIMESTAMP + INTERVAL '45 seconds', CURRENT_TIMESTAMP)
                     ON CONFLICT (session_id) DO UPDATE
                     SET expires_at = EXCLUDED.expires_at,
                         updated_at = CURRENT_TIMESTAMP
-                    WHERE gps.map_matching_watchers.user_id = EXCLUDED.user_id
+                    WHERE watcher.user_id = EXCLUDED.user_id
                     """,
                     [session_id, request.user.pk],
                 )
