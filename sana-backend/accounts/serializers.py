@@ -1,11 +1,14 @@
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
+from django.utils import timezone
+from datetime import timedelta
 from django.contrib.auth import get_user_model
 from rest_framework.exceptions import ValidationError
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
 from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import User
+from .models import User, UserSession
+from .session_utils import get_session_for_token, touch_session
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -103,6 +106,11 @@ class ChangePasswordSerializer(serializers.Serializer):
         user = self.context['request'].user
         user.set_password(self.validated_data['new_password'])
         user.save(update_fields=['password'])
+        # Password changes invalidate every browser/device session, including this one.
+        UserSession.objects.filter(
+            user=user,
+            revoked_at__isnull=True,
+        ).update(revoked_at=timezone.now())
         return user
 
 
@@ -121,7 +129,24 @@ class ContractAwareTokenRefreshSerializer(TokenRefreshSerializer):
                 'detail': 'قرارداد یا دسترسی حساب شما فعال نیست. لطفاً با پشتیبانی سانا تماس بگیرید.'
             })
 
-        return super().validate(attrs)
+        session = get_session_for_token(refresh, user=user)
+        if session is None or session.current_refresh_jti != refresh.get('jti'):
+            raise ValidationError({
+                'detail': 'نشست ورود شما منقضی یا باطل شده است. لطفاً دوباره وارد شوید.'
+            })
+
+        touch_session(session)
+        data = super().validate(attrs)
+
+        # Refresh rotation changes the token JTI. Only the newest refresh token
+        # remains usable for this session, even though the blacklist app is unused.
+        rotated_refresh = data.get('refresh')
+        if rotated_refresh:
+            rotated = RefreshToken(rotated_refresh)
+            session.current_refresh_jti = rotated.get('jti')
+            session.save(update_fields=['current_refresh_jti'])
+
+        return data
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -163,6 +188,24 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
                 raise serializers.ValidationError({
                     'detail': 'اشتراک شما فعال نیست. لطفاً با پشتیبانی سانا تماس بگیرید.'
                 })
+
+        # Create a server-side session only after all login checks succeed.
+        request = self.context.get('request')
+        now = timezone.now()
+        session = UserSession.objects.create(
+            user=user,
+            created_at=now,
+            last_activity_at=now,
+            expires_at=now + timedelta(hours=12),
+            ip_address=(request.META.get('REMOTE_ADDR') if request else None),
+            user_agent=(request.META.get('HTTP_USER_AGENT', '')[:512] if request else ''),
+        )
+        refresh = RefreshToken(data['refresh'])
+        refresh['sid'] = str(session.pk)
+        session.current_refresh_jti = refresh.get('jti')
+        session.save(update_fields=['current_refresh_jti'])
+        data['refresh'] = str(refresh)
+        data['access'] = str(refresh.access_token)
 
         # افزودن اطلاعات کامل کاربر به پاسخ
         data['user'] = UserSerializer(user).data
