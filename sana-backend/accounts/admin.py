@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from .models import User
+from .models import User, UserSession
 
 
 @admin.register(User)
@@ -23,3 +23,20 @@ class UserAdmin(BaseUserAdmin):
             'fields': ('username', 'password1', 'password2', 'role', 'account_type', 'organization', 'branch'),
         }),
     )
+
+@admin.register(UserSession)
+class UserSessionAdmin(admin.ModelAdmin):
+    list_display = ['user', 'created_at', 'last_activity_at', 'expires_at', 'revoked_at', 'ip_address']
+    list_filter = ['revoked_at', 'created_at']
+    search_fields = ['user__username', 'user__first_name', 'user__last_name', 'ip_address']
+    readonly_fields = [
+        'id', 'user', 'created_at', 'last_activity_at', 'expires_at',
+        'revoked_at', 'current_refresh_jti', 'ip_address', 'user_agent',
+    ]
+    ordering = ['-created_at']
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
