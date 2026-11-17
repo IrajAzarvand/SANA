@@ -31,10 +31,12 @@ export default function Sidebar({ isOpen, onClose }) {
 
     loadUnreadCount();
     const intervalId = window.setInterval(loadUnreadCount, 30000);
+    window.addEventListener('sana:personal-alerts-updated', loadUnreadCount);
 
     return () => {
       active = false;
       window.clearInterval(intervalId);
+      window.removeEventListener('sana:personal-alerts-updated', loadUnreadCount);
     };
   }, [isPersonal]);
 
