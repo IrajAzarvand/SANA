@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { authAPI } from '../api/services/auth';
+import { getAuthStorage, setAuthItem, saveAuthSession, clearAuthData } from '../api/client';
 
 const AuthContext = createContext(null);
 
@@ -7,11 +8,12 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // بارگذاری اولیه از localStorage
+  // بازیابی نشست از محل ذخیره‌سازی انتخاب‌شده هنگام ورود
   useEffect(() => {
     const init = async () => {
-      const accessToken = localStorage.getItem('sana_access_token');
-      const savedUser = localStorage.getItem('sana_user');
+      const storage = getAuthStorage();
+      const accessToken = storage.getItem('sana_access_token');
+      const savedUser = storage.getItem('sana_user');
 
       if (accessToken && savedUser) {
         try {
@@ -20,12 +22,10 @@ export function AuthProvider({ children }) {
           // اعتبارسنجی توکن با API
           const freshUser = await authAPI.me();
           setUser(freshUser);
-          localStorage.setItem('sana_user', JSON.stringify(freshUser));
+          setAuthItem('sana_user', JSON.stringify(freshUser));
         } catch {
           // توکن منقضی یا خطا
-          localStorage.removeItem('sana_access_token');
-          localStorage.removeItem('sana_refresh_token');
-          localStorage.removeItem('sana_user');
+          clearAuthData();
           setUser(null);
         }
       }
@@ -35,18 +35,16 @@ export function AuthProvider({ children }) {
     init();
   }, []);
 
-  const login = async (username, password) => {
+  const login = async (username, password, remember = false) => {
     const data = await authAPI.login(username, password);
-    localStorage.setItem('sana_access_token', data.access);
-    localStorage.setItem('sana_refresh_token', data.refresh);
-    localStorage.setItem('sana_user', JSON.stringify(data.user));
+    saveAuthSession(data, remember);
     setUser(data.user);
     return data.user;
   };
 
   const updateUser = useCallback((updatedUser) => {
     setUser(updatedUser);
-    localStorage.setItem('sana_user', JSON.stringify(updatedUser));
+    setAuthItem('sana_user', JSON.stringify(updatedUser));
   }, []);
 
   const logout = useCallback(async () => {
@@ -55,9 +53,7 @@ export function AuthProvider({ children }) {
     } catch {
       // Local credentials must be cleared even if the server is unreachable.
     } finally {
-      localStorage.removeItem('sana_access_token');
-      localStorage.removeItem('sana_refresh_token');
-      localStorage.removeItem('sana_user');
+      clearAuthData();
       setUser(null);
       window.location.href = '/login';
     }
