@@ -20,7 +20,7 @@ class DashboardStatsView(APIView):
 
     def get(self, request):
         user = request.user
-        today = timezone.now().date()
+        today = timezone.localdate()
         thirty_days_later = today + timedelta(days=30)
 
         # ادمین کل سایت
@@ -59,6 +59,7 @@ class DashboardStatsView(APIView):
             subscriptions = Subscription.objects.filter(organization_id=org)
             active_sub = subscriptions.filter(
                 status='active',
+                start_date__lte=today,
                 end_date__gte=today,
             ).order_by('-end_date').first()
 
@@ -92,6 +93,7 @@ class DashboardStatsView(APIView):
             subscriptions = Subscription.objects.filter(organization_id=org_id)
             active_sub = subscriptions.filter(
                 status='active',
+                start_date__lte=today,
                 end_date__gte=today,
             ).order_by('-end_date').first()
 
@@ -133,6 +135,7 @@ class DashboardStatsView(APIView):
             subscriptions = Subscription.objects.filter(user=user)
             active_sub = subscriptions.filter(
                 status='active',
+                start_date__lte=today,
                 end_date__gte=today,
             ).order_by('-end_date').first()
 
