@@ -11,25 +11,39 @@ export function AuthProvider({ children }) {
   // بازیابی نشست از محل ذخیره‌سازی انتخاب‌شده هنگام ورود
   useEffect(() => {
     const init = async () => {
-      const storage = getAuthStorage();
-      const accessToken = storage.getItem('sana_access_token');
-      const savedUser = storage.getItem('sana_user');
+      try {
+        const storage = getAuthStorage();
+        const accessToken = storage.getItem('sana_access_token');
+        const savedUser = storage.getItem('sana_user');
 
-      if (accessToken && savedUser) {
+        if (!accessToken || !savedUser) return;
+
+        let cachedUser;
         try {
-          setUser(JSON.parse(savedUser));
+          cachedUser = JSON.parse(savedUser);
+        } catch {
+          clearAuthData();
+          return;
+        }
 
-          // اعتبارسنجی توکن با API
+        // اطلاعات ذخیره‌شده تا زمان پاسخ سرور، هویت کاربر را حفظ می‌کند.
+        setUser(cachedUser);
+
+        try {
           const freshUser = await authAPI.me();
           setUser(freshUser);
           setAuthItem('sana_user', JSON.stringify(freshUser));
-        } catch {
-          // توکن منقضی یا خطا
-          clearAuthData();
-          setUser(null);
+        } catch (error) {
+          // فقط پاسخ قطعیِ رد شدن اعتبارنامه، نشست محلی را باطل می‌کند.
+          // خطای شبکه یا اختلال موقت سرور نباید کاربر را از حساب خارج کند.
+          if ([400, 401, 403].includes(error.response?.status)) {
+            clearAuthData();
+            setUser(null);
+          }
         }
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     init();
