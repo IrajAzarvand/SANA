@@ -45,6 +45,14 @@ export const alertsAPI = {
     const response = await apiClient.get('/devices/alerts/', { params });
     return response.data;
   },
+  preferences: async () => {
+    const response = await apiClient.get('/devices/alert-preferences/');
+    return response.data;
+  },
+  updatePreferences: async (data) => {
+    const response = await apiClient.put('/devices/alert-preferences/', data);
+    return response.data;
+  },
   updateStatus: async ({ deviceId, eventId, status }) => {
     const response = await apiClient.post('/devices/alerts/', {
       device_id: deviceId,
