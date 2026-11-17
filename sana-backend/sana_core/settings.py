@@ -159,6 +159,13 @@ REST_FRAMEWORK = {
         'auth_login': '10/min',
         'auth_refresh': '60/min',
         'password_change': '5/min',
+        'device_list': '30/min',
+        'personal_alert_preferences': '30/min',
+        'personal_alerts': '6/min',
+        'personal_report_history': '30/min',
+        'personal_map_activity': '30/min',
+        'personal_map_positions': '20/min',
+        'dashboard_stats': '30/min',
     },
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
