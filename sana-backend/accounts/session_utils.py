@@ -12,7 +12,7 @@ ACTIVITY_WRITE_INTERVAL = timedelta(seconds=60)
 
 def get_session_for_token(token, user=None):
     """Return a valid session or None; also revoke expired sessions."""
-    session_id = token.get('sid')
+    session_id = token.payload.get('sid')
     if not session_id:
         return None
 
