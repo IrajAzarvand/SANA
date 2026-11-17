@@ -123,7 +123,7 @@ apiClient.interceptors.response.use(
     } catch (refreshError) {
       // فقط رد شدن قطعی Refresh Token به معنی پایان نشست است؛
       // خطای شبکه نباید کاربر را به‌اشتباه از پنل خارج کند.
-      if ([401, 403].includes(refreshError.response?.status) || refreshError.message === 'No refresh token') {
+      if ([400, 401, 403].includes(refreshError.response?.status) || refreshError.message === 'No refresh token') {
         clearAuthSession();
       }
       return Promise.reject(refreshError);
