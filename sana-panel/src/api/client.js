@@ -74,13 +74,18 @@ async function rotateRefreshToken(expectedRefreshToken) {
       { timeout: 15000 },
     );
   } catch (error) {
-    // If another tab won the rotation race, use the token it already stored
-    // instead of treating the expected replay rejection as a logout.
-    const latestStorage = getAuthStorage();
-    const latestRefresh = latestStorage.getItem('sana_refresh_token');
-    const latestAccess = latestStorage.getItem('sana_access_token');
-    if (latestRefresh && latestRefresh !== refreshToken && latestAccess) {
-      return latestAccess;
+    // If another tab won the rotation race, its response may arrive just after
+    // this tab's replay rejection. Briefly wait for its new pair before logout.
+    if (error.response?.status === 401) {
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        await new Promise((resolve) => window.setTimeout(resolve, 100));
+        const latestStorage = getAuthStorage();
+        const latestRefresh = latestStorage.getItem('sana_refresh_token');
+        const latestAccess = latestStorage.getItem('sana_access_token');
+        if (latestRefresh && latestRefresh !== refreshToken && latestAccess) {
+          return latestAccess;
+        }
+      }
     }
     throw error;
   }
