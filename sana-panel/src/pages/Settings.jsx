@@ -269,8 +269,8 @@ function SecuritySection() {
     setSaving(true);
     try {
       await authAPI.changePassword(oldPassword, newPassword);
-      // The server revokes every session after a password change.
-      await logout();
+      // The server has already revoked every session; clear this browser locally.
+      await logout({ revokeServer: false });
     } catch (requestError) {
       const data = requestError.response?.data;
       const firstError = data && Object.values(data).flat().find((item) => typeof item === 'string');
@@ -337,7 +337,7 @@ function SecuritySection() {
               احراز هویت دو مرحله‌ای فعال نیست
             </h4>
             <p className="text-xs text-text-muted mb-3">
-              با فعال‌سازی، هنگام ورود یک کد تأیید به موبایل شما ارسال می‌شود.
+              این قابلیت هنوز برای حساب‌ها فعال نشده است.
             </p>
             <Button size="sm" disabled>فعال‌سازی</Button>
           </div>
