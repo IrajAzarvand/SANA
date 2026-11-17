@@ -3,7 +3,8 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.views import APIView
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework.throttling import ScopedRateThrottle
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from django.utils import timezone
 
@@ -22,6 +23,14 @@ from .permissions import IsSiteAdminOrReadOnly
 class CustomTokenObtainPairView(TokenObtainPairView):
     """لاگین با JWT — پاسخ شامل اطلاعات کاربر"""
     serializer_class = CustomTokenObtainPairSerializer
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'auth_login'
+
+
+class CustomTokenRefreshView(TokenRefreshView):
+    """Rate-limit refresh-token rotation to reduce automated abuse."""
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'auth_refresh'
 
 
 class UserViewSet(viewsets.ModelViewSet):
@@ -107,7 +116,7 @@ class UserViewSet(viewsets.ModelViewSet):
             serializer.save()
         return Response(UserSerializer(request.user).data)
 
-    @action(detail=False, methods=['post'])
+    @action(detail=False, methods=['post'], throttle_classes=[ScopedRateThrottle], throttle_scope='password_change')
     def change_password(self, request):
         """Change the authenticated user's own password."""
         serializer = ChangePasswordSerializer(
