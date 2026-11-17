@@ -134,6 +134,7 @@ class ContractAwareTokenRefreshSerializer(TokenRefreshSerializer):
         # Serialize concurrent refreshes for one session. Without the row lock,
         # two tabs could both accept the same JTI and invalidate each other's
         # newly rotated token.
+        invalid_session = False
         with transaction.atomic():
             session = UserSession.objects.select_for_update().filter(
                 pk=refresh.payload.get('sid'),
@@ -142,32 +143,28 @@ class ContractAwareTokenRefreshSerializer(TokenRefreshSerializer):
             ).first()
             now = timezone.now()
             if session is None:
-                raise AuthenticationFailed(
-                    'نشست ورود شما منقضی یا باطل شده است. لطفاً دوباره وارد شوید.'
-                )
-
-            if session.expires_at <= now or session.last_activity_at <= now - IDLE_TIMEOUT:
+                invalid_session = True
+            elif session.expires_at <= now or session.last_activity_at <= now - IDLE_TIMEOUT:
                 session.revoked_at = now
                 session.save(update_fields=['revoked_at'])
-                raise AuthenticationFailed(
-                    'نشست ورود شما منقضی یا باطل شده است. لطفاً دوباره وارد شوید.'
-                )
+                invalid_session = True
+            elif session.current_refresh_jti != refresh['jti']:
+                invalid_session = True
+            else:
+                touch_session(session)
+                data = super().validate(attrs)
 
-            if session.current_refresh_jti != refresh['jti']:
-                raise AuthenticationFailed(
-                    'نشست ورود شما منقضی یا باطل شده است. لطفاً دوباره وارد شوید.'
-                )
+                # Only the newest refresh token remains usable for this session.
+                rotated_refresh = data.get('refresh')
+                if rotated_refresh:
+                    rotated = RefreshToken(rotated_refresh)
+                    session.current_refresh_jti = rotated['jti']
+                    session.save(update_fields=['current_refresh_jti'])
 
-            touch_session(session)
-            data = super().validate(attrs)
-
-            # Only the newest refresh token remains usable for this session.
-            rotated_refresh = data.get('refresh')
-            if rotated_refresh:
-                rotated = RefreshToken(rotated_refresh)
-                session.current_refresh_jti = rotated['jti']
-                session.save(update_fields=['current_refresh_jti'])
-
+        if invalid_session:
+            raise AuthenticationFailed(
+                'نشست ورود شما منقضی یا باطل شده است. لطفاً دوباره وارد شوید.'
+            )
         return data
 
 
