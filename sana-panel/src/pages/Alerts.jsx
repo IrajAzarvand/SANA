@@ -498,6 +498,7 @@ function PersonalAlerts() {
             }
           : item
       )));
+      window.dispatchEvent(new Event('sana:personal-alerts-updated'));
     } catch {
       setError('ثبت تغییر وضعیت هشدار انجام نشد. لطفاً دوباره تلاش کنید.');
     } finally {
