@@ -217,7 +217,7 @@ function ProfileSection() {
           <Button variant="secondary" onClick={handleCancel} disabled={loading || saving}>
             انصراف
           </Button>
-          <Button onClick={handleSave} disabled={loading || saving}>
+          <Button onClick={handleSave} disabled={loading || saving || !preferencesLoaded}>
             {saving ? 'در حال ذخیره...' : 'ذخیره تغییرات'}
           </Button>
         </div>
@@ -758,6 +758,7 @@ function NotificationsSection() {
   const [disabledTypes, setDisabledTypes] = useState([]);
   const [savedDisabledTypes, setSavedDisabledTypes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -770,6 +771,7 @@ function NotificationsSection() {
         const disabled = Array.isArray(data?.disabled_event_types) ? data.disabled_event_types : [];
         setDisabledTypes(disabled);
         setSavedDisabledTypes(disabled);
+        setPreferencesLoaded(true);
       })
       .catch((requestError) => {
         if (active) setError(requestError.response?.data?.detail || 'دریافت تنظیمات اعلان‌ها ناموفق بود.');
@@ -846,7 +848,7 @@ function NotificationsSection() {
                     type="checkbox"
                     checked={!disabledTypes.includes(item.id)}
                     onChange={() => toggleType(item.id)}
-                    disabled={loading || saving}
+                    disabled={loading || saving || !preferencesLoaded}
                     aria-label={`${item.label} — مرکز هشدارها`}
                     className="w-4 h-4 rounded border-border-base bg-bg-base text-brand-500 focus:ring-brand-500/20 focus:ring-2 cursor-pointer accent-brand-500 disabled:opacity-50"
                   />
@@ -860,7 +862,7 @@ function NotificationsSection() {
       {error && <p role="alert" className="mt-4 text-sm text-danger">{error}</p>}
       {success && <p role="status" className="mt-4 text-sm text-success">{success}</p>}
       <div className="flex items-center justify-end gap-2 pt-4 mt-5 border-t border-border-base">
-        <Button variant="secondary" onClick={handleCancel} disabled={loading || saving}>انصراف</Button>
+        <Button variant="secondary" onClick={handleCancel} disabled={loading || saving || !preferencesLoaded}>انصراف</Button>
         <Button onClick={handleSave} disabled={loading || saving}>
           {saving ? 'در حال ذخیره...' : 'ذخیره تغییرات'}
         </Button>
