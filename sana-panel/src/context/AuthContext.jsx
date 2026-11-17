@@ -47,9 +47,11 @@ export function AuthProvider({ children }) {
     setAuthItem('sana_user', JSON.stringify(updatedUser));
   }, []);
 
-  const logout = useCallback(async () => {
+  const logout = useCallback(async ({ revokeServer = true } = {}) => {
     try {
-      await authAPI.logout();
+      if (revokeServer) {
+        await authAPI.logout();
+      }
     } catch {
       // Local credentials must be cleared even if the server is unreachable.
     } finally {
