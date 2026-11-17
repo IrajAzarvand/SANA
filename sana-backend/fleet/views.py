@@ -930,9 +930,9 @@ class DeviceViewSet(viewsets.ModelViewSet):
                         (session_id, user_id, expires_at, updated_at)
                     VALUES (%s, %s, CURRENT_TIMESTAMP + INTERVAL '45 seconds', CURRENT_TIMESTAMP)
                     ON CONFLICT (session_id) DO UPDATE
-                    SET user_id = EXCLUDED.user_id,
-                        expires_at = EXCLUDED.expires_at,
+                    SET expires_at = EXCLUDED.expires_at,
                         updated_at = CURRENT_TIMESTAMP
+                    WHERE gps.map_matching_watchers.user_id = EXCLUDED.user_id
                     """,
                     [session_id, request.user.pk],
                 )
