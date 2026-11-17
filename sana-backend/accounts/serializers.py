@@ -130,7 +130,7 @@ class ContractAwareTokenRefreshSerializer(TokenRefreshSerializer):
             })
 
         session = get_session_for_token(refresh, user=user)
-        if session is None or session.current_refresh_jti != refresh.get('jti'):
+        if session is None or session.current_refresh_jti != refresh['jti']:
             raise ValidationError({
                 'detail': 'نشست ورود شما منقضی یا باطل شده است. لطفاً دوباره وارد شوید.'
             })
@@ -143,7 +143,7 @@ class ContractAwareTokenRefreshSerializer(TokenRefreshSerializer):
         rotated_refresh = data.get('refresh')
         if rotated_refresh:
             rotated = RefreshToken(rotated_refresh)
-            session.current_refresh_jti = rotated.get('jti')
+            session.current_refresh_jti = rotated['jti']
             session.save(update_fields=['current_refresh_jti'])
 
         return data
