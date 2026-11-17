@@ -1149,6 +1149,11 @@ class DriverViewSet(viewsets.ModelViewSet):
     search_fields = ['first_name', 'last_name', 'mobile', 'personnel_code']
     ordering_fields = ['last_name', 'created_at']
 
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsOrganizationMember()]
+        return super().get_permissions()
+
     def get_queryset(self):
         user = self.request.user
         qs = Driver.objects.select_related('organization', 'branch')
