@@ -10,6 +10,11 @@ import { alertsAPI } from '../api/services/fleet';
 
 export default function Sidebar({ isOpen, onClose }) {
   const { user, isSiteAdmin, isOrganization, isBranchManager, isMainUser, isPersonal } = useAuth();
+  const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim()
+    || user?.full_name
+    || user?.username
+    || 'کاربر';
+  const avatarInitial = (user?.first_name || user?.full_name || user?.username || 'ک').trim().charAt(0);
   const location = useLocation();
   const [reportsExpanded, setReportsExpanded] = useState(() => window.location.pathname.startsWith('/panel/reports'));
   const [personalUnreadCount, setPersonalUnreadCount] = useState(0);
@@ -208,11 +213,11 @@ export default function Sidebar({ isOpen, onClose }) {
           <div className="p-3 border-t border-border-base">
             <div className="flex items-center gap-3 px-3 py-2.5 rounded-field bg-bg-base border border-border-base">
               <div className="w-8 h-8 rounded-full bg-brand-500 flex items-center justify-center text-bg-base font-bold text-sm">
-                {user?.name?.[0] || 'ا'}
+                {avatarInitial}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-xs text-text-primary truncate">{user?.name}</div>
-                <div className="text-[10px] text-text-muted leading-tight">حساب شخصی</div>
+                <div className="text-xs text-text-primary truncate">{fullName}</div>
+                <div className="text-[10px] text-text-muted leading-tight">مشتری شخصی</div>
               </div>
             </div>
           </div>
