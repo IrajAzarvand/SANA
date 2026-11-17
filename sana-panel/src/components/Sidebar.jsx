@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Map as MapIcon, Truck, Users, Cpu, BarChart3,
@@ -6,11 +6,37 @@ import {
   FileText, BrainCircuit,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { alertsAPI } from '../api/services/fleet';
 
 export default function Sidebar({ isOpen, onClose }) {
   const { user, isSiteAdmin, isOrganization, isBranchManager, isMainUser, isPersonal } = useAuth();
   const location = useLocation();
   const [reportsExpanded, setReportsExpanded] = useState(() => window.location.pathname.startsWith('/panel/reports'));
+  const [personalUnreadCount, setPersonalUnreadCount] = useState(0);
+
+  useEffect(() => {
+    if (!isPersonal) return undefined;
+
+    let active = true;
+    const loadUnreadCount = async () => {
+      try {
+        const response = await alertsAPI.list();
+        if (!active) return;
+        const events = Array.isArray(response?.results) ? response.results : [];
+        setPersonalUnreadCount(events.filter((event) => event.status === 'new').length);
+      } catch {
+        // در صورت خطای موقت، آخرین تعداد معتبر حفظ می‌شود.
+      }
+    };
+
+    loadUnreadCount();
+    const intervalId = window.setInterval(loadUnreadCount, 30000);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [isPersonal]);
 
   // ادمین کل سایت باید به تمام بخش‌های پنل دسترسی مستقیم داشته باشد.
   const adminMenu = [
@@ -38,7 +64,7 @@ export default function Sidebar({ isOpen, onClose }) {
     ...(isMainUser ? [{ path: '/panel/branches', icon: Building2, label: 'شعبه‌ها' }] : []),
     ...(isMainUser ? [{ path: '/panel/users', icon: Shield, label: 'کاربران' }] : []),
     { id: 'reports', icon: BarChart3, label: 'گزارش‌ها', children: [{ path: '/panel/reports/trips', label: 'گزارش مسیرها' }, { path: '/panel/reports/live-logs', label: 'لاگ زنده' }] },
-    { path: '/panel/alerts',     icon: AlertTriangle,    label: 'هشدارها', badge: 3 },
+    { path: '/panel/alerts',     icon: AlertTriangle,    label: 'هشدارها', badge: personalUnreadCount },
     { path: '/panel/settings',   icon: Settings,         label: 'تنظیمات' },
   ];
 
