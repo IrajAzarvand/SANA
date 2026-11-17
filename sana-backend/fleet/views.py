@@ -266,6 +266,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 device=OuterRef('pk'),
                 subscription__user=user,
                 subscription__status='active',
+                subscription__start_date__lte=today,
+                subscription__end_date__gte=today,
                 unassigned_at__isnull=True,
                 start_date__lte=today,
                 end_date__gte=today,
