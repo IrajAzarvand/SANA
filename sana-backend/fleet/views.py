@@ -9,6 +9,7 @@ from rest_framework import viewsets, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.throttling import ScopedRateThrottle
 
 from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation, DeviceCustomerAccessPeriod, DeviceAlertState, PersonalAlertPreference, DriverVehicleAssignment
 from .serializers import (
@@ -180,6 +181,8 @@ class DeviceModelViewSet(viewsets.ReadOnlyModelViewSet):
 class DeviceViewSet(viewsets.ModelViewSet):
     queryset = Device.objects.select_related('device_model', 'organization', 'branch', 'vehicle', 'owner_user').all()
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'device_list'
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['imei', 'sim_number', 'device_model__manufacturer', 'device_model__name']
     ordering_fields = ['created_at', 'imei']
@@ -473,7 +476,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
         return Response(serializer.data)
 
 
-    @action(detail=False, methods=['get', 'put'], url_path='alert-preferences')
+    @action(detail=False, methods=['get', 'put'], url_path='alert-preferences', throttle_classes=[ScopedRateThrottle], throttle_scope='personal_alert_preferences')
     def alert_preferences(self, request):
         """Read or update the signed-in personal user's Traccar alert filters."""
         if not request.user.is_personal_user:
@@ -502,7 +505,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
         )
         return Response({'disabled_event_types': preference.disabled_event_types})
 
-    @action(detail=False, methods=['get', 'post'], url_path='alerts')
+    @action(detail=False, methods=['get', 'post'], url_path='alerts', throttle_classes=[ScopedRateThrottle], throttle_scope='personal_alerts')
     def alerts(self, request):
         """Read authorized Traccar events and persist only per-user workflow state."""
         if not request.user.is_personal_user:
@@ -659,7 +662,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
         }
         return Response({'results': results, 'counts': counts})
 
-    @action(detail=False, methods=['get'], url_path='report-history')
+    @action(detail=False, methods=['get'], url_path='report-history', throttle_classes=[ScopedRateThrottle], throttle_scope='personal_report_history')
     def report_history(self, request):
         """Return authorized device history for map playback; customer dates are contract-bounded."""
         raw_device_id = request.query_params.get('device_id')
@@ -912,7 +915,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
             'unrestricted': bool(request.user.is_site_admin),
         })
 
-    @action(detail=False, methods=['post'], url_path='map-matching-activity')
+    @action(detail=False, methods=['post'], url_path='map-matching-activity', throttle_classes=[ScopedRateThrottle], throttle_scope='personal_map_activity')
     def map_matching_activity(self, request):
         """Heartbeat for a visible map; the GPS worker expires abandoned sessions."""
         session_id = request.data.get('session_id')
@@ -943,7 +946,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 )
         return Response({'active': active})
 
-    @action(detail=False, methods=['get'], url_path='map-positions')
+    @action(detail=False, methods=['get'], url_path='map-positions', throttle_classes=[ScopedRateThrottle], throttle_scope='personal_map_positions')
     def map_positions(self, request):
         """Return one live-map record for every device the current user may access."""
         devices = list(self.filter_queryset(self.get_queryset()).select_related('vehicle'))
