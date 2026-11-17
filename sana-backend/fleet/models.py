@@ -718,3 +718,23 @@ class DeviceAlertState(models.Model):
             models.Index(fields=['user', 'status', 'event_time'], name='fleet_alert_user_status_idx'),
             models.Index(fields=['device', 'event_type', 'event_time'], name='fleet_alert_device_type_idx'),
         ]
+
+
+class PersonalAlertPreference(models.Model):
+    """Per-user filters for Traccar events shown in the personal alert center."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='personal_alert_preference',
+        verbose_name='کاربر',
+    )
+    disabled_event_types = models.JSONField(default=list, blank=True, verbose_name='انواع هشدار غیرفعال')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'تنظیمات هشدار مشتری شخصی'
+        verbose_name_plural = 'تنظیمات هشدار مشتریان شخصی'
+
+    def __str__(self):
+        return f'تنظیمات هشدارهای {self.user}'
