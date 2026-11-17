@@ -10,7 +10,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
-from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation, DeviceCustomerAccessPeriod, DeviceAlertState, DriverVehicleAssignment
+from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation, DeviceCustomerAccessPeriod, DeviceAlertState, PersonalAlertPreference, DriverVehicleAssignment
 from .serializers import (
     VehicleTypeSerializer,
     VehicleSerializer,
@@ -470,6 +470,36 @@ class DeviceViewSet(viewsets.ModelViewSet):
             return self.get_paginated_response(serializer.data)
         return Response(serializer.data)
 
+
+    @action(detail=False, methods=['get', 'put'], url_path='alert-preferences')
+    def alert_preferences(self, request):
+        """Read or update the signed-in personal user's Traccar alert filters."""
+        if not request.user.is_personal_user:
+            return Response({'detail': 'این تنظیمات فقط برای مشتری شخصی فعال است.'}, status=403)
+
+        if request.method == 'GET':
+            preference = PersonalAlertPreference.objects.filter(user=request.user).first()
+            disabled = preference.disabled_event_types if preference else []
+            return Response({'disabled_event_types': disabled})
+
+        disabled = request.data.get('disabled_event_types', [])
+        if (
+            not isinstance(disabled, list)
+            or any(not isinstance(item, str) for item in disabled)
+            or len(disabled) > 100
+        ):
+            return Response({'detail': 'فهرست انواع هشدار نامعتبر است.'}, status=400)
+
+        allowed_types = set(["commandResult","deviceOnline","deviceUnknown","deviceOffline","deviceInactive","queuedCommandSent","deviceMoving","deviceStopped","deviceOverspeed","overspeed","deviceFuelDrop","deviceFuelIncrease","geofenceEnter","geofenceExit","geofenceCrossed","proximityEnter","proximityExit","unaccompaniedMotion","alarm","ignitionOn","ignitionOff","maintenance","driverChanged","media"])
+        if any(item not in allowed_types for item in disabled):
+            return Response({'detail': 'یکی از انواع هشدار انتخاب‌شده معتبر نیست.'}, status=400)
+
+        preference, _created = PersonalAlertPreference.objects.update_or_create(
+            user=request.user,
+            defaults={'disabled_event_types': sorted(set(disabled))},
+        )
+        return Response({'disabled_event_types': preference.disabled_event_types})
+
     @action(detail=False, methods=['get', 'post'], url_path='alerts')
     def alerts(self, request):
         """Read authorized Traccar events and persist only per-user workflow state."""
@@ -539,6 +569,9 @@ class DeviceViewSet(viewsets.ModelViewSet):
         ).select_related('subscription'))
         contract_by_device = {link.device_id: link for link in links}
 
+        preference = PersonalAlertPreference.objects.filter(user=request.user).only('disabled_event_types').first()
+        disabled_event_types = set(preference.disabled_event_types or []) if preference else set()
+
         results = []
         try:
             for device in devices:
@@ -596,6 +629,9 @@ class DeviceViewSet(viewsets.ModelViewSet):
                             ):
                                 previous_alert['status'] = 'resolved'
                                 previous_alert['resolved_at'] = event_time
+
+                    if event_type in disabled_event_types:
+                        continue
 
                     results.append({
                         'id': state.traccar_event_id,
