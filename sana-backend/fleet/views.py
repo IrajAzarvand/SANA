@@ -556,6 +556,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
             raw_end = timezone.make_aware(raw_end)
         if raw_start > raw_end or raw_end > now + timedelta(minutes=1):
             return Response({'detail': 'بازه زمانی انتخاب‌شده معتبر نیست.'}, status=400)
+        if raw_end - raw_start > timedelta(days=90):
+            return Response({'detail': 'بازه زمانی هشدارها نمی‌تواند بیشتر از ۹۰ روز باشد.'}, status=400)
 
         devices = list(self.get_queryset().select_related('vehicle'))
         if not devices:
