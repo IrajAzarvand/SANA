@@ -77,6 +77,11 @@ class SessionLifecycleTests(TestCase):
         self.assertEqual(self.client.get('/api/users/me/').status_code, 200)
 
     def test_password_change_revokes_all_sessions_including_current(self):
+        other_session = UserSession.objects.create(
+            user=self.user,
+            expires_at=timezone.now() + timedelta(hours=12),
+            current_refresh_jti='another-device-refresh-jti',
+        )
         response = self.client.post(
             '/api/users/change_password/',
             {
@@ -88,15 +93,24 @@ class SessionLifecycleTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
 
         self.session.refresh_from_db()
+        other_session.refresh_from_db()
         self.assertIsNotNone(self.session.revoked_at)
+        self.assertIsNotNone(other_session.revoked_at)
         self.assertEqual(self.client.get('/api/users/me/').status_code, 401)
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password('Changed-Password-456!'))
 
     def test_logout_revokes_only_current_session(self):
+        other_session = UserSession.objects.create(
+            user=self.user,
+            expires_at=timezone.now() + timedelta(hours=12),
+            current_refresh_jti='another-device-refresh-jti',
+        )
         response = self.client.post('/api/auth/logout/')
         self.assertEqual(response.status_code, 200, response.data)
 
         self.session.refresh_from_db()
+        other_session.refresh_from_db()
         self.assertIsNotNone(self.session.revoked_at)
+        self.assertIsNone(other_session.revoked_at)
         self.assertEqual(self.client.get('/api/users/me/').status_code, 401)
