@@ -229,6 +229,7 @@ function ProfileSection() {
 /* ============ امنیت ============ */
 
 function SecuritySection() {
+  const { logout } = useAuth();
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -267,11 +268,9 @@ function SecuritySection() {
 
     setSaving(true);
     try {
-      const response = await authAPI.changePassword(oldPassword, newPassword);
-      setSuccess(response.detail || 'رمز عبور با موفقیت تغییر کرد.');
-      setOldPassword('');
-      setNewPassword('');
-      setConfirmPassword('');
+      await authAPI.changePassword(oldPassword, newPassword);
+      // The server revokes every session after a password change.
+      await logout();
     } catch (requestError) {
       const data = requestError.response?.data;
       const firstError = data && Object.values(data).flat().find((item) => typeof item === 'string');
