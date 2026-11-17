@@ -3,7 +3,7 @@ import {
   Terminal, Pause, Play, Trash2, ShieldCheck, RadioTower,
   CircleStop, Wifi, Server, Database, Activity,
 } from 'lucide-react';
-import apiClient from '../api/client';
+import apiClient, { getAuthToken } from '../api/client';
 import { useAuth } from '../context/AuthContext';
 
 const LOG_SOURCES = {
@@ -74,7 +74,7 @@ function LiveTerminal() {
       );
 
       try {
-        const token = localStorage.getItem('sana_access_token');
+        const token = getAuthToken();
         const params = new URLSearchParams();
         if (activeCapture) {
           params.set('capture_port', String(activeCapture.port));
