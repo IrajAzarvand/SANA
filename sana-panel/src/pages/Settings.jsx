@@ -22,7 +22,6 @@ import {
   usersList,
   roleMap,
   userStatusMap,
-  notificationSettings,
 } from '../data/settingsData';
 
 export default function Settings() {
@@ -727,55 +726,145 @@ function UsersSection() {
 
 /* ============ اعلان‌ها ============ */
 
-function NotificationsSection() {
-  const [settings, setSettings] = useState(notificationSettings);
+const personalNotificationTypes = [
+  { id: 'commandResult', label: 'نتیجه اجرای فرمان', description: 'نتیجه اجرای فرمان دستگاه' },
+  { id: 'deviceOnline', label: 'اتصال مجدد دستگاه', description: 'برقراری دوباره ارتباط دستگاه' },
+  { id: 'deviceUnknown', label: 'وضعیت ارتباط نامشخص', description: 'نامشخص بودن وضعیت ارتباط' },
+  { id: 'deviceOffline', label: 'قطع ارتباط دستگاه', description: 'قطع ارتباط دستگاه' },
+  { id: 'deviceInactive', label: 'عدم فعالیت دستگاه', description: 'ارسال نشدن موقعیت برای مدت طولانی' },
+  { id: 'queuedCommandSent', label: 'ارسال فرمان در صف', description: 'قرار گرفتن فرمان در صف ارسال' },
+  { id: 'deviceMoving', label: 'شروع حرکت', description: 'آغاز حرکت خودرو' },
+  { id: 'deviceStopped', label: 'توقف خودرو', description: 'توقف خودرو' },
+  { id: 'deviceOverspeed', label: 'سرعت غیرمجاز', description: 'عبور سرعت از حد مجاز' },
+  { id: 'overspeed', label: 'سرعت غیرمجاز', description: 'ثبت رویداد سرعت غیرمجاز' },
+  { id: 'deviceFuelDrop', label: 'کاهش ناگهانی سوخت', description: 'کاهش ناگهانی سطح سوخت' },
+  { id: 'deviceFuelIncrease', label: 'افزایش ناگهانی سوخت', description: 'افزایش ناگهانی سطح سوخت' },
+  { id: 'geofenceEnter', label: 'ورود به محدوده', description: 'ورود خودرو به محدوده جغرافیایی' },
+  { id: 'geofenceExit', label: 'خروج از محدوده', description: 'خروج خودرو از محدوده جغرافیایی' },
+  { id: 'geofenceCrossed', label: 'عبور از محدوده', description: 'عبور از مرز محدوده جغرافیایی' },
+  { id: 'proximityEnter', label: 'ورود به محدوده نزدیکی', description: 'نزدیک شدن به دستگاه مرتبط' },
+  { id: 'proximityExit', label: 'خروج از محدوده نزدیکی', description: 'دور شدن از دستگاه مرتبط' },
+  { id: 'unaccompaniedMotion', label: 'حرکت بدون همراه', description: 'تشخیص حرکت دستگاه بدون همراه' },
+  { id: 'alarm', label: 'هشدار دستگاه', description: 'هشدار ارسال‌شده از خود دستگاه' },
+  { id: 'ignitionOn', label: 'روشن شدن سوئیچ', description: 'روشن شدن سوئیچ خودرو' },
+  { id: 'ignitionOff', label: 'خاموش شدن سوئیچ', description: 'خاموش شدن سوئیچ خودرو' },
+  { id: 'maintenance', label: 'یادآوری سرویس', description: 'رویداد سرویس دوره‌ای در صورت ثبت در Traccar' },
+  { id: 'driverChanged', label: 'تغییر راننده', description: 'تغییر راننده دستگاه' },
+  { id: 'media', label: 'رسانه جدید', description: 'دریافت رسانه از دستگاه' },
+];
 
-  const toggle = (id, channel) => {
-    setSettings((prev) =>
-      prev.map((s) => (s.id === id ? { ...s, [channel]: !s[channel] } : s))
-    );
+function NotificationsSection() {
+  const [disabledTypes, setDisabledTypes] = useState([]);
+  const [savedDisabledTypes, setSavedDisabledTypes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    apiClient.get('/devices/alert-preferences/')
+      .then(({ data }) => {
+        if (!active) return;
+        const disabled = Array.isArray(data?.disabled_event_types) ? data.disabled_event_types : [];
+        setDisabledTypes(disabled);
+        setSavedDisabledTypes(disabled);
+      })
+      .catch((requestError) => {
+        if (active) setError(requestError.response?.data?.detail || 'دریافت تنظیمات اعلان‌ها ناموفق بود.');
+      })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  const toggleType = (type) => {
+    setDisabledTypes((current) => current.includes(type)
+      ? current.filter((item) => item !== type)
+      : [...current, type]);
+    setError('');
+    setSuccess('');
+  };
+
+  const handleCancel = () => {
+    setDisabledTypes(savedDisabledTypes);
+    setError('');
+    setSuccess('');
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError('');
+    setSuccess('');
+    try {
+      const { data } = await apiClient.put('/devices/alert-preferences/', {
+        disabled_event_types: disabledTypes,
+      });
+      const disabled = Array.isArray(data?.disabled_event_types) ? data.disabled_event_types : [];
+      setDisabledTypes(disabled);
+      setSavedDisabledTypes(disabled);
+      setSuccess('تنظیمات اعلان‌ها با موفقیت ذخیره شد.');
+      window.dispatchEvent(new Event('sana:personal-alerts-updated'));
+    } catch (requestError) {
+      setError(requestError.response?.data?.detail || 'ذخیره تنظیمات اعلان‌ها انجام نشد. دوباره تلاش کنید.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
-    <Card title="تنظیمات اعلان‌ها" subtitle="انتخاب کانال دریافت هر نوع هشدار">
+    <Card title="تنظیمات اعلان‌ها" subtitle="انتخاب رویدادهایی که در مرکز هشدارهای پنل نمایش داده می‌شوند">
       <div className="overflow-x-auto -m-5">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border-base">
-              <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">نوع اعلان</th>
+              <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">نوع هشدار</th>
               <th className="text-center py-3 px-4 text-xs font-medium text-text-muted">ایمیل</th>
               <th className="text-center py-3 px-4 text-xs font-medium text-text-muted">پیامک</th>
               <th className="text-center py-3 px-4 text-xs font-medium text-text-muted">پوش</th>
+              <th className="text-center py-3 px-4 text-xs font-medium text-text-muted">مرکز هشدارها</th>
             </tr>
           </thead>
           <tbody>
-            {settings.map((s) => (
-              <tr key={s.id} className="border-b border-border-base last:border-0">
+            {personalNotificationTypes.map((item) => (
+              <tr key={item.id} className="border-b border-border-base last:border-0">
                 <td className="py-3 px-4">
-                  <div className="font-medium text-text-primary text-xs">{s.label}</div>
-                  <div className="text-[10px] text-text-muted mt-0.5">{s.description}</div>
+                  <div className="font-medium text-text-primary text-xs">{item.label}</div>
+                  <div className="text-[10px] text-text-muted mt-0.5">{item.description}</div>
                 </td>
-                {['email', 'sms', 'push'].map((ch) => (
-                  <td key={ch} className="py-3 px-4 text-center">
-                    <label className="inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={s[ch]}
-                        onChange={() => toggle(s.id, ch)}
-                        className="w-4 h-4 rounded border-border-base bg-bg-base text-brand-500 focus:ring-brand-500/20 focus:ring-2 cursor-pointer accent-brand-500"
-                      />
-                    </label>
+                {['email', 'sms', 'push'].map((channel) => (
+                  <td key={channel} className="py-3 px-4 text-center bg-bg-base/50">
+                    <input
+                      type="checkbox"
+                      checked={false}
+                      disabled
+                      aria-label={`${item.label} — ${channel}`}
+                      className="w-4 h-4 rounded border-border-base bg-bg-base opacity-40 cursor-not-allowed accent-brand-500"
+                    />
                   </td>
                 ))}
+                <td className="py-3 px-4 text-center">
+                  <input
+                    type="checkbox"
+                    checked={!disabledTypes.includes(item.id)}
+                    onChange={() => toggleType(item.id)}
+                    disabled={loading || saving}
+                    aria-label={`${item.label} — مرکز هشدارها`}
+                    className="w-4 h-4 rounded border-border-base bg-bg-base text-brand-500 focus:ring-brand-500/20 focus:ring-2 cursor-pointer accent-brand-500 disabled:opacity-50"
+                  />
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
+      {error && <p role="alert" className="mt-4 text-sm text-danger">{error}</p>}
+      {success && <p role="status" className="mt-4 text-sm text-success">{success}</p>}
       <div className="flex items-center justify-end gap-2 pt-4 mt-5 border-t border-border-base">
-        <Button variant="secondary">انصراف</Button>
-        <Button>ذخیره تغییرات</Button>
+        <Button variant="secondary" onClick={handleCancel} disabled={loading || saving}>انصراف</Button>
+        <Button onClick={handleSave} disabled={loading || saving}>
+          {saving ? 'در حال ذخیره...' : 'ذخیره تغییرات'}
+        </Button>
       </div>
     </Card>
   );
