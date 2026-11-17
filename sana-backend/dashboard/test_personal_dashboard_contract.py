@@ -6,7 +6,8 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from accounts.models import User
-from organizations.models import Subscription
+from fleet.models import Device
+from organizations.models import Subscription, SubscriptionDevice
 
 
 class PersonalDashboardContractSelectionTests(TestCase):
@@ -38,6 +39,50 @@ class PersonalDashboardContractSelectionTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIsNone(response.data['current_subscription'])
+
+    def test_expired_or_future_parent_contract_does_not_expose_device_counts(self):
+        today = timezone.localdate()
+        expired_device = Device.objects.create(
+            imei='860000000000411',
+            management_status='sold',
+        )
+        future_device = Device.objects.create(
+            imei='860000000000412',
+            management_status='sold',
+        )
+        expired_subscription = Subscription.objects.create(
+            contract_number='DASH-EXPIRED-DEVICE-001',
+            customer_type='personal',
+            user=self.user,
+            start_date=today - timedelta(days=30),
+            end_date=today - timedelta(days=1),
+            status='active',
+        )
+        future_subscription = Subscription.objects.create(
+            contract_number='DASH-FUTURE-DEVICE-001',
+            customer_type='personal',
+            user=self.user,
+            start_date=today + timedelta(days=1),
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        for subscription, device in (
+            (expired_subscription, expired_device),
+            (future_subscription, future_device),
+        ):
+            SubscriptionDevice.objects.create(
+                subscription=subscription,
+                device=device,
+                start_date=today - timedelta(days=5),
+                end_date=today + timedelta(days=30),
+            )
+
+        response = self.get_dashboard()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['devices'], 0)
+        self.assertEqual(response.data['gps_status']['total'], 0)
+        self.assertEqual(response.data['devices_by_management_status'], {})
 
     def test_contract_ending_on_previous_tehran_day_is_not_current(self):
         tehran_today = date(2026, 11, 18)
