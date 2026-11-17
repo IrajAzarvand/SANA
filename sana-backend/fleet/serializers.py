@@ -518,6 +518,34 @@ class DriverSerializer(serializers.ModelSerializer):
     def get_full_name(self, obj):
         return f'{obj.first_name} {obj.last_name}'
 
+    def validate(self, attrs):
+        request = self.context.get('request')
+        user = request.user if request else None
+        if not user or user.is_site_admin:
+            return attrs
+
+        if not (user.is_main_user or user.is_branch_manager):
+            raise serializers.ValidationError('اجازه مدیریت رانندگان را ندارید.')
+        if not user.organization_id:
+            raise serializers.ValidationError('حساب شما به سازمان معتبری متصل نیست.')
+
+        branch = attrs.get('branch', getattr(self.instance, 'branch', None))
+        if user.is_branch_manager:
+            if not user.branch_id:
+                raise serializers.ValidationError('حساب مدیر شعبه به شعبه معتبری متصل نیست.')
+            if branch and branch.pk != user.branch_id:
+                raise serializers.ValidationError({
+                    'branch': 'شما فقط می‌توانید رانندگان شعبه خود را مدیریت کنید.'
+                })
+            # A branch manager cannot move a driver out of, or into, another branch.
+            attrs['branch'] = user.branch
+        elif branch and branch.organization_id != user.organization_id:
+            raise serializers.ValidationError({
+                'branch': 'شعبه انتخاب‌شده متعلق به سازمان شما نیست.'
+            })
+
+        return attrs
+
     def create(self, validated_data):
         # organization رو از کاربر جاری پر کن
         request = self.context.get('request')
