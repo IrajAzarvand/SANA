@@ -49,12 +49,18 @@ export function AuthProvider({ children }) {
     localStorage.setItem('sana_user', JSON.stringify(updatedUser));
   }, []);
 
-  const logout = useCallback(() => {
-    localStorage.removeItem('sana_access_token');
-    localStorage.removeItem('sana_refresh_token');
-    localStorage.removeItem('sana_user');
-    setUser(null);
-    window.location.href = '/login';
+  const logout = useCallback(async () => {
+    try {
+      await authAPI.logout();
+    } catch {
+      // Local credentials must be cleared even if the server is unreachable.
+    } finally {
+      localStorage.removeItem('sana_access_token');
+      localStorage.removeItem('sana_refresh_token');
+      localStorage.removeItem('sana_user');
+      setUser(null);
+      window.location.href = '/login';
+    }
   }, []);
 
   // helperها
