@@ -35,7 +35,7 @@ class MapMatchingWatcherOwnershipTests(TestCase):
         self.assertEqual(response.status_code, 200)
         sql = cursor.execute.call_args.args[0]
         self.assertIn(
-            'WHERE gps.map_matching_watchers.user_id = EXCLUDED.user_id',
+            'WHERE watcher.user_id = EXCLUDED.user_id',
             sql,
         )
         self.assertNotIn('SET user_id = EXCLUDED.user_id', sql)
