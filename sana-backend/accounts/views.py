@@ -2,9 +2,12 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from .models import User
+from django.utils import timezone
+
+from .models import User, UserSession
 from .serializers import (
     UserSerializer,
     UserCreateSerializer,
@@ -114,3 +117,19 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response({'detail': 'رمز عبور با موفقیت تغییر کرد'})
+
+
+class LogoutView(APIView):
+    """Revoke the current browser/device session on the server."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        session_id = getattr(request.auth, 'payload', {}).get('sid')
+        if session_id:
+            UserSession.objects.filter(
+                pk=session_id,
+                user=request.user,
+                revoked_at__isnull=True,
+            ).update(revoked_at=timezone.now())
+        return Response({'detail': 'از حساب کاربری خارج شدید.'})
