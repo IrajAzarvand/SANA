@@ -114,3 +114,17 @@ class SessionLifecycleTests(TestCase):
         self.assertIsNotNone(self.session.revoked_at)
         self.assertIsNone(other_session.revoked_at)
         self.assertEqual(self.client.get('/api/users/me/').status_code, 401)
+    def test_expired_refresh_token_revokes_its_server_session(self):
+        self.session.expires_at = timezone.now() - timedelta(seconds=1)
+        self.session.save(update_fields=['expires_at'])
+
+        response = self.client.post(
+            '/api/auth/refresh/',
+            {'refresh': self.refresh},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 401)
+        self.session.refresh_from_db()
+        self.assertIsNotNone(self.session.revoked_at)
+
