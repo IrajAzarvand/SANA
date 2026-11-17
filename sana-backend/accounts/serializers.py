@@ -8,7 +8,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, Toke
 from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User, UserSession
-from .session_utils import ABSOLUTE_SESSION_LIFETIME, IDLE_TIMEOUT, get_session_for_token, touch_session
+from .session_utils import ABSOLUTE_SESSION_LIFETIME, IDLE_TIMEOUT, touch_session
 
 
 class UserSerializer(serializers.ModelSerializer):
