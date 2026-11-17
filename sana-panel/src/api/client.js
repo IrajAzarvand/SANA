@@ -66,11 +66,24 @@ async function rotateRefreshToken(expectedRefreshToken) {
     if (currentAccess) return currentAccess;
   }
 
-  const response = await axios.post(
-    `${API_BASE_URL}/auth/refresh/`,
-    { refresh: refreshToken },
-    { timeout: 15000 },
-  );
+  let response;
+  try {
+    response = await axios.post(
+      `${API_BASE_URL}/auth/refresh/`,
+      { refresh: refreshToken },
+      { timeout: 15000 },
+    );
+  } catch (error) {
+    // If another tab won the rotation race, use the token it already stored
+    // instead of treating the expected replay rejection as a logout.
+    const latestStorage = getAuthStorage();
+    const latestRefresh = latestStorage.getItem('sana_refresh_token');
+    const latestAccess = latestStorage.getItem('sana_access_token');
+    if (latestRefresh && latestRefresh !== refreshToken && latestAccess) {
+      return latestAccess;
+    }
+    throw error;
+  }
   const access = response.data?.access;
   if (!access) {
     throw new Error('Refresh response did not contain an access token');
