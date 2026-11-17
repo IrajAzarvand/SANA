@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
 from django.contrib.auth import get_user_model
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import AuthenticationFailed, ValidationError
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
 from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -130,9 +130,9 @@ class ContractAwareTokenRefreshSerializer(TokenRefreshSerializer):
 
         session = get_session_for_token(refresh, user=user)
         if session is None or session.current_refresh_jti != refresh['jti']:
-            raise ValidationError({
-                'detail': 'نشست ورود شما منقضی یا باطل شده است. لطفاً دوباره وارد شوید.'
-            })
+            raise AuthenticationFailed(
+                'نشست ورود شما منقضی یا باطل شده است. لطفاً دوباره وارد شوید.'
+            )
 
         touch_session(session)
         data = super().validate(attrs)
