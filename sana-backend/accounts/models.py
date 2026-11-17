@@ -118,7 +118,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     @property
     def active_subscription(self):
         """آخرین قرارداد فعال کاربر یا سازمانش"""
-        today = timezone.now().date()
+        today = timezone.localdate()
 
         if self.is_site_admin:
             return None
