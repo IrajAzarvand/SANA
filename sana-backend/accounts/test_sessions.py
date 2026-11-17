@@ -71,7 +71,7 @@ class SessionLifecycleTests(TestCase):
             {'refresh': self.refresh},
             format='json',
         )
-        self.assertEqual(replay.status_code, 400)
+        self.assertEqual(replay.status_code, 401)
 
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {first.data['access']}")
         self.assertEqual(self.client.get('/api/users/me/').status_code, 200)
