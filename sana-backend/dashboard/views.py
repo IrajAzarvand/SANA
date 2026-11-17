@@ -2,6 +2,7 @@ from rest_framework import status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.throttling import ScopedRateThrottle
 from django.db.models import Count, Exists, OuterRef, Q
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -17,6 +18,8 @@ from .models import SiteSettings
 class DashboardStatsView(APIView):
     """آمار داشبورد بر اساس نقش کاربر"""
     permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'dashboard_stats'
 
     def get(self, request):
         user = request.user
