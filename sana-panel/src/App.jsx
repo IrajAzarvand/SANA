@@ -42,7 +42,11 @@ export default function App() {
             <Route path="devices"   element={<Devices />} />
             <Route path="reports"   element={<Reports />} />
             <Route path="reports/trips" element={<DeviceTripReport />} />
-            <Route path="reports/live-logs" element={<LiveLogs />} />
+            <Route path="reports/live-logs" element={
+              <ProtectedRoute allowRoles={['site_admin']}>
+                <LiveLogs />
+              </ProtectedRoute>
+            } />
             <Route path="alerts"    element={<Alerts />} />
             <Route path="settings"  element={<Settings />} />
 
