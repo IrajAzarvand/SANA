@@ -122,12 +122,3 @@ export const userStatusMap = {
   active:   { label: 'فعال',    variant: 'success' },
   inactive: { label: 'غیرفعال', variant: 'muted'   },
 };
-
-export const notificationSettings = [
-  { id: 'sos',          label: 'هشدار اضطراری (SOS)',   description: 'وقتی دکمه اضطراری فشرده می‌شود',   email: true,  sms: true,  push: true  },
-  { id: 'speed',        label: 'سرعت غیرمجاز',          description: 'هنگام عبور از حد مجاز سرعت',       email: false, sms: false, push: true  },
-  { id: 'geofence',     label: 'خروج از محدوده',         description: 'خروج خودرو از محدوده‌های مجاز',   email: true,  sms: false, push: true  },
-  { id: 'offline',      label: 'قطع ارتباط دستگاه',      description: 'وقتی دستگاه بیش از ۳۰ دقیقه آفلاین شود', email: true, sms: false, push: false },
-  { id: 'maintenance',  label: 'یادآوری سرویس',         description: 'یادآوری سرویس‌های دوره‌ای',        email: true,  sms: false, push: false },
-  { id: 'daily_report', label: 'گزارش روزانه',          description: 'ارسال خلاصه فعالیت‌های روز',       email: true,  sms: false, push: false },
-];
