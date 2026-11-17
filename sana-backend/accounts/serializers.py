@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
+from django.db import transaction
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from rest_framework.exceptions import AuthenticationFailed, ValidationError
@@ -7,7 +8,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, Toke
 from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User, UserSession
-from .session_utils import ABSOLUTE_SESSION_LIFETIME, get_session_for_token, touch_session
+from .session_utils import ABSOLUTE_SESSION_LIFETIME, IDLE_TIMEOUT, get_session_for_token, touch_session
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -116,7 +117,7 @@ class ChangePasswordSerializer(serializers.Serializer):
 
 
 class ContractAwareTokenRefreshSerializer(TokenRefreshSerializer):
-    """Do not issue fresh access tokens to users whose account access has expired."""
+    """Rotate refresh tokens atomically against the server-side session."""
 
     def validate(self, attrs):
         refresh = RefreshToken(attrs['refresh'])
@@ -130,22 +131,42 @@ class ContractAwareTokenRefreshSerializer(TokenRefreshSerializer):
                 'detail': 'قرارداد یا دسترسی حساب شما فعال نیست. لطفاً با پشتیبانی سانا تماس بگیرید.'
             })
 
-        session = get_session_for_token(refresh, user=user)
-        if session is None or session.current_refresh_jti != refresh['jti']:
-            raise AuthenticationFailed(
-                'نشست ورود شما منقضی یا باطل شده است. لطفاً دوباره وارد شوید.'
-            )
+        # Serialize concurrent refreshes for one session. Without the row lock,
+        # two tabs could both accept the same JTI and invalidate each other's
+        # newly rotated token.
+        with transaction.atomic():
+            session = UserSession.objects.select_for_update().filter(
+                pk=refresh.payload.get('sid'),
+                user=user,
+                revoked_at__isnull=True,
+            ).first()
+            now = timezone.now()
+            if session is None:
+                raise AuthenticationFailed(
+                    'نشست ورود شما منقضی یا باطل شده است. لطفاً دوباره وارد شوید.'
+                )
 
-        touch_session(session)
-        data = super().validate(attrs)
+            if session.expires_at <= now or session.last_activity_at <= now - IDLE_TIMEOUT:
+                session.revoked_at = now
+                session.save(update_fields=['revoked_at'])
+                raise AuthenticationFailed(
+                    'نشست ورود شما منقضی یا باطل شده است. لطفاً دوباره وارد شوید.'
+                )
 
-        # Refresh rotation changes the token JTI. Only the newest refresh token
-        # remains usable for this session, even though the blacklist app is unused.
-        rotated_refresh = data.get('refresh')
-        if rotated_refresh:
-            rotated = RefreshToken(rotated_refresh)
-            session.current_refresh_jti = rotated['jti']
-            session.save(update_fields=['current_refresh_jti'])
+            if session.current_refresh_jti != refresh['jti']:
+                raise AuthenticationFailed(
+                    'نشست ورود شما منقضی یا باطل شده است. لطفاً دوباره وارد شوید.'
+                )
+
+            touch_session(session)
+            data = super().validate(attrs)
+
+            # Only the newest refresh token remains usable for this session.
+            rotated_refresh = data.get('refresh')
+            if rotated_refresh:
+                rotated = RefreshToken(rotated_refresh)
+                session.current_refresh_jti = rotated['jti']
+                session.save(update_fields=['current_refresh_jti'])
 
         return data
 
