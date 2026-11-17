@@ -765,7 +765,7 @@ function NotificationsSection() {
   useEffect(() => {
     let active = true;
     alertsAPI.preferences()
-      .then(({ data }) => {
+      .then((data) => {
         if (!active) return;
         const disabled = Array.isArray(data?.disabled_event_types) ? data.disabled_event_types : [];
         setDisabledTypes(disabled);
@@ -797,7 +797,7 @@ function NotificationsSection() {
     setError('');
     setSuccess('');
     try {
-      const { data } = await alertsAPI.updatePreferences({ disabled_event_types: disabledTypes });
+      const data = await alertsAPI.updatePreferences({ disabled_event_types: disabledTypes });
       const disabled = Array.isArray(data?.disabled_event_types) ? data.disabled_event_types : [];
       setDisabledTypes(disabled);
       setSavedDisabledTypes(disabled);
