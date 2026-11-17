@@ -1,3 +1,6 @@
+import uuid
+from datetime import timedelta
+
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from django.utils import timezone
@@ -194,7 +197,7 @@ class User(AbstractBaseUser, PermissionsMixin):
 class UserSession(models.Model):
     """Server-side lifecycle record for one authenticated browser/device session."""
 
-    id = models.UUIDField(primary_key=True, editable=False, default=__import__('uuid').uuid4)
+    id = models.UUIDField(primary_key=True, editable=False, default=uuid.uuid4)
     user = models.ForeignKey(
         'accounts.User',
         on_delete=models.CASCADE,
@@ -223,5 +226,5 @@ class UserSession(models.Model):
         return (
             self.revoked_at is None
             and self.expires_at > now
-            and self.last_activity_at > now - timezone.timedelta(minutes=30)
+            and self.last_activity_at > now - timedelta(minutes=30)
         )
