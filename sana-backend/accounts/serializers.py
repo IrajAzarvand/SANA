@@ -8,7 +8,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, Toke
 from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User, UserSession
-from .session_utils import get_session_for_token, touch_session
+from .session_utils import ABSOLUTE_SESSION_LIFETIME, get_session_for_token, touch_session
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -196,13 +196,13 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             user=user,
             created_at=now,
             last_activity_at=now,
-            expires_at=now + timedelta(hours=12),
+            expires_at=now + ABSOLUTE_SESSION_LIFETIME,
             ip_address=(request.META.get('REMOTE_ADDR') if request else None),
             user_agent=(request.META.get('HTTP_USER_AGENT', '')[:512] if request else ''),
         )
         refresh = RefreshToken(data['refresh'])
         refresh['sid'] = str(session.pk)
-        session.current_refresh_jti = refresh.get('jti')
+        session.current_refresh_jti = refresh['jti']
         session.save(update_fields=['current_refresh_jti'])
         data['refresh'] = str(refresh)
         data['access'] = str(refresh.access_token)
