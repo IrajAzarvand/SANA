@@ -34,6 +34,9 @@ export function refreshAccessToken() {
       }
 
       localStorage.setItem('sana_access_token', access);
+      if (response.data?.refresh) {
+        localStorage.setItem('sana_refresh_token', response.data.refresh);
+      }
       return access;
     })().finally(() => {
       refreshInFlight = null;
