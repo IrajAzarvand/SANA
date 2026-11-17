@@ -82,6 +82,7 @@ function ProfileSection() {
   });
   const [savedForm, setSavedForm] = useState(form);
   const [loading, setLoading] = useState(true);
+  const [profileLoaded, setProfileLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -102,6 +103,7 @@ function ProfileSection() {
         const profileData = mapProfileData(data);
         setForm(profileData);
         setSavedForm(profileData);
+        setProfileLoaded(true);
       })
       .catch(() => {
         if (!active) return;
@@ -184,13 +186,13 @@ function ProfileSection() {
             label="نام"
             value={form.firstName}
             onChange={(event) => handleChange('firstName', event.target.value)}
-            disabled={loading || saving}
+            disabled={loading || saving || !profileLoaded}
           />
           <Input
             label="نام خانوادگی"
             value={form.lastName}
             onChange={(event) => handleChange('lastName', event.target.value)}
-            disabled={loading || saving}
+            disabled={loading || saving || !profileLoaded}
           />
           <Input
             label="ایمیل"
@@ -198,7 +200,7 @@ function ProfileSection() {
             type="email"
             value={form.email}
             onChange={(event) => handleChange('email', event.target.value)}
-            disabled={loading || saving}
+            disabled={loading || saving || !profileLoaded}
           />
           <Input
             label="موبایل"
@@ -206,7 +208,7 @@ function ProfileSection() {
             type="tel"
             value={form.mobile}
             onChange={(event) => handleChange('mobile', event.target.value)}
-            disabled={loading || saving}
+            disabled={loading || saving || !profileLoaded}
           />
         </div>
 
@@ -214,10 +216,10 @@ function ProfileSection() {
         {success && <p className="text-sm text-success">{success}</p>}
 
         <div className="flex items-center justify-end gap-2 pt-4 border-t border-border-base">
-          <Button variant="secondary" onClick={handleCancel} disabled={loading || saving}>
+          <Button variant="secondary" onClick={handleCancel} disabled={loading || saving || !profileLoaded}>
             انصراف
           </Button>
-          <Button onClick={handleSave} disabled={loading || saving}>
+          <Button onClick={handleSave} disabled={loading || saving || !profileLoaded}>
             {saving ? 'در حال ذخیره...' : 'ذخیره تغییرات'}
           </Button>
         </div>
