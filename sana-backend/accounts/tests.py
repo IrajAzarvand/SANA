@@ -5,7 +5,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from accounts.models import User
+from accounts.models import User, UserSession
 from organizations.models import Branch, Organization, Subscription
 
 
@@ -35,6 +35,12 @@ class ContractExpirationAccessTests(TestCase):
 
     def authenticate_as(self, user):
         refresh = RefreshToken.for_user(user)
+        session = UserSession.objects.create(
+            user=user,
+            expires_at=timezone.now() + timedelta(hours=12),
+            current_refresh_jti=refresh['jti'],
+        )
+        refresh['sid'] = str(session.pk)
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
         return str(refresh)
 
@@ -134,6 +140,12 @@ class UsernameAvailabilityTests(TestCase):
 
     def authenticate_as(self, user):
         refresh = RefreshToken.for_user(user)
+        session = UserSession.objects.create(
+            user=user,
+            expires_at=timezone.now() + timedelta(hours=12),
+            current_refresh_jti=refresh['jti'],
+        )
+        refresh['sid'] = str(session.pk)
         self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {refresh.access_token}')
 
     def test_site_admin_sees_username_used_by_another_account_type_as_taken(self):
