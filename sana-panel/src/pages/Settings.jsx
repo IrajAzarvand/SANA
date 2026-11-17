@@ -15,7 +15,7 @@ import SettingsNav from '../components/SettingsNav';
 import { useAuth } from '../context/AuthContext';
 import { authAPI } from '../api/services/auth';
 import { organizationsAPI } from '../api/services/organizations';
-import apiClient from '../api/client';
+import apiClient, { getAuthToken } from '../api/client';
 import { MAP_PROVIDERS } from '../../../sana-map/src/config';
 import {
   branchesList,
@@ -997,7 +997,7 @@ function TraccarPortManager() {
     let operationSucceeded = true;
     const operationLines = [];
     try {
-      const token = localStorage.getItem('sana_access_token');
+      const token = getAuthToken();
       const response = await fetch(apiClient.defaults.baseURL + '/gps-monitor/ports/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
@@ -1048,7 +1048,7 @@ function TraccarPortManager() {
     let statusPoll;
     (async () => {
       try {
-        const token = localStorage.getItem('sana_access_token');
+        const token = getAuthToken();
         const statusResponse = await fetch(apiClient.defaults.baseURL + '/gps-monitor/ports/', {
           method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
           body: JSON.stringify({ action: 'capture-status', port: CAPTURE_TEST_PORT }),
@@ -1167,7 +1167,7 @@ function TraccarPortManager() {
       const controller = new AbortController();
       captureAbortRef.current = controller;
       try {
-        const token = localStorage.getItem('sana_access_token');
+        const token = getAuthToken();
         const response = await fetch(apiClient.defaults.baseURL + '/gps-monitor/ports/capture/' + CAPTURE_TEST_PORT + '/', {
           headers: { Accept: 'text/event-stream', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
           signal: controller.signal,
