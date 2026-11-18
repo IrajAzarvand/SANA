@@ -34,6 +34,8 @@ class CustomTokenRefreshView(TokenRefreshView):
 
 
 class UserViewSet(viewsets.ModelViewSet):
+    # Declare the attribute so DRF's router accepts action-level throttle_scope overrides.
+    throttle_scope = None
     queryset = User.objects.select_related('organization', 'branch').all()
     permission_classes = [IsAuthenticated, IsSiteAdminOrReadOnly]
 
