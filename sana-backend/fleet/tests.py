@@ -545,7 +545,7 @@ class ReportHistoryRequestSecurityTests(SimpleTestCase):
         request = factory.get("/api/devices/report-history/", {"device_id": "not-an-id"})
         force_authenticate(
             request,
-            user=SimpleNamespace(is_authenticated=True, is_site_admin=True),
+            user=SimpleNamespace(pk=1, is_authenticated=True, is_site_admin=True),
         )
 
         response = DeviceViewSet.as_view({"get": "report_history"})(request)
@@ -574,6 +574,7 @@ class PersonalAlertPreferencesSecurityTests(SimpleTestCase):
         force_authenticate(
             request,
             user=SimpleNamespace(
+                pk=1,
                 is_authenticated=True,
                 is_personal_user=False,
             ),
