@@ -592,6 +592,7 @@ class PersonalAlertsEndpointSecurityTests(SimpleTestCase):
         force_authenticate(
             request,
             user=SimpleNamespace(
+                pk=1,
                 is_authenticated=True,
                 is_personal_user=False,
             ),
