@@ -39,6 +39,13 @@ class PersonalDeviceContractBoundsTests(TestCase):
             start_date=self.today - timedelta(days=5),
             end_date=self.today + timedelta(days=30),
         )
+        # SubscriptionDevice.save() recalculates the parent contract end date
+        # from its device links. Restore the deliberately mismatched parent
+        # dates after creating the link so this fixture tests the intended case.
+        Subscription.objects.filter(pk=subscription.pk).update(
+            start_date=start_date,
+            end_date=end_date,
+        )
         return device
 
     def test_device_link_cannot_extend_access_beyond_parent_contract_dates(self):
