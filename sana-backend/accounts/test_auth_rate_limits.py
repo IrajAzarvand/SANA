@@ -1,17 +1,19 @@
 from django.conf import settings
 from django.core.cache import cache
-from django.test import TestCase, override_settings
+from django.test import TestCase
+from unittest.mock import patch
 from rest_framework.test import APIClient
+from rest_framework.throttling import ScopedRateThrottle
 
 from accounts.models import User
 
 
-def throttle_test_settings(scope):
-    rest_framework = dict(settings.REST_FRAMEWORK)
-    rates = dict(rest_framework.get('DEFAULT_THROTTLE_RATES', {}))
+def throttle_test_rates(scope):
+    # DRF copies DEFAULT_THROTTLE_RATES onto ScopedRateThrottle at import time;
+    # patch that effective mapping rather than overriding Django settings later.
+    rates = dict(ScopedRateThrottle.THROTTLE_RATES)
     rates[scope] = '2/min'
-    rest_framework['DEFAULT_THROTTLE_RATES'] = rates
-    return rest_framework
+    return rates
 
 
 class AuthEndpointThrottleTests(TestCase):
@@ -28,7 +30,7 @@ class AuthEndpointThrottleTests(TestCase):
     def tearDown(self):
         cache.clear()
 
-    @override_settings(REST_FRAMEWORK=throttle_test_settings('auth_login'))
+    @patch.object(ScopedRateThrottle, 'THROTTLE_RATES', throttle_test_rates('auth_login'))
     def test_login_is_rate_limited_by_client_ip(self):
         for _ in range(2):
             response = self.client.post(
@@ -45,7 +47,7 @@ class AuthEndpointThrottleTests(TestCase):
         )
         self.assertEqual(limited.status_code, 429)
 
-    @override_settings(REST_FRAMEWORK=throttle_test_settings('auth_refresh'))
+    @patch.object(ScopedRateThrottle, 'THROTTLE_RATES', throttle_test_rates('auth_refresh'))
     def test_refresh_endpoint_is_rate_limited(self):
         for _ in range(2):
             response = self.client.post(
@@ -62,7 +64,7 @@ class AuthEndpointThrottleTests(TestCase):
         )
         self.assertEqual(limited.status_code, 429)
 
-    @override_settings(REST_FRAMEWORK=throttle_test_settings('password_change'))
+    @patch.object(ScopedRateThrottle, 'THROTTLE_RATES', throttle_test_rates('password_change'))
     def test_password_change_is_rate_limited_per_authenticated_user(self):
         self.client.force_authenticate(user=self.user)
         payload = {
