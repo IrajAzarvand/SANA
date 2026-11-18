@@ -76,6 +76,16 @@ class PersonalDashboardContractSelectionTests(TestCase):
                 start_date=today - timedelta(days=5),
                 end_date=today + timedelta(days=30),
             )
+        # Creating a device link recalculates the parent subscription dates.
+        # Restore them afterward to model a legacy/inconsistent link accurately.
+        Subscription.objects.filter(pk=expired_subscription.pk).update(
+            start_date=today - timedelta(days=30),
+            end_date=today - timedelta(days=1),
+        )
+        Subscription.objects.filter(pk=future_subscription.pk).update(
+            start_date=today + timedelta(days=1),
+            end_date=today + timedelta(days=30),
+        )
 
         response = self.get_dashboard()
 
