@@ -58,7 +58,7 @@ export default function Sidebar({ isOpen, onClose }) {
     { path: '/panel/subscriptions',  icon: FileText,         label: 'قراردادها' },
     { path: '/panel/ai',             icon: BrainCircuit,     label: 'هوش مصنوعی' },
     { id: 'reports', icon: BarChart3, label: 'گزارش‌ها', children: [{ path: '/panel/reports/trips', label: 'گزارش مسیرها' }, { path: '/panel/reports/live-logs', label: 'لاگ زنده' }] },
-    { path: '/panel/alerts',         icon: AlertTriangle,    label: 'هشدارها', badge: 8 },
+    { path: '/panel/alerts',         icon: AlertTriangle,    label: 'هشدارها' },
     { path: '/panel/settings',       icon: Settings,         label: 'تنظیمات سایت' },
   ];
 
@@ -71,7 +71,7 @@ export default function Sidebar({ isOpen, onClose }) {
     ...(isMainUser ? [{ path: '/panel/branches', icon: Building2, label: 'شعبه‌ها' }] : []),
     ...(isMainUser ? [{ path: '/panel/users', icon: Shield, label: 'کاربران' }] : []),
     { id: 'reports', icon: BarChart3, label: 'گزارش‌ها', children: [{ path: '/panel/reports/trips', label: 'گزارش مسیرها' }, { path: '/panel/reports/live-logs', label: 'لاگ زنده' }] },
-    { path: '/panel/alerts',     icon: AlertTriangle,    label: 'هشدارها', badge: 3 },
+    { path: '/panel/alerts',     icon: AlertTriangle,    label: 'هشدارها' },
     { path: '/panel/settings',   icon: Settings,         label: 'تنظیمات' },
   ];
 
