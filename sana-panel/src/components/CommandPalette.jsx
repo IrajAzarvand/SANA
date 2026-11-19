@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, ArrowUp, ArrowDown, CornerDown, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -75,11 +75,11 @@ export default function CommandPalette({ open, onClose }) {
     setActiveIndex((index) => Math.min(index, Math.max(results.length - 1, 0)));
   }, [results.length]);
 
-  const select = (item) => {
+  const select = useCallback((item) => {
     if (!item) return;
     navigate(item.path);
     onClose();
-  };
+  }, [navigate, onClose]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -99,7 +99,7 @@ export default function CommandPalette({ open, onClose }) {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, results, activeIndex, onClose]);
+  }, [open, results, activeIndex, onClose, select]);
 
   if (!open) return null;
 
