@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, ArrowUp, ArrowDown, CornerDown, X } from 'lucide-react';
+import { Search, ArrowUp, ArrowDown, CornerDownLeft, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 const normalize = (value = '') => String(value)
@@ -122,13 +122,13 @@ export default function CommandPalette({ open, onClose }) {
           {results.length ? results.map((item, index) => (
             <button type="button" key={item.path} onClick={() => select(item)} onMouseEnter={() => setActiveIndex(index)} className={`flex w-full items-center justify-between rounded-lg px-3 py-3 text-right text-sm transition-colors ${activeIndex === index ? 'bg-bg-hover text-text-primary' : 'text-text-secondary hover:bg-bg-hover'}`}>
               <span>{item.label}</span>
-              {activeIndex === index && <CornerDown size={15} className="text-text-muted" />}
+              {activeIndex === index && <CornerDownLeft size={15} className="text-text-muted" />}
             </button>
           )) : <div className="px-4 py-8 text-center text-sm text-text-muted">نتیجه‌ای پیدا نشد.</div>}
         </div>
         <div className="flex items-center gap-4 border-t border-border-base px-3 py-2 text-[10px] text-text-muted">
           <span className="flex items-center gap-1"><ArrowUp size={12} /><ArrowDown size={12} /> انتخاب</span>
-          <span className="flex items-center gap-1"><CornerDown size={12} /> ورود</span>
+          <span className="flex items-center gap-1"><CornerDownLeft size={12} /> ورود</span>
           <span>Esc بستن</span>
         </div>
       </div>
