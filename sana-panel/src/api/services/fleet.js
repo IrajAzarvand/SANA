@@ -209,3 +209,24 @@ export const panelNotificationsAPI = {
     return response.data;
   },
 };
+
+// Shared notification client: source feeds remain separate, workflow actions are centralized.
+export const notificationsAPI = {
+  list: async () => {
+    const [businessResult, gpsResult] = await Promise.allSettled([
+      panelNotificationsAPI.list(),
+      alertsAPI.list(),
+    ]);
+    if (businessResult.status === 'rejected' && gpsResult.status === 'rejected') {
+      throw new Error('notification feeds unavailable');
+    }
+    return { businessResult, gpsResult };
+  },
+  markRead: ({ isGps, eventKey, deviceId, eventId }) => isGps
+    ? alertsAPI.updateStatus({ deviceId, eventId, status: 'read' })
+    : panelNotificationsAPI.markRead(eventKey),
+  markAllRead: () => Promise.allSettled([
+    panelNotificationsAPI.markAllRead(),
+    alertsAPI.markAllRead(),
+  ]),
+};
