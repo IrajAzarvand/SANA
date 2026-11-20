@@ -822,7 +822,7 @@ function PanelAlerts() {
         ...getPersonalEventPresentation(item),
         notification_key: `gps:${item.device_id}:${item.id}`,
         is_gps_alert: true,
-        is_read: item.status !== 'new',
+        is_read: item.status !== 'unread',
         title: getPersonalEventPresentation(item).typeLabel,
         path: '/panel/alerts',
       }))
