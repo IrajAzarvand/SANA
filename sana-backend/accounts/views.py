@@ -514,7 +514,7 @@ class UserViewSet(viewsets.ModelViewSet):
         for event in lifecycle_events[:100]:
             add(
                 f'device-lifecycle:{event.pk}',
-                f'چرخه عمر دستگاه: {event.get_event_type_display()}',
+                event.get_event_type_display(),
                 f'IMEI {event.device.imei}' + (f' · {event.description}' if event.description else ''),
                 event.event_date,
                 '/panel/devices',
