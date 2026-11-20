@@ -16,12 +16,14 @@ import {
   statusMap,
 } from '../data/alertsData';
 import { branches } from '../data/vehiclesData';
+import { useAuth } from '../context/AuthContext';
 import { alertsAPI, panelNotificationsAPI } from '../api/services/fleet';
 import { formatJalaliDateTime } from '../utils/dateUtils';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 export default function Alerts() {
-  return <PanelAlerts />;
+  const { isPersonal } = useAuth();
+  return isPersonal ? <PersonalAlerts /> : <PanelAlerts />;
 }
 
 function LegacyAlerts() {
@@ -407,7 +409,11 @@ function getPersonalEventPresentation(alert) {
 }
 
 function PersonalAlerts() {
+  const navigate = useNavigate();
   const [alerts, setAlerts] = useState([]);
+  const [businessNotifications, setBusinessNotifications] = useState([]);
+  const [businessError, setBusinessError] = useState('');
+  const [businessUpdating, setBusinessUpdating] = useState('');
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState(null);
   const [search, setSearch] = useState('');
@@ -419,6 +425,49 @@ function PersonalAlerts() {
     const response = await alertsAPI.list();
     setAlerts(Array.isArray(response?.results) ? response.results : []);
   }, []);
+
+  const loadBusinessNotifications = useCallback(async () => {
+    try {
+      const response = await panelNotificationsAPI.list();
+      setBusinessNotifications(Array.isArray(response?.results) ? response.results : []);
+      setBusinessError('');
+    } catch {
+      setBusinessError('دریافت اعلان‌های قرارداد و مالی ناموفق بود.');
+    }
+  }, []);
+
+  const markBusinessRead = async (item, shouldNavigate = false) => {
+    if (!item.is_read) {
+      setBusinessUpdating(item.id);
+      try {
+        await panelNotificationsAPI.markRead(item.id);
+        setBusinessNotifications((current) => current.map((entry) => (
+          entry.id === item.id ? { ...entry, is_read: true } : entry
+        )));
+        window.dispatchEvent(new Event('sana:notifications-updated'));
+      } catch {
+        setBusinessError('ثبت وضعیت خواندن اعلان ناموفق بود.');
+        setBusinessUpdating('');
+        return;
+      }
+      setBusinessUpdating('');
+    }
+    if (shouldNavigate && item.path) navigate(item.path);
+  };
+
+  const markAllBusinessRead = async () => {
+    setBusinessUpdating('all');
+    try {
+      await panelNotificationsAPI.markAllRead();
+      setBusinessNotifications((current) => current.map((item) => ({ ...item, is_read: true })));
+      window.dispatchEvent(new Event('sana:notifications-updated'));
+      setBusinessError('');
+    } catch {
+      setBusinessError('خواندن همه اعلان‌های مالی ناموفق بود.');
+    } finally {
+      setBusinessUpdating('');
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -433,7 +482,10 @@ function PersonalAlerts() {
           if (!cancelled) setError('دریافت هشدارها از سرور ناموفق بود. دوباره تلاش می‌کنیم.');
         }
       }
-      if (!cancelled) timer = window.setTimeout(poll, 30000);
+      if (!cancelled) {
+        await loadBusinessNotifications();
+        timer = window.setTimeout(poll, 30000);
+      }
     };
 
     const refreshFromHeader = () => {
@@ -442,7 +494,10 @@ function PersonalAlerts() {
       });
     };
     window.addEventListener('sana:traccar-alert-state-changed', refreshFromHeader);
+    window.addEventListener('sana:panel-notification-state-changed', loadBusinessNotifications);
+    window.addEventListener('sana:notifications-updated', loadBusinessNotifications);
 
+    loadBusinessNotifications();
     loadAlerts()
       .then(() => { if (!cancelled) setError(''); })
       .catch(() => { if (!cancelled) setError('دریافت هشدارها از سرور ناموفق بود.'); })
@@ -457,8 +512,10 @@ function PersonalAlerts() {
       cancelled = true;
       if (timer !== null) window.clearTimeout(timer);
       window.removeEventListener('sana:traccar-alert-state-changed', refreshFromHeader);
+      window.removeEventListener('sana:panel-notification-state-changed', loadBusinessNotifications);
+      window.removeEventListener('sana:notifications-updated', loadBusinessNotifications);
     };
-  }, [loadAlerts]);
+  }, [loadAlerts, loadBusinessNotifications]);
 
   const presentedAlerts = useMemo(
     () => alerts.map(getPersonalEventPresentation),
@@ -519,6 +576,69 @@ function PersonalAlerts() {
         title="هشدارها"
         subtitle="رویدادهای واقعی دستگاه‌های شما"
       />
+
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-semibold text-text-primary">قرارداد و امور مالی</h2>
+            <p className="mt-1 text-xs text-text-muted">سررسید اقساط، مانده‌های پرداخت‌نشده، دریافت وجه و وضعیت قرارداد</p>
+          </div>
+          {businessNotifications.some((item) => !item.is_read) && (
+            <button
+              type="button"
+              onClick={markAllBusinessRead}
+              disabled={!!businessUpdating}
+              className="rounded-field px-3 py-2 text-xs text-brand-500 hover:bg-bg-hover disabled:opacity-50"
+            >
+              خواندن همه
+            </button>
+          )}
+        </div>
+        {businessError && <p className="text-xs text-danger">{businessError}</p>}
+        {businessNotifications.length === 0 ? (
+          <Card><p className="py-3 text-center text-xs text-text-muted">اعلان قراردادی یا مالی جدیدی وجود ندارد.</p></Card>
+        ) : (
+          <div className="space-y-2">
+            {businessNotifications.map((item) => (
+              <Card key={item.id}>
+                <div className="flex flex-wrap items-start gap-3">
+                  <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-brand-500" style={{ opacity: item.is_read ? 0.2 : 1 }} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-sm font-semibold text-text-primary">{item.title}</h3>
+                      <Badge variant={item.is_read ? 'success' : 'warning'}>{item.is_read ? 'خوانده‌شده' : 'خوانده‌نشده'}</Badge>
+                    </div>
+                    <p className="mt-1 text-sm text-text-secondary">{item.message}</p>
+                    <p className="mt-1 text-[11px] text-text-muted">{formatJalaliDateTime(item.created_at)}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    {!item.is_read && (
+                      <button
+                        type="button"
+                        onClick={() => markBusinessRead(item)}
+                        disabled={!!businessUpdating}
+                        className="rounded-field px-3 py-2 text-xs text-brand-500 hover:bg-bg-hover disabled:opacity-50"
+                      >
+                        {businessUpdating === item.id ? 'در حال ثبت…' : 'خوانده شد'}
+                      </button>
+                    )}
+                    {item.path && (
+                      <button
+                        type="button"
+                        onClick={() => markBusinessRead(item, true)}
+                        disabled={!!businessUpdating}
+                        className="rounded-field px-3 py-2 text-xs text-text-secondary hover:bg-bg-hover disabled:opacity-50"
+                      >
+                        جزئیات قرارداد
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </section>
 
       {error && (
         <div className="rounded-field border border-danger/30 bg-danger/5 px-4 py-3 text-xs text-danger">
