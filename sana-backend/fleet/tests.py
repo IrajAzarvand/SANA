@@ -9,7 +9,7 @@ from django.utils.dateparse import parse_datetime
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from accounts.models import User
-from organizations.models import Subscription, SubscriptionDevice
+from organizations.models import Branch, Organization, Subscription, SubscriptionDevice
 from .models import Device, DeviceAlertState, DeviceCustomerAccessPeriod, DeviceLifecycleEvent
 from types import SimpleNamespace
 
@@ -603,6 +603,67 @@ class PersonalAlertsEndpointSecurityTests(SimpleTestCase):
         self.assertEqual(response.status_code, 403)
         self.assertIn('فقط برای مشتری شخصی', response.data['detail'])
 
+
+
+
+
+class OrganizationDeviceAccessQueryTests(TestCase):
+    def setUp(self):
+        self.organization = Organization.objects.create(name='Access Test Org', code='ACCESS-TEST')
+        self.branch = Branch.objects.create(organization=self.organization, name='Branch A', code='A')
+        self.other_branch = Branch.objects.create(organization=self.organization, name='Branch B', code='B')
+        self.main_user = User.objects.create_user(
+            username='access_test_main', password='test-password',
+            role='main_user', account_type='organization', organization=self.organization,
+        )
+        self.branch_user = User.objects.create_user(
+            username='access_test_branch', password='test-password',
+            role='branch_manager', account_type='organization',
+            organization=self.organization, branch=self.branch,
+        )
+        self.now = timezone.now()
+
+    def make_device_access(self, imei, branch, started_at):
+        device = Device.objects.create(imei=imei, management_status='active')
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device, organization=self.organization, branch=branch,
+            started_at=started_at,
+        )
+        return device
+
+
+
+    def test_organization_and_branch_lists_exclude_future_access_periods(self):
+        current_org_device = self.make_device_access(
+            '860000000000201', self.branch, self.now - timedelta(days=1),
+        )
+        future_org_device = self.make_device_access(
+            '860000000000202', self.branch, self.now + timedelta(days=1),
+        )
+        current_other_branch = self.make_device_access(
+            '860000000000203', self.other_branch, self.now - timedelta(days=1),
+        )
+        future_branch_device = self.make_device_access(
+            '860000000000204', self.branch, self.now + timedelta(days=2),
+        )
+
+        main_request = APIRequestFactory().get('/api/devices/')
+        force_authenticate(main_request, user=self.main_user)
+        main_view = DeviceViewSet()
+        main_view.action_map = {'get': 'list'}
+        main_view.request = main_view.initialize_request(main_request)
+        main_visible = set(main_view.get_queryset().values_list('id', flat=True))
+        self.assertEqual(main_visible, {
+            current_org_device.id, current_other_branch.id,
+        })
+
+        branch_request = APIRequestFactory().get('/api/devices/')
+        force_authenticate(branch_request, user=self.branch_user)
+        branch_view = DeviceViewSet()
+        branch_view.action_map = {'get': 'list'}
+        branch_view.request = branch_view.initialize_request(branch_request)
+        branch_visible = set(branch_view.get_queryset().values_list('id', flat=True))
+        self.assertEqual(branch_visible, {current_org_device.id})
 
 
 class PersonalDeviceAccessQueryTests(TestCase):
