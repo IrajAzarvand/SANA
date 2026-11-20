@@ -585,3 +585,27 @@ class PanelNotificationTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data, {'results': [], 'counts': {'all': 0, 'unread': 0}})
+
+    def test_organization_user_receives_notifications_when_another_user_is_updated(self):
+        colleague = User.objects.create_user(
+            username='notifications-colleague',
+            password='test-password-123',
+            account_type='organization',
+            role='branch_manager',
+            organization=self.organization,
+            branch=self.branch,
+        )
+        User.objects.filter(pk=colleague.pk).update(
+            updated_at=timezone.now() + timedelta(seconds=2)
+        )
+        self.client.force_authenticate(user=self.main_user)
+
+        response = self.client.get('/api/users/notifications/')
+
+        self.assertEqual(response.status_code, 200)
+        updated_events = [
+            item for item in response.data['results']
+            if item['id'].startswith(f'user-updated:{colleague.pk}:')
+        ]
+        self.assertEqual(len(updated_events), 1)
+        self.assertEqual(updated_events[0]['title'], 'اطلاعات کاربر به‌روزرسانی شد')
