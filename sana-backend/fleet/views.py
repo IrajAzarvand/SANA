@@ -595,25 +595,29 @@ class DeviceViewSet(viewsets.ModelViewSet):
         if raw_end - raw_start > timedelta(days=90):
             return Response({'detail': 'بازه زمانی هشدارها نمی‌تواند بیشتر از ۹۰ روز باشد.'}, status=400)
 
-        devices = list(self.get_queryset().select_related('vehicle'))
+        if request.user.is_personal_user:
+            # Include devices with historical links to this customer as well.
+            # Their event visibility is bounded below by the exact assignment
+            # and contract/device dates, not by current ownership.
+            devices = list(Device.objects.filter(
+                subscription_links__subscription__user=request.user,
+                subscription_links__assigned_at__lte=now,
+            ).distinct().select_related('vehicle'))
+        else:
+            devices = list(self.get_queryset().select_related('vehicle'))
         if not devices:
             return Response({'results': [], 'counts': {'all': 0, 'unread': 0, 'read': 0, 'reviewed': 0, 'resolved': 0}})
 
-        contract_by_device = {}
+        links_by_device = {}
         access_by_device = {}
         if request.user.is_personal_user:
-            today = timezone.localdate()
             links = SubscriptionDevice.objects.filter(
                 device__in=devices,
-                unassigned_at__isnull=True,
                 subscription__user=request.user,
-                subscription__status='active',
-                start_date__lte=today,
-                end_date__gte=today,
-                subscription__start_date__lte=today,
-                subscription__end_date__gte=today,
-            ).select_related('subscription')
-            contract_by_device = {link.device_id: link for link in links}
+                assigned_at__lte=now,
+            ).select_related('subscription').order_by('assigned_at', 'id')
+            for link in links:
+                links_by_device.setdefault(link.device_id, []).append(link)
         elif not request.user.is_site_admin:
             access_periods = DeviceCustomerAccessPeriod.objects.filter(
                 device__in=devices,
@@ -641,33 +645,40 @@ class DeviceViewSet(viewsets.ModelViewSet):
         try:
             device_context = {}
             for device in devices:
+                periods = []
                 if request.user.is_personal_user:
-                    link = contract_by_device.get(device.pk)
-                    if link is None:
-                        continue
-                    contract_start = timezone.make_aware(datetime.combine(
-                        max(link.start_date, link.subscription.start_date), datetime_time.min
-                    ))
-                    contract_end = timezone.make_aware(datetime.combine(
-                        min(link.end_date, link.subscription.end_date), datetime_time.max
-                    ))
+                    for link in links_by_device.get(device.pk, []):
+                        contract_start = timezone.make_aware(datetime.combine(
+                            max(link.start_date, link.subscription.start_date), datetime_time.min
+                        ))
+                        contract_end = timezone.make_aware(datetime.combine(
+                            min(link.end_date, link.subscription.end_date), datetime_time.max
+                        ))
+                        # The actual assignment timestamp is the lower boundary;
+                        # a later unassignment/reassignment closes this ownership window.
+                        contract_start = max(contract_start, link.assigned_at)
+                        contract_end = min(contract_end, link.unassigned_at or now, now)
+                        event_start = max(raw_start, contract_start)
+                        event_end = min(raw_end, contract_end)
+                        if event_start <= event_end:
+                            periods.append({'start': event_start, 'end': event_end})
                 elif request.user.is_site_admin:
-                    contract_start = raw_start
-                    contract_end = raw_end
+                    event_start = raw_start
+                    event_end = min(raw_end, now)
+                    if event_start <= event_end:
+                        periods.append({'start': event_start, 'end': event_end})
                 else:
                     access_period = access_by_device.get(device.pk)
-                    if access_period is None:
-                        continue
-                    contract_start = access_period.started_at
-                    contract_end = access_period.ended_at or now
+                    if access_period is not None:
+                        event_start = max(raw_start, access_period.started_at)
+                        event_end = min(raw_end, access_period.ended_at or now, now)
+                        if event_start <= event_end:
+                            periods.append({'start': event_start, 'end': event_end})
 
-                event_start = max(raw_start, contract_start)
-                event_end = min(raw_end, contract_end, now)
-                if event_start <= event_end:
+                if periods:
                     device_context[device.pk] = {
                         'device': device,
-                        'start': event_start,
-                        'end': event_end,
+                        'periods': periods,
                     }
 
             if not device_context:
@@ -690,8 +701,16 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 context_by_traccar_id[traccar_id] = context
 
             if context_by_traccar_id:
-                event_start = min(item['start'] for item in context_by_traccar_id.values())
-                event_end = max(item['end'] for item in context_by_traccar_id.values())
+                event_start = min(
+                    period['start']
+                    for item in context_by_traccar_id.values()
+                    for period in item['periods']
+                )
+                event_end = max(
+                    period['end']
+                    for item in context_by_traccar_id.values()
+                    for period in item['periods']
+                )
                 traccar_ids = list(context_by_traccar_id)
                 events = []
                 for offset in range(0, len(traccar_ids), 100):
@@ -720,7 +739,10 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     continue
                 if timezone.is_naive(event_time):
                     event_time = timezone.make_aware(event_time)
-                if event_time < context['start'] or event_time > context['end']:
+                if not any(
+                    period['start'] <= event_time <= period['end']
+                    for period in context['periods']
+                ):
                     continue
 
                 state, _created = DeviceAlertState.objects.update_or_create(
