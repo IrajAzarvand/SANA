@@ -745,6 +745,28 @@ class PersonalSubscriptionReadOnlyAccessTests(TestCase):
             price=1000000,
         )
 
+    def test_site_admin_cannot_bypass_contract_operation_log_with_direct_patch(self):
+        admin = User.objects.create_user(
+            username='contract-update-admin',
+            password='test-password',
+            role='site_admin',
+            account_type='admin',
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.client.force_authenticate(user=admin)
+
+        response = self.client.patch(
+            f'/api/subscriptions/{self.own_subscription.id}/',
+            {'notes': 'ویرایش بدون سابقه'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 405)
+        self.own_subscription.refresh_from_db()
+        self.assertEqual(self.own_subscription.notes, '')
+        self.assertFalse(self.own_subscription.operations.exists())
+
     def test_personal_customer_can_view_own_contract_details(self):
         self.client.force_authenticate(user=self.personal_user)
 
