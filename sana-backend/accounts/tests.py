@@ -587,6 +587,19 @@ class PanelNotificationTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data, {'results': [], 'counts': {'all': 0, 'unread': 0}})
 
+    def test_mark_all_notifications_read_persists_for_the_current_user(self):
+        self.client.force_authenticate(user=self.main_user)
+        response = self.client.post(
+            '/api/users/notifications/',
+            {'mark_all': True},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+
+        refreshed = self.client.get('/api/users/notifications/')
+        self.assertEqual(refreshed.data['counts']['unread'], 0)
+        self.assertTrue(all(item['is_read'] for item in refreshed.data['results']))
+
     def test_organization_user_receives_notifications_when_another_user_is_updated(self):
         colleague = User.objects.create_user(
             username='notifications-colleague',
