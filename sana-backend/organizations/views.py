@@ -626,43 +626,10 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         return Response({'contract_number': number})
 
     def destroy(self, request, *args, **kwargs):
-        """حذف فیزیکی نمی‌کنیم — فقط قرارداد را لغوشده می‌کنیم."""
-        subscription = self.get_object()
-
-        if subscription.status == 'cancelled':
-            return Response(status=status.HTTP_204_NO_CONTENT)
-
-        with transaction.atomic():
-            old_status = subscription.status
-            SubscriptionOperation.objects.create(
-                subscription=subscription,
-                operation_type='cancel',
-                performed_by=request.user,
-                old_start_date=subscription.start_date,
-                new_start_date=subscription.start_date,
-                old_end_date=subscription.end_date,
-                new_end_date=subscription.end_date,
-                old_status=old_status,
-                new_status='cancelled',
-            )
-            subscription.status = 'cancelled'
-            subscription.save(update_fields=['status', 'updated_at'])
-
-            active_links = subscription.subscription_devices.filter(unassigned_at__isnull=True)
-            for link in active_links:
-                link.unassigned_at = timezone.now()
-                link.save(update_fields=['unassigned_at'])
-
-                # لغو قرارداد به معنی برگشت دستگاه فروخته‌شده به انبار نیست.
-                record_device_lifecycle_event(
-                    device=link.device,
-                    event_type='removed_from_contract',
-                    performed_by=request.user,
-                    subscription=subscription,
-                    description=f'قرارداد {subscription.contract_number} لغو شد؛ دستگاه به مالک قبلی باقی ماند و به انبار برنگشت.',
-                )
-
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(
+            {'detail': 'حذف مستقیم قرارداد غیرفعال است؛ برای خاتمه قرارداد از عملیات لغو استفاده کنید.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
 
     
 # ═══════════════════════════════════════════════
