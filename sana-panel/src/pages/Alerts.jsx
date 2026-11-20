@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import { useAuth } from '../context/AuthContext';
-import { alertsAPI, panelNotificationsAPI, notificationsAPI } from '../api/services/fleet';
+import { notificationsAPI } from '../api/services/fleet';
 import { formatJalaliDateTime } from '../utils/dateUtils';
 import LoadingSpinner from '../components/LoadingSpinner';
 
@@ -188,40 +188,18 @@ export default function Alerts() {
   const [updating, setUpdating] = useState('');
 
   const loadNotifications = useCallback(async () => {
-    if (isPersonal) {
-      const [businessResult, gpsResult] = await Promise.allSettled([
-        panelNotificationsAPI.list(),
-        alertsAPI.list(),
-      ]);
-      if (businessResult.status === 'rejected' && gpsResult.status === 'rejected') {
-        throw new Error('notification feeds unavailable');
-      }
-      const business = businessResult.status === 'fulfilled'
-        ? (businessResult.value?.results || []).map((item) => presentBusinessItem(item, true))
-        : null;
-      const gps = gpsResult.status === 'fulfilled'
-        ? (gpsResult.value?.results || []).map(presentGpsEvent)
-        : null;
-      setItems((current) => {
-        const merged = [...(business ?? current.filter((item) => item.category === 'contract')), ...(gps ?? current.filter((item) => item.category === 'gps'))];
-        return merged.sort((a, b) => dateValue(b) - dateValue(a));
-      });
-      setError(businessResult.status === 'rejected' || gpsResult.status === 'rejected' ? 'بخشی از اعلان‌ها موقتاً در دسترس نیست.' : '');
-      return;
-    }
-
     const { businessResult, gpsResult } = await notificationsAPI.list();
     if (businessResult.status === 'rejected' && gpsResult.status === 'rejected') {
       throw new Error('notification feeds unavailable');
     }
     const business = businessResult.status === 'fulfilled'
-      ? (businessResult.value?.results || []).map((item) => presentBusinessItem(item, false))
+      ? (businessResult.value?.results || []).map((item) => presentBusinessItem(item, isPersonal))
       : null;
     const gps = gpsResult.status === 'fulfilled'
       ? (gpsResult.value?.results || []).map((item) => ({
           ...presentGpsEvent(item),
           is_read: item.status !== 'unread',
-          path: '/panel/alerts',
+          ...(!isPersonal ? { path: '/panel/alerts' } : {}),
         }))
       : null;
     setItems((current) => {
@@ -292,18 +270,12 @@ export default function Alerts() {
     setUpdating(item.notification_key);
     setError('');
     try {
-      if (isPersonal && item.category === 'contract') {
-        await panelNotificationsAPI.markRead(item.id);
-      } else if (isPersonal && item.category === 'gps') {
-        await alertsAPI.updateStatus({ deviceId: item.device_id, eventId: item.id, status: 'read' });
-      } else {
-        await notificationsAPI.markRead({
-          isGps: item.category === 'gps',
-          eventKey: item.id,
-          deviceId: item.device_id,
-          eventId: item.id,
-        });
-      }
+      await notificationsAPI.markRead({
+        isGps: item.category === 'gps',
+        eventKey: item.id,
+        deviceId: item.device_id,
+        eventId: item.id,
+      });
       setItems((current) => current.map((entry) => entry.notification_key === item.notification_key
         ? { ...entry, is_read: true, status: 'read' }
         : entry));
@@ -319,11 +291,11 @@ export default function Alerts() {
     setUpdating(item.notification_key);
     setError('');
     try {
-      await alertsAPI.updateStatus({ deviceId: item.device_id, eventId: item.id, status });
+      await notificationsAPI.updateGpsStatus({ deviceId: item.device_id, eventId: item.id, status });
       setItems((current) => current.map((entry) => entry.notification_key === item.notification_key
         ? { ...entry, status, is_read: true }
         : entry));
-      window.dispatchEvent(new Event('sana:personal-alerts-updated'));
+      window.dispatchEvent(new Event('sana:notifications-updated'));
     } catch {
       setError('ثبت وضعیت هشدار انجام نشد. لطفاً دوباره تلاش کنید.');
     } finally {
@@ -336,26 +308,18 @@ export default function Alerts() {
     setUpdating('all');
     setError('');
     try {
-      if (isPersonal) {
-        const unreadItems = items.filter((item) => !item.is_read);
-        const results = await Promise.allSettled(unreadItems.map((item) => (
-          item.category === 'contract'
-            ? panelNotificationsAPI.markRead(item.id)
-            : alertsAPI.updateStatus({ deviceId: item.device_id, eventId: item.id, status: 'read' })
-        )));
-        const failed = results.some((result) => result.status === 'rejected');
-        await loadNotifications();
-        if (failed) setError('بعضی اعلان‌ها خوانده شدند، اما ثبت وضعیت همه آن‌ها انجام نشد.');
-      } else {
-        const [businessResult, gpsResult] = await notificationsAPI.markAllRead();
-        setItems((current) => current.map((item) => {
-          if (item.category === 'gps' && gpsResult.status === 'fulfilled') return { ...item, is_read: true, status: 'read' };
-          if (item.category !== 'gps' && businessResult.status === 'fulfilled') return { ...item, is_read: true, status: 'read' };
-          return item;
-        }));
-        if (businessResult.status === 'rejected' || gpsResult.status === 'rejected') {
-          setError('خواندن همه اعلان‌ها به‌طور کامل انجام نشد.');
+      const [businessResult, gpsResult] = await notificationsAPI.markAllRead();
+      setItems((current) => current.map((item) => {
+        if (item.category === 'gps' && gpsResult.status === 'fulfilled') {
+          return { ...item, is_read: true, status: item.status === 'unread' ? 'read' : item.status };
         }
+        if (item.category !== 'gps' && businessResult.status === 'fulfilled') {
+          return { ...item, is_read: true, status: 'read' };
+        }
+        return item;
+      }));
+      if (businessResult.status === 'rejected' || gpsResult.status === 'rejected') {
+        setError('خواندن همه اعلان‌ها به‌طور کامل انجام نشد.');
       }
       window.dispatchEvent(new Event('sana:notifications-updated'));
     } catch {

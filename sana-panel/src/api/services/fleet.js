@@ -1,4 +1,4 @@
-import apiClient from '../client';
+import apiClient, { getAuthToken } from '../client';
 
 export const vehiclesAPI = {
   list: async (params = {}) => {
@@ -210,23 +210,104 @@ export const panelNotificationsAPI = {
   },
 };
 
+// All notification surfaces share one request/cache so the bell and inbox
+// cannot independently exhaust the per-user alert throttle.
+const NOTIFICATION_CACHE_TTL_MS = 11000;
+let notificationCache = null;
+let notificationCacheAt = 0;
+let notificationCacheToken = null;
+let notificationRequest = null;
+
+function updateCachedNotificationFeed(feedName, updater) {
+  if (!notificationCache || notificationCache[feedName]?.status !== 'fulfilled') return;
+  const feed = notificationCache[feedName];
+  const value = feed.value || {};
+  const results = Array.isArray(value.results) ? value.results : [];
+  notificationCache = {
+    ...notificationCache,
+    [feedName]: {
+      ...feed,
+      value: { ...value, results: updater(results) },
+    },
+  };
+}
+
+function setCachedFeedRead(feedName, predicate) {
+  updateCachedNotificationFeed(feedName, (results) => results.map((item) => (
+    predicate(item) ? { ...item, is_read: true, status: item.status === 'unread' ? 'read' : item.status } : item
+  )));
+}
+
 // Shared notification client: source feeds remain separate, workflow actions are centralized.
 export const notificationsAPI = {
   list: async () => {
-    const [businessResult, gpsResult] = await Promise.allSettled([
-      panelNotificationsAPI.list(),
-      alertsAPI.list(),
-    ]);
-    if (businessResult.status === 'rejected' && gpsResult.status === 'rejected') {
-      throw new Error('notification feeds unavailable');
+    const token = getAuthToken();
+    if (token !== notificationCacheToken) {
+      notificationCache = null;
+      notificationRequest = null;
+      notificationCacheAt = 0;
+      notificationCacheToken = token;
     }
-    return { businessResult, gpsResult };
+
+    if (notificationRequest) return notificationRequest;
+    if (notificationCache && Date.now() - notificationCacheAt < NOTIFICATION_CACHE_TTL_MS) {
+      if (notificationCache.businessResult.status === 'rejected' && notificationCache.gpsResult.status === 'rejected') {
+        throw new Error('notification feeds unavailable');
+      }
+      return notificationCache;
+    }
+
+    notificationCacheAt = Date.now();
+    notificationRequest = (async () => {
+      const [businessResult, gpsResult] = await Promise.allSettled([
+        panelNotificationsAPI.list(),
+        alertsAPI.list(),
+      ]);
+      const result = { businessResult, gpsResult };
+      if (getAuthToken() === token) {
+        notificationCache = result;
+        notificationCacheAt = Date.now();
+      }
+      if (businessResult.status === 'rejected' && gpsResult.status === 'rejected') {
+        throw new Error('notification feeds unavailable');
+      }
+      return result;
+    })().finally(() => {
+      if (notificationCacheToken === token) notificationRequest = null;
+    });
+    return notificationRequest;
   },
-  markRead: ({ isGps, eventKey, deviceId, eventId }) => isGps
-    ? alertsAPI.updateStatus({ deviceId, eventId, status: 'read' })
-    : panelNotificationsAPI.markRead(eventKey),
-  markAllRead: () => Promise.allSettled([
-    panelNotificationsAPI.markAllRead(),
-    alertsAPI.markAllRead(),
-  ]),
+  markRead: async ({ isGps, eventKey, deviceId, eventId }) => {
+    const result = isGps
+      ? await alertsAPI.updateStatus({ deviceId, eventId, status: 'read' })
+      : await panelNotificationsAPI.markRead(eventKey);
+    if (isGps) {
+      setCachedFeedRead('gpsResult', (item) => String(item.device_id) === String(deviceId) && String(item.id) === String(eventId));
+    } else {
+      setCachedFeedRead('businessResult', (item) => String(item.id) === String(eventKey));
+    }
+    return result;
+  },
+  updateGpsStatus: async ({ deviceId, eventId, status }) => {
+    const result = await alertsAPI.updateStatus({ deviceId, eventId, status });
+    updateCachedNotificationFeed('gpsResult', (results) => results.map((item) => (
+      String(item.device_id) === String(deviceId) && String(item.id) === String(eventId)
+        ? { ...item, status, is_read: true }
+        : item
+    )));
+    return result;
+  },
+  markAllRead: async () => {
+    const results = await Promise.allSettled([
+      panelNotificationsAPI.markAllRead(),
+      alertsAPI.markAllRead(),
+    ]);
+    if (results[0].status === 'fulfilled') {
+      setCachedFeedRead('businessResult', () => true);
+    }
+    if (results[1].status === 'fulfilled') {
+      setCachedFeedRead('gpsResult', () => true);
+    }
+    return results;
+  },
 };
