@@ -540,7 +540,7 @@ export default function SubscriptionDetail() {
   const handleCancel = async () => {
     setSaving(true);
     try {
-      await subscriptionsAPI.delete(id);
+      await subscriptionsAPI.cancel(id);
       setCancelModalOpen(false);
       refetch();
     } catch (err) {
@@ -731,18 +731,6 @@ export default function SubscriptionDetail() {
       setActionError(msg);
     } finally {
       setSaving(false);
-    }
-  };
-
-  // ═══ حذف پرداخت ═══
-  const handleRemovePayment = async (paymentId) => {
-    if (!confirm('آیا از حذف این پرداخت اطمینان دارید؟')) return;
-    try {
-      await subscriptionPaymentsAPI.delete(paymentId);
-      refetch();
-    } catch (err) {
-      console.error('Error removing payment:', err);
-      alert('خطا در حذف پرداخت');
     }
   };
 
@@ -1214,11 +1202,6 @@ export default function SubscriptionDetail() {
                       <Button size="sm" variant="secondary" onClick={() => openAllocationModal(p)}>
                         تخصیص اعتبار
                       </Button>
-                    )}
-                    {isSiteAdmin && !isCancelled && !p.allocations?.length && (
-                      <button onClick={() => handleRemovePayment(p.id)} className="p-1.5 rounded-field text-text-muted hover:bg-danger/10 hover:text-danger transition-colors" title="حذف دریافتی">
-                        <Trash2 size={14} />
-                      </button>
                     )}
                   </div>
                 </div>
