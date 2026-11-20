@@ -82,7 +82,7 @@ export default function SubscriptionDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { isSiteAdmin, isPersonal } = useAuth();
+  const { isSiteAdmin } = useAuth();
 
   const fetchSubscription = useCallback(async () => {
     return await subscriptionsAPI.get(id);
