@@ -37,7 +37,7 @@ export default function Header({ onMenuClick }) {
       <header className="h-16 min-h-16 shrink-0 bg-bg-elevated border-b border-border-base flex items-center justify-between px-2 sm:px-4 gap-2 sm:gap-4 sticky top-0 z-30">
         {/* سمت راست: منو + لوگو */}
         <div className="flex items-center gap-3">
-          <button onClick={onMenuClick} className="lg:hidden p-2 rounded-field text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors" aria-label="باز کردن منو">
+          <button onClick={onMenuClick} className="lg:hidden flex min-h-11 min-w-11 items-center justify-center rounded-field text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors" aria-label="باز کردن منو">
             <Menu size={20} />
           </button>
           <div className="hidden lg:block"><SanaLogo size="sm" /></div>
@@ -54,7 +54,7 @@ export default function Header({ onMenuClick }) {
         <div className="flex min-w-0 items-center gap-1 sm:gap-2">
           <NotificationCenter />
           <div className="relative">
-            <button onClick={() => setProfileOpen(!profileOpen)} className="flex items-center gap-2 p-1 pl-2 rounded-field hover:bg-bg-hover transition-colors" aria-expanded={profileOpen} aria-label="منوی کاربر">
+            <button onClick={() => setProfileOpen(!profileOpen)} className="flex min-h-11 items-center gap-2 p-1 pl-2 rounded-field hover:bg-bg-hover transition-colors" aria-expanded={profileOpen} aria-label="منوی کاربر">
               <div className="w-8 h-8 rounded-full bg-brand-500 flex items-center justify-center text-bg-base font-bold text-sm">{avatarInitial}</div>
               <div className="hidden md:flex flex-col items-start text-right">
                 <span className="text-sm text-text-primary leading-tight">{fullName}</span>
