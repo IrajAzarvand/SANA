@@ -504,6 +504,7 @@ class PanelNotificationTests(TestCase):
             password='test-password-123',
             account_type='organization',
             role='branch_manager',
+            organization=self.organization,
             branch=self.branch,
         )
 
@@ -518,7 +519,7 @@ class PanelNotificationTests(TestCase):
         ]
         self.assertEqual(len(branch_events), 1)
         self.assertIn('Main Branch', branch_events[0]['message'])
-        self.assertEqual(response.data['counts']['unread'], 1)
+        self.assertEqual(response.data['counts']['unread'], 2)
 
     def test_branch_manager_only_receives_its_branch_events(self):
         self.client.force_authenticate(user=self.branch_user)
@@ -562,7 +563,7 @@ class PanelNotificationTests(TestCase):
         refreshed = self.client.get('/api/users/notifications/')
         matching = next(item for item in refreshed.data['results'] if item['id'] == event['id'])
         self.assertTrue(matching['is_read'])
-        self.assertEqual(refreshed.data['counts']['unread'], 0)
+        self.assertEqual(refreshed.data['counts']['unread'], 1)
 
     def test_user_cannot_mark_an_event_outside_their_scope_as_read(self):
         self.client.force_authenticate(user=self.main_user)
