@@ -118,6 +118,22 @@ class TraccarAPIClientTests(SimpleTestCase):
 
 
 
+    @patch("fleet.traccar_api.urlopen")
+    def test_events_request_supports_multiple_device_ids(self, urlopen):
+        response = MagicMock()
+        response.read.return_value = b'[]'
+        response.__enter__.return_value = response
+        urlopen.return_value = response
+
+        traccar_device_events(
+            [42, 43], "2026-11-01T00:00:00Z", "2026-11-02T00:00:00Z"
+        )
+
+        url = urlopen.call_args.args[0].full_url
+        self.assertIn("deviceId=42", url)
+        self.assertIn("deviceId=43", url)
+
+
 class TraccarDeviceModelSyncTests(SimpleTestCase):
     def make_device(self, imei, model_id=None):
         device = MagicMock()
