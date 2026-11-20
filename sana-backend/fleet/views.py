@@ -534,7 +534,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     user=request.user,
                     device_id__in=visible_device_ids,
                     status='unread',
-                ).update(status='reviewed', acknowledged_at=timezone.now(), read_at=timezone.now(), reviewed_at=timezone.now())
+                ).update(status='read', read_at=timezone.now())
                 return Response({'updated': updated})
 
             raw_device_id = request.data.get('device_id')
@@ -557,15 +557,21 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 return Response({'detail': 'رویداد موردنظر یافت نشد.'}, status=404)
             now = timezone.now()
             normalized_status = 'reviewed' if requested_status == 'acknowledged' else requested_status
-            state.status = normalized_status
-            if normalized_status in {'read', 'reviewed', 'resolved'}:
-                state.read_at = state.read_at or now
-            if normalized_status in {'reviewed', 'resolved'}:
-                state.reviewed_at = state.reviewed_at or now
-                state.acknowledged_at = state.acknowledged_at or now
-            if normalized_status == 'resolved':
-                state.resolved_at = now
-            state.save(update_fields=['status', 'read_at', 'reviewed_at', 'acknowledged_at', 'resolved_at'])
+            allowed_from = {
+                'read': {'unread', 'read'},
+                'reviewed': {'unread', 'read', 'reviewed'},
+                'resolved': {'unread', 'read', 'reviewed'},
+            }
+            if state.status in allowed_from.get(normalized_status, set()):
+                state.status = normalized_status
+                if normalized_status in {'read', 'reviewed', 'resolved'}:
+                    state.read_at = state.read_at or now
+                if normalized_status in {'reviewed', 'resolved'}:
+                    state.reviewed_at = state.reviewed_at or now
+                    state.acknowledged_at = state.acknowledged_at or now
+                if normalized_status == 'resolved':
+                    state.resolved_at = state.resolved_at or now
+                state.save(update_fields=['status', 'read_at', 'reviewed_at', 'acknowledged_at', 'resolved_at'])
             return Response({
                 'device_id': device.pk,
                 'event_id': state.traccar_event_id,
