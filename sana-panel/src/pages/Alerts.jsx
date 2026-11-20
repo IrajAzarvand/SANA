@@ -22,8 +22,7 @@ import { formatJalaliDateTime } from '../utils/dateUtils';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 export default function Alerts() {
-  const { isPersonal } = useAuth();
-  return isPersonal ? <PersonalAlerts /> : <PanelAlerts />;
+  return <PanelAlerts />;
 }
 
 function LegacyAlerts() {
