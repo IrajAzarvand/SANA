@@ -117,7 +117,7 @@ export default function NotificationCenter() {
         await notificationsAPI.markRead({ isGps: false, eventKey: item.id });
       }
       setItems((current) => current.map((entry) => entry.notification_key === key
-        ? { ...entry, is_read: true, status: entry.status === 'new' ? 'acknowledged' : entry.status }
+        ? { ...entry, is_read: true, status: entry.status === 'unread' ? 'read' : entry.status }
         : entry));
       window.dispatchEvent(new Event(item.is_gps_alert ? 'sana:traccar-alert-state-changed' : 'sana:panel-notification-state-changed'));
       return true;
