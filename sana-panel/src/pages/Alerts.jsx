@@ -748,12 +748,16 @@ function PanelAlerts() {
     refresh();
     window.addEventListener('sana:notifications-updated', refreshNow);
     window.addEventListener('sana:personal-alerts-updated', refreshNow);
+    window.addEventListener('sana:panel-notification-state-changed', refreshNow);
+    window.addEventListener('sana:traccar-alert-state-changed', refreshNow);
     document.addEventListener('visibilitychange', refreshNow);
     return () => {
       active = false;
       window.clearTimeout(timer);
       window.removeEventListener('sana:notifications-updated', refreshNow);
       window.removeEventListener('sana:personal-alerts-updated', refreshNow);
+      window.removeEventListener('sana:panel-notification-state-changed', refreshNow);
+      window.removeEventListener('sana:traccar-alert-state-changed', refreshNow);
       document.removeEventListener('visibilitychange', refreshNow);
     };
   }, [loadAlerts]);
