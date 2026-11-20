@@ -47,7 +47,7 @@ class UserViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         # The self-profile endpoint is safe for every authenticated role;
         # its serializer limits writes to the current user's contact details.
-        if getattr(self, 'action', None) in ['me', 'change_password']:
+        if getattr(self, 'action', None) in ['me', 'change_password', 'notifications']:
             return [IsAuthenticated()]
         return super().get_permissions()
 
@@ -203,7 +203,7 @@ class UserViewSet(viewsets.ModelViewSet):
             organizations = Organization.objects.none()
             branches = Branch.objects.filter(pk=branch_id)
             users = User.objects.filter(branch_id=branch_id).exclude(pk=user.pk)
-            subscription_ops = SubscriptionOperation.objects.none()
+            subscription_ops = SubscriptionOperation.objects.select_related(\n                'subscription', 'subscription__organization', 'performed_by'\n            ).filter(subscription__organization_id=organization_id, performed_at__gte=cutoff)
 
         items = []
 
