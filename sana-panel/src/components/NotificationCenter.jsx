@@ -132,9 +132,45 @@ export default function NotificationCenter() {
   };
 
   const markAllRead = async () => {
-    for (const item of unread) {
-      const success = await markRead(item);
-      if (!success) break;
+    setUpdating('all');
+    try {
+      if (isPersonal) {
+        await alertsAPI.markAllRead();
+        setItems((current) => current.map((item) => ({
+          ...item,
+          is_read: true,
+          status: item.status === 'new' ? 'acknowledged' : item.status,
+        })));
+        window.dispatchEvent(new Event('sana:personal-alerts-updated'));
+        return;
+      }
+
+      const [businessResult, gpsResult] = await Promise.allSettled([
+        panelNotificationsAPI.markAllRead(),
+        alertsAPI.markAllRead(),
+      ]);
+      setItems((current) => current.map((item) => {
+        if (item.is_gps_alert && gpsResult.status === 'fulfilled') {
+          return { ...item, is_read: true, status: item.status === 'new' ? 'acknowledged' : item.status };
+        }
+        if (!item.is_gps_alert && businessResult.status === 'fulfilled') {
+          return { ...item, is_read: true };
+        }
+        return item;
+      }));
+      if (businessResult.status === 'fulfilled') {
+        window.dispatchEvent(new Event('sana:notifications-updated'));
+      }
+      if (gpsResult.status === 'fulfilled') {
+        window.dispatchEvent(new Event('sana:personal-alerts-updated'));
+      }
+      if (businessResult.status === 'rejected' || gpsResult.status === 'rejected') {
+        setError('خواندن همه اعلان‌ها به‌طور کامل انجام نشد.');
+      }
+    } catch {
+      setError('خواندن همه اعلان‌ها ناموفق بود. دوباره تلاش کنید.');
+    } finally {
+      setUpdating('');
     }
   };
 
