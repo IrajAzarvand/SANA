@@ -616,7 +616,9 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     organization=request.user.branch.organization,
                     branch=request.user.branch,
                 )
-            access_by_device = {period.device_id: period for period in access_periods}
+            access_by_device = {}
+            for period in access_periods.order_by('-started_at', '-id'):
+                access_by_device.setdefault(period.device_id, period)
 
         if request.user.is_personal_user:
             preference = PersonalAlertPreference.objects.filter(user=request.user).only('disabled_event_types').first()
