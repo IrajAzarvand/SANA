@@ -461,3 +461,127 @@ class ChangePasswordTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.other_user.refresh_from_db()
         self.assertTrue(self.other_user.check_password('Other-Password-123!'))
+
+
+class PanelNotificationTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.organization = Organization.objects.create(
+            name='Notification Organization',
+            code='NOTIF-ORG-001',
+        )
+        self.other_organization = Organization.objects.create(
+            name='Other Notification Organization',
+            code='NOTIF-ORG-002',
+        )
+        self.branch = Branch.objects.create(
+            organization=self.organization,
+            name='Main Branch',
+            code='NOTIF-BR-001',
+        )
+        self.other_branch = Branch.objects.create(
+            organization=self.other_organization,
+            name='Other Branch',
+            code='NOTIF-BR-002',
+        )
+        self.admin = User.objects.create_user(
+            username='notifications-admin',
+            password='test-password-123',
+            account_type='admin',
+            role='site_admin',
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.main_user = User.objects.create_user(
+            username='notifications-main',
+            password='test-password-123',
+            account_type='organization',
+            role='main_user',
+            organization=self.organization,
+        )
+        self.branch_user = User.objects.create_user(
+            username='notifications-branch',
+            password='test-password-123',
+            account_type='organization',
+            role='branch_manager',
+            branch=self.branch,
+        )
+
+    def test_organization_user_only_receives_its_own_branch_events(self):
+        self.client.force_authenticate(user=self.main_user)
+        response = self.client.get('/api/users/notifications/')
+
+        self.assertEqual(response.status_code, 200)
+        branch_events = [
+            item for item in response.data['results']
+            if item['id'].startswith('branch-created:')
+        ]
+        self.assertEqual(len(branch_events), 1)
+        self.assertIn('Main Branch', branch_events[0]['message'])
+        self.assertEqual(response.data['counts']['unread'], 1)
+
+    def test_branch_manager_only_receives_its_branch_events(self):
+        self.client.force_authenticate(user=self.branch_user)
+        response = self.client.get('/api/users/notifications/')
+
+        self.assertEqual(response.status_code, 200)
+        branch_events = [
+            item for item in response.data['results']
+            if item['id'].startswith('branch-created:')
+        ]
+        self.assertEqual(len(branch_events), 1)
+        self.assertIn('Main Branch', branch_events[0]['message'])
+
+    def test_site_admin_receives_events_across_organizations(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get('/api/users/notifications/')
+
+        self.assertEqual(response.status_code, 200)
+        branch_events = [
+            item for item in response.data['results']
+            if item['id'].startswith('branch-created:')
+        ]
+        self.assertEqual(len(branch_events), 2)
+
+    def test_notification_read_state_is_persisted_per_user(self):
+        self.client.force_authenticate(user=self.main_user)
+        listing = self.client.get('/api/users/notifications/')
+        event = next(
+            item for item in listing.data['results']
+            if item['id'].startswith('branch-created:')
+        )
+
+        marked = self.client.post(
+            '/api/users/notifications/',
+            {'event_key': event['id']},
+            format='json',
+        )
+        self.assertEqual(marked.status_code, 200)
+        self.assertTrue(marked.data['is_read'])
+
+        refreshed = self.client.get('/api/users/notifications/')
+        matching = next(item for item in refreshed.data['results'] if item['id'] == event['id'])
+        self.assertTrue(matching['is_read'])
+        self.assertEqual(refreshed.data['counts']['unread'], 0)
+
+    def test_user_cannot_mark_an_event_outside_their_scope_as_read(self):
+        self.client.force_authenticate(user=self.main_user)
+        response = self.client.post(
+            '/api/users/notifications/',
+            {'event_key': f'branch-created:{self.other_branch.pk}'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_personal_customer_does_not_receive_panel_activity_feed(self):
+        personal = User.objects.create_user(
+            username='notifications-personal',
+            password='test-password-123',
+            account_type='personal',
+            role='personal_user',
+        )
+        self.client.force_authenticate(user=personal)
+        response = self.client.get('/api/users/notifications/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data, {'results': [], 'counts': {'all': 0, 'unread': 0}})
