@@ -16,8 +16,8 @@ export default function SettingsNav({ active, onChange }) {
   ].filter((item) => item.show);
 
   return (
-    <nav className="bg-bg-elevated border border-border-base rounded-card p-2 h-fit">
-      <ul className="space-y-1">
+    <nav className="min-w-0 overflow-x-auto rounded-card border border-border-base bg-bg-elevated p-2 lg:overflow-visible">
+      <ul className="flex min-w-max gap-1 lg:min-w-0 lg:flex-col">
         {items.map((item) => {
           const Icon = item.icon;
           const isActive = active === item.id;
@@ -25,7 +25,7 @@ export default function SettingsNav({ active, onChange }) {
             <li key={item.id}>
               <button
                 onClick={() => onChange(item.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-field text-sm transition-all relative
+                className={`flex min-h-11 shrink-0 items-center gap-2 px-3 py-2.5 rounded-field text-sm transition-all relative lg:w-full lg:gap-3
                   ${isActive
                     ? 'bg-bg-hover text-text-primary font-medium'
                     : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
