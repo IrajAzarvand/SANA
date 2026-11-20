@@ -1,11 +1,15 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertTriangle, Check, CheckCheck, Eye, Bell, RefreshCw } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
+import Input from '../components/Input';
+import Tabs from '../components/Tabs';
 import Card from '../components/Card';
 import Badge from '../components/Badge';
 import Select from '../components/Select';
 import StatCard from '../components/StatCard';
 import EmptyState from '../components/EmptyState';
+import { statusMap } from '../data/alertsData';
 import { useAuth } from '../context/AuthContext';
 import { alertsAPI, panelNotificationsAPI, notificationsAPI } from '../api/services/fleet';
 import { formatJalaliDateTime } from '../utils/dateUtils';
