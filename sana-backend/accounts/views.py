@@ -269,9 +269,9 @@ class UserViewSet(viewsets.ModelViewSet):
 
         for organization in organizations:
             if organization.created_at >= cutoff:
-                add(f'organization-created:{organization.pk}', 'سازمان جدید ثبت شد', organization.name, organization.created_at, '/panel/companies')
+                add(f'organization-created:{organization.pk}', 'سازمان جدید ثبت شد', organization.name, organization.created_at, '/panel/companies' if is_admin else '/panel/settings')
             if organization.updated_at >= cutoff and organization.updated_at > organization.created_at:
-                add(f'organization-updated:{organization.pk}:{organization.updated_at.isoformat()}', 'اطلاعات سازمان به‌روزرسانی شد', organization.name, organization.updated_at, '/panel/companies')
+                add(f'organization-updated:{organization.pk}:{organization.updated_at.isoformat()}', 'اطلاعات سازمان به‌روزرسانی شد', organization.name, organization.updated_at, '/panel/companies' if is_admin else '/panel/settings')
 
         for branch in branches:
             if branch.created_at >= cutoff:
