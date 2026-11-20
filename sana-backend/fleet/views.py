@@ -663,7 +663,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                         if event_start <= event_end:
                             periods.append({'start': event_start, 'end': event_end})
                 elif request.user.is_site_admin:
-                    event_start = max(raw_start, now - timedelta(days=36500))
+                    event_start = raw_start
                     event_end = min(raw_end, now)
                     if event_start <= event_end:
                         periods.append({'start': event_start, 'end': event_end})
