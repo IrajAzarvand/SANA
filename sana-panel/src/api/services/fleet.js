@@ -61,6 +61,10 @@ export const alertsAPI = {
     });
     return response.data;
   },
+  markAllRead: async () => {
+    const response = await apiClient.post('/devices/alerts/', { mark_all: true });
+    return response.data;
+  },
 };
 
 export const devicesAPI = {
@@ -198,6 +202,10 @@ export const panelNotificationsAPI = {
   },
   markRead: async (eventKey) => {
     const response = await apiClient.post('/users/notifications/', { event_key: eventKey });
+    return response.data;
+  },
+  markAllRead: async () => {
+    const response = await apiClient.post('/users/notifications/', { mark_all: true });
     return response.data;
   },
 };
