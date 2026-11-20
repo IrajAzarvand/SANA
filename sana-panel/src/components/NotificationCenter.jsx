@@ -14,7 +14,8 @@ export default function NotificationCenter() {
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
-    const { businessResult, gpsResult } = await notificationsAPI.list();
+    try {
+      const { businessResult, gpsResult } = await notificationsAPI.list();
 
     if (businessResult.status === 'rejected' && gpsResult.status === 'rejected') {
       setError('دریافت اعلان‌ها ناموفق بود. دوباره تلاش کنید.');
@@ -50,11 +51,14 @@ export default function NotificationCenter() {
         (a, b) => new Date(b.created_at || b.event_time) - new Date(a.created_at || a.event_time),
       );
     });
-    setError(
-      businessResult.status === 'rejected' || gpsResult.status === 'rejected'
-        ? 'بخشی از اعلان‌ها در دسترس نیست؛ دوباره تلاش کنید.'
-        : '',
-    );
+      setError(
+        businessResult.status === 'rejected' || gpsResult.status === 'rejected'
+          ? 'بخشی از اعلان‌ها در دسترس نیست؛ دوباره تلاش کنید.'
+          : '',
+      );
+    } catch {
+      setError('دریافت اعلان‌ها ناموفق بود. دوباره تلاش کنید.');
+    }
   }, []);
 
   useEffect(() => {
