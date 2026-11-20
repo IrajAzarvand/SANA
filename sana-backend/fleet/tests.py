@@ -1089,6 +1089,42 @@ class PersonalTraccarAlertsTests(TestCase):
 
 
 
+    def test_bulk_mark_all_read_only_updates_alerts_for_accessible_devices(self):
+        other_device = Device.objects.create(
+            imei='860000000000399',
+            management_status='active',
+        )
+        event_time = timezone.now()
+        own_state = DeviceAlertState.objects.create(
+            user=self.user,
+            device=self.device,
+            traccar_event_id='own-event',
+            event_type='deviceOffline',
+            event_time=event_time,
+        )
+        outside_state = DeviceAlertState.objects.create(
+            user=self.user,
+            device=other_device,
+            traccar_event_id='outside-event',
+            event_type='deviceOffline',
+            event_time=event_time,
+        )
+
+        request = APIRequestFactory().post(
+            '/api/devices/alerts/',
+            {'mark_all': True},
+            format='json',
+        )
+        force_authenticate(request, user=self.user)
+        response = DeviceViewSet.as_view({'post': 'alerts'})(request)
+
+        self.assertEqual(response.status_code, 200)
+        own_state.refresh_from_db()
+        outside_state.refresh_from_db()
+        self.assertEqual(own_state.status, 'acknowledged')
+        self.assertEqual(outside_state.status, 'new')
+
+
 class PersonalLifecycleEventAccessTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
