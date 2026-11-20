@@ -591,7 +591,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
 
         devices = list(self.get_queryset().select_related('vehicle'))
         if not devices:
-            return Response({'results': [], 'counts': {'all': 0, 'new': 0, 'acknowledged': 0, 'resolved': 0}})
+            return Response({'results': [], 'counts': {'all': 0, 'unread': 0, 'read': 0, 'reviewed': 0, 'resolved': 0}})
 
         contract_by_device = {}
         access_by_device = {}
@@ -665,7 +665,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     }
 
             if not device_context:
-                return Response({'results': [], 'counts': {'all': 0, 'new': 0, 'acknowledged': 0, 'resolved': 0}})
+                return Response({'results': [], 'counts': {'all': 0, 'unread': 0, 'read': 0, 'reviewed': 0, 'resolved': 0}})
 
             traccar_by_unique_id = {
                 str(item.get('uniqueId') or '').strip(): item
