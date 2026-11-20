@@ -7,7 +7,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from django.utils import timezone
-from django.db.models import Q, Sum, F, Value, DecimalField
+from django.db.models import Q, Sum, Value, DecimalField
 from django.db.models.functions import Coalesce
 from datetime import datetime, timedelta
 
@@ -356,12 +356,17 @@ class UserViewSet(viewsets.ModelViewSet):
                 kind='financial',
             )
 
-        for subscription in subscriptions.filter(status='active', end_date__lt=today):
+        for subscription in subscriptions.filter(
+            status='active',
+            end_date__lt=today,
+            end_date__gte=today - timedelta(days=30),
+        ):
+            expired_at = timezone.make_aware(datetime.combine(subscription.end_date, datetime.min.time()))
             add(
                 f'contract-expired:{subscription.pk}:{subscription.end_date.isoformat()}',
                 'قرارداد منقضی شده است',
                 f'قرارداد {subscription.contract_number} در تاریخ {subscription.end_date} پایان یافته است',
-                now,
+                expired_at,
                 f'/panel/subscriptions/{subscription.pk}',
                 persistent=True,
                 kind='financial',
