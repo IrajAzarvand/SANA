@@ -282,7 +282,7 @@ export const notificationsAPI = {
       ? await alertsAPI.updateStatus({ deviceId, eventId, status: 'read' })
       : await panelNotificationsAPI.markRead(eventKey);
     if (isGps) {
-      setCachedFeedRead('gpsResult', (item) => item.device_id === deviceId && String(item.id) === String(eventId));
+      setCachedFeedRead('gpsResult', (item) => String(item.device_id) === String(deviceId) && String(item.id) === String(eventId));
     } else {
       setCachedFeedRead('businessResult', (item) => String(item.id) === String(eventKey));
     }
