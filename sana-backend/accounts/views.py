@@ -132,6 +132,19 @@ class UserViewSet(viewsets.ModelViewSet):
             return Response({'results': [], 'counts': {'all': 0, 'unread': 0}})
 
         if request.method == 'POST':
+            if request.data.get('mark_all') is True:
+                visible_keys = [
+                    item['id'] for item in self._build_panel_notifications(user)
+                ]
+                NotificationReadState.objects.bulk_create(
+                    [
+                        NotificationReadState(user=user, event_key=event_key)
+                        for event_key in visible_keys
+                    ],
+                    ignore_conflicts=True,
+                )
+                return Response({'updated': len(visible_keys)})
+
             event_key = str(request.data.get('event_key') or '').strip()
             if not event_key or len(event_key) > 200:
                 return Response({'detail': 'شناسه اعلان نامعتبر است.'}, status=400)
