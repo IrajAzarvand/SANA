@@ -156,6 +156,7 @@ export default function NotificationCenter() {
           is_read: true,
           status: item.status === 'new' ? 'acknowledged' : item.status,
         })));
+        window.dispatchEvent(new Event('sana:traccar-alert-state-changed'));
         return;
       }
 
