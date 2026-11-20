@@ -190,3 +190,14 @@ export const deviceOperationsAPI = {
     return response.data;
   },
 };
+
+export const panelNotificationsAPI = {
+  list: async () => {
+    const response = await apiClient.get('/users/notifications/');
+    return response.data;
+  },
+  markRead: async (eventKey) => {
+    const response = await apiClient.post('/users/notifications/', { event_key: eventKey });
+    return response.data;
+  },
+};
