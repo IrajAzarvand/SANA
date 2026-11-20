@@ -528,6 +528,15 @@ class DeviceViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'اجازه مشاهده هشدارها را ندارید.'}, status=403)
 
         if request.method == 'POST':
+            if request.data.get('mark_all') is True:
+                visible_device_ids = self.get_queryset().values_list('pk', flat=True)
+                updated = DeviceAlertState.objects.filter(
+                    user=request.user,
+                    device_id__in=visible_device_ids,
+                    status='new',
+                ).update(status='acknowledged', acknowledged_at=timezone.now())
+                return Response({'updated': updated})
+
             raw_device_id = request.data.get('device_id')
             event_id = str(request.data.get('event_id') or '').strip()
             requested_status = str(request.data.get('status') or '').strip()
