@@ -17,7 +17,7 @@ import {
 } from '../data/alertsData';
 import { branches } from '../data/vehiclesData';
 import { useAuth } from '../context/AuthContext';
-import { alertsAPI, panelNotificationsAPI } from '../api/services/fleet';
+import { alertsAPI, panelNotificationsAPI, notificationsAPI } from '../api/services/fleet';
 import { formatJalaliDateTime } from '../utils/dateUtils';
 import LoadingSpinner from '../components/LoadingSpinner';
 
@@ -799,10 +799,7 @@ function PanelAlerts() {
   const [updating, setUpdating] = useState('');
 
   const loadAlerts = useCallback(async () => {
-    const [businessResult, gpsResult] = await Promise.allSettled([
-      panelNotificationsAPI.list(),
-      alertsAPI.list(),
-    ]);
+    const { businessResult, gpsResult } = await notificationsAPI.list();
     if (businessResult.status === 'rejected' && gpsResult.status === 'rejected') {
       throw new Error('notification feeds unavailable');
     }
@@ -908,15 +905,12 @@ function PanelAlerts() {
     if (item.is_read) return true;
     setUpdating(item.notification_key);
     try {
-      if (item.is_gps_alert) {
-        await alertsAPI.updateStatus({
-          deviceId: item.device_id,
-          eventId: item.id,
-          status: 'acknowledged',
-        });
-      } else {
-        await panelNotificationsAPI.markRead(item.id);
-      }
+      await notificationsAPI.markRead({
+        isGps: item.is_gps_alert,
+        eventKey: item.id,
+        deviceId: item.device_id,
+        eventId: item.id,
+      });
       setItems((current) => current.map((entry) => entry.notification_key === item.notification_key
         ? { ...entry, is_read: true, status: 'acknowledged' }
         : entry));
@@ -932,10 +926,7 @@ function PanelAlerts() {
 
   const markAllRead = async () => {
     setUpdating('all');
-    const [businessResult, gpsResult] = await Promise.allSettled([
-      panelNotificationsAPI.markAllRead(),
-      alertsAPI.markAllRead(),
-    ]);
+    const [businessResult, gpsResult] = await notificationsAPI.markAllRead();
     setItems((current) => current.map((item) => {
       if (item.is_gps_alert && gpsResult.status === 'fulfilled') {
         return { ...item, is_read: true, status: 'acknowledged' };
