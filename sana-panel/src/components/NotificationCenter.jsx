@@ -16,59 +16,51 @@ export default function NotificationCenter() {
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
-    try {
-      if (isPersonal) {
-        const response = await alertsAPI.list();
-        setItems((Array.isArray(response?.results) ? response.results : []).map((item) => ({
-          ...item,
-          notification_key: alertKey(item),
-          title: item.type || 'رویداد دستگاه',
-          message: [item.vehicle_plate || 'دستگاه', item.device_imei ? `IMEI ${item.device_imei}` : ''].filter(Boolean).join(' · '),
-          created_at: item.event_time,
-          is_read: item.status !== 'new',
-          path: '/panel/alerts',
-        })));
-      } else {
-        const [businessResult, gpsResult] = await Promise.allSettled([
-          panelNotificationsAPI.list(),
-          alertsAPI.list(),
-        ]);
-        const businessItems = businessResult.status === 'fulfilled'
-          ? (Array.isArray(businessResult.value?.results) ? businessResult.value.results : []).map((item) => ({
-            ...item,
-            notification_key: item.id,
-            is_gps_alert: false,
-          }))
-          : null;
-        const gpsItems = gpsResult.status === 'fulfilled'
-          ? (Array.isArray(gpsResult.value?.results) ? gpsResult.value.results : []).map((item) => ({
-            ...item,
-            notification_key: `gps:${item.device_id}:${item.id}`,
-            title: item.type || 'هشدار دستگاه',
-            message: [item.vehicle_plate || 'دستگاه', item.device_imei ? `IMEI ${item.device_imei}` : ''].filter(Boolean).join(' · '),
-            created_at: item.event_time,
-            is_read: item.status !== 'new',
-            path: '/panel/alerts',
-            is_gps_alert: true,
-          }))
-          : null;
-        setItems((current) => {
-          const currentBusiness = businessItems ?? current.filter((item) => !item.is_gps_alert);
-          const currentGps = gpsItems ?? current.filter((item) => item.is_gps_alert);
-          return [...currentBusiness, ...currentGps].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-        });
-        if (businessResult.status === 'rejected' || gpsResult.status === 'rejected') {
-          setError('بخشی از اعلان‌ها در دسترس نیست؛ دوباره تلاش کنید.');
-        } else {
-          setError('');
-        }
-        return;
-      }
-      setError('');
-    } catch {
+    const [businessResult, gpsResult] = await Promise.allSettled([
+      panelNotificationsAPI.list(),
+      alertsAPI.list(),
+    ]);
+
+    if (businessResult.status === 'rejected' && gpsResult.status === 'rejected') {
       setError('دریافت اعلان‌ها ناموفق بود. دوباره تلاش کنید.');
+      return;
     }
-  }, [isPersonal]);
+
+    const businessItems = businessResult.status === 'fulfilled'
+      ? (Array.isArray(businessResult.value?.results) ? businessResult.value.results : []).map((item) => ({
+        ...item,
+        notification_key: item.id,
+        is_gps_alert: false,
+        message: item.message || item.detail || '',
+        is_read: Boolean(item.is_read),
+      }))
+      : null;
+    const gpsItems = gpsResult.status === 'fulfilled'
+      ? (Array.isArray(gpsResult.value?.results) ? gpsResult.value.results : []).map((item) => ({
+        ...item,
+        notification_key: alertKey(item),
+        title: item.type || 'رویداد دستگاه',
+        message: [item.vehicle_plate || 'دستگاه', item.device_imei ? `IMEI ${item.device_imei}` : ''].filter(Boolean).join(' · '),
+        created_at: item.event_time,
+        is_read: item.status !== 'new',
+        path: '/panel/alerts',
+        is_gps_alert: true,
+      }))
+      : null;
+
+    setItems((current) => {
+      const currentBusiness = businessItems ?? current.filter((item) => !item.is_gps_alert);
+      const currentGps = gpsItems ?? current.filter((item) => item.is_gps_alert);
+      return [...currentBusiness, ...currentGps].sort(
+        (a, b) => new Date(b.created_at || b.event_time) - new Date(a.created_at || a.event_time),
+      );
+    });
+    setError(
+      businessResult.status === 'rejected' || gpsResult.status === 'rejected'
+        ? 'بخشی از اعلان‌ها در دسترس نیست؛ دوباره تلاش کنید.'
+        : '',
+    );
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -124,7 +116,7 @@ export default function NotificationCenter() {
     const key = item.notification_key;
     setUpdating(key);
     try {
-      if (isPersonal || item.is_gps_alert) {
+      if (item.is_gps_alert) {
         await alertsAPI.updateStatus({
           deviceId: item.device_id,
           eventId: item.id,
@@ -136,7 +128,7 @@ export default function NotificationCenter() {
       setItems((current) => current.map((entry) => entry.notification_key === key
         ? { ...entry, is_read: true, status: entry.status === 'new' ? 'acknowledged' : entry.status }
         : entry));
-      window.dispatchEvent(new Event(isPersonal || item.is_gps_alert ? 'sana:traccar-alert-state-changed' : 'sana:panel-notification-state-changed'));
+      window.dispatchEvent(new Event(item.is_gps_alert ? 'sana:traccar-alert-state-changed' : 'sana:panel-notification-state-changed'));
       return true;
     } catch {
       setError('وضعیت خواندن اعلان ثبت نشد. دوباره تلاش کنید.');
@@ -149,17 +141,6 @@ export default function NotificationCenter() {
   const markAllRead = async () => {
     setUpdating('all');
     try {
-      if (isPersonal) {
-        await alertsAPI.markAllRead();
-        setItems((current) => current.map((item) => ({
-          ...item,
-          is_read: true,
-          status: item.status === 'new' ? 'acknowledged' : item.status,
-        })));
-        window.dispatchEvent(new Event('sana:traccar-alert-state-changed'));
-        return;
-      }
-
       const [businessResult, gpsResult] = await Promise.allSettled([
         panelNotificationsAPI.markAllRead(),
         alertsAPI.markAllRead(),
