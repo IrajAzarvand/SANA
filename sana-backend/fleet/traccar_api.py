@@ -19,7 +19,7 @@ def traccar_request(path: str, *, params: dict | None = None):
     password = str(getattr(settings, "TRACCAR_API_PASSWORD", "") or "")
     if not base_url or not username or not password:
         raise TraccarAPIError("Traccar API connection is not configured")
-    query = f"?{urlencode(params)}" if params else ""
+    query = f"?{urlencode(params, doseq=True)}" if params else ""
     token = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
     request = Request(
         f"{base_url}/{path.lstrip('/')}{query}",
@@ -77,11 +77,15 @@ def traccar_device_positions(device_id: int, start: str, end: str, *, limit: int
     return [item for item in result if isinstance(item, dict)]
 
 
-def traccar_device_events(device_id: int, start: str, end: str) -> list[dict]:
-    """Return Traccar events for one device and a bounded time range."""
+def traccar_device_events(device_id: int | list[int], start: str, end: str) -> list[dict]:
+    """Return Traccar events for one or more devices in a bounded time range."""
+    device_ids = device_id if isinstance(device_id, (list, tuple, set)) else [device_id]
+    normalized_ids = [int(item) for item in device_ids]
+    if not normalized_ids:
+        return []
     result = traccar_request(
         "reports/events",
-        params={"deviceId": int(device_id), "from": start, "to": end},
+        params={"deviceId": normalized_ids, "from": start, "to": end},
     )
     if not isinstance(result, list):
         raise TraccarAPIError("Traccar event report returned an unexpected response")
