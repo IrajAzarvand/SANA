@@ -278,8 +278,17 @@ class UserViewSet(viewsets.ModelViewSet):
                 add(f'branch-updated:{branch.pk}:{branch.updated_at.isoformat()}', 'اطلاعات شعبه تغییر کرد', branch.name, branch.updated_at, '/panel/branches' if is_admin or is_main else '/panel/dashboard')
 
         for account in users:
+            account_label = account.full_name or account.username
             if account.date_joined >= cutoff:
-                add(f'user-created:{account.pk}', 'کاربر جدید اضافه شد', account.full_name or account.username, account.date_joined, '/panel/users' if is_admin or is_main else '/panel/dashboard')
+                add(f'user-created:{account.pk}', 'کاربر جدید اضافه شد', account_label, account.date_joined, '/panel/users' if is_admin or is_main else '/panel/dashboard')
+            if account.updated_at >= cutoff and account.updated_at > account.date_joined + timedelta(seconds=1):
+                add(
+                    f'user-updated:{account.pk}:{account.updated_at.isoformat()}',
+                    'اطلاعات کاربر به‌روزرسانی شد',
+                    account_label,
+                    account.updated_at,
+                    '/panel/users' if is_admin or is_main else '/panel/dashboard',
+                )
 
         items.sort(key=lambda item: item['created_at'], reverse=True)
         return items[:100]
