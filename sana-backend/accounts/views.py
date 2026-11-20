@@ -357,7 +357,7 @@ class UserViewSet(viewsets.ModelViewSet):
             )
 
         for subscription in subscriptions.filter(
-            status='active',
+            status__in=['active', 'expired'],
             end_date__lt=today,
             end_date__gte=today - timedelta(days=30),
         ):
