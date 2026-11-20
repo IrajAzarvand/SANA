@@ -201,6 +201,15 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             return [IsSiteAdmin()]
         return super().get_permissions()
 
+    def update(self, request, *args, **kwargs):
+        return Response(
+            {'detail': 'ویرایش مستقیم قرارداد غیرفعال است؛ از مسیر ثبت عملیات ویرایش استفاده کنید.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def partial_update(self, request, *args, **kwargs):
+        return self.update(request, *args, **kwargs)
+
     def create(self, request, *args, **kwargs):
         """ساخت قرارداد با Wizard"""
         serializer = SubscriptionWizardSerializer(data=request.data, context={'request': request})
