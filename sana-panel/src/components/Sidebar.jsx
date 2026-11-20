@@ -25,14 +25,26 @@ export default function Sidebar({ isOpen, onClose }) {
     let active = true;
     const loadUnreadCount = async () => {
       try {
-        const response = isPersonal
-          ? await alertsAPI.list()
-          : await panelNotificationsAPI.list();
+        let count = 0;
+        if (isPersonal) {
+          const response = await alertsAPI.list();
+          const events = Array.isArray(response?.results) ? response.results : [];
+          count = events.filter((event) => event.status === 'new').length;
+        } else {
+          const [businessResult, gpsResult] = await Promise.allSettled([
+            panelNotificationsAPI.list(),
+            alertsAPI.list(),
+          ]);
+          if (businessResult.status === 'fulfilled') {
+            const events = Array.isArray(businessResult.value?.results) ? businessResult.value.results : [];
+            count += Number(businessResult.value?.counts?.unread ?? events.filter((event) => !event.is_read).length);
+          }
+          if (gpsResult.status === 'fulfilled') {
+            const events = Array.isArray(gpsResult.value?.results) ? gpsResult.value.results : [];
+            count += events.filter((event) => event.status === 'new').length;
+          }
+        }
         if (!active) return;
-        const events = Array.isArray(response?.results) ? response.results : [];
-        const count = isPersonal
-          ? events.filter((event) => event.status === 'new').length
-          : Number(response?.counts?.unread ?? events.filter((event) => !event.is_read).length);
         setUnreadCount(count);
       } catch {
         // در صورت خطای موقت، آخرین تعداد معتبر حفظ می‌شود.
