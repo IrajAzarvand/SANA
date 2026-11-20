@@ -29,11 +29,36 @@ export default function NotificationCenter() {
           path: '/panel/alerts',
         })));
       } else {
-        const response = await panelNotificationsAPI.list();
-        setItems(Array.isArray(response?.results) ? response.results.map((item) => ({
-          ...item,
-          notification_key: item.id,
-        })) : []);
+        const [businessResult, gpsResult] = await Promise.allSettled([
+          panelNotificationsAPI.list(),
+          alertsAPI.list(),
+        ]);
+        const businessItems = businessResult.status === 'fulfilled'
+          ? (Array.isArray(businessResult.value?.results) ? businessResult.value.results : []).map((item) => ({
+            ...item,
+            notification_key: item.id,
+            is_gps_alert: false,
+          }))
+          : [];
+        const gpsItems = gpsResult.status === 'fulfilled'
+          ? (Array.isArray(gpsResult.value?.results) ? gpsResult.value.results : []).map((item) => ({
+            ...item,
+            notification_key: `gps:${item.device_id}:${item.id}`,
+            title: item.type || 'هشدار دستگاه',
+            message: [item.vehicle_plate || 'دستگاه', item.device_imei ? `IMEI ${item.device_imei}` : ''].filter(Boolean).join(' · '),
+            created_at: item.event_time,
+            is_read: item.status !== 'new',
+            path: '/panel/alerts',
+            is_gps_alert: true,
+          }))
+          : [];
+        setItems([...businessItems, ...gpsItems].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+        if (businessResult.status === 'rejected' || gpsResult.status === 'rejected') {
+          setError('بخشی از اعلان‌ها در دسترس نیست؛ دوباره تلاش کنید.');
+        } else {
+          setError('');
+        }
+        return;
       }
       setError('');
     } catch {
@@ -84,7 +109,7 @@ export default function NotificationCenter() {
     const key = item.notification_key;
     setUpdating(key);
     try {
-      if (isPersonal) {
+      if (isPersonal || item.is_gps_alert) {
         await alertsAPI.updateStatus({
           deviceId: item.device_id,
           eventId: item.id,
@@ -96,7 +121,7 @@ export default function NotificationCenter() {
       setItems((current) => current.map((entry) => entry.notification_key === key
         ? { ...entry, is_read: true, status: entry.status === 'new' ? 'acknowledged' : entry.status }
         : entry));
-      window.dispatchEvent(new Event(isPersonal ? 'sana:personal-alerts-updated' : 'sana:notifications-updated'));
+      window.dispatchEvent(new Event(isPersonal || item.is_gps_alert ? 'sana:personal-alerts-updated' : 'sana:notifications-updated'));
       return true;
     } catch {
       setError('وضعیت خواندن اعلان ثبت نشد. دوباره تلاش کنید.');
