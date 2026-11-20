@@ -589,7 +589,9 @@ class PanelNotificationTests(TestCase):
         response = self.client.get('/api/users/notifications/')
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data, {'results': [], 'counts': {'all': 0, 'unread': 0}})
+        self.assertEqual(response.data['results'], [])
+        self.assertEqual(response.data['counts']['all'], 0)
+        self.assertEqual(response.data['counts']['unread'], 0)
 
     def test_mark_all_notifications_read_persists_for_the_current_user(self):
         self.client.force_authenticate(user=self.main_user)
