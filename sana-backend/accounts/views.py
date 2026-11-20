@@ -7,8 +7,9 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from django.utils import timezone
-from django.db.models import Q
-from datetime import timedelta
+from django.db.models import Q, Sum, F, Value, DecimalField
+from django.db.models.functions import Coalesce
+from datetime import datetime, timedelta
 
 from .models import User, UserSession, NotificationReadState
 from .serializers import (
@@ -21,7 +22,10 @@ from .serializers import (
 )
 from .permissions import IsSiteAdminOrReadOnly
 
-from organizations.models import Organization, Branch, SubscriptionOperation
+from organizations.models import (
+    Organization, Branch, Subscription, SubscriptionOperation,
+    SubscriptionPayment, SubscriptionInstallment,
+)
 from fleet.models import Device, DeviceOperation, DeviceLifecycleEvent
 
 
@@ -175,75 +179,212 @@ class UserViewSet(viewsets.ModelViewSet):
 
     @staticmethod
     def _build_panel_notifications(user):
-        """Build notifications from persisted business/operation records, never placeholders."""
-        cutoff = timezone.now() - timedelta(days=30)
+        """Build persisted business events and current financial reminders within the user's tenant."""
+        now = timezone.now()
+        today = timezone.localdate()
+        cutoff = now - timedelta(days=30)
         is_admin = user.is_site_admin
+        is_personal = user.is_personal_user
         is_main = user.is_main_user and bool(user.organization_id)
-        is_branch = user.is_branch_manager and bool(user.branch_id)
-        if not (is_admin or is_main or is_branch):
-            return []
+        is_branch = user.is_branch_manager and bool(user.organization_id)
 
         if is_admin:
-            devices = Device.objects.all()
+            subscriptions = Subscription.objects.all()
             organizations = Organization.objects.all()
             branches = Branch.objects.all()
             users = User.objects.exclude(pk=user.pk)
+            devices = Device.objects.all()
             subscription_ops = SubscriptionOperation.objects.select_related(
-                'subscription', 'subscription__organization', 'performed_by'
+                'subscription', 'subscription__organization', 'subscription__user', 'performed_by'
             ).filter(performed_at__gte=cutoff)
+        elif is_personal:
+            subscriptions = Subscription.objects.filter(user=user, customer_type='personal')
+            organizations = Organization.objects.none()
+            branches = Branch.objects.none()
+            users = User.objects.none()
+            devices = Device.objects.none()
+            subscription_ops = SubscriptionOperation.objects.select_related(
+                'subscription', 'subscription__user', 'performed_by'
+            ).filter(subscription__user=user, performed_at__gte=cutoff)
         elif is_main:
             organization_id = user.organization_id
-            devices = Device.objects.filter(
-                customer_access_periods__organization_id=organization_id,
-                customer_access_periods__started_at__lte=timezone.now(),
-                customer_access_periods__ended_at__isnull=True,
-            ).distinct()
+            subscriptions = Subscription.objects.filter(
+                organization_id=organization_id, customer_type='organization'
+            )
             organizations = Organization.objects.filter(pk=organization_id)
             branches = Branch.objects.filter(organization_id=organization_id)
             users = User.objects.filter(
                 Q(organization_id=organization_id) | Q(branch__organization_id=organization_id)
             ).exclude(pk=user.pk)
+            devices = Device.objects.filter(
+                customer_access_periods__organization_id=organization_id,
+                customer_access_periods__started_at__lte=now,
+                customer_access_periods__ended_at__isnull=True,
+            ).distinct()
+            subscription_ops = SubscriptionOperation.objects.select_related(
+                'subscription', 'subscription__organization', 'performed_by'
+            ).filter(subscription__organization_id=organization_id, performed_at__gte=cutoff)
+        elif is_branch:
+            organization_id = user.organization_id
+            branch_id = user.branch_id
+            subscriptions = Subscription.objects.filter(
+                organization_id=organization_id, customer_type='organization'
+            )
+            organizations = Organization.objects.none()
+            branches = Branch.objects.filter(pk=branch_id) if branch_id else Branch.objects.none()
+            users = User.objects.filter(branch_id=branch_id).exclude(pk=user.pk) if branch_id else User.objects.none()
+            devices = Device.objects.filter(
+                customer_access_periods__organization_id=organization_id,
+                customer_access_periods__branch_id=branch_id,
+                customer_access_periods__started_at__lte=now,
+                customer_access_periods__ended_at__isnull=True,
+            ).distinct() if branch_id else Device.objects.none()
+            # Subscription access is organization-scoped in SubscriptionViewSet, so keep
+            # contract/financial notifications consistent with that read-only API scope.
             subscription_ops = SubscriptionOperation.objects.select_related(
                 'subscription', 'subscription__organization', 'performed_by'
             ).filter(subscription__organization_id=organization_id, performed_at__gte=cutoff)
         else:
-            branch_id = user.branch_id
-            organization_id = user.branch.organization_id
-            devices = Device.objects.filter(
-                customer_access_periods__organization_id=organization_id,
-                customer_access_periods__branch_id=branch_id,
-                customer_access_periods__started_at__lte=timezone.now(),
-                customer_access_periods__ended_at__isnull=True,
-            ).distinct()
-            organizations = Organization.objects.none()
-            branches = Branch.objects.filter(pk=branch_id)
-            users = User.objects.filter(branch_id=branch_id).exclude(pk=user.pk)
-            subscription_ops = SubscriptionOperation.objects.select_related(
-                'subscription', 'subscription__organization', 'performed_by'
-            ).filter(subscription__organization_id=organization_id, performed_at__gte=cutoff)
+            return []
 
         items = []
 
-        def add(key, title, message, timestamp, path):
-            if timestamp and timestamp >= cutoff:
+        def add(key, title, message, timestamp, path, *, persistent=False, kind='business'):
+            if timestamp and (persistent or timestamp >= cutoff):
                 items.append({
                     'id': key,
                     'title': title,
                     'message': message,
                     'created_at': timestamp,
                     'path': path,
+                    'kind': kind,
                 })
 
-        for operation in subscription_ops[:100]:
-            organization_name = operation.subscription.organization.name if operation.subscription.organization_id else 'مشتری'
+        # Contract lifecycle and management operations.
+        for operation in subscription_ops.exclude(operation_type='payment')[:200]:
+            subscription = operation.subscription
+            customer_name = (
+                subscription.organization.name if subscription.organization_id
+                else (subscription.user.full_name or subscription.user.username if subscription.user_id else 'مشتری')
+            )
             add(
                 f'subscription-operation:{operation.pk}',
                 f'قرارداد: {operation.get_operation_type_display()}',
-                f'{operation.subscription.contract_number} · {organization_name}',
+                f'{subscription.contract_number} · {customer_name}',
                 operation.performed_at,
-                '/panel/subscriptions' if is_admin else '/panel/dashboard',
+                f'/panel/subscriptions/{subscription.pk}',
             )
 
+        # Real receipts are distinct from installment reminders and are visible only
+        # to the contract owner/tenant and site administrators.
+        payments = SubscriptionPayment.objects.select_related(
+            'subscription', 'subscription__organization', 'subscription__user'
+        ).filter(subscription__in=subscriptions, created_at__gte=cutoff).order_by('-created_at')
+        for payment in payments[:200]:
+            subscription = payment.subscription
+            add(
+                f'payment-received:{payment.pk}',
+                'پرداخت قرارداد ثبت شد',
+                f'قرارداد {subscription.contract_number} · مبلغ {payment.amount:,.0f} ریال',
+                payment.created_at,
+                f'/panel/subscriptions/{subscription.pk}',
+                kind='financial',
+            )
+
+        # Current active schedule only: superseded plans disappear from the feed.
+        # Allocation totals ensure a fully-paid installment never generates a reminder.
+        installments = SubscriptionInstallment.objects.filter(
+            plan__subscription__in=subscriptions,
+            plan__status='active',
+            status='active',
+        ).select_related('plan', 'plan__subscription').annotate(
+            allocated_amount=Coalesce(
+                Sum('allocations__amount'),
+                Value(0),
+                output_field=DecimalField(max_digits=15, decimal_places=0),
+            )
+        ).order_by('due_date', 'number')
+
+        for installment in installments:
+            remaining = (installment.amount or 0) - (installment.allocated_amount or 0)
+            if remaining <= 0:
+                continue
+            subscription = installment.plan.subscription
+            days_until_due = (installment.due_date - today).days
+            if days_until_due < 0:
+                stage = 'overdue'
+                title = 'قسط سررسیدگذشته و تسویه‌نشده'
+                message = (
+                    f'قرارداد {subscription.contract_number} · قسط {installment.number} · '
+                    f'مانده {remaining:,.0f} ریال · سررسید {installment.due_date}'
+                )
+            elif days_until_due == 0:
+                stage = 'due-today'
+                title = 'سررسید قسط امروز است'
+                message = (
+                    f'قرارداد {subscription.contract_number} · قسط {installment.number} · '
+                    f'مانده {remaining:,.0f} ریال'
+                )
+            elif days_until_due <= 7:
+                stage = 'due-soon'
+                title = 'سررسید قسط نزدیک است'
+                message = (
+                    f'قرارداد {subscription.contract_number} · قسط {installment.number} · '
+                    f'مانده {remaining:,.0f} ریال · {days_until_due} روز تا سررسید'
+                )
+            else:
+                continue
+            add(
+                f'installment:{installment.pk}:plan-{installment.plan_id}:{installment.due_date}:{stage}',
+                title,
+                message,
+                timezone.make_aware(datetime.combine(installment.due_date, datetime.min.time())),
+                f'/panel/subscriptions/{subscription.pk}',
+                persistent=True,
+                kind='financial',
+            )
+
+        # Contract expiry reminder: keep the existing 30-day dashboard policy and
+        # provide a stable notification key so polling does not create duplicates.
+        for subscription in subscriptions.filter(status='active', end_date__gte=today, end_date__lte=today + timedelta(days=30)):
+            days_left = (subscription.end_date - today).days
+            add(
+                f'contract-expiring:{subscription.pk}:{subscription.end_date.isoformat()}',
+                'موعد پایان قرارداد نزدیک است',
+                f'قرارداد {subscription.contract_number} · {days_left} روز تا پایان قرارداد',
+                now,
+                f'/panel/subscriptions/{subscription.pk}',
+                persistent=True,
+                kind='financial',
+            )
+
+        for subscription in subscriptions.filter(status='active', end_date__lt=today):
+            add(
+                f'contract-expired:{subscription.pk}:{subscription.end_date.isoformat()}',
+                'قرارداد منقضی شده است',
+                f'قرارداد {subscription.contract_number} در تاریخ {subscription.end_date} پایان یافته است',
+                now,
+                f'/panel/subscriptions/{subscription.pk}',
+                persistent=True,
+                kind='financial',
+            )
+
+        # Active installment-plan revisions are explicit business events.
+        for plan in subscriptions.filter(installment_plans__status='active').values_list(
+            'installment_plans__id', 'installment_plans__version',
+            'installment_plans__created_at', 'contract_number', 'id'
+        ).distinct():
+            plan_id, version, created_at, contract_number, subscription_id = plan
+            add(
+                f'installment-plan:{plan_id}',
+                'برنامه اقساط قرارداد ثبت یا اصلاح شد',
+                f'قرارداد {contract_number} · نسخه {version}',
+                created_at,
+                f'/panel/subscriptions/{subscription_id}',
+                kind='financial',
+            )
+
+        # Organization, branch, user, and device activity remains role-scoped.
         device_operations = DeviceOperation.objects.select_related(
             'device', 'target_organization', 'target_branch', 'performed_by'
         ).filter(performed_at__gte=cutoff)
@@ -252,17 +393,17 @@ class UserViewSet(viewsets.ModelViewSet):
         ).filter(event_date__gte=cutoff, device_operation__isnull=True)
         if is_main:
             device_operations = device_operations.filter(
-                Q(device__in=devices) | Q(target_organization_id=organization_id)
+                Q(device__in=devices) | Q(target_organization_id=user.organization_id)
             )
             lifecycle_events = lifecycle_events.filter(
-                Q(device__in=devices) | Q(organization_id=organization_id)
+                Q(device__in=devices) | Q(organization_id=user.organization_id)
             )
         elif is_branch:
             device_operations = device_operations.filter(
-                Q(device__in=devices) | Q(target_branch_id=branch_id)
+                Q(device__in=devices) | Q(target_branch_id=user.branch_id)
             )
             lifecycle_events = lifecycle_events.filter(
-                Q(device__in=devices) | Q(branch_id=branch_id)
+                Q(device__in=devices) | Q(branch_id=user.branch_id)
             )
 
         for operation in device_operations[:100]:
@@ -284,7 +425,7 @@ class UserViewSet(viewsets.ModelViewSet):
 
         for organization in organizations:
             if is_admin and organization.created_at >= cutoff:
-                add(f'organization-created:{organization.pk}', 'سازمان جدید ثبت شد', organization.name, organization.created_at, '/panel/companies' if is_admin else '/panel/settings')
+                add(f'organization-created:{organization.pk}', 'سازمان جدید ثبت شد', organization.name, organization.created_at, '/panel/companies')
             if organization.updated_at >= cutoff and organization.updated_at > organization.created_at + timedelta(seconds=1):
                 add(f'organization-updated:{organization.pk}:{organization.updated_at.isoformat()}', 'اطلاعات سازمان به‌روزرسانی شد', organization.name, organization.updated_at, '/panel/companies' if is_admin else '/panel/settings')
 
@@ -308,7 +449,7 @@ class UserViewSet(viewsets.ModelViewSet):
                 )
 
         items.sort(key=lambda item: item['created_at'], reverse=True)
-        return items[:100]
+        return items[:200]
 
     @action(detail=False, methods=['post'], throttle_classes=[ScopedRateThrottle], throttle_scope='password_change')
     def change_password(self, request):
