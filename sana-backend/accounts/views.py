@@ -187,6 +187,9 @@ class UserViewSet(viewsets.ModelViewSet):
                     'resolved': {'unread', 'read', 'reviewed'},
                 }
                 if state.status in allowed_from.get(requested_status, set()):
+                    defaults['read_at'] = state.read_at or now if requested_status in {'read', 'reviewed', 'resolved'} else state.read_at
+                    defaults['reviewed_at'] = state.reviewed_at or now if requested_status in {'reviewed', 'resolved'} else state.reviewed_at
+                    defaults['resolved_at'] = state.resolved_at or now if requested_status == 'resolved' else state.resolved_at
                     for field, value in defaults.items():
                         setattr(state, field, value)
                     state.save()
