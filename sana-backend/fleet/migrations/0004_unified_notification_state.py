@@ -23,6 +23,9 @@ def populate_notification_keys(apps, schema_editor):
 class Migration(migrations.Migration):
     dependencies = [
         ('fleet', '0003_device_alert_state'),
+        # Keep the fleet migration graph linear: this migration must follow
+        # the parallel personal-alert-preference migration.
+        ('fleet', '0004_personal_alert_preference'),
     ]
 
     operations = [
