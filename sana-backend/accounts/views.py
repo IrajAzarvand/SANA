@@ -181,9 +181,10 @@ class UserViewSet(viewsets.ModelViewSet):
         elif is_main:
             organization_id = user.organization_id
             devices = Device.objects.filter(
-                Q(organization_id=organization_id)
-                | Q(current_holder_organization_id=organization_id)
-            )
+                customer_access_periods__organization_id=organization_id,
+                customer_access_periods__started_at__lte=timezone.now(),
+                customer_access_periods__ended_at__isnull=True,
+            ).distinct()
             organizations = Organization.objects.filter(pk=organization_id)
             branches = Branch.objects.filter(organization_id=organization_id)
             users = User.objects.filter(organization_id=organization_id).exclude(pk=user.pk)
@@ -194,8 +195,11 @@ class UserViewSet(viewsets.ModelViewSet):
             branch_id = user.branch_id
             organization_id = user.branch.organization_id
             devices = Device.objects.filter(
-                Q(branch_id=branch_id) | Q(current_holder_organization_id=organization_id, branch_id=branch_id)
-            )
+                customer_access_periods__organization_id=organization_id,
+                customer_access_periods__branch_id=branch_id,
+                customer_access_periods__started_at__lte=timezone.now(),
+                customer_access_periods__ended_at__isnull=True,
+            ).distinct()
             organizations = Organization.objects.none()
             branches = Branch.objects.filter(pk=branch_id)
             users = User.objects.filter(branch_id=branch_id).exclude(pk=user.pk)
@@ -229,13 +233,19 @@ class UserViewSet(viewsets.ModelViewSet):
         lifecycle_events = DeviceLifecycleEvent.objects.select_related(
             'device', 'organization', 'branch', 'performed_by'
         ).filter(event_date__gte=cutoff)
-        if not is_admin:
+        if is_main:
             device_operations = device_operations.filter(
-                Q(device__in=devices) | Q(target_organization_id=organization_id, target_branch_id=branch_id if is_branch else None)
+                Q(device__in=devices) | Q(target_organization_id=organization_id)
             )
             lifecycle_events = lifecycle_events.filter(
-                Q(device__in=devices)
-                | Q(organization_id=organization_id, branch_id=branch_id if is_branch else None)
+                Q(device__in=devices) | Q(organization_id=organization_id)
+            )
+        elif is_branch:
+            device_operations = device_operations.filter(
+                Q(device__in=devices) | Q(target_branch_id=branch_id)
+            )
+            lifecycle_events = lifecycle_events.filter(
+                Q(device__in=devices) | Q(branch_id=branch_id)
             )
 
         for operation in device_operations[:100]:
