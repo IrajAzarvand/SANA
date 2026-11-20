@@ -672,7 +672,7 @@ function PanelAlerts() {
         return { ...item, is_read: true, status: 'read' };
       }
       if (!item.is_gps_alert && businessResult.status === 'fulfilled') {
-        return { ...item, is_read: true, status: 'reviewed' };
+        return { ...item, is_read: true, status: 'read' };
       }
       return item;
     }));
