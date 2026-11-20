@@ -291,7 +291,7 @@ export const notificationsAPI = {
   updateGpsStatus: async ({ deviceId, eventId, status }) => {
     const result = await alertsAPI.updateStatus({ deviceId, eventId, status });
     updateCachedNotificationFeed('gpsResult', (results) => results.map((item) => (
-      item.device_id === deviceId && String(item.id) === String(eventId)
+      String(item.device_id) === String(deviceId) && String(item.id) === String(eventId)
         ? { ...item, status, is_read: true }
         : item
     )));
