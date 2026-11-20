@@ -252,9 +252,20 @@ class DeviceViewSet(viewsets.ModelViewSet):
         if user.is_site_admin:
             pass
         elif user.is_main_user and user.organization:
-            qs = qs.filter(customer_access_periods__organization=user.organization, customer_access_periods__ended_at__isnull=True).distinct()
+            now = timezone.now()
+            qs = qs.filter(
+                customer_access_periods__organization=user.organization,
+                customer_access_periods__started_at__lte=now,
+                customer_access_periods__ended_at__isnull=True,
+            ).distinct()
         elif user.is_branch_manager and user.branch:
-            qs = qs.filter(customer_access_periods__organization=user.organization, customer_access_periods__branch=user.branch, customer_access_periods__ended_at__isnull=True).distinct()
+            now = timezone.now()
+            qs = qs.filter(
+                customer_access_periods__organization=user.organization,
+                customer_access_periods__branch=user.branch,
+                customer_access_periods__started_at__lte=now,
+                customer_access_periods__ended_at__isnull=True,
+            ).distinct()
         elif user.is_personal_user:
             now = timezone.now()
             today = timezone.localdate()
