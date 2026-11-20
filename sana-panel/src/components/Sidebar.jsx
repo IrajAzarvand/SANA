@@ -6,7 +6,7 @@ import {
   FileText, BrainCircuit,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { alertsAPI } from '../api/services/fleet';
+import { alertsAPI, panelNotificationsAPI } from '../api/services/fleet';
 
 export default function Sidebar({ isOpen, onClose }) {
   const { user, isSiteAdmin, isOrganization, isBranchManager, isMainUser, isPersonal } = useAuth();
@@ -17,18 +17,23 @@ export default function Sidebar({ isOpen, onClose }) {
   const avatarInitial = (user?.first_name || user?.full_name || user?.username || 'ک').trim().charAt(0);
   const location = useLocation();
   const [reportsExpanded, setReportsExpanded] = useState(() => window.location.pathname.startsWith('/panel/reports'));
-  const [personalUnreadCount, setPersonalUnreadCount] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
-    if (!isPersonal) return undefined;
+    if (!isPersonal && !isSiteAdmin && !isOrganization) return undefined;
 
     let active = true;
     const loadUnreadCount = async () => {
       try {
-        const response = await alertsAPI.list();
+        const response = isPersonal
+          ? await alertsAPI.list()
+          : await panelNotificationsAPI.list();
         if (!active) return;
         const events = Array.isArray(response?.results) ? response.results : [];
-        setPersonalUnreadCount(events.filter((event) => event.status === 'new').length);
+        const count = isPersonal
+          ? events.filter((event) => event.status === 'new').length
+          : Number(response?.counts?.unread ?? events.filter((event) => !event.is_read).length);
+        setUnreadCount(count);
       } catch {
         // در صورت خطای موقت، آخرین تعداد معتبر حفظ می‌شود.
       }
@@ -37,13 +42,15 @@ export default function Sidebar({ isOpen, onClose }) {
     loadUnreadCount();
     const intervalId = window.setInterval(loadUnreadCount, 30000);
     window.addEventListener('sana:personal-alerts-updated', loadUnreadCount);
+    window.addEventListener('sana:notifications-updated', loadUnreadCount);
 
     return () => {
       active = false;
       window.clearInterval(intervalId);
       window.removeEventListener('sana:personal-alerts-updated', loadUnreadCount);
+      window.removeEventListener('sana:notifications-updated', loadUnreadCount);
     };
-  }, [isPersonal]);
+  }, [isPersonal, isSiteAdmin, isOrganization]);
 
   // ادمین کل سایت باید به تمام بخش‌های پنل دسترسی مستقیم داشته باشد.
   const adminMenu = [
@@ -58,7 +65,7 @@ export default function Sidebar({ isOpen, onClose }) {
     { path: '/panel/subscriptions',  icon: FileText,         label: 'قراردادها' },
     { path: '/panel/ai',             icon: BrainCircuit,     label: 'هوش مصنوعی' },
     { id: 'reports', icon: BarChart3, label: 'گزارش‌ها', children: [{ path: '/panel/reports/trips', label: 'گزارش مسیرها' }, { path: '/panel/reports/live-logs', label: 'لاگ زنده' }] },
-    { path: '/panel/alerts',         icon: AlertTriangle,    label: 'هشدارها' },
+    { path: '/panel/alerts',         icon: AlertTriangle,    label: 'هشدارها', badge: unreadCount },
     { path: '/panel/settings',       icon: Settings,         label: 'تنظیمات سایت' },
   ];
 
@@ -71,7 +78,7 @@ export default function Sidebar({ isOpen, onClose }) {
     ...(isMainUser ? [{ path: '/panel/branches', icon: Building2, label: 'شعبه‌ها' }] : []),
     ...(isMainUser ? [{ path: '/panel/users', icon: Shield, label: 'کاربران' }] : []),
     { id: 'reports', icon: BarChart3, label: 'گزارش‌ها', children: [{ path: '/panel/reports/trips', label: 'گزارش مسیرها' }, { path: '/panel/reports/live-logs', label: 'لاگ زنده' }] },
-    { path: '/panel/alerts',     icon: AlertTriangle,    label: 'هشدارها' },
+    { path: '/panel/alerts',     icon: AlertTriangle,    label: 'هشدارها', badge: unreadCount },
     { path: '/panel/settings',   icon: Settings,         label: 'تنظیمات' },
   ];
 
@@ -80,7 +87,7 @@ export default function Sidebar({ isOpen, onClose }) {
     { path: '/panel/map',        icon: MapIcon,          label: 'نقشه' },
     { path: '/panel/devices',    icon: Cpu,               label: 'دستگاه‌های من' },
     { path: '/panel/reports',    icon: BarChart3,        label: 'گزارش‌ها', children: [{ path: '/panel/reports/trips', label: 'گزارش مسیرها' }] },
-    { path: '/panel/alerts',     icon: AlertTriangle,    label: 'هشدارها', badge: personalUnreadCount },
+    { path: '/panel/alerts',     icon: AlertTriangle,    label: 'هشدارها', badge: unreadCount },
     { path: '/panel/settings',   icon: Settings,         label: 'تنظیمات' },
   ];
 
@@ -165,7 +172,7 @@ export default function Sidebar({ isOpen, onClose }) {
                           {isActive && <span className="absolute right-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-brand-500 rounded-l" />}
                           <Icon size={17} className={isActive ? 'text-brand-500' : 'text-text-muted group-hover:text-text-secondary'} />
                           <span className="flex-1">{item.label}</span>
-                          {item.badge && <span className="bg-danger text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{item.badge}</span>}
+                          {item.badge > 0 && <span className="bg-danger text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">{item.badge > 99 ? '99+' : item.badge}</span>}
                         </>
                       )}
                     </NavLink>
