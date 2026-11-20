@@ -186,7 +186,7 @@ class UserViewSet(viewsets.ModelViewSet):
         is_admin = user.is_site_admin
         is_personal = user.is_personal_user
         is_main = user.is_main_user and bool(user.organization_id)
-        is_branch = user.is_branch_manager and bool(user.organization_id)
+        is_branch = user.is_branch_manager and bool(user.branch_id)
 
         if is_admin:
             subscriptions = Subscription.objects.all()
@@ -225,7 +225,7 @@ class UserViewSet(viewsets.ModelViewSet):
                 'subscription', 'subscription__organization', 'performed_by'
             ).filter(subscription__organization_id=organization_id, performed_at__gte=cutoff)
         elif is_branch:
-            organization_id = user.organization_id
+            organization_id = user.branch.organization_id if user.branch_id else user.organization_id
             branch_id = user.branch_id
             subscriptions = Subscription.objects.filter(
                 organization_id=organization_id, customer_type='organization'
