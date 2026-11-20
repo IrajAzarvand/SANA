@@ -132,8 +132,6 @@ class UserViewSet(viewsets.ModelViewSet):
     def notifications(self, request):
         """Return real, role-scoped operational events with per-user read state."""
         user = request.user
-        if user.is_personal_user:
-            return Response({'results': [], 'counts': {'all': 0, 'unread': 0}})
 
         if request.method == 'POST':
             if request.data.get('mark_all') is True:
