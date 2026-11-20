@@ -933,14 +933,14 @@ class PersonalAndTenantFinancialNotificationTests(TestCase):
             for item in notifications.data['results']
         ))
 
-    def test_delete_endpoint_records_contract_cancellation_notification(self):
+    def test_cancel_endpoint_records_contract_cancellation_notification(self):
         contract = self.make_contract(
             owner=self.personal, number='PRS-DESTROY-CANCEL-001'
         )
         self.client.force_authenticate(user=self.admin)
 
-        deleted = self.client.delete(f'/api/subscriptions/{contract.pk}/')
-        self.assertEqual(deleted.status_code, 204)
+        cancelled = self.client.post(f'/api/subscriptions/{contract.pk}/cancel/', {}, format='json')
+        self.assertEqual(cancelled.status_code, 200)
 
         notifications = self.client.get('/api/users/notifications/')
         self.assertEqual(notifications.status_code, 200)
