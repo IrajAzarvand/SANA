@@ -295,7 +295,7 @@ export default function Alerts() {
       setItems((current) => current.map((entry) => entry.notification_key === item.notification_key
         ? { ...entry, status, is_read: true }
         : entry));
-      window.dispatchEvent(new Event('sana:personal-alerts-updated'));
+      window.dispatchEvent(new Event('sana:notifications-updated'));
     } catch {
       setError('ثبت وضعیت هشدار انجام نشد. لطفاً دوباره تلاش کنید.');
     } finally {
