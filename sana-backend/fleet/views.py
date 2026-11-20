@@ -533,14 +533,14 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 updated = DeviceAlertState.objects.filter(
                     user=request.user,
                     device_id__in=visible_device_ids,
-                    status='new',
-                ).update(status='acknowledged', acknowledged_at=timezone.now())
+                    status='unread',
+                ).update(status='read', read_at=timezone.now())
                 return Response({'updated': updated})
 
             raw_device_id = request.data.get('device_id')
             event_id = str(request.data.get('event_id') or '').strip()
             requested_status = str(request.data.get('status') or '').strip()
-            if requested_status not in {'acknowledged', 'resolved'} or not event_id:
+            if requested_status not in {'read', 'reviewed', 'resolved', 'acknowledged'} or not event_id:
                 return Response({'detail': 'شناسه رویداد و وضعیت معتبر الزامی است.'}, status=400)
             try:
                 device_id = int(raw_device_id)
@@ -555,12 +555,23 @@ class DeviceViewSet(viewsets.ModelViewSet):
             ).first()
             if state is None:
                 return Response({'detail': 'رویداد موردنظر یافت نشد.'}, status=404)
-            state.status = requested_status
-            if requested_status == 'acknowledged':
-                state.acknowledged_at = timezone.now()
-            else:
-                state.resolved_at = timezone.now()
-            state.save(update_fields=['status', 'acknowledged_at', 'resolved_at'])
+            now = timezone.now()
+            normalized_status = 'reviewed' if requested_status == 'acknowledged' else requested_status
+            allowed_from = {
+                'read': {'unread', 'read'},
+                'reviewed': {'unread', 'read', 'reviewed'},
+                'resolved': {'unread', 'read', 'reviewed'},
+            }
+            if state.status in allowed_from.get(normalized_status, set()):
+                state.status = normalized_status
+                if normalized_status in {'read', 'reviewed', 'resolved'}:
+                    state.read_at = state.read_at or now
+                if normalized_status in {'reviewed', 'resolved'}:
+                    state.reviewed_at = state.reviewed_at or now
+                    state.acknowledged_at = state.acknowledged_at or now
+                if normalized_status == 'resolved':
+                    state.resolved_at = state.resolved_at or now
+                state.save(update_fields=['status', 'read_at', 'reviewed_at', 'acknowledged_at', 'resolved_at'])
             return Response({
                 'device_id': device.pk,
                 'event_id': state.traccar_event_id,
@@ -586,7 +597,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
 
         devices = list(self.get_queryset().select_related('vehicle'))
         if not devices:
-            return Response({'results': [], 'counts': {'all': 0, 'new': 0, 'acknowledged': 0, 'resolved': 0}})
+            return Response({'results': [], 'counts': {'all': 0, 'unread': 0, 'read': 0, 'reviewed': 0, 'resolved': 0}})
 
         contract_by_device = {}
         access_by_device = {}
@@ -660,7 +671,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     }
 
             if not device_context:
-                return Response({'results': [], 'counts': {'all': 0, 'new': 0, 'acknowledged': 0, 'resolved': 0}})
+                return Response({'results': [], 'counts': {'all': 0, 'unread': 0, 'read': 0, 'reviewed': 0, 'resolved': 0}})
 
             traccar_by_unique_id = {
                 str(item.get('uniqueId') or '').strip(): item
@@ -716,7 +727,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     user=request.user,
                     device=device,
                     traccar_event_id=event_id,
-                    defaults={'event_type': event_type, 'event_time': event_time},
+                    defaults={'event_key': f'gps:{device.pk}:{event_id}', 'notification_type': 'gps', 'event_type': event_type, 'event_time': event_time},
                 )
                 if event_type == 'deviceOnline':
                     DeviceAlertState.objects.filter(
@@ -724,8 +735,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
                         device=device,
                         event_type='deviceOffline',
                         event_time__lt=event_time,
-                    ).exclude(status='resolved').update(
-                        status='resolved', resolved_at=event_time
+                    ) .exclude(status='resolved').update(
+                        status='resolved', read_at=event_time, reviewed_at=event_time, resolved_at=event_time
                     )
                     for previous_alert in results:
                         if (
@@ -757,8 +768,9 @@ class DeviceViewSet(viewsets.ModelViewSet):
         results.sort(key=lambda item: (item['event_time'], item['id']), reverse=True)
         counts = {
             'all': len(results),
-            'new': sum(item['status'] == 'new' for item in results),
-            'acknowledged': sum(item['status'] == 'acknowledged' for item in results),
+            'unread': sum(item['status'] == 'unread' for item in results),
+            'read': sum(item['status'] == 'read' for item in results),
+            'reviewed': sum(item['status'] == 'reviewed' for item in results),
             'resolved': sum(item['status'] == 'resolved' for item in results),
         }
         return Response({'results': results, 'counts': counts})

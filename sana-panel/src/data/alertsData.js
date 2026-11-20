@@ -19,7 +19,8 @@ export const severityMap = {
 
 export const statusMap = {
   active:       { label: 'فعال',       variant: 'danger'  },
-  acknowledged: { label: 'بررسی‌شده',   variant: 'warning' },
+  read:         { label: 'خوانده‌شده', variant: 'info'    },
+  reviewed:      { label: 'بررسی‌شده', variant: 'warning' },
   resolved:     { label: 'حل‌شده',      variant: 'success' },
 };
 
