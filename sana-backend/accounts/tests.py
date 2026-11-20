@@ -840,3 +840,45 @@ class PersonalAndTenantFinancialNotificationTests(TestCase):
 
         self.assertFalse(any(item.startswith(f'installment:{old_installment.pk}:') for item in ids))
         self.assertTrue(any(item.startswith(f'installment:{new_installment.pk}:') for item in ids))
+
+
+    def test_personal_customer_can_mark_own_financial_notification_read(self):
+        contract = self.make_contract(owner=self.personal, number='PRS-READ-STATE-001')
+        plan = self.make_plan(contract)
+        installment = self.make_installment(
+            plan, number=1, due_date=self.today + timedelta(days=1)
+        )
+        self.client.force_authenticate(user=self.personal)
+        listing = self.client.get('/api/users/notifications/')
+        event = next(
+            item for item in listing.data['results']
+            if item['id'].startswith(f'installment:{installment.pk}:')
+        )
+
+        marked = self.client.post(
+            '/api/users/notifications/',
+            {'event_key': event['id']},
+            format='json',
+        )
+        self.assertEqual(marked.status_code, 200)
+        refreshed = self.client.get('/api/users/notifications/')
+        matching = next(item for item in refreshed.data['results'] if item['id'] == event['id'])
+        self.assertTrue(matching['is_read'])
+
+    def test_contract_expiry_notifications_cover_upcoming_and_recently_expired_contracts(self):
+        upcoming = self.make_contract(owner=self.personal, number='PRS-EXPIRING-001')
+        upcoming.end_date = self.today + timedelta(days=10)
+        upcoming.save(update_fields=['end_date'])
+        expired = self.make_contract(owner=self.personal, number='PRS-EXPIRED-001')
+        expired.end_date = self.today - timedelta(days=2)
+        expired.save(update_fields=['end_date'])
+
+        self.client.force_authenticate(user=self.personal)
+        response = self.client.get('/api/users/notifications/')
+        titles = [item['title'] for item in response.data['results']]
+        messages = [item['message'] for item in response.data['results']]
+
+        self.assertIn('موعد پایان قرارداد نزدیک است', titles)
+        self.assertIn('قرارداد منقضی شده است', titles)
+        self.assertTrue(any('PRS-EXPIRING-001' in message for message in messages))
+        self.assertTrue(any('PRS-EXPIRED-001' in message for message in messages))
