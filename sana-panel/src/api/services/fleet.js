@@ -264,13 +264,16 @@ export const notificationsAPI = {
         alertsAPI.list(),
       ]);
       const result = { businessResult, gpsResult };
-      notificationCache = result;
+      if (getAuthToken() === token) {
+        notificationCache = result;
+        notificationCacheAt = Date.now();
+      }
       if (businessResult.status === 'rejected' && gpsResult.status === 'rejected') {
         throw new Error('notification feeds unavailable');
       }
       return result;
     })().finally(() => {
-      notificationRequest = null;
+      if (notificationCacheToken === token) notificationRequest = null;
     });
     return notificationRequest;
   },
