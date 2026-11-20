@@ -7,7 +7,6 @@ import { useAuth } from '../context/AuthContext';
 const alertKey = (alert) => `${alert.device_id}:${alert.id}`;
 
 export default function NotificationCenter() {
-  const { isPersonal } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState([]);
