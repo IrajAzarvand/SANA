@@ -168,6 +168,8 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             pass
         elif user.organization_id:
             qs = qs.filter(organization_id=user.organization_id)
+        elif user.is_branch_manager and user.branch_id:
+            qs = qs.filter(organization_id=user.branch.organization_id)
         elif user.is_personal_user:
             qs = qs.filter(user=user)
         else:
