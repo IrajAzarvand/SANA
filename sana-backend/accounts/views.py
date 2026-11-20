@@ -249,7 +249,12 @@ class UserViewSet(viewsets.ModelViewSet):
             organizations = Organization.objects.none()
             branches = Branch.objects.none()
             users = User.objects.none()
-            devices = Device.objects.none()
+            # A personal customer may only receive device activity belonging to
+            # devices currently assigned to one of their own contracts.
+            devices = Device.objects.filter(
+                subscription_links__subscription__in=subscriptions,
+                subscription_links__unassigned_at__isnull=True,
+            ).distinct()
             subscription_ops = SubscriptionOperation.objects.select_related(
                 'subscription', 'subscription__user', 'performed_by'
             ).filter(subscription__user=user, performed_at__gte=cutoff)
@@ -444,7 +449,18 @@ class UserViewSet(viewsets.ModelViewSet):
         lifecycle_events = DeviceLifecycleEvent.objects.select_related(
             'device', 'organization', 'branch', 'performed_by'
         ).filter(event_date__gte=cutoff, device_operation__isnull=True)
-        if is_main:
+        if is_personal:
+            # Do not leak global device inventory/operations into a personal
+            # customer's contract and financial notification feed.
+            device_operations = device_operations.filter(
+                Q(device__in=devices)
+                | Q(subscription__in=subscriptions)
+                | Q(target_subscription__in=subscriptions)
+            )
+            lifecycle_events = lifecycle_events.filter(
+                Q(device__in=devices) | Q(subscription__in=subscriptions)
+            )
+        elif is_main:
             device_operations = device_operations.filter(
                 Q(device__in=devices) | Q(target_organization_id=user.organization_id)
             )
