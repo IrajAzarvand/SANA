@@ -109,9 +109,14 @@ export default function NotificationCenter() {
   const unread = useMemo(() => items.filter((item) => !item.is_read), [items]);
 
   useEffect(() => {
-    window.dispatchEvent(new CustomEvent('sana:notification-count-updated', {
-      detail: { count: unread.length },
-    }));
+    const publishCount = () => {
+      window.dispatchEvent(new CustomEvent('sana:notification-count-updated', {
+        detail: { count: unread.length },
+      }));
+    };
+    window.addEventListener('sana:notification-count-request', publishCount);
+    publishCount();
+    return () => window.removeEventListener('sana:notification-count-request', publishCount);
   }, [unread.length]);
 
   const markRead = async (item) => {
