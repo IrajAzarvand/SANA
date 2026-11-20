@@ -679,11 +679,14 @@ class DeviceViewSet(viewsets.ModelViewSet):
             if context_by_traccar_id:
                 event_start = min(item['start'] for item in context_by_traccar_id.values())
                 event_end = max(item['end'] for item in context_by_traccar_id.values())
-                events = traccar_device_events(
-                    list(context_by_traccar_id),
-                    event_start.isoformat().replace('+00:00', 'Z'),
-                    event_end.isoformat().replace('+00:00', 'Z'),
-                )
+                traccar_ids = list(context_by_traccar_id)
+                events = []
+                for offset in range(0, len(traccar_ids), 100):
+                    events.extend(traccar_device_events(
+                        traccar_ids[offset:offset + 100],
+                        event_start.isoformat().replace('+00:00', 'Z'),
+                        event_end.isoformat().replace('+00:00', 'Z'),
+                    ))
             else:
                 events = []
 
