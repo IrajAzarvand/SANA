@@ -44,45 +44,38 @@ export default function NotificationCenter() {
   useEffect(() => {
     let alive = true;
     let timer;
-    const poll = async () => {
+    let running = false;
+
+    const refresh = async () => {
+      if (running) return;
+      running = true;
       if (document.visibilityState === 'visible') {
-        try {
-          if (isPersonal) {
-            const response = await alertsAPI.list();
-            if (alive) setItems((Array.isArray(response?.results) ? response.results : []).map((item) => ({
-              ...item,
-              notification_key: alertKey(item),
-              title: item.type || 'رویداد دستگاه',
-              message: [item.vehicle_plate || 'دستگاه', item.device_imei ? `IMEI ${item.device_imei}` : ''].filter(Boolean).join(' · '),
-              created_at: item.event_time,
-              is_read: item.status !== 'new',
-              path: '/panel/alerts',
-            })));
-          } else {
-            const response = await panelNotificationsAPI.list();
-            if (alive) setItems(Array.isArray(response?.results) ? response.results.map((item) => ({
-              ...item,
-              notification_key: item.id,
-            })) : []);
-          }
-          if (alive) setError('');
-        } catch {
-          if (alive) setError('دریافت اعلان‌ها ناموفق بود. دوباره تلاش کنید.');
-        }
+        await load();
       }
-      if (alive) timer = window.setTimeout(poll, 30000);
+      running = false;
+      if (alive) {
+        timer = window.setTimeout(refresh, 30000);
+      }
     };
-    poll();
-    const refresh = () => { if (alive) poll(); };
-    window.addEventListener('sana:notifications-updated', refresh);
-    window.addEventListener('sana:personal-alerts-updated', refresh);
+
+    const refreshNow = () => {
+      window.clearTimeout(timer);
+      refresh();
+    };
+
+    refresh();
+    window.addEventListener('sana:notifications-updated', refreshNow);
+    window.addEventListener('sana:personal-alerts-updated', refreshNow);
+    document.addEventListener('visibilitychange', refreshNow);
+
     return () => {
       alive = false;
       window.clearTimeout(timer);
-      window.removeEventListener('sana:notifications-updated', refresh);
-      window.removeEventListener('sana:personal-alerts-updated', refresh);
+      window.removeEventListener('sana:notifications-updated', refreshNow);
+      window.removeEventListener('sana:personal-alerts-updated', refreshNow);
+      document.removeEventListener('visibilitychange', refreshNow);
     };
-  }, [isPersonal]);
+  }, [load]);
 
   const unread = useMemo(() => items.filter((item) => !item.is_read), [items]);
 
