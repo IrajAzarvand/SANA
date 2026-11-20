@@ -232,7 +232,7 @@ class UserViewSet(viewsets.ModelViewSet):
         ).filter(performed_at__gte=cutoff)
         lifecycle_events = DeviceLifecycleEvent.objects.select_related(
             'device', 'organization', 'branch', 'performed_by'
-        ).filter(event_date__gte=cutoff)
+        ).filter(event_date__gte=cutoff, device_operation__isnull=True)
         if is_main:
             device_operations = device_operations.filter(
                 Q(device__in=devices) | Q(target_organization_id=organization_id)
