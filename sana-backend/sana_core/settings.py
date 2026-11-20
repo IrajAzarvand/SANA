@@ -162,6 +162,7 @@ REST_FRAMEWORK = {
         'device_list': '30/min',
         'personal_alert_preferences': '30/min',
         'personal_alerts': '6/min',
+        'panel_notifications': '30/min',
         'personal_report_history': '240/min',
         'personal_map_activity': '30/min',
         'personal_map_positions': '20/min',
