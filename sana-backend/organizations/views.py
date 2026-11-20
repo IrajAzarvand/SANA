@@ -210,6 +210,12 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
     def partial_update(self, request, *args, **kwargs):
         return self.update(request, *args, **kwargs)
 
+    def destroy(self, request, *args, **kwargs):
+        return Response(
+            {'detail': 'حذف قرارداد غیرفعال است؛ برای خاتمه قرارداد از عملیات لغو استفاده کنید.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
     def create(self, request, *args, **kwargs):
         """ساخت قرارداد با Wizard"""
         serializer = SubscriptionWizardSerializer(data=request.data, context={'request': request})
@@ -703,6 +709,15 @@ class SubscriptionDeviceViewSet(viewsets.ModelViewSet):
             return [IsSiteAdmin()]
         return super().get_permissions()
 
+    def update(self, request, *args, **kwargs):
+        return Response(
+            {'detail': 'ویرایش مستقیم ارتباط دستگاه با قرارداد غیرفعال است؛ از عملیات ویرایش قرارداد استفاده کنید.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def partial_update(self, request, *args, **kwargs):
+        return self.update(request, *args, **kwargs)
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -837,16 +852,19 @@ class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(payment).data)
 
     def update(self, request, *args, **kwargs):
-        instance = self.get_object()
-        if instance.allocations.exists():
-            raise serializers.ValidationError('دریافتی دارای تخصیص مالی است و قابل ویرایش مستقیم نیست')
-        return super().update(request, *args, **kwargs)
+        return Response(
+            {'detail': 'ویرایش مستقیم دریافتی غیرفعال است؛ از عملیات اصلاح قرارداد استفاده کنید.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def partial_update(self, request, *args, **kwargs):
+        return self.update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        if instance.allocations.exists():
-            raise serializers.ValidationError('دریافتی دارای تخصیص مالی است و قابل حذف مستقیم نیست')
-        return super().destroy(request, *args, **kwargs)
+        return Response(
+            {'detail': 'حذف مستقیم دریافتی غیرفعال است تا سابقه مالی حفظ شود.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
 
     def get_permissions(self):
         if self.action in ['create', 'destroy', 'update', 'partial_update', 'allocate']:
