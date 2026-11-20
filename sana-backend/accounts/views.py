@@ -200,7 +200,9 @@ class UserViewSet(viewsets.ModelViewSet):
             ).distinct()
             organizations = Organization.objects.filter(pk=organization_id)
             branches = Branch.objects.filter(organization_id=organization_id)
-            users = User.objects.filter(organization_id=organization_id).exclude(pk=user.pk)
+            users = User.objects.filter(
+                Q(organization_id=organization_id) | Q(branch__organization_id=organization_id)
+            ).exclude(pk=user.pk)
             subscription_ops = SubscriptionOperation.objects.select_related(
                 'subscription', 'subscription__organization', 'performed_by'
             ).filter(subscription__organization_id=organization_id, performed_at__gte=cutoff)
