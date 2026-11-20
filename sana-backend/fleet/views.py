@@ -519,8 +519,13 @@ class DeviceViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get', 'post'], url_path='alerts', throttle_classes=[ScopedRateThrottle], throttle_scope='personal_alerts')
     def alerts(self, request):
         """Read authorized Traccar events and persist only per-user workflow state."""
-        if not request.user.is_personal_user:
-            return Response({'detail': 'این سرویس در حال حاضر فقط برای مشتری شخصی فعال است.'}, status=403)
+        if not (
+            request.user.is_personal_user
+            or request.user.is_site_admin
+            or request.user.is_main_user
+            or request.user.is_branch_manager
+        ):
+            return Response({'detail': 'اجازه مشاهده هشدارها را ندارید.'}, status=403)
 
         if request.method == 'POST':
             raw_device_id = request.data.get('device_id')
@@ -574,34 +579,64 @@ class DeviceViewSet(viewsets.ModelViewSet):
         if not devices:
             return Response({'results': [], 'counts': {'all': 0, 'new': 0, 'acknowledged': 0, 'resolved': 0}})
 
-        today = timezone.localdate()
-        links = list(SubscriptionDevice.objects.filter(
-            device__in=devices,
-            unassigned_at__isnull=True,
-            subscription__user=request.user,
-            subscription__status='active',
-            start_date__lte=today,
-            end_date__gte=today,
-            subscription__start_date__lte=today,
-            subscription__end_date__gte=today,
-        ).select_related('subscription'))
-        contract_by_device = {link.device_id: link for link in links}
+        contract_by_device = {}
+        access_by_device = {}
+        if request.user.is_personal_user:
+            today = timezone.localdate()
+            links = SubscriptionDevice.objects.filter(
+                device__in=devices,
+                unassigned_at__isnull=True,
+                subscription__user=request.user,
+                subscription__status='active',
+                start_date__lte=today,
+                end_date__gte=today,
+                subscription__start_date__lte=today,
+                subscription__end_date__gte=today,
+            ).select_related('subscription')
+            contract_by_device = {link.device_id: link for link in links}
+        elif not request.user.is_site_admin:
+            access_periods = DeviceCustomerAccessPeriod.objects.filter(
+                device__in=devices,
+                started_at__lte=now,
+                ended_at__isnull=True,
+            )
+            if request.user.is_main_user:
+                access_periods = access_periods.filter(organization=request.user.organization)
+            elif request.user.is_branch_manager:
+                access_periods = access_periods.filter(
+                    organization=request.user.branch.organization,
+                    branch=request.user.branch,
+                )
+            access_by_device = {period.device_id: period for period in access_periods}
 
-        preference = PersonalAlertPreference.objects.filter(user=request.user).only('disabled_event_types').first()
-        disabled_event_types = set(preference.disabled_event_types or []) if preference else set()
+        if request.user.is_personal_user:
+            preference = PersonalAlertPreference.objects.filter(user=request.user).only('disabled_event_types').first()
+            disabled_event_types = set(preference.disabled_event_types or []) if preference else set()
+        else:
+            disabled_event_types = set()
 
         results = []
         try:
             for device in devices:
-                link = contract_by_device.get(device.pk)
-                if link is None:
-                    continue
-                contract_start = timezone.make_aware(datetime.combine(
-                    max(link.start_date, link.subscription.start_date), datetime_time.min
-                ))
-                contract_end = timezone.make_aware(datetime.combine(
-                    min(link.end_date, link.subscription.end_date), datetime_time.max
-                ))
+                if request.user.is_personal_user:
+                    link = contract_by_device.get(device.pk)
+                    if link is None:
+                        continue
+                    contract_start = timezone.make_aware(datetime.combine(
+                        max(link.start_date, link.subscription.start_date), datetime_time.min
+                    ))
+                    contract_end = timezone.make_aware(datetime.combine(
+                        min(link.end_date, link.subscription.end_date), datetime_time.max
+                    ))
+                elif request.user.is_site_admin:
+                    contract_start = raw_start
+                    contract_end = raw_end
+                else:
+                    access_period = access_by_device.get(device.pk)
+                    if access_period is None:
+                        continue
+                    contract_start = access_period.started_at
+                    contract_end = access_period.ended_at or now
                 event_start = max(raw_start, contract_start)
                 event_end = min(raw_end, contract_end, now)
                 if event_start > event_end:
