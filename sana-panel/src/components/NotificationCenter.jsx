@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bell, Check, ExternalLink, LoaderCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { alertsAPI, panelNotificationsAPI } from '../api/services/fleet';
+import { notificationsAPI } from '../api/services/fleet';
 
 const alertKey = (alert) => `${alert.device_id}:${alert.id}`;
 
@@ -14,10 +14,7 @@ export default function NotificationCenter() {
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
-    const [businessResult, gpsResult] = await Promise.allSettled([
-      panelNotificationsAPI.list(),
-      alertsAPI.list(),
-    ]);
+    const { businessResult, gpsResult } = await notificationsAPI.list();
 
     if (businessResult.status === 'rejected' && gpsResult.status === 'rejected') {
       setError('دریافت اعلان‌ها ناموفق بود. دوباره تلاش کنید.');
@@ -40,7 +37,7 @@ export default function NotificationCenter() {
         title: item.type || 'رویداد دستگاه',
         message: [item.vehicle_plate || 'دستگاه', item.device_imei ? `IMEI ${item.device_imei}` : ''].filter(Boolean).join(' · '),
         created_at: item.event_time,
-        is_read: item.status !== 'new',
+        is_read: item.status !== 'unread',
         path: '/panel/alerts',
         is_gps_alert: true,
       }))
@@ -115,13 +112,9 @@ export default function NotificationCenter() {
     setUpdating(key);
     try {
       if (item.is_gps_alert) {
-        await alertsAPI.updateStatus({
-          deviceId: item.device_id,
-          eventId: item.id,
-          status: 'acknowledged',
-        });
+        await notificationsAPI.markRead({ isGps: true, deviceId: item.device_id, eventId: item.id });
       } else {
-        await panelNotificationsAPI.markRead(item.id);
+        await notificationsAPI.markRead({ isGps: false, eventKey: item.id });
       }
       setItems((current) => current.map((entry) => entry.notification_key === key
         ? { ...entry, is_read: true, status: entry.status === 'new' ? 'acknowledged' : entry.status }
@@ -139,13 +132,10 @@ export default function NotificationCenter() {
   const markAllRead = async () => {
     setUpdating('all');
     try {
-      const [businessResult, gpsResult] = await Promise.allSettled([
-        panelNotificationsAPI.markAllRead(),
-        alertsAPI.markAllRead(),
-      ]);
+      const [businessResult, gpsResult] = await notificationsAPI.markAllRead();
       setItems((current) => current.map((item) => {
         if (item.is_gps_alert && gpsResult.status === 'fulfilled') {
-          return { ...item, is_read: true, status: item.status === 'new' ? 'acknowledged' : item.status };
+          return { ...item, is_read: true, status: item.status === 'unread' ? 'read' : item.status };
         }
         if (!item.is_gps_alert && businessResult.status === 'fulfilled') {
           return { ...item, is_read: true };
