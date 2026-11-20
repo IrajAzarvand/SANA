@@ -979,7 +979,7 @@ class PersonalAndTenantFinancialNotificationTests(TestCase):
         self.assertFalse(any(
             item.startswith(f'installment:{old_installment.pk}:')
             for item in ids
-        )))
+        ))
 
     def test_organization_and_branch_manager_notifications_are_tenant_scoped(self):
         own_contract = self.make_contract(
