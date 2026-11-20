@@ -606,7 +606,6 @@ class PanelNotificationTests(TestCase):
             password='test-password-123',
             account_type='organization',
             role='branch_manager',
-            organization=self.organization,
             branch=self.branch,
         )
         User.objects.filter(pk=colleague.pk).update(
