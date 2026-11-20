@@ -16,7 +16,6 @@ import {
   statusMap,
 } from '../data/alertsData';
 import { branches } from '../data/vehiclesData';
-import { useAuth } from '../context/AuthContext';
 import { alertsAPI, panelNotificationsAPI } from '../api/services/fleet';
 import { formatJalaliDateTime } from '../utils/dateUtils';
 import LoadingSpinner from '../components/LoadingSpinner';
