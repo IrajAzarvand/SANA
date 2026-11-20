@@ -1048,3 +1048,67 @@ class PersonalAndTenantFinancialNotificationTests(TestCase):
                 for item in response.data['results']
             ))
 
+    def test_contract_suspend_activate_and_cancel_operations_generate_notifications(self):
+        contract = self.make_contract(
+            owner=self.personal, number='PRS-LIFECYCLE-NOTIF-001'
+        )
+        self.client.force_authenticate(user=self.admin)
+
+        suspended = self.client.post(
+            f'/api/subscriptions/{contract.pk}/suspend/', {}, format='json'
+        )
+        self.assertEqual(suspended.status_code, 200, suspended.data)
+        self.assertEqual(suspended.data['status'], 'suspended')
+
+        activated = self.client.post(
+            f'/api/subscriptions/{contract.pk}/activate/', {}, format='json'
+        )
+        self.assertEqual(activated.status_code, 200, activated.data)
+        self.assertEqual(activated.data['status'], 'active')
+
+        cancelled = self.client.post(
+            f'/api/subscriptions/{contract.pk}/cancel/', {}, format='json'
+        )
+        self.assertEqual(cancelled.status_code, 200, cancelled.data)
+        self.assertEqual(cancelled.data['status'], 'cancelled')
+
+        self.client.force_authenticate(user=self.personal)
+        response = self.client.get('/api/users/notifications/')
+        self.assertEqual(response.status_code, 200)
+        events = [
+            item for item in response.data['results']
+            if item['id'].startswith('subscription-operation:')
+            and contract.contract_number in item['message']
+        ]
+        titles = [item['title'] for item in events]
+        self.assertEqual(len(events), 3)
+        self.assertTrue(any('تعلیق' in title for title in titles))
+        self.assertTrue(any('فعال‌سازی' in title or 'فعال سازی' in title for title in titles))
+        self.assertTrue(any('لغو' in title for title in titles))
+
+    def test_contract_renewal_operation_generates_notification(self):
+        contract = self.make_contract(
+            owner=self.personal, number='PRS-RENEW-NOTIF-001'
+        )
+        new_end_date = (contract.end_date + timedelta(days=90)).isoformat()
+        self.client.force_authenticate(user=self.admin)
+
+        response = self.client.post(
+            f'/api/subscriptions/{contract.pk}/renew/',
+            {'new_end_date': new_end_date, 'notes': 'تمدید آزمایشی'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['end_date'], new_end_date)
+
+        self.client.force_authenticate(user=self.personal)
+        notifications = self.client.get('/api/users/notifications/')
+        self.assertEqual(notifications.status_code, 200)
+        matches = [
+            item for item in notifications.data['results']
+            if item['id'].startswith('subscription-operation:')
+            and 'تمدید' in item['title']
+            and contract.contract_number in item['message']
+        ]
+        self.assertEqual(len(matches), 1)
+
