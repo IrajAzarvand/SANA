@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Bell, Check, ExternalLink, LoaderCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { alertsAPI, panelNotificationsAPI } from '../api/services/fleet';
-import { useAuth } from '../context/AuthContext';
 
 const alertKey = (alert) => `${alert.device_id}:${alert.id}`;
 
