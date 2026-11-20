@@ -792,7 +792,7 @@ export default function SubscriptionDetail() {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3 min-w-0">
           <button
-            onClick={() => navigate(isPersonal ? '/panel/dashboard' : '/panel/subscriptions')}
+            onClick={() => navigate(isSiteAdmin ? '/panel/subscriptions' : '/panel/dashboard')}
             className="p-2.5 rounded-xl text-text-muted hover:bg-bg-hover hover:text-text-primary transition-colors"
             aria-label="بازگشت"
           >
