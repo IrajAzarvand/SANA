@@ -784,7 +784,7 @@ class PersonalSubscriptionReadOnlyAccessTests(TestCase):
         self.assertTrue(Subscription.objects.filter(pk=self.own_subscription.pk).exists())
         self.assertFalse(self.own_subscription.operations.exists())
 
-    def test_site_admin_cannot_update_or_delete_subscription_device_directly(self):
+    def test_site_admin_cannot_update_device_directly_and_delete_is_audited(self):
         admin = User.objects.create_user(
             username='subscription-device-admin',
             password='test-password',
@@ -824,6 +824,16 @@ class PersonalSubscriptionReadOnlyAccessTests(TestCase):
         link.refresh_from_db()
         self.assertEqual(link.end_date, self.own_subscription.end_date)
         self.assertEqual(SubscriptionOperation.objects.count(), before_operations)
+
+        with patch('organizations.views.record_device_lifecycle_event'):
+            delete_response = self.client.delete(f'/api/subscription-devices/{link.id}/')
+
+        self.assertEqual(delete_response.status_code, 204)
+        link.refresh_from_db()
+        self.assertIsNotNone(link.unassigned_at)
+        self.assertIsNotNone(link.removed_by_operation_id)
+        self.assertEqual(link.removed_by_operation.operation_type, 'remove_device')
+        self.assertEqual(SubscriptionOperation.objects.count(), before_operations + 1)
 
     def test_site_admin_cannot_update_or_delete_payment_directly(self):
         admin = User.objects.create_user(
