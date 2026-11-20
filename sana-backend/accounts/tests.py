@@ -900,6 +900,8 @@ class PersonalAndTenantFinancialNotificationTests(TestCase):
         contract = self.make_contract(
             organization=self.organization, number='ORG-BRANCH-DETAIL-001'
         )
+        plan = self.make_plan(contract)
+        installment = self.make_installment(plan, number=1, due_date=self.today)
 
         self.client.force_authenticate(user=branch_manager)
         detail = self.client.get(f'/api/subscriptions/{contract.pk}/')
@@ -907,6 +909,6 @@ class PersonalAndTenantFinancialNotificationTests(TestCase):
 
         self.assertEqual(detail.status_code, 200)
         self.assertTrue(any(
-            item['message'].startswith('قرارداد ORG-BRANCH-DETAIL-001')
+            item['id'].startswith(f'installment:{installment.pk}:')
             for item in notifications.data['results']
         ))
