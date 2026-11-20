@@ -601,7 +601,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
-        """لغو قرارداد"""
+        """لغو قرارداد و پایان‌دادن به تخصیص دستگاه‌های فعال آن."""
         subscription = self.get_object()
         with transaction.atomic():
             operation = SubscriptionOperation.objects.create(
@@ -610,6 +610,23 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             )
             subscription.status = 'cancelled'
             subscription.save(update_fields=['status', 'updated_at'])
+
+            active_links = SubscriptionDevice.objects.select_related('device').filter(
+                subscription=subscription,
+                unassigned_at__isnull=True,
+            )
+            unassigned_at = timezone.now()
+            for link in active_links:
+                link.unassigned_at = unassigned_at
+                link.removed_by_operation = operation
+                link.save(update_fields=['unassigned_at', 'removed_by_operation'])
+                record_device_lifecycle_event(
+                    device=link.device,
+                    event_type='removed_from_contract',
+                    performed_by=request.user,
+                    subscription=subscription,
+                    description=f'دستگاه به‌دلیل لغو قرارداد {subscription.contract_number} از قرارداد خارج شد؛ مالکیت دستگاه حفظ شد.',
+                )
         return Response(SubscriptionSerializer(subscription).data)
 
     @action(detail=False, methods=['get'])
