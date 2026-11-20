@@ -39,7 +39,7 @@ export default function NotificationCenter() {
             notification_key: item.id,
             is_gps_alert: false,
           }))
-          : [];
+          : null;
         const gpsItems = gpsResult.status === 'fulfilled'
           ? (Array.isArray(gpsResult.value?.results) ? gpsResult.value.results : []).map((item) => ({
             ...item,
@@ -51,8 +51,12 @@ export default function NotificationCenter() {
             path: '/panel/alerts',
             is_gps_alert: true,
           }))
-          : [];
-        setItems([...businessItems, ...gpsItems].sort((a, b) => new Date(b.created_at) - new Date(a.created_at)));
+          : null;
+        setItems((current) => {
+          const currentBusiness = businessItems ?? current.filter((item) => !item.is_gps_alert);
+          const currentGps = gpsItems ?? current.filter((item) => item.is_gps_alert);
+          return [...currentBusiness, ...currentGps].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        });
         if (businessResult.status === 'rejected' || gpsResult.status === 'rejected') {
           setError('بخشی از اعلان‌ها در دسترس نیست؛ دوباره تلاش کنید.');
         } else {
