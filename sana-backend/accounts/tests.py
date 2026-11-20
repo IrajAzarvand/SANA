@@ -6,7 +6,11 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from accounts.models import User, UserSession
-from organizations.models import Branch, Organization, Subscription
+from organizations.models import (
+    Branch, Organization, Subscription, SubscriptionPayment,
+    SubscriptionInstallmentPlan, SubscriptionInstallment,
+    SubscriptionPaymentAllocation,
+)
 
 
 class ContractExpirationAccessTests(TestCase):
@@ -622,3 +626,217 @@ class PanelNotificationTests(TestCase):
         ]
         self.assertEqual(len(updated_events), 1)
         self.assertEqual(updated_events[0]['title'], 'اطلاعات کاربر به‌روزرسانی شد')
+
+
+
+class PersonalAndTenantFinancialNotificationTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.today = timezone.localdate()
+        self.personal = User.objects.create_user(
+            username='financial-personal-owner',
+            password='test-password-123',
+            account_type='personal',
+            role='personal_user',
+        )
+        self.other_personal = User.objects.create_user(
+            username='financial-personal-other',
+            password='test-password-123',
+            account_type='personal',
+            role='personal_user',
+        )
+        self.organization = Organization.objects.create(
+            name='Financial Notification Org',
+            code='FIN-NOTIF-ORG-001',
+        )
+        self.org_user = User.objects.create_user(
+            username='financial-org-manager',
+            password='test-password-123',
+            account_type='organization',
+            role='main_user',
+            organization=self.organization,
+        )
+        self.admin = User.objects.create_user(
+            username='financial-notification-admin',
+            password='test-password-123',
+            account_type='admin',
+            role='site_admin',
+            is_staff=True,
+            is_superuser=True,
+        )
+
+    def make_contract(self, *, owner=None, organization=None, number='FIN-CONTRACT-001'):
+        return Subscription.objects.create(
+            contract_number=number,
+            customer_type='personal' if owner else 'organization',
+            user=owner,
+            organization=organization,
+            start_date=self.today - timedelta(days=10),
+            end_date=self.today + timedelta(days=90),
+            status='active',
+            price=300000,
+        )
+
+    def make_plan(self, subscription, *, version=1):
+        return SubscriptionInstallmentPlan.objects.create(
+            subscription=subscription,
+            version=version,
+            scheduled_amount=300000,
+            installment_count=3,
+            interval_months=1,
+            calculation_mode='equal',
+            status='active',
+        )
+
+    def make_installment(self, plan, *, number, due_date, amount=100000):
+        return SubscriptionInstallment.objects.create(
+            plan=plan,
+            number=number,
+            amount=amount,
+            due_date=due_date,
+            status='active',
+        )
+
+    def test_personal_customer_receives_only_own_contract_and_financial_events(self):
+        own_contract = self.make_contract(owner=self.personal, number='PRS-OWN-001')
+        other_contract = self.make_contract(owner=self.other_personal, number='PRS-OTHER-001')
+        own_plan = self.make_plan(own_contract)
+        other_plan = self.make_plan(other_contract)
+        due = self.make_installment(
+            own_plan, number=1, due_date=self.today + timedelta(days=3)
+        )
+        self.make_installment(
+            other_plan, number=1, due_date=self.today + timedelta(days=2)
+        )
+        payment = SubscriptionPayment.objects.create(
+            subscription=own_contract,
+            amount=50000,
+            received_at=self.today,
+            description='پرداخت آزمایشی',
+        )
+
+        self.client.force_authenticate(user=self.personal)
+        response = self.client.get('/api/users/notifications/')
+
+        self.assertEqual(response.status_code, 200)
+        ids = [item['id'] for item in response.data['results']]
+        self.assertIn(f'installment:{due.pk}:plan-{own_plan.pk}:{due.due_date}:due-soon', ids)
+        self.assertIn(f'payment-received:{payment.pk}', ids)
+        self.assertFalse(any('PRS-OTHER-001' in item['message'] for item in response.data['results']))
+
+    def test_fully_paid_installment_does_not_generate_due_or_overdue_notification(self):
+        contract = self.make_contract(owner=self.personal, number='PRS-PAID-001')
+        plan = self.make_plan(contract)
+        installment = self.make_installment(
+            plan, number=1, due_date=self.today - timedelta(days=2)
+        )
+        payment = SubscriptionPayment.objects.create(
+            subscription=contract,
+            amount=100000,
+            received_at=self.today,
+        )
+        SubscriptionPaymentAllocation.objects.create(
+            payment=payment,
+            installment=installment,
+            allocation_type='installment',
+            amount=100000,
+        )
+
+        self.client.force_authenticate(user=self.personal)
+        response = self.client.get('/api/users/notifications/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(any(
+            item['id'].startswith(f'installment:{installment.pk}:')
+            for item in response.data['results']
+        ))
+
+    def test_overdue_notification_uses_remaining_balance_not_original_amount(self):
+        contract = self.make_contract(owner=self.personal, number='PRS-PARTIAL-001')
+        plan = self.make_plan(contract)
+        installment = self.make_installment(
+            plan, number=1, due_date=self.today - timedelta(days=5)
+        )
+        payment = SubscriptionPayment.objects.create(
+            subscription=contract,
+            amount=40000,
+            received_at=self.today,
+        )
+        SubscriptionPaymentAllocation.objects.create(
+            payment=payment,
+            installment=installment,
+            allocation_type='installment',
+            amount=40000,
+        )
+
+        self.client.force_authenticate(user=self.personal)
+        response = self.client.get('/api/users/notifications/')
+
+        overdue = next(
+            item for item in response.data['results']
+            if item['id'].startswith(f'installment:{installment.pk}:')
+        )
+        self.assertIn('مانده 60,000 ریال', overdue['message'])
+        self.assertIn(':overdue', overdue['id'])
+
+    def test_organization_customer_receives_its_own_financial_reminders(self):
+        contract = self.make_contract(
+            organization=self.organization, number='ORG-FIN-001'
+        )
+        plan = self.make_plan(contract)
+        installment = self.make_installment(
+            plan, number=1, due_date=self.today
+        )
+
+        self.client.force_authenticate(user=self.org_user)
+        response = self.client.get('/api/users/notifications/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(any(
+            item['id'].startswith(f'installment:{installment.pk}:')
+            and item['title'] == 'سررسید قسط امروز است'
+            for item in response.data['results']
+        ))
+
+    def test_site_admin_receives_financial_events_across_tenants(self):
+        personal_contract = self.make_contract(
+            owner=self.personal, number='PRS-ADMIN-VIEW-001'
+        )
+        org_contract = self.make_contract(
+            organization=self.organization, number='ORG-ADMIN-VIEW-001'
+        )
+        personal_plan = self.make_plan(personal_contract)
+        org_plan = self.make_plan(org_contract)
+        personal_installment = self.make_installment(
+            personal_plan, number=1, due_date=self.today - timedelta(days=1)
+        )
+        org_installment = self.make_installment(
+            org_plan, number=1, due_date=self.today - timedelta(days=1)
+        )
+
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get('/api/users/notifications/')
+
+        ids = [item['id'] for item in response.data['results']]
+        self.assertTrue(any(item.startswith(f'installment:{personal_installment.pk}:') for item in ids))
+        self.assertTrue(any(item.startswith(f'installment:{org_installment.pk}:') for item in ids))
+
+    def test_new_active_plan_version_replaces_old_plan_reminder_key(self):
+        contract = self.make_contract(owner=self.personal, number='PRS-PLAN-VERSION-001')
+        old_plan = self.make_plan(contract, version=1)
+        old_installment = self.make_installment(
+            old_plan, number=1, due_date=self.today + timedelta(days=2)
+        )
+        old_plan.status = 'superseded'
+        old_plan.save(update_fields=['status'])
+        new_plan = self.make_plan(contract, version=2)
+        new_installment = self.make_installment(
+            new_plan, number=1, due_date=self.today + timedelta(days=5)
+        )
+
+        self.client.force_authenticate(user=self.personal)
+        response = self.client.get('/api/users/notifications/')
+        ids = [item['id'] for item in response.data['results']]
+
+        self.assertFalse(any(item.startswith(f'installment:{old_installment.pk}:') for item in ids))
+        self.assertTrue(any(item.startswith(f'installment:{new_installment.pk}:') for item in ids))
