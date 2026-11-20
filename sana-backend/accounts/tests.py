@@ -934,3 +934,50 @@ class PersonalAndTenantFinancialNotificationTests(TestCase):
         ]
         self.assertEqual(len(matches), 1)
 
+    def test_revise_installment_plan_endpoint_notifies_using_new_schedule(self):
+        contract = self.make_contract(
+            owner=self.personal, number='PRS-PLAN-ENDPOINT-001'
+        )
+        old_plan = self.make_plan(contract)
+        old_installment = self.make_installment(
+            old_plan, number=1, due_date=self.today + timedelta(days=20)
+        )
+        self.make_installment(
+            old_plan, number=2, due_date=self.today + timedelta(days=50)
+        )
+        self.make_installment(
+            old_plan, number=3, due_date=self.today + timedelta(days=80)
+        )
+        self.client.force_authenticate(user=self.admin)
+
+        response = self.client.post(
+            f'/api/subscriptions/{contract.pk}/revise_installment_plan/',
+            {
+                'installment_count': 2,
+                'interval_months': 2,
+                'calculation_mode': 'equal',
+                'surplus_policy': 'credit',
+                'first_due_date': (self.today + timedelta(days=3)).isoformat(),
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+
+        old_plan.refresh_from_db()
+        self.assertEqual(old_plan.status, 'superseded')
+        new_plan = contract.installment_plans.get(status='active')
+        self.assertEqual(new_plan.installments.count(), 2)
+
+        notifications = self.client.get('/api/users/notifications/')
+        ids = [item['id'] for item in notifications.data['results']]
+        self.assertIn(f'installment-plan:{new_plan.pk}', ids)
+        self.assertTrue(any(
+            item.startswith(f'installment:{installment.pk}:plan-{new_plan.pk}:')
+            for installment in new_plan.installments.all()
+            for item in ids
+        ))
+        self.assertFalse(any(
+            item.startswith(f'installment:{old_installment.pk}:')
+            for item in ids
+        )
+
