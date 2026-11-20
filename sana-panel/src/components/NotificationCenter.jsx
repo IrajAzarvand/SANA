@@ -5,6 +5,83 @@ import { notificationsAPI } from '../api/services/fleet';
 
 const alertKey = (alert) => `${alert.device_id}:${alert.id}`;
 
+const gpsEventLabels = {
+  commandResult: 'نتیجه اجرای فرمان',
+  deviceOnline: 'اتصال مجدد دستگاه',
+  deviceUnknown: 'وضعیت ارتباط نامشخص',
+  deviceOffline: 'قطع ارتباط دستگاه',
+  deviceInactive: 'عدم فعالیت دستگاه',
+  queuedCommandSent: 'ارسال فرمان در صف',
+  deviceMoving: 'شروع حرکت',
+  deviceStopped: 'توقف خودرو',
+  deviceOverspeed: 'سرعت غیرمجاز',
+  overspeed: 'سرعت غیرمجاز',
+  deviceFuelDrop: 'کاهش ناگهانی سوخت',
+  deviceFuelIncrease: 'افزایش ناگهانی سوخت',
+  geofenceEnter: 'ورود به محدوده جغرافیایی',
+  geofenceExit: 'خروج از محدوده جغرافیایی',
+  geofenceCrossed: 'عبور از محدوده جغرافیایی',
+  proximityEnter: 'ورود به محدوده نزدیکی',
+  proximityExit: 'خروج از محدوده نزدیکی',
+  unaccompaniedMotion: 'حرکت بدون همراه',
+  alarm: 'هشدار دستگاه',
+  ignitionOn: 'روشن شدن سوئیچ',
+  ignitionOff: 'خاموش شدن سوئیچ',
+  maintenance: 'یادآوری سرویس',
+  driverChanged: 'تغییر راننده',
+  media: 'رسانه جدید',
+};
+
+const alarmLabels = {
+  general: 'هشدار عمومی', sos: 'دکمه اضطراری', vibration: 'لرزش',
+  movement: 'حرکت غیرمجاز', overspeed: 'سرعت غیرمجاز', fallDown: 'سقوط',
+  lowPower: 'ولتاژ برق پایین', lowBattery: 'باتری ضعیف', fault: 'خطای دستگاه',
+  powerOff: 'خاموشی برق', powerOn: 'وصل شدن برق', door: 'باز شدن در',
+  geofence: 'هشدار محدوده جغرافیایی', gpsAntennaCut: 'قطع آنتن GPS',
+  accident: 'تصادف', tow: 'یدک‌کش شدن', idle: 'درجا کار کردن موتور',
+  fuelLeak: 'نشت سوخت', tampering: 'دست‌کاری دستگاه', removing: 'جدا شدن دستگاه',
+};
+
+const localizeGpsAlert = (item) => {
+  const attributes = item.attributes || {};
+  const rawAlarm = attributes.alarm;
+  const alarms = typeof rawAlarm === 'string'
+    ? rawAlarm.split(',').map((value) => value.trim()).filter(Boolean)
+    : [];
+  const details = [];
+  if (attributes.geofence) details.push(`محدوده: ${attributes.geofence}`);
+  if (attributes.speed != null) details.push(`سرعت: ${attributes.speed}`);
+  if (attributes.speedLimit != null) details.push(`حد مجاز سرعت: ${attributes.speedLimit}`);
+  if (attributes.fuel != null) details.push(`سوخت: ${attributes.fuel}`);
+  if (attributes.result) details.push(`نتیجه: ${attributes.result}`);
+  if (attributes.command) details.push(`فرمان: ${attributes.command}`);
+  if (attributes.driverName) details.push(`راننده: ${attributes.driverName}`);
+  if (attributes.address) details.push(`موقعیت: ${attributes.address}`);
+
+  const title = gpsEventLabels[item.type] || (item.type ? 'رویداد دستگاه' : 'رویداد ناشناخته');
+  const message = item.type === 'alarm' && alarms.length
+    ? `هشدار دستگاه: ${alarms.map((value) => alarmLabels[value] || 'هشدار دستگاه').join('، ')}`
+    : ({
+      deviceMoving: 'حرکت خودرو آغاز شد',
+      deviceStopped: 'خودرو متوقف شد',
+      deviceOverspeed: 'سرعت خودرو از حد مجاز عبور کرد',
+      overspeed: 'هشدار سرعت غیرمجاز ثبت شد',
+      deviceOffline: 'ارتباط دستگاه قطع شد',
+      deviceOnline: 'ارتباط دستگاه برقرار شد',
+      ignitionOn: 'سوئیچ خودرو روشن شد',
+      ignitionOff: 'سوئیچ خودرو خاموش شد',
+      geofenceEnter: 'خودرو وارد محدوده جغرافیایی شد',
+      geofenceExit: 'خودرو از محدوده جغرافیایی خارج شد',
+    }[item.type] || 'یک رویداد از دستگاه دریافت شد');
+
+  return {
+    ...item,
+    title,
+    message: [message, item.vehicle_plate || ''].filter(Boolean).join(' · '),
+    detail: details.join(' · '),
+  };
+};
+
 export default function NotificationCenter() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -13,12 +90,12 @@ export default function NotificationCenter() {
   const [updating, setUpdating] = useState('');
   const [error, setError] = useState('');
 
-  const load = useCallback(async () => {
+  const load = useCallback(async ({ showError = false } = {}) => {
     try {
       const { businessResult, gpsResult } = await notificationsAPI.list();
 
     if (businessResult.status === 'rejected' && gpsResult.status === 'rejected') {
-      setError('دریافت اعلان‌ها ناموفق بود. دوباره تلاش کنید.');
+      if (showError) setError('دریافت اعلان‌ها ناموفق بود. دوباره تلاش کنید.');
       return;
     }
 
@@ -35,8 +112,8 @@ export default function NotificationCenter() {
       ? (Array.isArray(gpsResult.value?.results) ? gpsResult.value.results : []).map((item) => ({
         ...item,
         notification_key: alertKey(item),
-        title: item.type || 'رویداد دستگاه',
-        message: [item.vehicle_plate || 'دستگاه', item.device_imei ? `IMEI ${item.device_imei}` : ''].filter(Boolean).join(' · '),
+        ...localizeGpsAlert(item),
+        message: [localizeGpsAlert(item).message, item.device_imei ? `شناسه دستگاه: ${item.device_imei}` : ''].filter(Boolean).join(' · '),
         created_at: item.event_time,
         is_read: item.status !== 'unread',
         path: '/panel/alerts',
@@ -51,13 +128,17 @@ export default function NotificationCenter() {
         (a, b) => new Date(b.created_at || b.event_time) - new Date(a.created_at || a.event_time),
       );
     });
-      setError(
-        businessResult.status === 'rejected' || gpsResult.status === 'rejected'
-          ? 'بخشی از اعلان‌ها در دسترس نیست؛ دوباره تلاش کنید.'
-          : '',
-      );
+      if (showError) {
+        setError(
+          businessResult.status === 'rejected' || gpsResult.status === 'rejected'
+            ? 'بخشی از اعلان‌ها موقتاً در دسترس نیست؛ دوباره تلاش کنید.'
+            : '',
+        );
+      } else if (businessResult.status === 'fulfilled' && gpsResult.status === 'fulfilled') {
+        setError('');
+      }
     } catch {
-      setError('دریافت اعلان‌ها ناموفق بود. دوباره تلاش کنید.');
+      if (showError) setError('دریافت اعلان‌ها ناموفق بود. دوباره تلاش کنید.');
     }
   }, []);
 
@@ -184,8 +265,9 @@ export default function NotificationCenter() {
         onClick={() => {
           setOpen((value) => !value);
           if (!open) {
+            setError('');
             setLoading(true);
-            load().finally(() => setLoading(false));
+            load({ showError: true }).finally(() => setLoading(false));
           }
         }}
         className="relative rounded-field p-2 text-text-secondary transition-colors hover:bg-bg-hover hover:text-text-primary"
