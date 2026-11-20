@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AlertTriangle, Check, CheckCheck, Eye, Bell, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Check, CheckCheck, Eye, Bell, RefreshCw, Search } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Input from '../components/Input';
 import Tabs from '../components/Tabs';
