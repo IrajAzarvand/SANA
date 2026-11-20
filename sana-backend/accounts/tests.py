@@ -979,5 +979,5 @@ class PersonalAndTenantFinancialNotificationTests(TestCase):
         self.assertFalse(any(
             item.startswith(f'installment:{old_installment.pk}:')
             for item in ids
-        )
+        )))
 
