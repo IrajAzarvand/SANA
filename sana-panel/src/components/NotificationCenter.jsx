@@ -104,6 +104,12 @@ export default function NotificationCenter() {
 
   const unread = useMemo(() => items.filter((item) => !item.is_read), [items]);
 
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent('sana:notification-count-updated', {
+      detail: { count: unread.length },
+    }));
+  }, [unread.length]);
+
   const markRead = async (item) => {
     if (item.is_read) return true;
     const key = item.notification_key;
@@ -121,7 +127,6 @@ export default function NotificationCenter() {
       setItems((current) => current.map((entry) => entry.notification_key === key
         ? { ...entry, is_read: true, status: entry.status === 'new' ? 'acknowledged' : entry.status }
         : entry));
-      window.dispatchEvent(new Event(isPersonal || item.is_gps_alert ? 'sana:personal-alerts-updated' : 'sana:notifications-updated'));
       return true;
     } catch {
       setError('وضعیت خواندن اعلان ثبت نشد. دوباره تلاش کنید.');
@@ -141,7 +146,6 @@ export default function NotificationCenter() {
           is_read: true,
           status: item.status === 'new' ? 'acknowledged' : item.status,
         })));
-        window.dispatchEvent(new Event('sana:personal-alerts-updated'));
         return;
       }
 
@@ -158,12 +162,6 @@ export default function NotificationCenter() {
         }
         return item;
       }));
-      if (businessResult.status === 'fulfilled') {
-        window.dispatchEvent(new Event('sana:notifications-updated'));
-      }
-      if (gpsResult.status === 'fulfilled') {
-        window.dispatchEvent(new Event('sana:personal-alerts-updated'));
-      }
       if (businessResult.status === 'rejected' || gpsResult.status === 'rejected') {
         setError('خواندن همه اعلان‌ها به‌طور کامل انجام نشد.');
       }
