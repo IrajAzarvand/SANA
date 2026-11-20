@@ -6,7 +6,6 @@ import {
   FileText, BrainCircuit,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { alertsAPI, panelNotificationsAPI } from '../api/services/fleet';
 
 export default function Sidebar({ isOpen, onClose }) {
   const { user, isSiteAdmin, isOrganization, isBranchManager, isMainUser, isPersonal } = useAuth();
@@ -20,49 +19,12 @@ export default function Sidebar({ isOpen, onClose }) {
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
-    if (!isPersonal && !isSiteAdmin && !isOrganization) return undefined;
-
-    let active = true;
-    const loadUnreadCount = async () => {
-      try {
-        let count = 0;
-        if (isPersonal) {
-          const response = await alertsAPI.list();
-          const events = Array.isArray(response?.results) ? response.results : [];
-          count = events.filter((event) => event.status === 'new').length;
-        } else {
-          const [businessResult, gpsResult] = await Promise.allSettled([
-            panelNotificationsAPI.list(),
-            alertsAPI.list(),
-          ]);
-          if (businessResult.status === 'fulfilled') {
-            const events = Array.isArray(businessResult.value?.results) ? businessResult.value.results : [];
-            count += Number(businessResult.value?.counts?.unread ?? events.filter((event) => !event.is_read).length);
-          }
-          if (gpsResult.status === 'fulfilled') {
-            const events = Array.isArray(gpsResult.value?.results) ? gpsResult.value.results : [];
-            count += events.filter((event) => event.status === 'new').length;
-          }
-        }
-        if (!active) return;
-        setUnreadCount(count);
-      } catch {
-        // در صورت خطای موقت، آخرین تعداد معتبر حفظ می‌شود.
-      }
+    const syncUnreadCount = (event) => {
+      setUnreadCount(Math.max(0, Number(event.detail?.count) || 0));
     };
-
-    loadUnreadCount();
-    const intervalId = window.setInterval(loadUnreadCount, 30000);
-    window.addEventListener('sana:personal-alerts-updated', loadUnreadCount);
-    window.addEventListener('sana:notifications-updated', loadUnreadCount);
-
-    return () => {
-      active = false;
-      window.clearInterval(intervalId);
-      window.removeEventListener('sana:personal-alerts-updated', loadUnreadCount);
-      window.removeEventListener('sana:notifications-updated', loadUnreadCount);
-    };
-  }, [isPersonal, isSiteAdmin, isOrganization]);
+    window.addEventListener('sana:notification-count-updated', syncUnreadCount);
+    return () => window.removeEventListener('sana:notification-count-updated', syncUnreadCount);
+  }, []);
 
   // ادمین کل سایت باید به تمام بخش‌های پنل دسترسی مستقیم داشته باشد.
   const adminMenu = [
