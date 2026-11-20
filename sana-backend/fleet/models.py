@@ -676,11 +676,11 @@ class DeviceLifecycleEvent(models.Model):
 
 
 class DeviceAlertState(models.Model):
-    """Per-user workflow state for a Traccar event; raw telemetry stays in Traccar."""
-
+    """Unified per-user notification state; GPS telemetry remains authoritative in Traccar."""
     STATUS_CHOICES = [
-        ('new', 'جدید'),
-        ('acknowledged', 'بررسی‌شده'),
+        ('unread', 'خوانده‌نشده'),
+        ('read', 'خوانده‌شده'),
+        ('reviewed', 'بررسی‌شده'),
         ('resolved', 'رفع‌شده'),
     ]
 
@@ -693,22 +693,32 @@ class DeviceAlertState(models.Model):
     device = models.ForeignKey(
         Device,
         on_delete=models.CASCADE,
+        null=True,
+        blank=True,
         related_name='alert_states',
         verbose_name='دستگاه',
     )
-    traccar_event_id = models.CharField(max_length=64, verbose_name='شناسه رویداد Traccar')
+    event_key = models.CharField(max_length=200, verbose_name='شناسه یکتای اعلان')
+    notification_type = models.CharField(max_length=64, default='gps', verbose_name='دسته اعلان')
+    traccar_event_id = models.CharField(max_length=64, blank=True, default='', verbose_name='شناسه رویداد Traccar')
     event_type = models.CharField(max_length=64, verbose_name='نوع رویداد')
     event_time = models.DateTimeField(verbose_name='زمان رویداد')
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='new')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='unread')
+    read_at = models.DateTimeField(null=True, blank=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
     acknowledged_at = models.DateTimeField(null=True, blank=True)
     resolved_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        verbose_name = 'وضعیت پیگیری هشدار'
-        verbose_name_plural = 'وضعیت‌های پیگیری هشدار'
+        verbose_name = 'وضعیت اعلان'
+        verbose_name_plural = 'وضعیت اعلان‌ها'
         ordering = ['-event_time', '-id']
         constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'event_key'],
+                name='fleet_alert_user_event_key_uniq',
+            ),
             models.UniqueConstraint(
                 fields=['user', 'device', 'traccar_event_id'],
                 name='fleet_alert_user_device_event_uniq',
@@ -718,7 +728,6 @@ class DeviceAlertState(models.Model):
             models.Index(fields=['user', 'status', 'event_time'], name='fleet_alert_user_status_idx'),
             models.Index(fields=['device', 'event_type', 'event_time'], name='fleet_alert_device_type_idx'),
         ]
-
 
 class PersonalAlertPreference(models.Model):
     """Per-user filters for Traccar events shown in the personal alert center."""
