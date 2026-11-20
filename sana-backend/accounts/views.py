@@ -7,7 +7,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from django.utils import timezone
-from django.db.models import Q, Sum, Value, DecimalField
+from django.db.models import Exists, OuterRef, Q, Sum, Value, DecimalField
 from django.db.models.functions import Coalesce
 from datetime import datetime, timedelta
 
@@ -23,6 +23,7 @@ from .serializers import (
 from .permissions import IsSiteAdminOrReadOnly
 
 from organizations.models import (
+    SubscriptionDevice,
     Organization, Branch, Subscription, SubscriptionOperation,
     SubscriptionPayment, SubscriptionInstallment,
 )
@@ -249,10 +250,17 @@ class UserViewSet(viewsets.ModelViewSet):
             organizations = Organization.objects.none()
             branches = Branch.objects.none()
             users = User.objects.none()
-            # A personal customer may only receive device activity belonging to
-            # devices currently assigned to one of their own contracts.
+            # Only devices covered by a currently valid personal contract
+            # and a currently valid device-to-contract assignment belong in
+            # the customer's present-day business notification scope.
             devices = Device.objects.filter(
                 subscription_links__subscription__in=subscriptions,
+                subscription_links__subscription__status='active',
+                subscription_links__subscription__start_date__lte=today,
+                subscription_links__subscription__end_date__gte=today,
+                subscription_links__start_date__lte=today,
+                subscription_links__end_date__gte=today,
+                subscription_links__assigned_at__lte=now,
                 subscription_links__unassigned_at__isnull=True,
             ).distinct()
             subscription_ops = SubscriptionOperation.objects.select_related(
@@ -450,16 +458,36 @@ class UserViewSet(viewsets.ModelViewSet):
             'device', 'organization', 'branch', 'performed_by'
         ).filter(event_date__gte=cutoff, device_operation__isnull=True)
         if is_personal:
-            # Do not leak global device inventory/operations into a personal
-            # customer's contract and financial notification feed.
-            device_operations = device_operations.filter(
-                Q(device__in=devices)
-                | Q(subscription__in=subscriptions)
-                | Q(target_subscription__in=subscriptions)
+            # Historical device activity is visible only when this exact device
+            # was assigned to one of this customer's personal contracts at the
+            # time the event occurred. Current ownership alone is insufficient:
+            # it would expose another customer's old device history after a transfer.
+            operation_contract_access = SubscriptionDevice.objects.filter(
+                device_id=OuterRef('device_id'),
+                subscription__in=subscriptions,
+                subscription__start_date__lte=OuterRef('performed_at__date'),
+                subscription__end_date__gte=OuterRef('performed_at__date'),
+                start_date__lte=OuterRef('performed_at__date'),
+                end_date__gte=OuterRef('performed_at__date'),
+                assigned_at__lte=OuterRef('performed_at'),
+            ).filter(
+                Q(unassigned_at__isnull=True)
+                | Q(unassigned_at__gte=OuterRef('performed_at'))
             )
-            lifecycle_events = lifecycle_events.filter(
-                Q(device__in=devices) | Q(subscription__in=subscriptions)
+            lifecycle_contract_access = SubscriptionDevice.objects.filter(
+                device_id=OuterRef('device_id'),
+                subscription__in=subscriptions,
+                subscription__start_date__lte=OuterRef('event_date__date'),
+                subscription__end_date__gte=OuterRef('event_date__date'),
+                start_date__lte=OuterRef('event_date__date'),
+                end_date__gte=OuterRef('event_date__date'),
+                assigned_at__lte=OuterRef('event_date'),
+            ).filter(
+                Q(unassigned_at__isnull=True)
+                | Q(unassigned_at__gte=OuterRef('event_date'))
             )
+            device_operations = device_operations.filter(Exists(operation_contract_access))
+            lifecycle_events = lifecycle_events.filter(Exists(lifecycle_contract_access))
         elif is_main:
             device_operations = device_operations.filter(
                 Q(device__in=devices) | Q(target_organization_id=user.organization_id)
