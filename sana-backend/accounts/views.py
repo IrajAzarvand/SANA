@@ -177,9 +177,19 @@ class UserViewSet(viewsets.ModelViewSet):
                 defaults['reviewed_at'] = now
             if requested_status == 'resolved':
                 defaults['resolved_at'] = now
-            state, _ = DeviceAlertState.objects.update_or_create(
-                user=user, event_key=event_key, defaults=defaults
-            )
+            state = DeviceAlertState.objects.filter(user=user, event_key=event_key).first()
+            if state is None:
+                state = DeviceAlertState.objects.create(user=user, event_key=event_key, **defaults)
+            elif state.status != 'resolved':
+                allowed_from = {
+                    'read': {'unread', 'read'},
+                    'reviewed': {'unread', 'read', 'reviewed'},
+                    'resolved': {'unread', 'read', 'reviewed'},
+                }
+                if state.status in allowed_from.get(requested_status, set()):
+                    for field, value in defaults.items():
+                        setattr(state, field, value)
+                    state.save()
             return Response({
                 'id': state.event_key,
                 'status': state.status,
