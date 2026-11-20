@@ -16,15 +16,6 @@ export const subscriptionsAPI = {
     return response.data;
   },
 
-  update: async (id, data) => {
-    const response = await apiClient.patch(`/subscriptions/${id}/`, data);
-    return response.data;
-  },
-
-  delete: async (id) => {
-    await apiClient.delete(`/subscriptions/${id}/`);
-  },
-
   modify: async (id, data) => {
     const response = await apiClient.post(`/subscriptions/${id}/modify/`, data);
     return response.data;
@@ -80,10 +71,6 @@ export const subscriptionDevicesAPI = {
     const response = await apiClient.post('/subscription-devices/', data);
     return response.data;
   },
-  update: async (id, data) => {
-    const response = await apiClient.patch(`/subscription-devices/${id}/`, data);
-    return response.data;
-  },
   delete: async (id) => {
     await apiClient.delete(`/subscription-devices/${id}/`);
   },
@@ -97,13 +84,6 @@ export const subscriptionPaymentsAPI = {
   create: async (data) => {
     const response = await apiClient.post('/subscription-payments/', data);
     return response.data;
-  },
-  update: async (id, data) => {
-    const response = await apiClient.patch(`/subscription-payments/${id}/`, data);
-    return response.data;
-  },
-  delete: async (id) => {
-    await apiClient.delete(`/subscription-payments/${id}/`);
   },
   allocate: async (id, data) => {
     const response = await apiClient.post(`/subscription-payments/${id}/allocate/`, data);

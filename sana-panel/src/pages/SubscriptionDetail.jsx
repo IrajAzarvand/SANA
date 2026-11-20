@@ -82,7 +82,7 @@ export default function SubscriptionDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { isSiteAdmin, isPersonal } = useAuth();
+  const { isSiteAdmin } = useAuth();
 
   const fetchSubscription = useCallback(async () => {
     return await subscriptionsAPI.get(id);
@@ -540,7 +540,7 @@ export default function SubscriptionDetail() {
   const handleCancel = async () => {
     setSaving(true);
     try {
-      await subscriptionsAPI.delete(id);
+      await subscriptionsAPI.cancel(id);
       setCancelModalOpen(false);
       refetch();
     } catch (err) {
@@ -734,18 +734,6 @@ export default function SubscriptionDetail() {
     }
   };
 
-  // ═══ حذف پرداخت ═══
-  const handleRemovePayment = async (paymentId) => {
-    if (!confirm('آیا از حذف این پرداخت اطمینان دارید؟')) return;
-    try {
-      await subscriptionPaymentsAPI.delete(paymentId);
-      refetch();
-    } catch (err) {
-      console.error('Error removing payment:', err);
-      alert('خطا در حذف پرداخت');
-    }
-  };
-
   if (loading) {
     return (
       <div className="space-y-6">
@@ -792,7 +780,7 @@ export default function SubscriptionDetail() {
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3 min-w-0">
           <button
-            onClick={() => navigate(isPersonal ? '/panel/dashboard' : '/panel/subscriptions')}
+            onClick={() => navigate(isSiteAdmin ? '/panel/subscriptions' : '/panel/dashboard')}
             className="p-2.5 rounded-xl text-text-muted hover:bg-bg-hover hover:text-text-primary transition-colors"
             aria-label="بازگشت"
           >
@@ -1214,11 +1202,6 @@ export default function SubscriptionDetail() {
                       <Button size="sm" variant="secondary" onClick={() => openAllocationModal(p)}>
                         تخصیص اعتبار
                       </Button>
-                    )}
-                    {isSiteAdmin && !isCancelled && !p.allocations?.length && (
-                      <button onClick={() => handleRemovePayment(p.id)} className="p-1.5 rounded-field text-text-muted hover:bg-danger/10 hover:text-danger transition-colors" title="حذف دریافتی">
-                        <Trash2 size={14} />
-                      </button>
                     )}
                   </div>
                 </div>

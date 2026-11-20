@@ -76,6 +76,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True, verbose_name='فعال')
     is_staff = models.BooleanField(default=False, verbose_name='دسترسی ادمین')
     date_joined = models.DateTimeField(default=timezone.now, verbose_name='تاریخ عضویت')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='آخرین به‌روزرسانی')
     last_login_ip = models.GenericIPAddressField(null=True, blank=True)
 
     objects = UserManager()
@@ -228,3 +229,29 @@ class UserSession(models.Model):
             and self.expires_at > now
             and self.last_activity_at > now - timedelta(minutes=30)
         )
+
+
+class NotificationReadState(models.Model):
+    """Per-user read state for real administrative and organization activity events."""
+
+    user = models.ForeignKey(
+        'accounts.User',
+        on_delete=models.CASCADE,
+        related_name='notification_read_states',
+        verbose_name='کاربر',
+    )
+    event_key = models.CharField(max_length=200, verbose_name='شناسه رویداد')
+    read_at = models.DateTimeField(default=timezone.now, verbose_name='زمان خواندن')
+
+    class Meta:
+        verbose_name = 'وضعیت خواندن اعلان'
+        verbose_name_plural = 'وضعیت‌های خواندن اعلان'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'event_key'],
+                name='accounts_notif_user_event_uniq',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['user', 'read_at'], name='accounts_notif_user_read_idx'),
+        ]

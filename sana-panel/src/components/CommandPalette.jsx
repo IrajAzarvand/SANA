@@ -15,10 +15,10 @@ function getCommands(user) {
   const common = [
     { path: '/panel/dashboard', label: 'داشبورد', keywords: 'خانه نمای کلی' },
     { path: '/panel/map', label: 'نقشه زنده', keywords: 'نقشه موقعیت خودرو مکان' },
-    { path: '/panel/devices', label: role === 'personal_user' ? 'دستگاه‌های من' : 'دستگاه‌ها', keywords: 'gps tracker دستگاه ردیاب' },
+    { path: '/panel/devices', label: role === 'personal_user' ? 'دستگاه‌های من' : role === 'branch_manager' ? 'دستگاه‌های شعبه' : role === 'main_user' ? 'دستگاه‌های سازمان' : 'همه دستگاه‌ها', keywords: 'gps tracker دستگاه ردیاب سیم کارت imei' },
     { path: '/panel/reports/trips', label: 'گزارش مسیرها', keywords: 'گزارش سفر مسیر تاریخ' },
-    { path: '/panel/alerts', label: 'هشدارها', keywords: 'اعلان رویداد زنگ' },
-    { path: '/panel/settings', label: 'تنظیمات', keywords: 'پروفایل حساب تنظیم' },
+    { path: '/panel/alerts', label: 'مرکز اعلان‌ها و هشدارها', keywords: 'اعلان نوتیفیکیشن notification رویداد زنگ gps آفلاین آنلاین' },
+    { path: '/panel/settings', label: role === 'site_admin' ? 'تنظیمات سایت' : role === 'personal_user' ? 'تنظیمات حساب' : 'تنظیمات سازمان', keywords: 'پروفایل حساب تنظیمات سایت سازمان' },
   ];
 
   if (role === 'personal_user') {
@@ -34,7 +34,7 @@ function getCommands(user) {
       { path: '/panel/companies', label: 'شرکت‌ها', keywords: 'سازمان' },
       { path: '/panel/subscriptions', label: 'قراردادها', keywords: 'اشتراک' },
       { path: '/panel/ai', label: 'مدیریت هوش مصنوعی', keywords: 'ai هوش' },
-      { path: '/panel/reports/live-logs', label: 'لاگ زنده', keywords: 'لاگ ثبت رخداد tcp' },
+      { path: '/panel/reports/live-logs', label: 'لاگ زنده سامانه', keywords: 'لاگ ثبت رخداد tcp ترافیک شبکه systemd traccar' },
       { path: '/panel/reports', label: 'گزارش‌ها', keywords: 'آمار' },
     ];
   }
@@ -45,7 +45,7 @@ function getCommands(user) {
     { path: '/panel/reports', label: 'گزارش‌ها', keywords: 'آمار' },
     ...(role === 'main_user' ? [
       { path: '/panel/branches', label: 'شعبه‌ها', keywords: 'شعب' },
-      { path: '/panel/users', label: 'کاربران سازمان', keywords: 'حساب کاربری' },
+      { path: '/panel/users', label: 'کاربران سازمان', keywords: 'حساب کاربری اعضا مدیریت کاربران' },
     ] : []),
   ];
 }

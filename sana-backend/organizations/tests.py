@@ -5,7 +5,7 @@ from unittest.mock import patch
 from accounts.models import User
 from fleet.models import Device
 from organizations.models import (
-    Organization, Subscription, SubscriptionDevice, SubscriptionPayment,
+    Organization, Subscription, SubscriptionDevice, SubscriptionPayment, SubscriptionOperation,
     SubscriptionInstallmentPlan, SubscriptionInstallment, SubscriptionPaymentAllocation,
 )
 from organizations.financial import create_installment_plan, allocate_payment, revise_installment_plan
@@ -744,6 +744,129 @@ class PersonalSubscriptionReadOnlyAccessTests(TestCase):
             end_date=today + timedelta(days=100),
             price=1000000,
         )
+
+    def test_site_admin_cannot_bypass_contract_operation_log_with_direct_patch(self):
+        admin = User.objects.create_user(
+            username='contract-update-admin',
+            password='test-password',
+            role='site_admin',
+            account_type='admin',
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.client.force_authenticate(user=admin)
+
+        response = self.client.patch(
+            f'/api/subscriptions/{self.own_subscription.id}/',
+            {'notes': 'ویرایش بدون سابقه'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 405)
+        self.own_subscription.refresh_from_db()
+        self.assertEqual(self.own_subscription.notes, '')
+        self.assertFalse(self.own_subscription.operations.exists())
+
+    def test_site_admin_cannot_delete_contract_and_must_use_cancel_operation(self):
+        admin = User.objects.create_user(
+            username='contract-delete-admin',
+            password='test-password',
+            role='site_admin',
+            account_type='admin',
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.client.force_authenticate(user=admin)
+
+        response = self.client.delete(f'/api/subscriptions/{self.own_subscription.id}/')
+
+        self.assertEqual(response.status_code, 405)
+        self.assertTrue(Subscription.objects.filter(pk=self.own_subscription.pk).exists())
+        self.assertFalse(self.own_subscription.operations.exists())
+
+    def test_site_admin_cannot_update_device_directly_and_delete_is_audited(self):
+        admin = User.objects.create_user(
+            username='subscription-device-admin',
+            password='test-password',
+            role='site_admin',
+            account_type='admin',
+            is_staff=True,
+            is_superuser=True,
+        )
+        device = Device.objects.create(imei='555555555555555')
+        link = SubscriptionDevice.objects.create(
+            subscription=self.own_subscription,
+            device=device,
+            start_date=self.own_subscription.start_date,
+            end_date=self.own_subscription.end_date,
+        )
+        self.client.force_authenticate(user=admin)
+        before_operations = SubscriptionOperation.objects.count()
+
+        patch_response = self.client.patch(
+            f'/api/subscription-devices/{link.id}/',
+            {'end_date': '2028-01-01'},
+            format='json',
+        )
+        put_response = self.client.put(
+            f'/api/subscription-devices/{link.id}/',
+            {
+                'subscription': self.own_subscription.id,
+                'device': device.id,
+                'start_date': '2026-11-07',
+                'end_date': '2028-01-01',
+            },
+            format='json',
+        )
+
+        self.assertEqual(patch_response.status_code, 405)
+        self.assertEqual(put_response.status_code, 405)
+        link.refresh_from_db()
+        self.assertEqual(link.end_date, self.own_subscription.end_date)
+        self.assertEqual(SubscriptionOperation.objects.count(), before_operations)
+
+        with patch('organizations.views.record_device_lifecycle_event'):
+            delete_response = self.client.delete(f'/api/subscription-devices/{link.id}/')
+
+        self.assertEqual(delete_response.status_code, 204)
+        link.refresh_from_db()
+        self.assertIsNotNone(link.unassigned_at)
+        self.assertIsNotNone(link.removed_by_operation_id)
+        self.assertEqual(link.removed_by_operation.operation_type, 'remove_device')
+        self.assertEqual(SubscriptionOperation.objects.count(), before_operations + 1)
+
+    def test_site_admin_cannot_update_or_delete_payment_directly(self):
+        admin = User.objects.create_user(
+            username='subscription-payment-admin',
+            password='test-password',
+            role='site_admin',
+            account_type='admin',
+            is_staff=True,
+            is_superuser=True,
+        )
+        payment = SubscriptionPayment.objects.create(
+            subscription=self.own_subscription,
+            amount=250000,
+            received_at=timezone.localdate(),
+            description='رسید اولیه',
+        )
+        self.client.force_authenticate(user=admin)
+        before_operations = SubscriptionOperation.objects.count()
+
+        patch_response = self.client.patch(
+            f'/api/subscription-payments/{payment.id}/',
+            {'amount': 500000, 'description': 'تغییر بدون سابقه'},
+            format='json',
+        )
+        delete_response = self.client.delete(f'/api/subscription-payments/{payment.id}/')
+
+        self.assertEqual(patch_response.status_code, 405)
+        self.assertEqual(delete_response.status_code, 405)
+        payment.refresh_from_db()
+        self.assertEqual(payment.amount, 250000)
+        self.assertEqual(payment.description, 'رسید اولیه')
+        self.assertTrue(SubscriptionPayment.objects.filter(pk=payment.pk).exists())
+        self.assertEqual(SubscriptionOperation.objects.count(), before_operations)
 
     def test_personal_customer_can_view_own_contract_details(self):
         self.client.force_authenticate(user=self.personal_user)

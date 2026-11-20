@@ -519,10 +519,24 @@ class DeviceViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get', 'post'], url_path='alerts', throttle_classes=[ScopedRateThrottle], throttle_scope='personal_alerts')
     def alerts(self, request):
         """Read authorized Traccar events and persist only per-user workflow state."""
-        if not request.user.is_personal_user:
-            return Response({'detail': 'این سرویس در حال حاضر فقط برای مشتری شخصی فعال است.'}, status=403)
+        if not (
+            request.user.is_personal_user
+            or request.user.is_site_admin
+            or request.user.is_main_user
+            or request.user.is_branch_manager
+        ):
+            return Response({'detail': 'اجازه مشاهده هشدارها را ندارید.'}, status=403)
 
         if request.method == 'POST':
+            if request.data.get('mark_all') is True:
+                visible_device_ids = self.get_queryset().values_list('pk', flat=True)
+                updated = DeviceAlertState.objects.filter(
+                    user=request.user,
+                    device_id__in=visible_device_ids,
+                    status='new',
+                ).update(status='acknowledged', acknowledged_at=timezone.now())
+                return Response({'updated': updated})
+
             raw_device_id = request.data.get('device_id')
             event_id = str(request.data.get('event_id') or '').strip()
             requested_status = str(request.data.get('status') or '').strip()
@@ -574,95 +588,169 @@ class DeviceViewSet(viewsets.ModelViewSet):
         if not devices:
             return Response({'results': [], 'counts': {'all': 0, 'new': 0, 'acknowledged': 0, 'resolved': 0}})
 
-        today = timezone.localdate()
-        links = list(SubscriptionDevice.objects.filter(
-            device__in=devices,
-            unassigned_at__isnull=True,
-            subscription__user=request.user,
-            subscription__status='active',
-            start_date__lte=today,
-            end_date__gte=today,
-            subscription__start_date__lte=today,
-            subscription__end_date__gte=today,
-        ).select_related('subscription'))
-        contract_by_device = {link.device_id: link for link in links}
+        contract_by_device = {}
+        access_by_device = {}
+        if request.user.is_personal_user:
+            today = timezone.localdate()
+            links = SubscriptionDevice.objects.filter(
+                device__in=devices,
+                unassigned_at__isnull=True,
+                subscription__user=request.user,
+                subscription__status='active',
+                start_date__lte=today,
+                end_date__gte=today,
+                subscription__start_date__lte=today,
+                subscription__end_date__gte=today,
+            ).select_related('subscription')
+            contract_by_device = {link.device_id: link for link in links}
+        elif not request.user.is_site_admin:
+            access_periods = DeviceCustomerAccessPeriod.objects.filter(
+                device__in=devices,
+                started_at__lte=now,
+                ended_at__isnull=True,
+            )
+            if request.user.is_main_user:
+                access_periods = access_periods.filter(organization=request.user.organization)
+            elif request.user.is_branch_manager:
+                access_periods = access_periods.filter(
+                    organization=request.user.branch.organization,
+                    branch=request.user.branch,
+                )
+            access_by_device = {}
+            for period in access_periods.order_by('-started_at', '-id'):
+                access_by_device.setdefault(period.device_id, period)
 
-        preference = PersonalAlertPreference.objects.filter(user=request.user).only('disabled_event_types').first()
-        disabled_event_types = set(preference.disabled_event_types or []) if preference else set()
+        if request.user.is_personal_user:
+            preference = PersonalAlertPreference.objects.filter(user=request.user).only('disabled_event_types').first()
+            disabled_event_types = set(preference.disabled_event_types or []) if preference else set()
+        else:
+            disabled_event_types = set()
 
         results = []
         try:
+            device_context = {}
             for device in devices:
-                link = contract_by_device.get(device.pk)
-                if link is None:
-                    continue
-                contract_start = timezone.make_aware(datetime.combine(
-                    max(link.start_date, link.subscription.start_date), datetime_time.min
-                ))
-                contract_end = timezone.make_aware(datetime.combine(
-                    min(link.end_date, link.subscription.end_date), datetime_time.max
-                ))
+                if request.user.is_personal_user:
+                    link = contract_by_device.get(device.pk)
+                    if link is None:
+                        continue
+                    contract_start = timezone.make_aware(datetime.combine(
+                        max(link.start_date, link.subscription.start_date), datetime_time.min
+                    ))
+                    contract_end = timezone.make_aware(datetime.combine(
+                        min(link.end_date, link.subscription.end_date), datetime_time.max
+                    ))
+                elif request.user.is_site_admin:
+                    contract_start = raw_start
+                    contract_end = raw_end
+                else:
+                    access_period = access_by_device.get(device.pk)
+                    if access_period is None:
+                        continue
+                    contract_start = access_period.started_at
+                    contract_end = access_period.ended_at or now
+
                 event_start = max(raw_start, contract_start)
                 event_end = min(raw_end, contract_end, now)
-                if event_start > event_end:
+                if event_start <= event_end:
+                    device_context[device.pk] = {
+                        'device': device,
+                        'start': event_start,
+                        'end': event_end,
+                    }
+
+            if not device_context:
+                return Response({'results': [], 'counts': {'all': 0, 'new': 0, 'acknowledged': 0, 'resolved': 0}})
+
+            traccar_by_unique_id = {
+                str(item.get('uniqueId') or '').strip(): item
+                for item in traccar_devices()
+                if str(item.get('uniqueId') or '').strip() and item.get('id') is not None
+            }
+            context_by_traccar_id = {}
+            for context in device_context.values():
+                traccar_device = traccar_by_unique_id.get(str(context['device'].imei).strip())
+                if traccar_device is None:
+                    continue
+                try:
+                    traccar_id = int(traccar_device['id'])
+                except (TypeError, ValueError):
+                    continue
+                context_by_traccar_id[traccar_id] = context
+
+            if context_by_traccar_id:
+                event_start = min(item['start'] for item in context_by_traccar_id.values())
+                event_end = max(item['end'] for item in context_by_traccar_id.values())
+                traccar_ids = list(context_by_traccar_id)
+                events = []
+                for offset in range(0, len(traccar_ids), 100):
+                    events.extend(traccar_device_events(
+                        traccar_ids[offset:offset + 100],
+                        event_start.isoformat().replace('+00:00', 'Z'),
+                        event_end.isoformat().replace('+00:00', 'Z'),
+                    ))
+            else:
+                events = []
+
+            for event in sorted(events, key=lambda item: str(item.get('eventTime') or '')):
+                try:
+                    traccar_id = int(event.get('deviceId'))
+                except (TypeError, ValueError):
+                    continue
+                context = context_by_traccar_id.get(traccar_id)
+                if context is None:
                     continue
 
-                traccar_device = traccar_device_by_unique_id(device.imei)
-                if not traccar_device or traccar_device.get('id') is None:
+                device = context['device']
+                event_id = str(event.get('id') or '').strip()
+                event_type = str(event.get('type') or '').strip()
+                event_time = parse_datetime(str(event.get('eventTime') or ''))
+                if not event_id or not event_type or event_time is None:
                     continue
-                events = traccar_device_events(
-                    int(traccar_device['id']),
-                    event_start.isoformat().replace('+00:00', 'Z'),
-                    event_end.isoformat().replace('+00:00', 'Z'),
+                if timezone.is_naive(event_time):
+                    event_time = timezone.make_aware(event_time)
+                if event_time < context['start'] or event_time > context['end']:
+                    continue
+
+                state, _created = DeviceAlertState.objects.update_or_create(
+                    user=request.user,
+                    device=device,
+                    traccar_event_id=event_id,
+                    defaults={'event_type': event_type, 'event_time': event_time},
                 )
-                for event in sorted(events, key=lambda item: str(item.get('eventTime') or '')):
-                    event_id = str(event.get('id') or '').strip()
-                    event_type = str(event.get('type') or '').strip()
-                    event_time = parse_datetime(str(event.get('eventTime') or ''))
-                    if not event_id or not event_type or event_time is None:
-                        continue
-                    if timezone.is_naive(event_time):
-                        event_time = timezone.make_aware(event_time)
-
-                    state, _created = DeviceAlertState.objects.update_or_create(
+                if event_type == 'deviceOnline':
+                    DeviceAlertState.objects.filter(
                         user=request.user,
                         device=device,
-                        traccar_event_id=event_id,
-                        defaults={'event_type': event_type, 'event_time': event_time},
+                        event_type='deviceOffline',
+                        event_time__lt=event_time,
+                    ).exclude(status='resolved').update(
+                        status='resolved', resolved_at=event_time
                     )
-                    if event_type == 'deviceOnline':
-                        DeviceAlertState.objects.filter(
-                            user=request.user,
-                            device=device,
-                            event_type='deviceOffline',
-                            event_time__lt=event_time,
-                        ).exclude(status='resolved').update(
-                            status='resolved', resolved_at=event_time
-                        )
-                        for previous_alert in results:
-                            if (
-                                previous_alert['device_id'] == device.pk
-                                and previous_alert['type'] == 'deviceOffline'
-                                and previous_alert['event_time'] < event_time
-                            ):
-                                previous_alert['status'] = 'resolved'
-                                previous_alert['resolved_at'] = event_time
+                    for previous_alert in results:
+                        if (
+                            previous_alert['device_id'] == device.pk
+                            and previous_alert['type'] == 'deviceOffline'
+                            and previous_alert['event_time'] < event_time
+                        ):
+                            previous_alert['status'] = 'resolved'
+                            previous_alert['resolved_at'] = event_time
 
-                    if event_type in disabled_event_types:
-                        continue
+                if event_type in disabled_event_types:
+                    continue
 
-                    results.append({
-                        'id': state.traccar_event_id,
-                        'device_id': device.pk,
-                        'device_imei': device.imei,
-                        'vehicle_plate': device.vehicle.plate if device.vehicle_id else None,
-                        'type': state.event_type,
-                        'event_time': state.event_time,
-                        'status': state.status,
-                        'acknowledged_at': state.acknowledged_at,
-                        'resolved_at': state.resolved_at,
-                        'attributes': event.get('attributes') if isinstance(event.get('attributes'), dict) else {},
-                    })
+                results.append({
+                    'id': state.traccar_event_id,
+                    'device_id': device.pk,
+                    'device_imei': device.imei,
+                    'vehicle_plate': device.vehicle.plate if device.vehicle_id else None,
+                    'type': state.event_type,
+                    'event_time': state.event_time,
+                    'status': state.status,
+                    'acknowledged_at': state.acknowledged_at,
+                    'resolved_at': state.resolved_at,
+                    'attributes': event.get('attributes') if isinstance(event.get('attributes'), dict) else {},
+                })
         except TraccarAPIError:
             return Response({'detail': 'دریافت رویدادها از Traccar در حال حاضر ممکن نیست.'}, status=503)
 

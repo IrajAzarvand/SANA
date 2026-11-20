@@ -168,6 +168,8 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             pass
         elif user.organization_id:
             qs = qs.filter(organization_id=user.organization_id)
+        elif user.is_branch_manager and user.branch_id:
+            qs = qs.filter(organization_id=user.branch.organization_id)
         elif user.is_personal_user:
             qs = qs.filter(user=user)
         else:
@@ -198,6 +200,21 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         if self.action in ['create', 'destroy', 'update', 'partial_update', 'renew', 'modify', 'revise_installment_plan', 'suspend', 'activate', 'cancel']:
             return [IsSiteAdmin()]
         return super().get_permissions()
+
+    def update(self, request, *args, **kwargs):
+        return Response(
+            {'detail': 'ویرایش مستقیم قرارداد غیرفعال است؛ از مسیر ثبت عملیات ویرایش استفاده کنید.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def partial_update(self, request, *args, **kwargs):
+        return self.update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        return Response(
+            {'detail': 'حذف قرارداد غیرفعال است؛ برای خاتمه قرارداد از عملیات لغو استفاده کنید.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
 
     def create(self, request, *args, **kwargs):
         """ساخت قرارداد با Wizard"""
@@ -584,7 +601,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
-        """لغو قرارداد"""
+        """لغو قرارداد و پایان‌دادن به تخصیص دستگاه‌های فعال آن."""
         subscription = self.get_object()
         with transaction.atomic():
             operation = SubscriptionOperation.objects.create(
@@ -593,6 +610,23 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             )
             subscription.status = 'cancelled'
             subscription.save(update_fields=['status', 'updated_at'])
+
+            active_links = SubscriptionDevice.objects.select_related('device').filter(
+                subscription=subscription,
+                unassigned_at__isnull=True,
+            )
+            unassigned_at = timezone.now()
+            for link in active_links:
+                link.unassigned_at = unassigned_at
+                link.removed_by_operation = operation
+                link.save(update_fields=['unassigned_at', 'removed_by_operation'])
+                record_device_lifecycle_event(
+                    device=link.device,
+                    event_type='removed_from_contract',
+                    performed_by=request.user,
+                    subscription=subscription,
+                    description=f'دستگاه به‌دلیل لغو قرارداد {subscription.contract_number} از قرارداد خارج شد؛ مالکیت دستگاه حفظ شد.',
+                )
         return Response(SubscriptionSerializer(subscription).data)
 
     @action(detail=False, methods=['get'])
@@ -609,31 +643,10 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         return Response({'contract_number': number})
 
     def destroy(self, request, *args, **kwargs):
-        """حذف فیزیکی نمی‌کنیم — فقط قرارداد را لغوشده می‌کنیم."""
-        subscription = self.get_object()
-
-        if subscription.status == 'cancelled':
-            return Response(status=status.HTTP_204_NO_CONTENT)
-
-        with transaction.atomic():
-            subscription.status = 'cancelled'
-            subscription.save(update_fields=['status', 'updated_at'])
-
-            active_links = subscription.subscription_devices.filter(unassigned_at__isnull=True)
-            for link in active_links:
-                link.unassigned_at = timezone.now()
-                link.save(update_fields=['unassigned_at'])
-
-                # لغو قرارداد به معنی برگشت دستگاه فروخته‌شده به انبار نیست.
-                record_device_lifecycle_event(
-                    device=link.device,
-                    event_type='removed_from_contract',
-                    performed_by=request.user,
-                    subscription=subscription,
-                    description=f'قرارداد {subscription.contract_number} لغو شد؛ دستگاه به مالک قبلی باقی ماند و به انبار برنگشت.',
-                )
-
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response(
+            {'detail': 'حذف مستقیم قرارداد غیرفعال است؛ برای خاتمه قرارداد از عملیات لغو استفاده کنید.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
 
     
 # ═══════════════════════════════════════════════
@@ -679,6 +692,15 @@ class SubscriptionDeviceViewSet(viewsets.ModelViewSet):
         if self.action in ['create', 'destroy', 'update', 'partial_update', 'allocate']:
             return [IsSiteAdmin()]
         return super().get_permissions()
+
+    def update(self, request, *args, **kwargs):
+        return Response(
+            {'detail': 'ویرایش مستقیم ارتباط دستگاه با قرارداد غیرفعال است؛ از عملیات ویرایش قرارداد استفاده کنید.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def partial_update(self, request, *args, **kwargs):
+        return self.update(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -814,16 +836,19 @@ class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
         return Response(self.get_serializer(payment).data)
 
     def update(self, request, *args, **kwargs):
-        instance = self.get_object()
-        if instance.allocations.exists():
-            raise serializers.ValidationError('دریافتی دارای تخصیص مالی است و قابل ویرایش مستقیم نیست')
-        return super().update(request, *args, **kwargs)
+        return Response(
+            {'detail': 'ویرایش مستقیم دریافتی غیرفعال است؛ از عملیات اصلاح قرارداد استفاده کنید.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
+
+    def partial_update(self, request, *args, **kwargs):
+        return self.update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        if instance.allocations.exists():
-            raise serializers.ValidationError('دریافتی دارای تخصیص مالی است و قابل حذف مستقیم نیست')
-        return super().destroy(request, *args, **kwargs)
+        return Response(
+            {'detail': 'حذف مستقیم دریافتی غیرفعال است تا سابقه مالی حفظ شود.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
 
     def get_permissions(self):
         if self.action in ['create', 'destroy', 'update', 'partial_update', 'allocate']:

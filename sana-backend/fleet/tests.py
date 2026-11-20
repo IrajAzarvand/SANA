@@ -118,6 +118,22 @@ class TraccarAPIClientTests(SimpleTestCase):
 
 
 
+    @patch("fleet.traccar_api.urlopen")
+    def test_events_request_supports_multiple_device_ids(self, urlopen):
+        response = MagicMock()
+        response.read.return_value = b'[]'
+        response.__enter__.return_value = response
+        urlopen.return_value = response
+
+        traccar_device_events(
+            [42, 43], "2026-11-01T00:00:00Z", "2026-11-02T00:00:00Z"
+        )
+
+        url = urlopen.call_args.args[0].full_url
+        self.assertIn("deviceId=42", url)
+        self.assertIn("deviceId=43", url)
+
+
 class TraccarDeviceModelSyncTests(SimpleTestCase):
     def make_device(self, imei, model_id=None):
         device = MagicMock()
@@ -586,8 +602,8 @@ class PersonalAlertPreferencesSecurityTests(SimpleTestCase):
         self.assertIn('فقط برای مشتری شخصی', response.data['detail'])
 
 
-class PersonalAlertsEndpointSecurityTests(SimpleTestCase):
-    def test_alerts_endpoint_is_not_available_to_non_personal_roles(self):
+class AlertsEndpointUnsupportedRoleTests(SimpleTestCase):
+    def test_alerts_endpoint_rejects_unsupported_roles(self):
         request = APIRequestFactory().get('/api/devices/alerts/')
         force_authenticate(
             request,
@@ -595,13 +611,16 @@ class PersonalAlertsEndpointSecurityTests(SimpleTestCase):
                 pk=1,
                 is_authenticated=True,
                 is_personal_user=False,
+                is_site_admin=False,
+                is_main_user=False,
+                is_branch_manager=False,
             ),
         )
 
         response = DeviceViewSet.as_view({'get': 'alerts'})(request)
 
         self.assertEqual(response.status_code, 403)
-        self.assertIn('فقط برای مشتری شخصی', response.data['detail'])
+        self.assertIn('اجازه مشاهده هشدارها', response.data['detail'])
 
 
 
@@ -990,14 +1009,15 @@ class PersonalTraccarAlertsTests(TestCase):
         )
 
     @patch('fleet.views.traccar_device_events')
-    @patch('fleet.views.traccar_device_by_unique_id')
+    @patch('fleet.views.traccar_devices')
     def test_get_returns_real_traccar_events_for_contract_device(
-        self, lookup_device, fetch_events
+        self, list_devices, fetch_events
     ):
         event_time = timezone.now().replace(microsecond=0)
-        lookup_device.return_value = {'id': 42}
+        list_devices.return_value = [{'id': 42, 'uniqueId': self.device.imei}]
         fetch_events.return_value = [{
             'id': 701,
+            'deviceId': 42,
             'type': 'deviceOffline',
             'eventTime': event_time.isoformat(),
             'attributes': {},
@@ -1011,19 +1031,19 @@ class PersonalTraccarAlertsTests(TestCase):
         self.assertEqual(response.data['counts']['new'], 1)
         self.assertEqual(response.data['results'][0]['id'], '701')
         self.assertEqual(response.data['results'][0]['status'], 'new')
-        self.assertEqual(fetch_events.call_args.args[0], 42)
+        self.assertEqual(fetch_events.call_args.args[0], [42])
 
     @patch('fleet.views.traccar_device_events')
-    @patch('fleet.views.traccar_device_by_unique_id')
+    @patch('fleet.views.traccar_devices')
     def test_online_event_resolves_previous_offline_event(
-        self, lookup_device, fetch_events
+        self, list_devices, fetch_events
     ):
         offline_time = timezone.now() - timedelta(hours=2)
         online_time = timezone.now()
-        lookup_device.return_value = {'id': 42}
+        list_devices.return_value = [{'id': 42, 'uniqueId': self.device.imei}]
         fetch_events.return_value = [
-            {'id': 702, 'type': 'deviceOffline', 'eventTime': offline_time.isoformat()},
-            {'id': 703, 'type': 'deviceOnline', 'eventTime': online_time.isoformat()},
+            {'id': 702, 'deviceId': 42, 'type': 'deviceOffline', 'eventTime': offline_time.isoformat()},
+            {'id': 703, 'deviceId': 42, 'type': 'deviceOnline', 'eventTime': online_time.isoformat()},
         ]
         request = APIRequestFactory().get('/api/devices/alerts/')
         force_authenticate(request, user=self.user)
@@ -1067,6 +1087,42 @@ class PersonalTraccarAlertsTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+
+
+    def test_bulk_mark_all_read_only_updates_alerts_for_accessible_devices(self):
+        other_device = Device.objects.create(
+            imei='860000000000399',
+            management_status='active',
+        )
+        event_time = timezone.now()
+        own_state = DeviceAlertState.objects.create(
+            user=self.user,
+            device=self.device,
+            traccar_event_id='own-event',
+            event_type='deviceOffline',
+            event_time=event_time,
+        )
+        outside_state = DeviceAlertState.objects.create(
+            user=self.user,
+            device=other_device,
+            traccar_event_id='outside-event',
+            event_type='deviceOffline',
+            event_time=event_time,
+        )
+
+        request = APIRequestFactory().post(
+            '/api/devices/alerts/',
+            {'mark_all': True},
+            format='json',
+        )
+        force_authenticate(request, user=self.user)
+        response = DeviceViewSet.as_view({'post': 'alerts'})(request)
+
+        self.assertEqual(response.status_code, 200)
+        own_state.refresh_from_db()
+        outside_state.refresh_from_db()
+        self.assertEqual(own_state.status, 'acknowledged')
+        self.assertEqual(outside_state.status, 'new')
 
 
 class PersonalLifecycleEventAccessTests(TestCase):
@@ -1200,3 +1256,120 @@ class LiveMapDeviceCoverageTests(SimpleTestCase):
         self.assertTrue(all(item["latitude"] is None for item in response.data))
         self.assertTrue(all(item["longitude"] is None for item in response.data))
         self.assertTrue(all(item["has_position"] is False for item in response.data))
+
+
+class OrganizationAndAdminAlertsAccessTests(TestCase):
+    def setUp(self):
+        self.organization = Organization.objects.create(
+            name='Alerts Access Organization',
+            code='ALERTS-ACCESS-ORG',
+        )
+        self.branch = Branch.objects.create(
+            organization=self.organization,
+            name='Alerts Branch',
+            code='ALERTS-BR',
+        )
+        self.other_branch = Branch.objects.create(
+            organization=self.organization,
+            name='Other Alerts Branch',
+            code='ALERTS-BR-2',
+        )
+        self.main_user = User.objects.create_user(
+            username='alerts-main-user',
+            password='test-password',
+            account_type='organization',
+            role='main_user',
+            organization=self.organization,
+        )
+        self.branch_user = User.objects.create_user(
+            username='alerts-branch-user',
+            password='test-password',
+            account_type='organization',
+            role='branch_manager',
+            organization=self.organization,
+            branch=self.branch,
+        )
+        self.admin = User.objects.create_user(
+            username='alerts-site-admin',
+            password='test-password',
+            account_type='admin',
+            role='site_admin',
+            is_staff=True,
+            is_superuser=True,
+        )
+
+    def make_access_device(self, imei, branch):
+        device = Device.objects.create(imei=imei, management_status='active')
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=self.organization,
+            branch=branch,
+            started_at=timezone.now() - timedelta(days=2),
+        )
+        return device
+
+    @patch('fleet.views.traccar_device_events')
+    @patch('fleet.views.traccar_devices')
+    def test_organization_user_receives_traccar_alerts_for_authorized_devices(
+        self, list_devices, fetch_events
+    ):
+        device = self.make_access_device('860000000000801', self.branch)
+        list_devices.return_value = [{'id': 8801, 'uniqueId': device.imei}]
+        event_time = timezone.now().replace(microsecond=0)
+        fetch_events.return_value = [{
+            'id': 8802,
+            'deviceId': 8801,
+            'type': 'deviceOffline',
+            'eventTime': event_time.isoformat(),
+            'attributes': {},
+        }]
+        request = APIRequestFactory().get('/api/devices/alerts/')
+        force_authenticate(request, user=self.main_user)
+
+        response = DeviceViewSet.as_view({'get': 'alerts'})(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['results'][0]['device_id'], device.pk)
+        self.assertEqual(response.data['results'][0]['status'], 'new')
+
+    @patch('fleet.views.traccar_device_events')
+    @patch('fleet.views.traccar_devices')
+    def test_branch_manager_does_not_receive_other_branch_device_alerts(
+        self, list_devices, fetch_events
+    ):
+        self.make_access_device('860000000000802', self.other_branch)
+        request = APIRequestFactory().get('/api/devices/alerts/')
+        force_authenticate(request, user=self.branch_user)
+
+        response = DeviceViewSet.as_view({'get': 'alerts'})(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['results'], [])
+        list_devices.assert_not_called()
+        fetch_events.assert_not_called()
+
+    @patch('fleet.views.traccar_device_events')
+    @patch('fleet.views.traccar_devices')
+    def test_site_admin_receives_traccar_alerts_without_customer_access_period(
+        self, list_devices, fetch_events
+    ):
+        device = Device.objects.create(
+            imei='860000000000803',
+            management_status='warehouse',
+        )
+        list_devices.return_value = [{'id': 8803, 'uniqueId': device.imei}]
+        event_time = timezone.now().replace(microsecond=0)
+        fetch_events.return_value = [{
+            'id': 8804,
+            'deviceId': 8803,
+            'type': 'deviceOffline',
+            'eventTime': event_time.isoformat(),
+            'attributes': {},
+        }]
+        request = APIRequestFactory().get('/api/devices/alerts/')
+        force_authenticate(request, user=self.admin)
+
+        response = DeviceViewSet.as_view({'get': 'alerts'})(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['results'][0]['device_id'], device.pk)

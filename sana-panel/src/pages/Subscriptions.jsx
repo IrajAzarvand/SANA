@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { Search, Plus, FileText, Trash2, Eye, RotateCw } from 'lucide-react';
+import { Search, Plus, FileText, Eye, RotateCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
@@ -47,17 +47,6 @@ export default function Subscriptions() {
     });
   }, [subscriptions, search, filterStatus, filterType]);
 
-  const handleDelete = async (id) => {
-    if (!confirm('آیا از حذف این قرارداد اطمینان دارید؟')) return;
-    try {
-      await subscriptionsAPI.delete(id);
-      refetch();
-    } catch (err) {
-      console.error('Error deleting subscription:', err);
-      alert('خطا در حذف قرارداد');
-    }
-  };
-
   const getMenuItems = (sub) => {
     const items = [];
 
@@ -75,12 +64,6 @@ export default function Subscriptions() {
         onClick: () => navigate(`/panel/subscriptions/${sub.id}?renew=true`),
       });
 
-      items.push({
-        label: 'حذف',
-        icon: Trash2,
-        variant: 'danger',
-        onClick: () => handleDelete(sub.id),
-      });
     }
 
     return items;
