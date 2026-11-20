@@ -7,8 +7,10 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from django.utils import timezone
+from django.db.models import Q
+from datetime import timedelta
 
-from .models import User, UserSession
+from .models import User, UserSession, NotificationReadState
 from .serializers import (
     UserSerializer,
     UserCreateSerializer,
@@ -18,6 +20,9 @@ from .serializers import (
     CustomTokenObtainPairSerializer,
 )
 from .permissions import IsSiteAdminOrReadOnly
+
+from organizations.models import Organization, Branch, SubscriptionOperation
+from fleet.models import Device, DeviceOperation, DeviceLifecycleEvent
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -117,6 +122,157 @@ class UserViewSet(viewsets.ModelViewSet):
             serializer.is_valid(raise_exception=True)
             serializer.save()
         return Response(UserSerializer(request.user).data)
+
+
+    @action(detail=False, methods=['get', 'post'], url_path='notifications', throttle_classes=[ScopedRateThrottle], throttle_scope='panel_notifications')
+    def notifications(self, request):
+        """Return real, role-scoped operational events with per-user read state."""
+        user = request.user
+        if user.is_personal_user:
+            return Response({'results': [], 'counts': {'all': 0, 'unread': 0}})
+
+        if request.method == 'POST':
+            event_key = str(request.data.get('event_key') or '').strip()
+            if not event_key or len(event_key) > 200:
+                return Response({'detail': 'شناسه اعلان نامعتبر است.'}, status=400)
+            # Only allow marking an event that is currently visible to this user.
+            visible_keys = {item['id'] for item in self._build_panel_notifications(user)}
+            if event_key not in visible_keys:
+                return Response({'detail': 'اعلان یافت نشد یا دسترسی ندارید.'}, status=404)
+            state, _ = NotificationReadState.objects.update_or_create(
+                user=user, event_key=event_key, defaults={'read_at': timezone.now()}
+            )
+            return Response({'id': state.event_key, 'is_read': True, 'read_at': state.read_at})
+
+        events = self._build_panel_notifications(user)
+        keys = [item['id'] for item in events]
+        read_keys = set(NotificationReadState.objects.filter(
+            user=user, event_key__in=keys
+        ).values_list('event_key', flat=True))
+        for item in events:
+            item['is_read'] = item['id'] in read_keys
+        return Response({
+            'results': events,
+            'counts': {
+                'all': len(events),
+                'unread': sum(not item['is_read'] for item in events),
+                'read': sum(item['is_read'] for item in events),
+            },
+        })
+
+    @staticmethod
+    def _build_panel_notifications(user):
+        """Build notifications from persisted business/operation records, never placeholders."""
+        cutoff = timezone.now() - timedelta(days=30)
+        is_admin = user.is_site_admin
+        is_main = user.is_main_user and bool(user.organization_id)
+        is_branch = user.is_branch_manager and bool(user.branch_id)
+        if not (is_admin or is_main or is_branch):
+            return []
+
+        if is_admin:
+            devices = Device.objects.all()
+            organizations = Organization.objects.all()
+            branches = Branch.objects.all()
+            users = User.objects.exclude(pk=user.pk)
+            subscription_ops = SubscriptionOperation.objects.select_related(
+                'subscription', 'subscription__organization', 'performed_by'
+            ).filter(performed_at__gte=cutoff)
+        elif is_main:
+            organization_id = user.organization_id
+            devices = Device.objects.filter(
+                Q(organization_id=organization_id)
+                | Q(current_holder_organization_id=organization_id)
+            )
+            organizations = Organization.objects.filter(pk=organization_id)
+            branches = Branch.objects.filter(organization_id=organization_id)
+            users = User.objects.filter(organization_id=organization_id).exclude(pk=user.pk)
+            subscription_ops = SubscriptionOperation.objects.select_related(
+                'subscription', 'subscription__organization', 'performed_by'
+            ).filter(subscription__organization_id=organization_id, performed_at__gte=cutoff)
+        else:
+            branch_id = user.branch_id
+            organization_id = user.branch.organization_id
+            devices = Device.objects.filter(
+                Q(branch_id=branch_id) | Q(current_holder_organization_id=organization_id, branch_id=branch_id)
+            )
+            organizations = Organization.objects.none()
+            branches = Branch.objects.filter(pk=branch_id)
+            users = User.objects.filter(branch_id=branch_id).exclude(pk=user.pk)
+            subscription_ops = SubscriptionOperation.objects.none()
+
+        items = []
+
+        def add(key, title, message, timestamp, path):
+            if timestamp and timestamp >= cutoff:
+                items.append({
+                    'id': key,
+                    'title': title,
+                    'message': message,
+                    'created_at': timestamp,
+                    'path': path,
+                })
+
+        for operation in subscription_ops[:100]:
+            organization_name = operation.subscription.organization.name if operation.subscription.organization_id else 'مشتری'
+            add(
+                f'subscription-operation:{operation.pk}',
+                f'قرارداد: {operation.get_operation_type_display()}',
+                f'{operation.subscription.contract_number} · {organization_name}',
+                operation.performed_at,
+                '/panel/subscriptions' if is_admin else '/panel/dashboard',
+            )
+
+        device_operations = DeviceOperation.objects.select_related(
+            'device', 'target_organization', 'target_branch', 'performed_by'
+        ).filter(performed_at__gte=cutoff)
+        lifecycle_events = DeviceLifecycleEvent.objects.select_related(
+            'device', 'organization', 'branch', 'performed_by'
+        ).filter(event_date__gte=cutoff)
+        if not is_admin:
+            device_operations = device_operations.filter(
+                Q(device__in=devices) | Q(target_organization_id=organization_id, target_branch_id=branch_id if is_branch else None)
+            )
+            lifecycle_events = lifecycle_events.filter(
+                Q(device__in=devices)
+                | Q(organization_id=organization_id, branch_id=branch_id if is_branch else None)
+            )
+
+        for operation in device_operations[:100]:
+            add(
+                f'device-operation:{operation.pk}',
+                f'دستگاه: {operation.get_operation_type_display()}',
+                f'IMEI {operation.device.imei}' + (f' · {operation.description}' if operation.description else ''),
+                operation.performed_at,
+                '/panel/devices',
+            )
+        for event in lifecycle_events[:100]:
+            add(
+                f'device-lifecycle:{event.pk}',
+                f'چرخه عمر دستگاه: {event.get_event_type_display()}',
+                f'IMEI {event.device.imei}' + (f' · {event.description}' if event.description else ''),
+                event.event_date,
+                '/panel/devices',
+            )
+
+        for organization in organizations:
+            if organization.created_at >= cutoff:
+                add(f'organization-created:{organization.pk}', 'سازمان جدید ثبت شد', organization.name, organization.created_at, '/panel/companies')
+            if organization.updated_at >= cutoff and organization.updated_at > organization.created_at:
+                add(f'organization-updated:{organization.pk}:{organization.updated_at.isoformat()}', 'اطلاعات سازمان به‌روزرسانی شد', organization.name, organization.updated_at, '/panel/companies')
+
+        for branch in branches:
+            if branch.created_at >= cutoff:
+                add(f'branch-created:{branch.pk}', 'شعبه جدید ایجاد شد', branch.name, branch.created_at, '/panel/branches' if is_admin or is_main else '/panel/dashboard')
+            if branch.updated_at >= cutoff and branch.updated_at > branch.created_at:
+                add(f'branch-updated:{branch.pk}:{branch.updated_at.isoformat()}', 'اطلاعات شعبه تغییر کرد', branch.name, branch.updated_at, '/panel/branches' if is_admin or is_main else '/panel/dashboard')
+
+        for account in users:
+            if account.date_joined >= cutoff:
+                add(f'user-created:{account.pk}', 'کاربر جدید اضافه شد', account.full_name or account.username, account.date_joined, '/panel/users' if is_admin or is_main else '/panel/dashboard')
+
+        items.sort(key=lambda item: item['created_at'], reverse=True)
+        return items[:100]
 
     @action(detail=False, methods=['post'], throttle_classes=[ScopedRateThrottle], throttle_scope='password_change')
     def change_password(self, request):
