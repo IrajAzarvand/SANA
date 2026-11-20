@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Search, AlertTriangle, Check, CheckCheck, Eye, Bell, Trash2, RefreshCw } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
@@ -16,13 +17,13 @@ import {
 } from '../data/alertsData';
 import { branches } from '../data/vehiclesData';
 import { useAuth } from '../context/AuthContext';
-import { alertsAPI } from '../api/services/fleet';
+import { alertsAPI, panelNotificationsAPI } from '../api/services/fleet';
 import { formatJalaliDateTime } from '../utils/dateUtils';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 export default function Alerts() {
   const { isPersonal } = useAuth();
-  return isPersonal ? <PersonalAlerts /> : <LegacyAlerts />;
+  return isPersonal ? <PersonalAlerts /> : <PanelAlerts />;
 }
 
 function LegacyAlerts() {
@@ -655,6 +656,279 @@ function PersonalAlerts() {
               </div>
             );
           })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+function PanelAlerts() {
+  const navigate = useNavigate();
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
+  const [activeTab, setActiveTab] = useState('all');
+  const [updating, setUpdating] = useState('');
+
+  const loadAlerts = useCallback(async () => {
+    const [businessResult, gpsResult] = await Promise.allSettled([
+      panelNotificationsAPI.list(),
+      alertsAPI.list(),
+    ]);
+    if (businessResult.status === 'rejected' && gpsResult.status === 'rejected') {
+      throw new Error('notification feeds unavailable');
+    }
+
+    const businessItems = businessResult.status === 'fulfilled'
+      ? (Array.isArray(businessResult.value?.results) ? businessResult.value.results : []).map((item) => ({
+        ...item,
+        notification_key: item.id,
+        is_gps_alert: false,
+        typeLabel: 'رویداد مدیریتی',
+        icon: '📋',
+        severity: 'info',
+        vehicle: item.message,
+        time: formatJalaliDateTime(item.created_at),
+        status: item.is_read ? 'acknowledged' : 'active',
+      }))
+      : null;
+    const gpsItems = gpsResult.status === 'fulfilled'
+      ? (Array.isArray(gpsResult.value?.results) ? gpsResult.value.results : []).map((item) => ({
+        ...getPersonalEventPresentation(item),
+        notification_key: `gps:${item.device_id}:${item.id}`,
+        is_gps_alert: true,
+        is_read: item.status !== 'new',
+        title: getPersonalEventPresentation(item).typeLabel,
+        path: '/panel/alerts',
+      }))
+      : null;
+
+    setItems((current) => {
+      const currentBusiness = businessItems ?? current.filter((item) => !item.is_gps_alert);
+      const currentGps = gpsItems ?? current.filter((item) => item.is_gps_alert);
+      return [...currentBusiness, ...currentGps].sort(
+        (a, b) => new Date(b.created_at || b.event_time) - new Date(a.created_at || a.event_time),
+      );
+    });
+    setError(
+      businessResult.status === 'rejected' || gpsResult.status === 'rejected'
+        ? 'بخشی از اعلان‌ها موقتاً در دسترس نیست.'
+        : '',
+    );
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    let timer;
+    let running = false;
+
+    const refresh = async () => {
+      if (running) return;
+      running = true;
+      if (document.visibilityState === 'visible') {
+        try {
+          await loadAlerts();
+        } catch {
+          if (active) setError('دریافت اعلان‌ها ناموفق بود. دوباره تلاش کنید.');
+        }
+      }
+      running = false;
+      if (active) {
+        setLoading(false);
+        timer = window.setTimeout(refresh, 30000);
+      }
+    };
+    const refreshNow = () => {
+      window.clearTimeout(timer);
+      refresh();
+    };
+
+    refresh();
+    window.addEventListener('sana:notifications-updated', refreshNow);
+    window.addEventListener('sana:personal-alerts-updated', refreshNow);
+    document.addEventListener('visibilitychange', refreshNow);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+      window.removeEventListener('sana:notifications-updated', refreshNow);
+      window.removeEventListener('sana:personal-alerts-updated', refreshNow);
+      document.removeEventListener('visibilitychange', refreshNow);
+    };
+  }, [loadAlerts]);
+
+  const unread = useMemo(() => items.filter((item) => !item.is_read), [items]);
+  const counts = useMemo(() => ({
+    all: items.length,
+    unread: unread.length,
+    read: items.length - unread.length,
+  }), [items.length, unread.length]);
+
+  const filtered = useMemo(() => items.filter((item) => {
+    if (activeTab === 'unread' && item.is_read) return false;
+    if (activeTab === 'read' && !item.is_read) return false;
+    const query = search.trim().toLocaleLowerCase('fa');
+    if (query && ![item.title, item.message, item.vehicle, item.typeLabel]
+      .filter(Boolean).some((value) => String(value).toLocaleLowerCase('fa').includes(query))) return false;
+    return true;
+  }), [items, activeTab, search]);
+
+  const markRead = async (item) => {
+    if (item.is_read) return true;
+    setUpdating(item.notification_key);
+    try {
+      if (item.is_gps_alert) {
+        await alertsAPI.updateStatus({
+          deviceId: item.device_id,
+          eventId: item.id,
+          status: 'acknowledged',
+        });
+      } else {
+        await panelNotificationsAPI.markRead(item.id);
+      }
+      setItems((current) => current.map((entry) => entry.notification_key === item.notification_key
+        ? { ...entry, is_read: true, status: 'acknowledged' }
+        : entry));
+      window.dispatchEvent(new Event(item.is_gps_alert ? 'sana:personal-alerts-updated' : 'sana:notifications-updated'));
+      return true;
+    } catch {
+      setError('ثبت وضعیت خواندن اعلان ناموفق بود.');
+      return false;
+    } finally {
+      setUpdating('');
+    }
+  };
+
+  const markAllRead = async () => {
+    setUpdating('all');
+    const [businessResult, gpsResult] = await Promise.allSettled([
+      panelNotificationsAPI.markAllRead(),
+      alertsAPI.markAllRead(),
+    ]);
+    setItems((current) => current.map((item) => {
+      if (item.is_gps_alert && gpsResult.status === 'fulfilled') {
+        return { ...item, is_read: true, status: 'acknowledged' };
+      }
+      if (!item.is_gps_alert && businessResult.status === 'fulfilled') {
+        return { ...item, is_read: true, status: 'acknowledged' };
+      }
+      return item;
+    }));
+    if (businessResult.status === 'fulfilled') {
+      window.dispatchEvent(new Event('sana:notifications-updated'));
+    }
+    if (gpsResult.status === 'fulfilled') {
+      window.dispatchEvent(new Event('sana:personal-alerts-updated'));
+    }
+    setError(
+      businessResult.status === 'rejected' || gpsResult.status === 'rejected'
+        ? 'خواندن همه اعلان‌ها به‌طور کامل انجام نشد.'
+        : '',
+    );
+    setUpdating('');
+  };
+
+  return (
+    <div className="space-y-5">
+      <PageHeader
+        title="مرکز اعلان‌ها"
+        subtitle="رویدادهای مدیریتی، تغییرات سازمانی و هشدارهای خودرو و GPS"
+      />
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <StatCard title="کل اعلان‌ها" value={counts.all} icon={Bell} color="brand" />
+        <StatCard title="خوانده‌نشده" value={counts.unread} icon={AlertTriangle} color="warning" />
+        <StatCard title="خوانده‌شده" value={counts.read} icon={CheckCheck} color="success" />
+      </div>
+
+      <Card>
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <Tabs
+              activeTab={activeTab}
+              onChange={setActiveTab}
+              tabs={[
+                { value: 'all', label: 'همه', count: counts.all },
+                { value: 'unread', label: 'خوانده‌نشده', count: counts.unread },
+                { value: 'read', label: 'خوانده‌شده', count: counts.read },
+              ]}
+            />
+            {unread.length > 0 && (
+              <button
+                type="button"
+                onClick={markAllRead}
+                disabled={!!updating}
+                className="rounded-field px-3 py-2 text-xs text-brand-500 hover:bg-bg-hover disabled:opacity-50"
+              >
+                خواندن همه
+              </button>
+            )}
+          </div>
+          <Input
+            icon={Search}
+            placeholder="جستجوی نوع رویداد، دستگاه، پلاک یا متن اعلان..."
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </div>
+      </Card>
+
+      {loading ? (
+        <LoadingSpinner />
+      ) : error && items.length === 0 ? (
+        <Card><EmptyState icon={Bell} title="دریافت اعلان‌ها ممکن نشد" description={error} /></Card>
+      ) : filtered.length === 0 ? (
+        <Card>
+          <EmptyState icon={Bell} title="اعلانی یافت نشد" description="برای این فیلتر موردی وجود ندارد." />
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {filtered.map((item) => (
+            <Card key={item.notification_key}>
+              <div className="flex flex-wrap items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-field bg-bg-hover text-lg">
+                  {item.icon || '🔔'}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="mb-1 flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm font-semibold text-text-primary">{item.title || item.typeLabel}</h3>
+                    <Badge variant={item.is_read ? 'success' : 'warning'}>
+                      {item.is_read ? 'خوانده‌شده' : 'خوانده‌نشده'}
+                    </Badge>
+                    {item.is_gps_alert && <Badge variant="info">هشدار خودرو</Badge>}
+                  </div>
+                  <p className="text-sm text-text-secondary">{item.message}</p>
+                  {item.detail && <p className="mt-1 text-xs text-text-muted">{item.detail}</p>}
+                  <p className="mt-2 text-[11px] text-text-muted">
+                    {item.vehicle && <span>{item.vehicle} · </span>}
+                    {formatJalaliDateTime(item.created_at || item.event_time)}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {!item.is_read && (
+                    <button
+                      type="button"
+                      onClick={() => markRead(item)}
+                      disabled={!!updating}
+                      className="rounded-field px-3 py-2 text-xs text-brand-500 hover:bg-bg-hover disabled:opacity-50"
+                    >
+                      {updating === item.notification_key ? 'در حال ثبت…' : 'خوانده شد'}
+                    </button>
+                  )}
+                  {item.path && item.path !== '/panel/alerts' && (
+                    <button
+                      type="button"
+                      onClick={() => navigate(item.path)}
+                      className="rounded-field px-3 py-2 text-xs text-text-secondary hover:bg-bg-hover"
+                    >
+                      مشاهده مرتبط
+                    </button>
+                  )}
+                </div>
+              </div>
+            </Card>
+          ))}
         </div>
       )}
     </div>
