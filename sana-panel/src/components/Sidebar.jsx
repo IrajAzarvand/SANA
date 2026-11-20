@@ -23,6 +23,7 @@ export default function Sidebar({ isOpen, onClose }) {
       setUnreadCount(Math.max(0, Number(event.detail?.count) || 0));
     };
     window.addEventListener('sana:notification-count-updated', syncUnreadCount);
+    window.dispatchEvent(new Event('sana:notification-count-request'));
     return () => window.removeEventListener('sana:notification-count-updated', syncUnreadCount);
   }, []);
 
