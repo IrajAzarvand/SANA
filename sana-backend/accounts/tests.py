@@ -882,3 +882,31 @@ class PersonalAndTenantFinancialNotificationTests(TestCase):
         self.assertIn('قرارداد منقضی شده است', titles)
         self.assertTrue(any('PRS-EXPIRING-001' in message for message in messages))
         self.assertTrue(any('PRS-EXPIRED-001' in message for message in messages))
+
+
+    def test_branch_manager_without_duplicate_organization_field_can_open_org_contract(self):
+        branch = Branch.objects.create(
+            organization=self.organization,
+            name='Financial Branch',
+            code='FIN-BR-001',
+        )
+        branch_manager = User.objects.create_user(
+            username='financial-branch-only',
+            password='test-password-123',
+            account_type='organization',
+            role='branch_manager',
+            branch=branch,
+        )
+        contract = self.make_contract(
+            organization=self.organization, number='ORG-BRANCH-DETAIL-001'
+        )
+
+        self.client.force_authenticate(user=branch_manager)
+        detail = self.client.get(f'/api/subscriptions/{contract.pk}/')
+        notifications = self.client.get('/api/users/notifications/')
+
+        self.assertEqual(detail.status_code, 200)
+        self.assertTrue(any(
+            item['message'].startswith('قرارداد ORG-BRANCH-DETAIL-001')
+            for item in notifications.data['results']
+        ))
