@@ -9,7 +9,7 @@ import Badge from '../components/Badge';
 import Select from '../components/Select';
 import StatCard from '../components/StatCard';
 import EmptyState from '../components/EmptyState';
-import { statusMap } from '../data/alertsData';
+import { severityMap, statusMap } from '../data/alertsData';
 import { useAuth } from '../context/AuthContext';
 import { alertsAPI, panelNotificationsAPI, notificationsAPI } from '../api/services/fleet';
 import { formatJalaliDateTime } from '../utils/dateUtils';
