@@ -597,14 +597,29 @@ class DeviceViewSet(viewsets.ModelViewSet):
 
         if request.user.is_personal_user:
             # Include devices with historical links to this customer as well.
-            # Their event visibility is bounded below by the exact assignment
-            # and contract/device dates, not by current ownership.
+            # Their event visibility is bounded by each exact assignment period.
             devices = list(Device.objects.filter(
                 subscription_links__subscription__user=request.user,
                 subscription_links__assigned_at__lte=now,
             ).distinct().select_related('vehicle'))
-        else:
+        elif request.user.is_site_admin:
             devices = list(self.get_queryset().select_related('vehicle'))
+        else:
+            # Organization and branch customers need historical devices too:
+            # get_queryset() intentionally exposes only currently active access.
+            access_scope = DeviceCustomerAccessPeriod.objects.filter(started_at__lte=now)
+            if request.user.is_main_user:
+                access_scope = access_scope.filter(organization=request.user.organization)
+            elif request.user.is_branch_manager:
+                access_scope = access_scope.filter(
+                    organization=request.user.branch.organization,
+                    branch=request.user.branch,
+                )
+            else:
+                access_scope = access_scope.none()
+            devices = list(Device.objects.filter(
+                customer_access_periods__in=access_scope,
+            ).distinct().select_related('vehicle'))
         if not devices:
             return Response({'results': [], 'counts': {'all': 0, 'unread': 0, 'read': 0, 'reviewed': 0, 'resolved': 0}})
 
@@ -622,7 +637,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
             access_periods = DeviceCustomerAccessPeriod.objects.filter(
                 device__in=devices,
                 started_at__lte=now,
-                ended_at__isnull=True,
             )
             if request.user.is_main_user:
                 access_periods = access_periods.filter(organization=request.user.organization)
@@ -631,9 +645,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     organization=request.user.branch.organization,
                     branch=request.user.branch,
                 )
-            access_by_device = {}
-            for period in access_periods.order_by('-started_at', '-id'):
-                access_by_device.setdefault(period.device_id, period)
+            for period in access_periods.order_by('started_at', 'id'):
+                access_by_device.setdefault(period.device_id, []).append(period)
 
         if request.user.is_personal_user:
             preference = PersonalAlertPreference.objects.filter(user=request.user).only('disabled_event_types').first()
@@ -668,8 +681,10 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     if event_start <= event_end:
                         periods.append({'start': event_start, 'end': event_end})
                 else:
-                    access_period = access_by_device.get(device.pk)
-                    if access_period is not None:
+                    # Check every historical access interval for this customer.
+                    # This blocks events before assignment and after access ended,
+                    # while preserving events from a previous valid assignment.
+                    for access_period in access_by_device.get(device.pk, []):
                         event_start = max(raw_start, access_period.started_at)
                         event_end = min(raw_end, access_period.ended_at or now, now)
                         if event_start <= event_end:
