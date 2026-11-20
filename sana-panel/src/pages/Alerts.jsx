@@ -438,6 +438,13 @@ function PersonalAlerts() {
       if (!cancelled) timer = window.setTimeout(poll, 30000);
     };
 
+    const refreshFromHeader = () => {
+      loadAlerts().catch(() => {
+        if (!cancelled) setError('دریافت هشدارها از سرور ناموفق بود.');
+      });
+    };
+    window.addEventListener('sana:traccar-alert-state-changed', refreshFromHeader);
+
     loadAlerts()
       .then(() => { if (!cancelled) setError(''); })
       .catch(() => { if (!cancelled) setError('دریافت هشدارها از سرور ناموفق بود.'); })
@@ -451,6 +458,7 @@ function PersonalAlerts() {
     return () => {
       cancelled = true;
       if (timer !== null) window.clearTimeout(timer);
+      window.removeEventListener('sana:traccar-alert-state-changed', refreshFromHeader);
     };
   }, [loadAlerts]);
 
