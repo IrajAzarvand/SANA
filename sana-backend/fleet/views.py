@@ -626,6 +626,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
 
         results = []
         try:
+            device_context = {}
             for device in devices:
                 if request.user.is_personal_user:
                     link = contract_by_device.get(device.pk)
@@ -646,67 +647,105 @@ class DeviceViewSet(viewsets.ModelViewSet):
                         continue
                     contract_start = access_period.started_at
                     contract_end = access_period.ended_at or now
+
                 event_start = max(raw_start, contract_start)
                 event_end = min(raw_end, contract_end, now)
-                if event_start > event_end:
-                    continue
+                if event_start <= event_end:
+                    device_context[device.pk] = {
+                        'device': device,
+                        'start': event_start,
+                        'end': event_end,
+                    }
 
-                traccar_device = traccar_device_by_unique_id(device.imei)
-                if not traccar_device or traccar_device.get('id') is None:
+            if not device_context:
+                return Response({'results': [], 'counts': {'all': 0, 'new': 0, 'acknowledged': 0, 'resolved': 0}})
+
+            traccar_by_unique_id = {
+                str(item.get('uniqueId') or '').strip(): item
+                for item in traccar_devices()
+                if str(item.get('uniqueId') or '').strip() and item.get('id') is not None
+            }
+            context_by_traccar_id = {}
+            for context in device_context.values():
+                traccar_device = traccar_by_unique_id.get(str(context['device'].imei).strip())
+                if traccar_device is None:
                     continue
+                try:
+                    traccar_id = int(traccar_device['id'])
+                except (TypeError, ValueError):
+                    continue
+                context_by_traccar_id[traccar_id] = context
+
+            if context_by_traccar_id:
+                event_start = min(item['start'] for item in context_by_traccar_id.values())
+                event_end = max(item['end'] for item in context_by_traccar_id.values())
                 events = traccar_device_events(
-                    int(traccar_device['id']),
+                    list(context_by_traccar_id),
                     event_start.isoformat().replace('+00:00', 'Z'),
                     event_end.isoformat().replace('+00:00', 'Z'),
                 )
-                for event in sorted(events, key=lambda item: str(item.get('eventTime') or '')):
-                    event_id = str(event.get('id') or '').strip()
-                    event_type = str(event.get('type') or '').strip()
-                    event_time = parse_datetime(str(event.get('eventTime') or ''))
-                    if not event_id or not event_type or event_time is None:
-                        continue
-                    if timezone.is_naive(event_time):
-                        event_time = timezone.make_aware(event_time)
+            else:
+                events = []
 
-                    state, _created = DeviceAlertState.objects.update_or_create(
+            for event in sorted(events, key=lambda item: str(item.get('eventTime') or '')):
+                try:
+                    traccar_id = int(event.get('deviceId'))
+                except (TypeError, ValueError):
+                    continue
+                context = context_by_traccar_id.get(traccar_id)
+                if context is None:
+                    continue
+
+                device = context['device']
+                event_id = str(event.get('id') or '').strip()
+                event_type = str(event.get('type') or '').strip()
+                event_time = parse_datetime(str(event.get('eventTime') or ''))
+                if not event_id or not event_type or event_time is None:
+                    continue
+                if timezone.is_naive(event_time):
+                    event_time = timezone.make_aware(event_time)
+                if event_time < context['start'] or event_time > context['end']:
+                    continue
+
+                state, _created = DeviceAlertState.objects.update_or_create(
+                    user=request.user,
+                    device=device,
+                    traccar_event_id=event_id,
+                    defaults={'event_type': event_type, 'event_time': event_time},
+                )
+                if event_type == 'deviceOnline':
+                    DeviceAlertState.objects.filter(
                         user=request.user,
                         device=device,
-                        traccar_event_id=event_id,
-                        defaults={'event_type': event_type, 'event_time': event_time},
+                        event_type='deviceOffline',
+                        event_time__lt=event_time,
+                    ).exclude(status='resolved').update(
+                        status='resolved', resolved_at=event_time
                     )
-                    if event_type == 'deviceOnline':
-                        DeviceAlertState.objects.filter(
-                            user=request.user,
-                            device=device,
-                            event_type='deviceOffline',
-                            event_time__lt=event_time,
-                        ).exclude(status='resolved').update(
-                            status='resolved', resolved_at=event_time
-                        )
-                        for previous_alert in results:
-                            if (
-                                previous_alert['device_id'] == device.pk
-                                and previous_alert['type'] == 'deviceOffline'
-                                and previous_alert['event_time'] < event_time
-                            ):
-                                previous_alert['status'] = 'resolved'
-                                previous_alert['resolved_at'] = event_time
+                    for previous_alert in results:
+                        if (
+                            previous_alert['device_id'] == device.pk
+                            and previous_alert['type'] == 'deviceOffline'
+                            and previous_alert['event_time'] < event_time
+                        ):
+                            previous_alert['status'] = 'resolved'
+                            previous_alert['resolved_at'] = event_time
 
-                    if event_type in disabled_event_types:
-                        continue
+                if event_type in disabled_event_types:
+                    continue
 
-                    results.append({
-                        'id': state.traccar_event_id,
-                        'device_id': device.pk,
-                        'device_imei': device.imei,
-                        'vehicle_plate': device.vehicle.plate if device.vehicle_id else None,
-                        'type': state.event_type,
-                        'event_time': state.event_time,
-                        'status': state.status,
-                        'acknowledged_at': state.acknowledged_at,
-                        'resolved_at': state.resolved_at,
-                        'attributes': event.get('attributes') if isinstance(event.get('attributes'), dict) else {},
-                    })
+                results.append({
+                    'id': state.traccar_event_id,
+                    'device_id': device.pk,
+                    'device_imei': device.imei,
+                    'vehicle_plate': device.vehicle.plate if device.vehicle_id else None,
+                    'type': state.event_type,
+                    'event_time': state.event_time,
+                    'status': state.status,
+                    'acknowledged_at': state.acknowledged_at,
+                    'resolved_at': state.resolved_at,
+                    'attributes': event.get('attributes') if isinstance(event.get('attributes'), dict) else {},
+                })
         except TraccarAPIError:
             return Response({'detail': 'دریافت رویدادها از Traccar در حال حاضر ممکن نیست.'}, status=503)
 
