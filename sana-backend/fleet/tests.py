@@ -993,14 +993,15 @@ class PersonalTraccarAlertsTests(TestCase):
         )
 
     @patch('fleet.views.traccar_device_events')
-    @patch('fleet.views.traccar_device_by_unique_id')
+    @patch('fleet.views.traccar_devices')
     def test_get_returns_real_traccar_events_for_contract_device(
-        self, lookup_device, fetch_events
+        self, list_devices, fetch_events
     ):
         event_time = timezone.now().replace(microsecond=0)
-        lookup_device.return_value = {'id': 42}
+        list_devices.return_value = [{'id': 42, 'uniqueId': self.device.imei}]
         fetch_events.return_value = [{
             'id': 701,
+            'deviceId': 42,
             'type': 'deviceOffline',
             'eventTime': event_time.isoformat(),
             'attributes': {},
@@ -1014,19 +1015,19 @@ class PersonalTraccarAlertsTests(TestCase):
         self.assertEqual(response.data['counts']['new'], 1)
         self.assertEqual(response.data['results'][0]['id'], '701')
         self.assertEqual(response.data['results'][0]['status'], 'new')
-        self.assertEqual(fetch_events.call_args.args[0], 42)
+        self.assertEqual(fetch_events.call_args.args[0], [42])
 
     @patch('fleet.views.traccar_device_events')
-    @patch('fleet.views.traccar_device_by_unique_id')
+    @patch('fleet.views.traccar_devices')
     def test_online_event_resolves_previous_offline_event(
-        self, lookup_device, fetch_events
+        self, list_devices, fetch_events
     ):
         offline_time = timezone.now() - timedelta(hours=2)
         online_time = timezone.now()
-        lookup_device.return_value = {'id': 42}
+        list_devices.return_value = [{'id': 42, 'uniqueId': self.device.imei}]
         fetch_events.return_value = [
-            {'id': 702, 'type': 'deviceOffline', 'eventTime': offline_time.isoformat()},
-            {'id': 703, 'type': 'deviceOnline', 'eventTime': online_time.isoformat()},
+            {'id': 702, 'deviceId': 42, 'type': 'deviceOffline', 'eventTime': offline_time.isoformat()},
+            {'id': 703, 'deviceId': 42, 'type': 'deviceOnline', 'eventTime': online_time.isoformat()},
         ]
         request = APIRequestFactory().get('/api/devices/alerts/')
         force_authenticate(request, user=self.user)
@@ -1256,15 +1257,16 @@ class OrganizationAndAdminAlertsAccessTests(TestCase):
         return device
 
     @patch('fleet.views.traccar_device_events')
-    @patch('fleet.views.traccar_device_by_unique_id')
+    @patch('fleet.views.traccar_devices')
     def test_organization_user_receives_traccar_alerts_for_authorized_devices(
-        self, lookup_device, fetch_events
+        self, list_devices, fetch_events
     ):
         device = self.make_access_device('860000000000801', self.branch)
-        lookup_device.return_value = {'id': 8801}
+        list_devices.return_value = [{'id': 8801, 'uniqueId': device.imei}]
         event_time = timezone.now().replace(microsecond=0)
         fetch_events.return_value = [{
             'id': 8802,
+            'deviceId': 8801,
             'type': 'deviceOffline',
             'eventTime': event_time.isoformat(),
             'attributes': {},
@@ -1279,9 +1281,9 @@ class OrganizationAndAdminAlertsAccessTests(TestCase):
         self.assertEqual(response.data['results'][0]['status'], 'new')
 
     @patch('fleet.views.traccar_device_events')
-    @patch('fleet.views.traccar_device_by_unique_id')
+    @patch('fleet.views.traccar_devices')
     def test_branch_manager_does_not_receive_other_branch_device_alerts(
-        self, lookup_device, fetch_events
+        self, list_devices, fetch_events
     ):
         self.make_access_device('860000000000802', self.other_branch)
         request = APIRequestFactory().get('/api/devices/alerts/')
@@ -1291,22 +1293,23 @@ class OrganizationAndAdminAlertsAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['results'], [])
-        lookup_device.assert_not_called()
+        list_devices.assert_not_called()
         fetch_events.assert_not_called()
 
     @patch('fleet.views.traccar_device_events')
-    @patch('fleet.views.traccar_device_by_unique_id')
+    @patch('fleet.views.traccar_devices')
     def test_site_admin_receives_traccar_alerts_without_customer_access_period(
-        self, lookup_device, fetch_events
+        self, list_devices, fetch_events
     ):
         device = Device.objects.create(
             imei='860000000000803',
             management_status='warehouse',
         )
-        lookup_device.return_value = {'id': 8803}
+        list_devices.return_value = [{'id': 8803, 'uniqueId': device.imei}]
         event_time = timezone.now().replace(microsecond=0)
         fetch_events.return_value = [{
             'id': 8804,
+            'deviceId': 8803,
             'type': 'deviceOffline',
             'eventTime': event_time.isoformat(),
             'attributes': {},
