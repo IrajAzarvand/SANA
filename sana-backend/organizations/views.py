@@ -618,6 +618,18 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             return Response(status=status.HTTP_204_NO_CONTENT)
 
         with transaction.atomic():
+            old_status = subscription.status
+            SubscriptionOperation.objects.create(
+                subscription=subscription,
+                operation_type='cancel',
+                performed_by=request.user,
+                old_start_date=subscription.start_date,
+                new_start_date=subscription.start_date,
+                old_end_date=subscription.end_date,
+                new_end_date=subscription.end_date,
+                old_status=old_status,
+                new_status='cancelled',
+            )
             subscription.status = 'cancelled'
             subscription.save(update_fields=['status', 'updated_at'])
 

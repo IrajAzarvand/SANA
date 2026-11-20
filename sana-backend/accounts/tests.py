@@ -914,3 +914,23 @@ class PersonalAndTenantFinancialNotificationTests(TestCase):
             item['id'].startswith(f'installment:{installment.pk}:')
             for item in notifications.data['results']
         ))
+
+    def test_delete_endpoint_records_contract_cancellation_notification(self):
+        contract = self.make_contract(
+            owner=self.personal, number='PRS-DESTROY-CANCEL-001'
+        )
+        self.client.force_authenticate(user=self.admin)
+
+        deleted = self.client.delete(f'/api/subscriptions/{contract.pk}/')
+        self.assertEqual(deleted.status_code, 204)
+
+        notifications = self.client.get('/api/users/notifications/')
+        self.assertEqual(notifications.status_code, 200)
+        matches = [
+            item for item in notifications.data['results']
+            if item['id'].startswith('subscription-operation:')
+            and 'لغو' in item['title']
+            and contract.contract_number in item['message']
+        ]
+        self.assertEqual(len(matches), 1)
+
