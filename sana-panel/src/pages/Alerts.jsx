@@ -262,6 +262,7 @@ function PersonalAlerts() {
   const counts = useMemo(() => ({
     all: presentedAlerts.length,
     active: presentedAlerts.filter((item) => item.status === 'active').length,
+    read: presentedAlerts.filter((item) => item.status === 'read').length,
     reviewed: presentedAlerts.filter((item) => item.status === 'reviewed').length,
     resolved: presentedAlerts.filter((item) => item.status === 'resolved').length,
   }), [presentedAlerts]);
@@ -383,9 +384,10 @@ function PersonalAlerts() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <StatCard title="کل رویدادها" value={counts.all} icon={Bell} color="brand" />
         <StatCard title="جدید" value={counts.active} icon={AlertTriangle} color="danger" />
+        <StatCard title="خوانده‌شده" value={counts.read} icon={Check} color="info" />
         <StatCard title="بررسی‌شده" value={counts.reviewed} icon={Eye} color="warning" />
         <StatCard title="رفع‌شده" value={counts.resolved} icon={CheckCheck} color="success" />
       </div>
@@ -397,6 +399,7 @@ function PersonalAlerts() {
           tabs={[
             { value: 'all', label: 'همه', count: counts.all },
             { value: 'active', label: 'جدید', count: counts.active },
+            { value: 'read', label: 'خوانده‌شده', count: counts.read },
             { value: 'reviewed', label: 'بررسی‌شده', count: counts.reviewed },
             { value: 'resolved', label: 'رفع‌شده', count: counts.resolved },
           ]}
@@ -649,7 +652,7 @@ function PanelAlerts() {
         eventId: item.id,
       });
       setItems((current) => current.map((entry) => entry.notification_key === item.notification_key
-        ? { ...entry, is_read: true, status: 'reviewed' }
+        ? { ...entry, is_read: true, status: 'read' }
         : entry));
       window.dispatchEvent(new Event(item.is_gps_alert ? 'sana:personal-alerts-updated' : 'sana:notifications-updated'));
       return true;
@@ -666,7 +669,7 @@ function PanelAlerts() {
     const [businessResult, gpsResult] = await notificationsAPI.markAllRead();
     setItems((current) => current.map((item) => {
       if (item.is_gps_alert && gpsResult.status === 'fulfilled') {
-        return { ...item, is_read: true, status: 'reviewed' };
+        return { ...item, is_read: true, status: 'read' };
       }
       if (!item.is_gps_alert && businessResult.status === 'fulfilled') {
         return { ...item, is_read: true, status: 'reviewed' };
