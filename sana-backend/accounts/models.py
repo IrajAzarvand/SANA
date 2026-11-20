@@ -76,6 +76,7 @@ class User(AbstractBaseUser, PermissionsMixin):
     is_active = models.BooleanField(default=True, verbose_name='فعال')
     is_staff = models.BooleanField(default=False, verbose_name='دسترسی ادمین')
     date_joined = models.DateTimeField(default=timezone.now, verbose_name='تاریخ عضویت')
+    updated_at = models.DateTimeField(auto_now=True, verbose_name='آخرین به‌روزرسانی')
     last_login_ip = models.GenericIPAddressField(null=True, blank=True)
 
     objects = UserManager()
