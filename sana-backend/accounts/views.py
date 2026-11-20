@@ -293,6 +293,7 @@ class UserViewSet(viewsets.ModelViewSet):
         # Allocation totals ensure a fully-paid installment never generates a reminder.
         installments = SubscriptionInstallment.objects.filter(
             plan__subscription__in=subscriptions,
+            plan__subscription__status='active',
             plan__status='active',
             status='active',
         ).select_related('plan', 'plan__subscription').annotate(

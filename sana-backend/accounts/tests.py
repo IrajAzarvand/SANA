@@ -753,6 +753,24 @@ class PersonalAndTenantFinancialNotificationTests(TestCase):
             for item in response.data['results']
         ))
 
+    def test_cancelled_contract_does_not_generate_installment_reminders(self):
+        contract = self.make_contract(owner=self.personal, number='PRS-CANCELLED-001')
+        contract.status = 'cancelled'
+        contract.save(update_fields=['status'])
+        plan = self.make_plan(contract)
+        installment = self.make_installment(
+            plan, number=1, due_date=self.today - timedelta(days=1)
+        )
+
+        self.client.force_authenticate(user=self.personal)
+        response = self.client.get('/api/users/notifications/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(any(
+            item['id'].startswith(f'installment:{installment.pk}:')
+            for item in response.data['results']
+        ))
+
     def test_overdue_notification_uses_remaining_balance_not_original_amount(self):
         contract = self.make_contract(owner=self.personal, number='PRS-PARTIAL-001')
         plan = self.make_plan(contract)
