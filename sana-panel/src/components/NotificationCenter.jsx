@@ -136,6 +136,7 @@ export default function NotificationCenter() {
       setItems((current) => current.map((entry) => entry.notification_key === key
         ? { ...entry, is_read: true, status: entry.status === 'new' ? 'acknowledged' : entry.status }
         : entry));
+      window.dispatchEvent(new Event(item.is_gps_alert ? 'sana:traccar-alert-state-changed' : 'sana:panel-notification-state-changed'));
       return true;
     } catch {
       setError('وضعیت خواندن اعلان ثبت نشد. دوباره تلاش کنید.');
@@ -171,6 +172,12 @@ export default function NotificationCenter() {
         }
         return item;
       }));
+      if (businessResult.status === 'fulfilled') {
+        window.dispatchEvent(new Event('sana:panel-notification-state-changed'));
+      }
+      if (gpsResult.status === 'fulfilled') {
+        window.dispatchEvent(new Event('sana:traccar-alert-state-changed'));
+      }
       if (businessResult.status === 'rejected' || gpsResult.status === 'rejected') {
         setError('خواندن همه اعلان‌ها به‌طور کامل انجام نشد.');
       }
