@@ -116,7 +116,7 @@ export default function Sidebar({ isOpen, onClose }) {
                         type="button"
                         aria-expanded={reportsExpanded}
                         onClick={() => setReportsExpanded((expanded) => !expanded)}
-                        className={`group flex w-full items-center gap-2.5 px-2.5 py-2.5 rounded-field text-[13px] transition-all text-right
+                        className={`group flex min-h-11 w-full items-center gap-2.5 px-2.5 py-2.5 rounded-field text-[13px] transition-all text-right
                           ${location.pathname.startsWith('/panel/reports')
                             ? 'bg-bg-hover text-text-primary font-medium'
                             : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
@@ -153,7 +153,7 @@ export default function Sidebar({ isOpen, onClose }) {
                       to={item.path}
                       onClick={onClose}
                       className={({ isActive }) =>
-                        `group flex items-center gap-2.5 px-2.5 py-2.5 rounded-field text-[13px] transition-all relative
+                        `group flex min-h-11 items-center gap-2.5 px-2.5 py-2.5 rounded-field text-[13px] transition-all relative
                          ${isActive
                            ? 'bg-bg-hover text-text-primary font-medium'
                            : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
