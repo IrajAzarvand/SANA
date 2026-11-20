@@ -321,14 +321,14 @@ class UserViewSet(viewsets.ModelViewSet):
                 title = 'سررسید قسط امروز است'
                 message = (
                     f'قرارداد {subscription.contract_number} · قسط {installment.number} · '
-                    f'مانده {remaining:,.0f} ریال'
+                    f'مانده {remaining:,.0f} ریال · سررسید {installment.due_date}'
                 )
             elif days_until_due <= 7:
                 stage = 'due-soon'
                 title = 'سررسید قسط نزدیک است'
                 message = (
                     f'قرارداد {subscription.contract_number} · قسط {installment.number} · '
-                    f'مانده {remaining:,.0f} ریال · {days_until_due} روز تا سررسید'
+                    f'مانده {remaining:,.0f} ریال · سررسید {installment.due_date} · {days_until_due} روز باقی‌مانده'
                 )
             else:
                 continue
@@ -336,7 +336,7 @@ class UserViewSet(viewsets.ModelViewSet):
                 f'installment:{installment.pk}:plan-{installment.plan_id}:{installment.due_date}:{stage}',
                 title,
                 message,
-                timezone.make_aware(datetime.combine(installment.due_date, datetime.min.time())),
+                now,
                 f'/panel/subscriptions/{subscription.pk}',
                 persistent=True,
                 kind='financial',
