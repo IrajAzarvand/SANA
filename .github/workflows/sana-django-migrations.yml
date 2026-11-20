@@ -117,7 +117,7 @@ jobs:
           DB_NAME: sana_upgrade
           PGPASSWORD: postgres
         run: |
-          mv fleet/migrations/0003_squashed_0015_traccar_authoritative.py /tmp/0003_squashed_0015_traccar_authoritative.py
+          mv fleet/migrations/0003_current_state.py /tmp/0003_current_state.py
           python manage.py migrate --noinput
           python manage.py shell -c '
           from fleet.models import Device, DeviceModel
@@ -129,7 +129,7 @@ jobs:
           )
           Device.objects.create(imei="352094082143253", device_model=model)
           '
-          mv /tmp/0003_squashed_0015_traccar_authoritative.py fleet/migrations/0003_squashed_0015_traccar_authoritative.py
+          mv /tmp/0003_current_state.py fleet/migrations/0003_current_state.py
           python manage.py migrate --noinput
           python manage.py makemigrations --check --dry-run
           python manage.py shell -c '
@@ -148,8 +148,8 @@ jobs:
           PGPASSWORD: postgres
         run: |
           set -Eeuo pipefail
-          squash="fleet/migrations/0003_squashed_0015_traccar_authoritative.py"
-          hidden="/tmp/0003_squashed_0015_traccar_authoritative.py"
+          squash="fleet/migrations/0003_current_state.py"
+          hidden="/tmp/0003_current_state.py"
           restore_squash() {
             if [[ -f "$hidden" && ! -f "$squash" ]]; then
               mv "$hidden" "$squash"
