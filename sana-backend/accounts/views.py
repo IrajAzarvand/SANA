@@ -465,7 +465,6 @@ class UserViewSet(viewsets.ModelViewSet):
             operation_contract_access = SubscriptionDevice.objects.filter(
                 device_id=OuterRef('device_id'),
                 subscription__in=subscriptions,
-                subscription__status='active',
                 subscription__start_date__lte=OuterRef('performed_at__date'),
                 subscription__end_date__gte=OuterRef('performed_at__date'),
                 start_date__lte=OuterRef('performed_at__date'),
@@ -478,7 +477,6 @@ class UserViewSet(viewsets.ModelViewSet):
             lifecycle_contract_access = SubscriptionDevice.objects.filter(
                 device_id=OuterRef('device_id'),
                 subscription__in=subscriptions,
-                subscription__status='active',
                 subscription__start_date__lte=OuterRef('event_date__date'),
                 subscription__end_date__gte=OuterRef('event_date__date'),
                 start_date__lte=OuterRef('event_date__date'),
