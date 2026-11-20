@@ -981,3 +981,52 @@ class PersonalAndTenantFinancialNotificationTests(TestCase):
             for item in ids
         )))
 
+    def test_organization_and_branch_manager_notifications_are_tenant_scoped(self):
+        own_contract = self.make_contract(
+            organization=self.organization, number='ORG-SCOPE-OWN-001'
+        )
+        other_org = Organization.objects.create(
+            name='Other Notification Tenant', code='FIN-NOTIF-ORG-099'
+        )
+        other_contract = self.make_contract(
+            organization=other_org, number='ORG-SCOPE-OTHER-001'
+        )
+        own_plan = self.make_plan(own_contract)
+        other_plan = self.make_plan(other_contract)
+        own_installment = self.make_installment(
+            own_plan, number=1, due_date=self.today
+        )
+        other_installment = self.make_installment(
+            other_plan, number=1, due_date=self.today
+        )
+        branch = Branch.objects.create(
+            organization=self.organization,
+            name='Scoped Branch',
+            code='FIN-SCOPE-BR-001',
+        )
+        branch_manager = User.objects.create_user(
+            username='financial-scope-branch',
+            password='test-password-123',
+            account_type='organization',
+            role='branch_manager',
+            branch=branch,
+        )
+
+        for user in (self.org_user, branch_manager):
+            self.client.force_authenticate(user=user)
+            response = self.client.get('/api/users/notifications/')
+            self.assertEqual(response.status_code, 200)
+            ids = [item['id'] for item in response.data['results']]
+            self.assertTrue(any(
+                item.startswith(f'installment:{own_installment.pk}:')
+                for item in ids
+            ))
+            self.assertFalse(any(
+                item.startswith(f'installment:{other_installment.pk}:')
+                for item in ids
+            ))
+            self.assertFalse(any(
+                'ORG-SCOPE-OTHER-001' in item['message']
+                for item in response.data['results']
+            ))
+
