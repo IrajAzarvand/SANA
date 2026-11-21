@@ -278,7 +278,7 @@ class SubscriptionWizardDeviceValidationTests(TestCase):
         self.assertIn('devices', serializer.errors)
 
     def test_device_not_in_warehouse_is_rejected(self):
-        self.device.management_status = 'sold'
+        self.device.management_status = 'installed'
         self.device.save(update_fields=['management_status'])
         serializer = SubscriptionWizardSerializer(data=self._payload())
         self.assertFalse(serializer.is_valid())
@@ -318,7 +318,7 @@ class SubscriptionWizardDeviceValidationTests(TestCase):
         link = SubscriptionDevice.objects.get(subscription=subscription, device=self.device)
         self.assertIsNone(link.unassigned_at)
         self.device.refresh_from_db()
-        self.assertEqual(self.device.management_status, 'sold')
+        self.assertEqual(self.device.management_status, 'installed')
 
 class SubscriptionContractNumberUniquenessTests(TestCase):
     def test_contract_number_cannot_duplicate_any_existing_contract(self):
