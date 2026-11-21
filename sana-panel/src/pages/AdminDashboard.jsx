@@ -43,15 +43,15 @@ const serviceState = {
 };
 const managementLabels = {
   warehouse: 'انبار',
-  sold: 'فروخته‌شده',
   installed: 'نصب‌شده',
   active: 'فعال',
   ready: 'آماده تعیین تکلیف',
+  in_repair: 'در حال تعمیر',
   faulty: 'خراب',
   lost: 'گمشده',
   stolen: 'سرقت‌شده',
   disconnected: 'قطع سرویس',
-  retired: 'بازنشسته',
+  unusable: 'غیرقابل استفاده',
   disposed: 'امحاء‌شده',
 };
 
