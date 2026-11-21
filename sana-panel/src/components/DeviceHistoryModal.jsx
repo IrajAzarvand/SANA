@@ -66,7 +66,7 @@ const deviceOutcomeActionMap = {
   customer_spare: 'تحویل به مشتری به عنوان دستگاه یدکی',
   install_other_vehicle: 'نصب روی خودروی دیگر',
   transfer_customer: 'انتقال به مشتری دیگر',
-  retire: 'بازنشستگی',
+  retire: 'خارج کردن از چرخه استفاده',
   dispose: 'امحاء',
   other: 'سایر',
 };
@@ -290,7 +290,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
     }));
   };
 
-  const canAddFollowUpReplacement = ['faulty', 'lost', 'stolen'].includes(historyDevice?.management_status);
+  const canAddFollowUpReplacement = ['faulty', 'in_repair', 'lost', 'stolen'].includes(historyDevice?.management_status);
   const operationNeedsReplacement = ['return_for_repair', 'lost', 'stolen', 'temporary_replacement', 'permanent_replacement'].includes(operationForm.operation_type);
   const operationNeedsReplacementType = operationNeedsReplacement && Boolean(operationForm.replacement_device);
   const operationNeedsReplacementMethod = operationNeedsReplacement && Boolean(operationForm.replacement_device);
@@ -536,7 +536,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
                         { value: 'transfer_customer', label: 'انتقال به مشتری دیگر' },
                         { value: 'transfer_branch', label: 'انتقال بین شعب' },
                         { value: 'transfer_vehicle', label: 'انتقال بین خودروها' },
-                        { value: 'retire', label: 'بازنشستگی' },
+                        { value: 'retire', label: 'خارج کردن از چرخه استفاده' },
                         { value: 'dispose', label: 'امحاء' },
                       ]}
                     />
