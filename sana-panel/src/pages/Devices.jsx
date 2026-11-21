@@ -561,9 +561,9 @@ function DevicesTab() {
                            <span className="text-text-muted text-xs">—</span>
                          )}
                        </td>
-                      <td className="py-3 px-4">
+                      {isSiteAdmin && <td className="py-3 px-4">
                         <Badge variant={mgmt.variant}>{mgmt.label}</Badge>
-                      </td>
+                      </td>}
                       <td className="py-3 px-4 text-xs text-text-secondary whitespace-nowrap" title={d.last_data_received_at || ''}>
                         <span className={d.last_data_received_at ? 'text-text-primary' : 'text-text-muted'}>
                           {formatReceivedAt(d.last_data_received_at)}
@@ -571,7 +571,7 @@ function DevicesTab() {
                       </td>
                       <td className="py-3 px-4">
                         <span title={!d.data_active ? (d.data_inactive_reason || 'علت غیرفعال بودن مشخص نیست') : undefined}>
-                          <Badge variant={d.data_active ? 'success' : 'muted'}>
+                          <Badge variant={d.data_active ? 'success' : 'neutral'}>
                             <span className="inline-flex items-center gap-1.5">
                               <Activity size={12} />
                               {d.data_active ? 'سرویس فعال' : 'سرویس غیرفعال'}
