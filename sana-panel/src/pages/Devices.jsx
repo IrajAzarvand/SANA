@@ -161,7 +161,7 @@ function DevicesTab() {
   }, [devices, search, filterStatus, filterWarehouse]);
 
   const statusOptions = useMemo(() => {
-    return Object.entries(managementStatusMap).map(([value, { label }]) => ({
+    return Object.entries(managementStatusMap).filter(([value]) => !['sold', 'retired'].includes(value)).map(([value, { label }]) => ({
       value, label,
     }));
   }, []);
@@ -480,7 +480,7 @@ function DevicesTab() {
                     {isSiteAdmin && <div><div className="text-text-muted">وضعیت مدیریتی</div><div className="mt-1"><Badge variant={mgmt.variant}>{mgmt.label}</Badge></div></div>}
                     <div><div className="text-text-muted">آخرین دریافت GPS</div><div className="mt-1 text-text-primary">{formatReceivedAt(d.last_data_received_at)}</div></div>
                     <div><div className="text-text-muted">مجوز سرویس GPS</div><div className="mt-1"><span title={!d.data_active ? (d.data_inactive_reason || 'علت غیرفعال بودن مشخص نیست') : undefined}>
-                        <Badge variant={d.data_active ? 'success' : 'muted'}>{d.data_active ? 'سرویس فعال' : 'سرویس غیرفعال'}</Badge>
+                        <Badge variant={d.data_active ? 'success' : 'neutral'}>{d.data_active ? 'سرویس فعال' : 'سرویس غیرفعال'}</Badge>
                       </span></div></div>
                     {d.replacement_device_imei && <div className="col-span-2"><div className="text-text-muted">دستگاه مرتبط</div><button type="button" onClick={() => focusRelatedDevice(d.replacement_device_imei)} className="mt-1 text-brand-400">{d.replacement_device_imei}</button></div>}
                   </div>
@@ -547,7 +547,7 @@ function DevicesTab() {
                              {d.subscription_device_type_display || 'جایگزین شده'}
                            </button>
                          ) : d.subscription_device_type_display ? (
-                           <Badge variant={d.subscription_device_type === 'primary' ? 'muted' : 'brand'}>
+                           <Badge variant={d.subscription_device_type === 'primary' ? 'info' : d.subscription_device_type === 'temporary_repair' ? 'warning' : 'brand'}>
                              {d.subscription_device_type_display}
                            </Badge>
                          ) : (
