@@ -549,7 +549,7 @@ function DevicesTab() {
                              {d.subscription_device_type_display || 'جایگزین شده'}
                            </button>
                          ) : d.subscription_device_type_display ? (
-                           <Badge variant={d.subscription_device_type === 'primary' ? 'info' : d.subscription_device_type === 'temporary_repair' ? 'warning' : 'brand'}>
+                           <Badge variant={d.subscription_device_type === 'primary' ? 'info' : d.subscription_device_type === 'temporary_repair' ? 'warning' : d.subscription_device_type === 'permanent_replacement' ? 'brand' : 'neutral'}>
                              {d.subscription_device_type_display}
                            </Badge>
                          ) : (
@@ -700,7 +700,7 @@ const personalGpsStatus = {
   moving: { label: 'در حال حرکت', variant: 'success', icon: CarFront },
   stopped: { label: 'متوقف', variant: 'info', icon: MapPin },
   offline: { label: 'آفلاین', variant: 'danger', icon: WifiOff },
-  unknown: { label: 'وضعیت نامشخص', variant: 'muted', icon: Wifi },
+  unknown: { label: 'وضعیت نامشخص', variant: 'neutral', icon: Wifi },
 };
 
 function PersonalDevicesView({ devices, onRefresh }) {
