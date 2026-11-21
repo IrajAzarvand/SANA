@@ -1603,34 +1603,3 @@ class DeviceOperationViewSet(viewsets.ModelViewSet):
         if device:
             qs = qs.filter(device_id=device) | qs.filter(replacement_device_id=device)
         return qs.distinct()
-
-
-class = DeviceOperationSerializer
-    permission_classes = [IsAuthenticated]
-    http_method_names = ['get', 'post', 'head', 'options']
-
-    def get_queryset(self):
-        user = self.request.user
-        qs = self.queryset
-        if user.is_site_admin:
-            pass
-        elif user.is_main_user and user.organization_id:
-            access = DeviceCustomerAccessPeriod.objects.filter(device=OuterRef('device_id'), organization_id=user.organization_id, started_at__lte=OuterRef('performed_at')).filter(Q(ended_at__isnull=True) | Q(ended_at__gte=OuterRef('performed_at')))
-            qs = qs.filter(Exists(access))
-        elif user.is_branch_manager and user.branch_id:
-            access = DeviceCustomerAccessPeriod.objects.filter(device=OuterRef('device_id'), organization_id=user.organization_id, branch_id=user.branch_id, started_at__lte=OuterRef('performed_at')).filter(Q(ended_at__isnull=True) | Q(ended_at__gte=OuterRef('performed_at')))
-            qs = qs.filter(Exists(access))
-        elif user.is_personal_user:
-            access = DeviceCustomerAccessPeriod.objects.filter(device=OuterRef('device_id'), user_id=user.id, started_at__lte=OuterRef('performed_at')).filter(Q(ended_at__isnull=True) | Q(ended_at__gte=OuterRef('performed_at')))
-            qs = qs.filter(Exists(access))
-        else:
-            qs = qs.none()
-        device = self.request.query_params.get('device')
-        if device:
-            qs = qs.filter(device_id=device) | qs.filter(replacement_device_id=device)
-        return qs.distinct()
-
-    def get_permissions(self):
-        if self.action == 'create':
-            return [IsSiteAdmin()]
-        return super().get_permissions()
