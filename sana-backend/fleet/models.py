@@ -612,7 +612,7 @@ class DeviceLifecycleEvent(models.Model):
         ('found', 'پیدا شدن'),
         ('disposition', 'تعیین تکلیف'),
         ('stolen', 'سرقت'),
-        ('retired', 'بازنشستگی'),
+        ('retired', 'خروج از چرخه استفاده'),
         ('disposed', 'امحاء'),
     ]
 
