@@ -1,6 +1,4 @@
-import logging
 from bisect import bisect_right
-from time import perf_counter
 
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
@@ -33,8 +31,6 @@ from organizations.models import SubscriptionDevice
 from accounts.permissions import IsSiteAdmin, IsOrganizationMember
 from .traccar_api import TraccarAPIError, traccar_current_positions, traccar_device_by_unique_id, traccar_device_positions, traccar_device_events, traccar_devices
 
-
-logger = logging.getLogger(__name__)
 
 
 def traccar_position_timestamp(position):
@@ -587,8 +583,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 'resolved_at': state.resolved_at,
             })
 
-        request_started_at = perf_counter()
-        device_query_started_at = perf_counter()
         now = timezone.now()
         default_start = now - timedelta(days=30)
         raw_start = parse_datetime(request.query_params.get('from', '')) if request.query_params.get('from') else default_start
@@ -629,7 +623,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
             devices = list(Device.objects.filter(
                 customer_access_periods__in=access_scope,
             ).distinct().select_related('vehicle'))
-        device_query_ms = (perf_counter() - device_query_started_at) * 1000
         if not devices:
             return Response({'results': [], 'counts': {'all': 0, 'unread': 0, 'read': 0, 'reviewed': 0, 'resolved': 0}})
 
@@ -667,7 +660,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
         results = []
         try:
             device_context = {}
-            context_build_started_at = perf_counter()
             for device in devices:
                 periods = []
                 if request.user.is_personal_user:
@@ -707,18 +699,14 @@ class DeviceViewSet(viewsets.ModelViewSet):
                         'periods': periods,
                     }
 
-            context_build_ms = (perf_counter() - context_build_started_at) * 1000
             if not device_context:
                 return Response({'results': [], 'counts': {'all': 0, 'unread': 0, 'read': 0, 'reviewed': 0, 'resolved': 0}})
 
-            traccar_devices_started_at = perf_counter()
             traccar_by_unique_id = {
                 str(item.get('uniqueId') or '').strip(): item
                 for item in traccar_devices()
                 if str(item.get('uniqueId') or '').strip() and item.get('id') is not None
             }
-            traccar_devices_ms = (perf_counter() - traccar_devices_started_at) * 1000
-            traccar_device_count = len(traccar_by_unique_id)
             context_by_traccar_id = {}
             for context in device_context.values():
                 traccar_device = traccar_by_unique_id.get(str(context['device'].imei).strip())
@@ -730,8 +718,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     continue
                 context_by_traccar_id[traccar_id] = context
 
-            events_fetch_started_at = perf_counter()
-            traccar_event_requests = 0
             if context_by_traccar_id:
                 event_start = min(
                     period['start']
@@ -746,7 +732,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 traccar_ids = list(context_by_traccar_id)
                 events = []
                 for offset in range(0, len(traccar_ids), 100):
-                    traccar_event_requests += 1
                     events.extend(traccar_device_events(
                         traccar_ids[offset:offset + 100],
                         event_start.isoformat().replace('+00:00', 'Z'),
@@ -754,9 +739,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     ))
             else:
                 events = []
-            events_fetch_ms = (perf_counter() - events_fetch_started_at) * 1000
-            event_processing_started_at = perf_counter()
-            persistence_ms = 0.0
             eligible_events = []
             online_times_by_device = {}
 
@@ -795,7 +777,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     online_times_by_device.setdefault(device.pk, []).append(event_time)
 
             # Fetch existing states once, then create missing states in batches.
-            persistence_started_at = perf_counter()
             device_ids = {item['device'].pk for item in eligible_events}
             event_ids = {item['event_id'] for item in eligible_events}
             states_by_key = {}
@@ -859,12 +840,10 @@ class DeviceViewSet(viewsets.ModelViewSet):
                         traccar_event_id__in=event_ids,
                     )
                 }
-            persistence_ms += (perf_counter() - persistence_started_at) * 1000
 
             # Resolve earlier offline alerts in batches, preserving the first
             # subsequent online event as the resolution timestamp.
             if online_times_by_device:
-                persistence_started_at = perf_counter()
                 online_times_by_device = {
                     device_id: sorted(times)
                     for device_id, times in online_times_by_device.items()
@@ -910,7 +889,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
                         fields=['status', 'read_at', 'reviewed_at', 'resolved_at'],
                         batch_size=500,
                     )
-                persistence_ms += (perf_counter() - persistence_started_at) * 1000
 
             for item in eligible_events:
                 device = item['device']
@@ -932,7 +910,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     'resolved_at': state.resolved_at,
                     'attributes': item['event'].get('attributes') if isinstance(item['event'].get('attributes'), dict) else {},
                 })
-            event_processing_ms = (perf_counter() - event_processing_started_at) * 1000
         except TraccarAPIError:
             return Response({'detail': 'دریافت رویدادها از Traccar در حال حاضر ممکن نیست.'}, status=503)
 
@@ -944,25 +921,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
             'reviewed': sum(item['status'] == 'reviewed' for item in results),
             'resolved': sum(item['status'] == 'resolved' for item in results),
         }
-        logger.warning(
-            'SANA_ALERT_TIMING total_ms=%.1f device_query_ms=%.1f context_build_ms=%.1f '
-            'traccar_devices_ms=%.1f events_fetch_ms=%.1f event_processing_ms=%.1f '
-            'persistence_ms=%.1f devices=%d traccar_devices=%d matched_devices=%d '
-            'event_requests=%d traccar_events=%d visible_events=%d',
-            (perf_counter() - request_started_at) * 1000,
-            device_query_ms,
-            context_build_ms,
-            traccar_devices_ms,
-            events_fetch_ms,
-            event_processing_ms,
-            persistence_ms,
-            len(devices),
-            traccar_device_count,
-            len(context_by_traccar_id),
-            traccar_event_requests,
-            len(events),
-            len(results),
-        )
         return Response({'results': results, 'counts': counts})
 
     @action(detail=False, methods=['get'], url_path='report-history', throttle_classes=[ScopedRateThrottle], throttle_scope='personal_report_history')
