@@ -17,7 +17,7 @@ export default function Companies() {
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState({
-    name: '', code: '', registration_number: '',
+    name: '', code: '', registration_number: '', economy_code: '',
     phone: '', email: '', address: '', status: 'active',
   });
   const [saving, setSaving] = useState(false);
