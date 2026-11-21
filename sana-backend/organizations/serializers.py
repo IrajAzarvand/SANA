@@ -1054,7 +1054,7 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                     device.current_holder_user = user
 
                 # آپدیت وضعیت مدیریتی دستگاه — از انبار خارج شد
-                device.management_status = 'sold'
+                device.management_status = 'installed'
                 device.save()
                 record_device_lifecycle_event(
                     device=device,
