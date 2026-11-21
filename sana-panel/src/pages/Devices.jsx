@@ -158,7 +158,7 @@ function DevicesTab() {
       if (isSiteAdmin && filterWarehouse === 'no' && d.is_in_warehouse) return false;
       return true;
     });
-  }, [devices, search, filterStatus, filterWarehouse]);
+  }, [devices, search, filterStatus, filterWarehouse, isSiteAdmin]);
 
   const statusOptions = useMemo(() => {
     return Object.entries(managementStatusMap).filter(([value]) => !['sold', 'retired'].includes(value)).map(([value, { label }]) => ({
