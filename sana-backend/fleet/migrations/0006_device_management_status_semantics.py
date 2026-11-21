@@ -42,6 +42,26 @@ class Migration(migrations.Migration):
             ),
         ),
         migrations.AlterField(
+            model_name='deviceoperation',
+            name='outcome_action',
+            field=models.CharField(
+                choices=[
+                    ('return_customer_same_vehicle', 'بازگشت به مشتری و نصب روی همان خودرو'),
+                    ('return_customer_no_vehicle', 'بازگشت به مشتری بدون نصب'),
+                    ('sana_warehouse', 'بازگشت به انبار سانا'),
+                    ('customer_spare', 'تحویل به مشتری به عنوان دستگاه یدکی'),
+                    ('install_other_vehicle', 'نصب روی خودروی دیگر'),
+                    ('transfer_customer', 'انتقال به مشتری دیگر'),
+                    ('retire', 'خارج کردن از چرخه استفاده'),
+                    ('dispose', 'امحاء'),
+                    ('other', 'سایر'),
+                ],
+                blank=True,
+                max_length=40,
+                verbose_name='تعیین تکلیف دستگاه',
+            ),
+        ),
+        migrations.AlterField(
             model_name='devicelifecycleevent',
             name='event_type',
             field=models.CharField(
