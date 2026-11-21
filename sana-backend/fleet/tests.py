@@ -1375,7 +1375,7 @@ class OrganizationAndAdminAlertsAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['results'][0]['device_id'], device.pk)
-        self.assertEqual(response.data['results'][0]['status'], 'new')
+        self.assertEqual(response.data['results'][0]['status'], 'unread')
 
     @patch('fleet.views.traccar_device_events')
     @patch('fleet.views.traccar_devices')
