@@ -664,13 +664,13 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
           <div className="flex min-w-0 gap-2">
             <button type="button" onClick={loadHistory} disabled={loadingHistory || !deviceId} className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60 lg:flex-none">
               <CalendarClock size={16} className={loadingHistory ? 'animate-pulse' : ''} />
-              {loadingHistory ? 'در حال دریافت…' : 'نمایش گزارش'}
+              {loadingHistory ? (points.length ? 'در حال دریافت ادامه مسیر…' : 'در حال دریافت…') : 'نمایش گزارش'}
             </button>
             <label className="flex items-center gap-1.5 rounded-lg border border-border-base bg-bg-base px-2 text-xs text-text-secondary">
               <span className="sr-only">نقشه</span>
-              <select aria-label="انتخاب ارائه‌دهنده نقشه" value={provider} onChange={(event) => setProvider(event.target.value)} className="max-w-[112px] bg-transparent py-2 text-xs text-text-primary outline-none">
-                <option value={MAP_PROVIDERS.LEAFLET_OSM}>OpenStreetMap</option>
-                <option value={MAP_PROVIDERS.NESHAN_LEAFLET}>نشان</option>
+              <select aria-label="انتخاب ارائه‌دهنده نقشه" value={provider} onChange={(event) => setProvider(event.target.value)} className="max-w-[112px] bg-bg-base py-2 text-xs text-text-primary outline-none">
+                <option className="bg-bg-base text-text-primary" value={MAP_PROVIDERS.LEAFLET_OSM}>OpenStreetMap</option>
+                <option className="bg-bg-base text-text-primary" value={MAP_PROVIDERS.NESHAN_LEAFLET}>نشان</option>
               </select>
             </label>
           </div>
