@@ -560,7 +560,7 @@ export default function SubscriptionDetail() {
   };
 
   const openDeviceHistory = (deviceId) => {
-    if (!deviceId) return;
+    if (!isSiteAdmin || !deviceId) return;
     setDeviceHistoryId(deviceId);
   };
 
@@ -1011,7 +1011,7 @@ export default function SubscriptionDetail() {
 
                         return (
                           <div className="flex flex-wrap items-center gap-1.5">
-                            {relation?.related_device_id ? (
+                            {relation?.related_device_id && isSiteAdmin ? (
                               <button
                                 type="button"
                                 onClick={() => openDeviceHistory(relation.related_device_id)}
@@ -1034,7 +1034,7 @@ export default function SubscriptionDetail() {
                       })()}
                     </td>
                     <td className="py-3 px-2">
-                      <ActionMenu
+                      {isSiteAdmin && <ActionMenu
                         items={[
                           {
                             label: 'تاریخچه و رویدادها',
@@ -1063,7 +1063,7 @@ export default function SubscriptionDetail() {
                             },
                           ] : []),
                         ]}
-                      />
+                      />}
                     </td>
                   </tr>
                 ))}
@@ -1406,11 +1406,11 @@ export default function SubscriptionDetail() {
         </section>
       )}
 
-      <DeviceHistoryModalHost
+      {isSiteAdmin && <DeviceHistoryModalHost
         deviceHistoryId={deviceHistoryId}
         onClose={() => setDeviceHistoryId(null)}
         onOperationSaved={refetch}
-      />
+      />}
 
       {/* ═══ مودال ویرایش قرارداد ═══ */}
       <Modal
