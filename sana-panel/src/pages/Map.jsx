@@ -276,7 +276,7 @@ export default function Map() {
         )}
 
         {selectedDevice && !mobileListOpen && (
-          <div className="absolute bottom-[68px] left-2 z-[1000] w-[min(320px,calc(100%-16px))] sm:left-3">
+          <div className="absolute bottom-[76px] left-2 z-[1100] w-[min(320px,calc(100%-16px))] sm:left-3">
             <DeviceDetails position={selectedDevice} onClose={() => setFollowedDeviceId(null)} />
           </div>
         )}
@@ -406,7 +406,7 @@ function DeviceDetails({ position, onClose }) {
   const keys = [...new Set([...COMMON_ATTRIBUTES, ...Object.keys(attributes)])];
 
   return (
-    <div dir="rtl" className="max-h-[42vh] overflow-hidden rounded-xl border border-white/10 bg-bg-elevated/95 shadow-xl backdrop-blur-md">
+    <div dir="rtl" className="flex max-h-[65vh] flex-col overflow-hidden rounded-xl border border-white/10 bg-bg-elevated/95 shadow-xl backdrop-blur-md">
       <div className="flex items-center justify-between gap-2 border-b border-white/10 px-3 py-2">
         <div className="min-w-0">
           <div className="truncate text-xs font-bold text-text-primary">{title}</div>
@@ -429,7 +429,7 @@ function DeviceDetails({ position, onClose }) {
       )}
       <details className="border-t border-white/10">
         <summary className="cursor-pointer px-3 py-2 text-[10px] font-semibold text-text-secondary">اطلاعات فنی و Attributeهای Traccar</summary>
-        <div className="max-h-36 overflow-y-auto px-3 pb-2">
+        <div className="max-h-[min(32vh,240px)] overflow-y-auto overscroll-contain px-3 pb-2">
           {keys.map((key) => (
             <div key={key} className="flex items-start justify-between gap-3 border-b border-white/5 py-1 text-[10px]">
               <span className="text-text-muted">{ATTRIBUTE_LABELS[key] || key} <span className="opacity-60">({key})</span></span>
