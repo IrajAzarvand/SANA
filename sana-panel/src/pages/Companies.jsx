@@ -16,6 +16,7 @@ import { useApi } from '../hooks/useApi';
 export default function Companies() {
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingOrganization, setEditingOrganization] = useState(null);
   const [form, setForm] = useState({
     name: '', code: '', registration_number: '', economy_code: '',
     phone: '', email: '', address: '', status: 'active',
@@ -49,8 +50,13 @@ export default function Companies() {
     e.preventDefault();
     setSaving(true);
     try {
-      await organizationsAPI.create(form);
+      if (editingOrganization) {
+        await organizationsAPI.update(editingOrganization.id, form);
+      } else {
+        await organizationsAPI.create(form);
+      }
       setModalOpen(false);
+      setEditingOrganization(null);
       setForm({
         name: '', code: '', registration_number: '', economy_code: '',
         phone: '', email: '', address: '', status: 'active',
@@ -83,7 +89,20 @@ export default function Companies() {
       items.push({
         label: 'ویرایش',
         icon: Pencil,
-        onClick: () => console.log('Edit organization:', org.id),
+        onClick: () => {
+          setEditingOrganization(org);
+          setForm({
+            name: org.name || '',
+            code: org.code || '',
+            registration_number: org.registration_number || '',
+            economy_code: org.economy_code || '',
+            phone: org.phone || '',
+            email: org.email || '',
+            address: org.address || '',
+            status: org.status || 'active',
+          });
+          setModalOpen(true);
+        },
       });
       items.push({
         label: 'حذف',
@@ -224,7 +243,7 @@ export default function Companies() {
         <Modal
           open={modalOpen}
           onClose={() => setModalOpen(false)}
-          title="افزودن شرکت"
+          title={editingOrganization ? 'ویرایش شرکت' : 'افزودن شرکت'}
           size="lg"
           footer={
             <>
@@ -232,7 +251,7 @@ export default function Companies() {
                 انصراف
               </Button>
               <Button type="submit" form="add-company-form" disabled={saving}>
-                {saving ? 'در حال ذخیره...' : 'ذخیره'}
+                {saving ? 'در حال ذخیره...' : (editingOrganization ? 'ذخیره تغییرات' : 'ذخیره')}
               </Button>
             </>
           }
