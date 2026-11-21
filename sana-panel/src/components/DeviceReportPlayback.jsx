@@ -245,15 +245,33 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
       .then(({ data }) => {
         if (!active) return;
         setMetadata(data);
-        if (!isSiteAdmin && data.range_start && data.range_end && !dateSelectionTouchedRef.current) {
-          const rangeStart = dateTimeLocal(data.range_start);
-          const rangeEnd = dateTimeLocal(data.range_end);
+        if (!dateSelectionTouchedRef.current) {
           const now = new Date();
           const todayDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-          const initialEnd = datePart(rangeEnd) > todayDate ? `${todayDate}T23:59` : rangeEnd;
-          setFrom(rangeStart);
+          const todayStart = `${todayDate}T00:00`;
+          const todayEnd = `${todayDate}T23:59`;
+          let initialStart = todayStart;
+          let initialEnd = todayEnd;
+
+          // Customer reports must stay inside the authorized contract/access window.
+          if (!isSiteAdmin && data.range_start && data.range_end) {
+            const rangeStart = dateTimeLocal(data.range_start);
+            const rangeEnd = dateTimeLocal(data.range_end);
+            if (rangeStart && rangeStart > initialStart) initialStart = rangeStart;
+            if (rangeEnd && rangeEnd < initialEnd) initialEnd = rangeEnd;
+
+            // If today's date is outside the authorized window, keep the default
+            // on the nearest permitted boundary rather than creating an invalid range.
+            if (initialStart > initialEnd) {
+              const boundary = todayStart > rangeEnd ? rangeEnd : rangeStart;
+              initialStart = boundary;
+              initialEnd = boundary;
+            }
+          }
+
+          setFrom(initialStart);
           setTo(initialEnd);
-          setFromTime(timePart(rangeStart) || '00:00');
+          setFromTime(timePart(initialStart) || '00:00');
           setToTime(timePart(initialEnd) || '23:59');
         }
       })
