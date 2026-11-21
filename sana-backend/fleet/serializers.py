@@ -454,6 +454,9 @@ class DeviceListSerializer(serializers.ModelSerializer):
         return 'primary'
 
     def get_management_status(self, obj):
+        request = self.context.get('request')
+        if not request or not getattr(request.user, 'is_site_admin', False):
+            return None
         if self._is_in_warehouse(obj):
             return 'warehouse'
 
@@ -469,9 +472,9 @@ class DeviceListSerializer(serializers.ModelSerializer):
     def get_subscription_device_type_display(self, obj):
         value = self.get_subscription_device_type(obj)
         return {
-            'primary': 'دستگاه اصلی',
+            'primary': 'اصلی',
             'temporary_repair': 'جایگزین موقت',
-            'permanent_replacement': 'جایگزین دائمی',
+            'permanent_replacement': 'جایگزین دائم',
             'replacement': 'دستگاه جایگزین',
         'replaced': 'جایگزین شده',
         }.get(value)
