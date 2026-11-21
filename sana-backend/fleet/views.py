@@ -1,5 +1,6 @@
 from bisect import bisect_right
 
+from django.core.cache import cache
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from datetime import datetime, timedelta, time as datetime_time
@@ -45,6 +46,26 @@ def traccar_position_timestamp(position):
 def traccar_position_protocol(position):
     """Return the decoder protocol reported by Traccar for a position."""
     return str(position.get('protocol') or '').strip().lower()
+
+
+def traccar_history_device_id(imei):
+    """Resolve and briefly cache Traccar's internal device ID by exact IMEI.
+
+    The caller still performs SANA device authorization on every request.
+    Only the Traccar lookup result is cached; no client-supplied ID is trusted.
+    """
+    cache_key = f"sana:traccar:history-device-id:{str(imei).strip()}"
+    device_id = cache.get(cache_key)
+    if device_id is not None:
+        return int(device_id)
+
+    traccar_device = traccar_device_by_unique_id(imei)
+    if traccar_device is None or traccar_device.get('id') is None:
+        return None
+
+    device_id = int(traccar_device['id'])
+    cache.set(cache_key, device_id, timeout=120)
+    return device_id
 
 
 def parse_report_history_cursor(raw_cursor_time, raw_cursor_id):
@@ -1061,11 +1082,11 @@ class DeviceViewSet(viewsets.ModelViewSet):
         limit = 5000
         query_start = cursor_fix_time or raw_start
         try:
-            traccar_device = traccar_device_by_unique_id(device.imei)
-            if traccar_device is None or traccar_device.get('id') is None:
+            traccar_device_id = traccar_history_device_id(device.imei)
+            if traccar_device_id is None:
                 return Response({'detail': 'دستگاه در Traccar ثبت نشده است.'}, status=404)
             positions = traccar_device_positions(
-                int(traccar_device['id']),
+                traccar_device_id,
                 query_start.isoformat().replace('+00:00', 'Z'),
                 raw_end.isoformat().replace('+00:00', 'Z'),
                 limit=limit + 1,
