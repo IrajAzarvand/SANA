@@ -757,7 +757,7 @@ class PersonalDeviceAccessQueryTests(TestCase):
         today = timezone.localdate()
         device = Device.objects.create(
             imei='860000000000106',
-            management_status='sold',
+            management_status='installed',
         )
         subscription = Subscription.objects.create(
             contract_number='PERSONAL-ACCESS-TEST-001',
@@ -794,7 +794,7 @@ class PersonalDeviceAccessQueryTests(TestCase):
         today = timezone.localdate()
         device = Device.objects.create(
             imei='860000000000110',
-            management_status='sold',
+            management_status='installed',
         )
         subscription = Subscription.objects.create(
             contract_number='PERSONAL-REPORT-PAGING-TEST-001',
@@ -870,7 +870,7 @@ class PersonalDeviceAccessQueryTests(TestCase):
         today = timezone.localdate()
         device = Device.objects.create(
             imei='860000000000107',
-            management_status='sold',
+            management_status='installed',
         )
         subscription = Subscription.objects.create(
             contract_number='PERSONAL-REPORT-TEST-001',
@@ -913,7 +913,7 @@ class PersonalDeviceAccessQueryTests(TestCase):
         )
         device = Device.objects.create(
             imei='860000000000109',
-            management_status='sold',
+            management_status='installed',
         )
         subscription = Subscription.objects.create(
             contract_number='PERSONAL-REPORT-RANGE-TEST-001',
@@ -1190,7 +1190,7 @@ class PersonalLifecycleEventAccessTests(TestCase):
     def make_contract_event(self, *, user, imei, event_date=None):
         device = Device.objects.create(
             imei=imei,
-            management_status='sold',
+            management_status='installed',
         )
         subscription = Subscription.objects.create(
             contract_number=f'PERSONAL-LIFECYCLE-{imei[-4:]}',
