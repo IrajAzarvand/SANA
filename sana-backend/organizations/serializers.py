@@ -185,7 +185,7 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
             label = (
                 'جایگزین موقت'
                 if relation.replacement_type == 'temporary_repair'
-                else 'تعویض دائمی'
+                else 'جایگزین دائم'
             )
             return {
                 'direction': 'replacement',
