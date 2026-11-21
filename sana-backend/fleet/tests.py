@@ -1007,6 +1007,10 @@ class PersonalTraccarAlertsTests(TestCase):
             start_date=today - timedelta(days=20),
             end_date=today + timedelta(days=20),
         )
+        # Keep the technical assignment boundary earlier than the event fixtures.
+        SubscriptionDevice.objects.filter(
+            subscription=self.subscription, device=self.device
+        ).update(assigned_at=timezone.now() - timedelta(days=1))
 
     @patch('fleet.views.traccar_device_events')
     @patch('fleet.views.traccar_devices')
@@ -1028,10 +1032,49 @@ class PersonalTraccarAlertsTests(TestCase):
         response = DeviceViewSet.as_view({'get': 'alerts'})(request)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['counts']['new'], 1)
+        self.assertEqual(response.data['counts']['unread'], 1)
         self.assertEqual(response.data['results'][0]['id'], '701')
-        self.assertEqual(response.data['results'][0]['status'], 'new')
+        self.assertEqual(response.data['results'][0]['status'], 'unread')
         self.assertEqual(fetch_events.call_args.args[0], [42])
+
+    @patch('fleet.views.traccar_device_events')
+    @patch('fleet.views.traccar_devices')
+    def test_refresh_preserves_existing_user_workflow_state(
+        self, list_devices, fetch_events
+    ):
+        event_time = timezone.now().replace(microsecond=0)
+        read_at = event_time - timedelta(minutes=5)
+        DeviceAlertState.objects.create(
+            user=self.user,
+            device=self.device,
+            event_key=f'gps:{self.device.pk}:704',
+            notification_type='gps',
+            traccar_event_id='704',
+            event_type='deviceOffline',
+            event_time=event_time,
+            status='read',
+            read_at=read_at,
+        )
+        list_devices.return_value = [{'id': 42, 'uniqueId': self.device.imei}]
+        fetch_events.return_value = [{
+            'id': 704,
+            'deviceId': 42,
+            'type': 'deviceOffline',
+            'eventTime': event_time.isoformat(),
+            'attributes': {},
+        }]
+        request = APIRequestFactory().get('/api/devices/alerts/')
+        force_authenticate(request, user=self.user)
+
+        response = DeviceViewSet.as_view({'get': 'alerts'})(request)
+
+        self.assertEqual(response.status_code, 200)
+        state = DeviceAlertState.objects.get(
+            user=self.user, device=self.device, traccar_event_id='704'
+        )
+        self.assertEqual(state.status, 'read')
+        self.assertEqual(state.read_at, read_at)
+        self.assertEqual(response.data['results'][0]['status'], 'read')
 
     @patch('fleet.views.traccar_device_events')
     @patch('fleet.views.traccar_devices')
@@ -1099,6 +1142,7 @@ class PersonalTraccarAlertsTests(TestCase):
             user=self.user,
             device=self.device,
             traccar_event_id='own-event',
+            event_key=f'gps:{self.device.pk}:own-event',
             event_type='deviceOffline',
             event_time=event_time,
         )
@@ -1106,6 +1150,7 @@ class PersonalTraccarAlertsTests(TestCase):
             user=self.user,
             device=other_device,
             traccar_event_id='outside-event',
+            event_key=f'gps:{other_device.pk}:outside-event',
             event_type='deviceOffline',
             event_time=event_time,
         )
@@ -1121,8 +1166,8 @@ class PersonalTraccarAlertsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         own_state.refresh_from_db()
         outside_state.refresh_from_db()
-        self.assertEqual(own_state.status, 'acknowledged')
-        self.assertEqual(outside_state.status, 'new')
+        self.assertEqual(own_state.status, 'read')
+        self.assertEqual(outside_state.status, 'unread')
 
 
 class PersonalLifecycleEventAccessTests(TestCase):
@@ -1330,7 +1375,7 @@ class OrganizationAndAdminAlertsAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['results'][0]['device_id'], device.pk)
-        self.assertEqual(response.data['results'][0]['status'], 'new')
+        self.assertEqual(response.data['results'][0]['status'], 'unread')
 
     @patch('fleet.views.traccar_device_events')
     @patch('fleet.views.traccar_devices')
