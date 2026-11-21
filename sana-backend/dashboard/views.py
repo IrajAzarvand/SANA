@@ -60,6 +60,8 @@ class DashboardStatsView(APIView):
         if user.is_main_user and user.organization_id:
             org = user.organization_id
             subscriptions = Subscription.objects.filter(organization_id=org)
+            organization_devices = list(Device.objects.filter(organization_id=org).only('id', 'imei'))
+            gps_status = self.get_personal_gps_status(organization_devices)
             active_sub = subscriptions.filter(
                 status='active',
                 start_date__lte=today,
@@ -85,7 +87,7 @@ class DashboardStatsView(APIView):
                     'days_until_expiry': active_sub.days_until_expiry,
                     'is_expiring_soon': active_sub.is_expiring_soon,
                 } if active_sub else None,
-                'devices_by_status': self.get_devices_by_status(org),
+                'gps_status': gps_status,
                 'vehicles_by_status': self.get_vehicles_by_status(org),
             })
 
@@ -94,6 +96,8 @@ class DashboardStatsView(APIView):
             branch = user.branch_id
             org_id = user.organization_id
             subscriptions = Subscription.objects.filter(organization_id=org_id)
+            branch_devices = list(Device.objects.filter(branch_id=branch).only('id', 'imei'))
+            gps_status = self.get_personal_gps_status(branch_devices)
             active_sub = subscriptions.filter(
                 status='active',
                 start_date__lte=today,
@@ -110,7 +114,7 @@ class DashboardStatsView(APIView):
                     'days_until_expiry': active_sub.days_until_expiry,
                     'is_expiring_soon': active_sub.is_expiring_soon,
                 } if active_sub else None,
-                'devices_by_status': self.get_devices_by_status(branch=branch),
+                'gps_status': gps_status,
                 'vehicles_by_status': self.get_vehicles_by_status(branch=branch),
             })
 
@@ -145,7 +149,6 @@ class DashboardStatsView(APIView):
             ).order_by('-end_date').first()
 
             personal_device_list = list(personal_devices.only('id', 'imei'))
-            management_status = self.get_devices_by_status(access_user=user)
             gps_status = self.get_personal_gps_status(personal_device_list)
 
             return Response({
@@ -159,8 +162,6 @@ class DashboardStatsView(APIView):
                     'days_until_expiry': active_sub.days_until_expiry,
                     'is_expiring_soon': active_sub.is_expiring_soon,
                 } if active_sub else None,
-                'devices_by_status': management_status,
-                'devices_by_management_status': management_status,
                 'gps_status': gps_status,
                 'vehicles_by_status': self.get_vehicles_by_status(owner=user),
             })
