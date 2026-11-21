@@ -244,7 +244,7 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
 
         # آپدیت وضعیت
         if device.management_status == 'warehouse':
-            device.management_status = 'sold'
+            device.management_status = 'installed'
 
         device.save()
         request = self.context.get('request')
