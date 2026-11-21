@@ -106,7 +106,7 @@ class DeviceSerializer(serializers.ModelSerializer):
 
     def get_management_status(self, obj):
         request = self.context.get('request')
-        if not request or not getattr(request.user, 'is_site_admin', False):
+        if request and not getattr(request.user, 'is_site_admin', False):
             return None
         if obj.is_in_warehouse:
             return 'warehouse'
@@ -212,7 +212,7 @@ class DeviceListSerializer(serializers.ModelSerializer):
     def get_data_inactive_reason(self, obj):
         """Return internal diagnostics to admins and a simple service message to customers."""
         request = self.context.get('request')
-        is_admin = bool(request and getattr(request.user, 'is_site_admin', False))
+        is_admin = not request or getattr(request.user, 'is_site_admin', False)
         if not is_admin and not self.get_data_active(obj):
             return 'سرویس دستگاه در حال حاضر فعال نیست'
         link = self._active_subscription_link(obj)
