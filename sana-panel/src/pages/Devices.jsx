@@ -153,9 +153,9 @@ function DevicesTab() {
           !(d.device_model_name && d.device_model_name.toLowerCase().includes(search.toLowerCase())) &&
           !(d.traccar_model && d.traccar_model.toLowerCase().includes(search.toLowerCase())) &&
           !(d.vehicle_plate && d.vehicle_plate.includes(search))) return false;
-      if (filterStatus && d.management_status !== filterStatus) return false;
-      if (filterWarehouse === 'yes' && !d.is_in_warehouse) return false;
-      if (filterWarehouse === 'no' && d.is_in_warehouse) return false;
+      if (isSiteAdmin && filterStatus && d.management_status !== filterStatus) return false;
+      if (isSiteAdmin && filterWarehouse === 'yes' && !d.is_in_warehouse) return false;
+      if (isSiteAdmin && filterWarehouse === 'no' && d.is_in_warehouse) return false;
       return true;
     });
   }, [devices, search, filterStatus, filterWarehouse]);
@@ -397,15 +397,15 @@ function DevicesTab() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <div title="وضعیت مدیریتی">
+          {isSiteAdmin && <div title="وضعیت مدیریتی">
             <Select
               placeholder="همه وضعیت‌ها"
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
               options={statusOptions}
             />
-          </div>
-          <div title="محل استقرار">
+          </div>}
+          {isSiteAdmin && <div title="محل استقرار">
             <Select
               value={filterWarehouse}
               onChange={(e) => setFilterWarehouse(e.target.value)}
@@ -475,7 +475,7 @@ function DevicesTab() {
                     <div><div className="text-text-muted">قرارداد مرتبط</div><div className="mt-1 font-mono text-text-primary">{d.subscription_number || '—'}</div></div>
                     <div><div className="text-text-muted">نوع ارتباط</div><div className="mt-1 text-text-primary">{d.subscription_device_type_display || '—'}</div></div>
                     <div><div className="text-text-muted">خودرو</div><div className="mt-1 font-mono text-text-primary">{d.vehicle_plate || '—'}</div></div>
-                    <div><div className="text-text-muted">وضعیت مدیریتی</div><div className="mt-1"><Badge variant={mgmt.variant}>{mgmt.label}</Badge></div></div>
+                    {isSiteAdmin && <div><div className="text-text-muted">وضعیت مدیریتی</div><div className="mt-1"><Badge variant={mgmt.variant}>{mgmt.label}</Badge></div></div>}
                     <div><div className="text-text-muted">آخرین دریافت GPS</div><div className="mt-1 text-text-primary">{formatReceivedAt(d.last_data_received_at)}</div></div>
                     <div><div className="text-text-muted">مجوز سرویس GPS</div><div className="mt-1"><span title={!d.data_active ? (d.data_inactive_reason || 'علت غیرفعال بودن مشخص نیست') : undefined}>
                         <Badge variant={d.data_active ? 'success' : 'muted'}>{d.data_active ? 'سرویس فعال' : 'سرویس غیرفعال'}</Badge>
