@@ -42,12 +42,12 @@ const getContractDeviceStatus = (device, isSiteAdmin = false) => {
   let relationLabel = 'آزاد';
   let relationVariant = 'neutral';
 
-  if (relation?.direction === 'replacement') {
+  if (device.is_active && relation?.direction === 'replacement') {
     relationLabel = relation.replacement_type === 'temporary_repair'
       ? 'جایگزین موقت'
       : 'جایگزین دائم';
     relationVariant = relation.replacement_type === 'temporary_repair' ? 'warning' : 'brand';
-  } else if (relation?.direction === 'replaced' || device.is_active) {
+  } else if (device.is_active) {
     relationLabel = 'اصلی';
     relationVariant = 'info';
   }
