@@ -52,7 +52,7 @@ export default function Companies() {
       await organizationsAPI.create(form);
       setModalOpen(false);
       setForm({
-        name: '', code: '', registration_number: '',
+        name: '', code: '', registration_number: '', economy_code: '',
         phone: '', email: '', address: '', status: 'active',
       });
       refetch();
