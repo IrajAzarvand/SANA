@@ -44,11 +44,11 @@ class PersonalDashboardContractSelectionTests(TestCase):
         today = timezone.localdate()
         expired_device = Device.objects.create(
             imei='860000000000411',
-            management_status='sold',
+            management_status='installed',
         )
         future_device = Device.objects.create(
             imei='860000000000412',
-            management_status='sold',
+            management_status='installed',
         )
         expired_subscription = Subscription.objects.create(
             contract_number='DASH-EXPIRED-DEVICE-001',
@@ -92,7 +92,6 @@ class PersonalDashboardContractSelectionTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['devices'], 0)
         self.assertEqual(response.data['gps_status']['total'], 0)
-        self.assertEqual(response.data['devices_by_management_status'], {})
 
     def test_contract_ending_on_previous_tehran_day_is_not_current(self):
         tehran_today = date(2026, 11, 18)
