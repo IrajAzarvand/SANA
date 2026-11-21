@@ -262,7 +262,7 @@ def execute_device_operation(
             )
 
     elif operation_type in {'temporary_replacement', 'permanent_replacement'}:
-        if device.management_status not in {'faulty', 'lost', 'stolen'}:
+        if device.management_status not in {'faulty', 'in_repair', 'lost', 'stolen'}:
             raise ValidationError({
                 'device': 'فقط دستگاه خراب، گمشده یا سرقت‌شده می‌تواند بعداً جایگزین دریافت کند.'
             })
