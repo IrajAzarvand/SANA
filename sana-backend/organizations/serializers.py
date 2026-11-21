@@ -196,8 +196,8 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
                 'related_device_imei': related.imei,
                 'related_device_model': related.device_model.name if related.device_model else None,
                 'related_device_sim': related.sim_number,
-                'related_device_status': related.management_status,
-                'related_device_status_display': related.get_management_status_display(),
+                'related_device_status': related.management_status if is_admin else None,
+                'related_device_status_display': related.get_management_status_display() if is_admin else None,
             }
 
         return None
