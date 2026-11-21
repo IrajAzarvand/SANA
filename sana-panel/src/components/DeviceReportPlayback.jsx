@@ -302,7 +302,7 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
     setPoints([]);
     setPointIndex(0);
     try {
-      const allPoints = [];
+      const pointsById = new Map();
       let cursor = null;
       let page = 0;
       do {
@@ -316,32 +316,32 @@ export default function DeviceReportPlayback({ isSiteAdmin }) {
           params,
           timeout: 60000,
         });
-        allPoints.push(...(data.points || []));
+        const pagePoints = (data.points || []).filter((point) => {
+          const isValidPair = (latitude, longitude) => {
+            const lat = Number(latitude);
+            const lng = Number(longitude);
+            return latitude !== null && latitude !== undefined && longitude !== null && longitude !== undefined
+              && Number.isFinite(lat) && Number.isFinite(lng)
+              && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
+          };
+          return isValidPair(point.matched_latitude, point.matched_longitude)
+            || isValidPair(point.latitude, point.longitude);
+        });
+        pagePoints.forEach((point) => pointsById.set(String(point.id), point));
+        const visiblePoints = [...pointsById.values()].sort((left, right) => {
+          const timeDifference = new Date(left.server_received_at).getTime()
+            - new Date(right.server_received_at).getTime();
+          return timeDifference || Number(left.id) - Number(right.id);
+        });
+        setPoints(visiblePoints);
+        setHasUnmatchedCoordinates(visiblePoints.some((point) =>
+          point.matched_latitude == null || point.matched_longitude == null
+        ));
         cursor = data.next_cursor || null;
         page += 1;
         if (page > 200) throw new Error('بازه انتخابی بیش از حد بزرگ است؛ بازه کوتاه‌تری انتخاب کنید.');
       } while (cursor);
-      allPoints.sort((left, right) => {
-        const timeDifference = new Date(left.server_received_at).getTime()
-          - new Date(right.server_received_at).getTime();
-        return timeDifference || Number(left.id) - Number(right.id);
-      });
-      const validPoints = allPoints.filter((point) => {
-        const isValidPair = (latitude, longitude) => {
-          const lat = Number(latitude);
-          const lng = Number(longitude);
-          return latitude !== null && latitude !== undefined && longitude !== null && longitude !== undefined
-            && Number.isFinite(lat) && Number.isFinite(lng)
-            && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
-        };
-        return isValidPair(point.matched_latitude, point.matched_longitude)
-          || isValidPair(point.latitude, point.longitude);
-      });
-      setPoints(validPoints);
-      if (validPoints.length === 0) setNotice('در این بازه نقطه مکانی معتبر ثبت نشده است.');
-      setHasUnmatchedCoordinates(validPoints.some((point) =>
-        point.matched_latitude == null || point.matched_longitude == null
-      ));
+      if (pointsById.size === 0) setNotice('در این بازه نقطه مکانی معتبر ثبت نشده است.');
     } catch (err) {
       setError(err.response?.data?.detail || err.message || 'دریافت تاریخچه دستگاه ناموفق بود.');
     } finally {
