@@ -1189,6 +1189,8 @@ class PersonalLifecycleEventAccessTests(TestCase):
             password='test-password',
             role='site_admin',
             account_type='admin',
+            is_staff=True,
+            is_superuser=True,
         )
         self.today = timezone.localdate()
         self.now = timezone.now()
