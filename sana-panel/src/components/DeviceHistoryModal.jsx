@@ -448,7 +448,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
                         {event.event_date ? toJalali(event.event_date) : '—'}
                       </div>
                     </div>
-                    <Badge variant={event.new_status === 'warehouse' ? 'info' : 'brand'}>
+                    <Badge variant={getManagementStatus(event.new_status).variant}>
                       {getManagementStatus(event.new_status).label}
                     </Badge>
                   </div>
