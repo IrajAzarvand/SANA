@@ -67,10 +67,10 @@ class VehicleListSerializer(serializers.ModelSerializer):
         ]
 
     def get_device_status(self, obj):
-        device = obj.devices.filter(management_status='active').first()
+        device = obj.devices.order_by('-updated_at', '-id').first()
         if not device:
             return 'none'
-        return device.management_status
+        return 'active' if device.is_data_active else 'offline'
 
 
 class DeviceModelSerializer(serializers.ModelSerializer):
