@@ -28,7 +28,6 @@ def record_device_lifecycle_event(
 
     status_map = {
         'received': 'warehouse',
-        'sold': 'installed',
         'assigned_to_contract': 'installed',
         'returned': 'warehouse',
         'sent_to_repair': 'in_repair',
