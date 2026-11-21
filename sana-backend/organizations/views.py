@@ -120,7 +120,9 @@ class BranchViewSet(viewsets.ModelViewSet):
         return qs
 
     def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+        if self.action == 'destroy':
+            return [IsSiteAdmin()]
+        if self.action in ['create', 'update', 'partial_update']:
             return [IsMainUserOrSiteAdmin()]
         return super().get_permissions()
 
