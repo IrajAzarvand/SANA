@@ -19,10 +19,42 @@ from .views import (
     DeviceLifecycleEventViewSet,
     normalize_traccar_history_positions,
     parse_report_history_cursor,
+    traccar_history_device_id,
     traccar_position_protocol,
     traccar_position_timestamp,
 )
 from .serializers import DeviceListSerializer
+
+
+class TraccarHistoryDeviceIdCacheTests(SimpleTestCase):
+    @patch("fleet.views.traccar_device_by_unique_id")
+    @patch("fleet.views.cache")
+    def test_cached_device_id_avoids_repeated_traccar_lookup(self, cache_mock, lookup):
+        cache_mock.get.return_value = 42
+        self.assertEqual(traccar_history_device_id("860000000000107"), 42)
+        lookup.assert_not_called()
+        cache_mock.get.assert_called_once_with(
+            "sana:traccar:history-device-id:860000000000107"
+        )
+
+    @patch("fleet.views.traccar_device_by_unique_id")
+    @patch("fleet.views.cache")
+    def test_device_id_lookup_is_cached_for_short_period(self, cache_mock, lookup):
+        cache_mock.get.return_value = None
+        lookup.return_value = {"id": 42, "uniqueId": "860000000000107"}
+        self.assertEqual(traccar_history_device_id("860000000000107"), 42)
+        lookup.assert_called_once_with("860000000000107")
+        cache_mock.set.assert_called_once_with(
+            "sana:traccar:history-device-id:860000000000107", 42, timeout=120
+        )
+
+    @patch("fleet.views.traccar_device_by_unique_id")
+    @patch("fleet.views.cache")
+    def test_missing_traccar_device_is_not_cached(self, cache_mock, lookup):
+        cache_mock.get.return_value = None
+        lookup.return_value = None
+        self.assertIsNone(traccar_history_device_id("860000000000107"))
+        cache_mock.set.assert_not_called()
 
 
 @override_settings(
