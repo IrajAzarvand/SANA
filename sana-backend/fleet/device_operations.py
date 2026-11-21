@@ -187,11 +187,11 @@ def execute_device_operation(
             device.branch = None
             device.current_holder_organization = None
             device.current_holder_user = None
-            device.management_status = 'faulty'
+            device.management_status = 'in_repair'
             device.save()
 
             replacement_device.management_status = (
-                'installed' if replacement_type == 'temporary_repair' else 'sold'
+                'installed'
             )
             replacement_device.vehicle = old_vehicle
             replacement_device.branch = old_branch
@@ -244,7 +244,7 @@ def execute_device_operation(
             device.branch = None
             device.current_holder_organization = None
             device.current_holder_user = None
-            device.management_status = 'faulty'
+            device.management_status = 'in_repair'
             device.save()
 
             record_device_lifecycle_event(
@@ -346,7 +346,7 @@ def execute_device_operation(
         )
 
     elif operation_type == 'repaired':
-        if device.management_status != 'faulty':
+        if device.management_status not in {'faulty', 'in_repair'}:
             raise ValidationError({
                 'device': 'فقط دستگاهی که در وضعیت خرابی/تعمیر است قابل ثبت به عنوان تعمیرشده است.'
             })
@@ -505,7 +505,7 @@ def execute_device_operation(
                     'outcome_action': 'خودروی قبلی برای بازگشت مشخص نیست؛ خودروی مقصد را انتخاب کنید.'
                 })
             if Device.objects.filter(vehicle=target).exclude(pk=device.pk).exclude(
-                management_status__in=['faulty', 'lost', 'stolen', 'retired', 'disposed']
+                management_status__in=['faulty', 'in_repair', 'lost', 'stolen', 'unusable', 'disposed']
             ).exists():
                 raise ValidationError({
                     'outcome_action': 'خودروی قبلی هنوز دستگاه دیگری دارد؛ ابتدا تکلیف آن دستگاه را مشخص کنید.'
@@ -521,7 +521,7 @@ def execute_device_operation(
             device.branch = None
             device.current_holder_organization = previous_org
             device.current_holder_user = previous_user
-            device.management_status = 'sold'
+            device.management_status = 'installed'
 
         elif outcome_action == 'sana_warehouse':
             device.vehicle = None
@@ -572,7 +572,7 @@ def execute_device_operation(
             device.branch = None
             device.current_holder_organization = previous_org
             device.current_holder_user = previous_user
-            device.management_status = 'retired'
+            device.management_status = 'unusable'
 
         elif outcome_action == 'dispose':
             device.organization = None
@@ -722,8 +722,8 @@ def execute_device_operation(
         )
 
     elif operation_type == 'dispose':
-        if device.management_status != 'retired':
-            raise ValidationError({'device': 'برای امحاء ابتدا دستگاه باید بازنشسته شود.'})
+        if device.management_status != 'unusable':
+            raise ValidationError({'device': 'برای امحاء ابتدا دستگاه باید از چرخه استفاده خارج شده باشد.'})
         _close_active_link(device, operation)
         device.management_status = 'disposed'
         device.vehicle = None
