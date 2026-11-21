@@ -105,6 +105,9 @@ class DeviceSerializer(serializers.ModelSerializer):
     data_active = serializers.BooleanField(source='is_data_active', read_only=True)
 
     def get_management_status(self, obj):
+        request = self.context.get('request')
+        if not request or not getattr(request.user, 'is_site_admin', False):
+            return None
         if obj.is_in_warehouse:
             return 'warehouse'
         return obj.management_status
@@ -182,6 +185,9 @@ class DeviceListSerializer(serializers.ModelSerializer):
         )
 
     def get_is_in_warehouse(self, obj):
+        request = self.context.get('request')
+        if not request or not getattr(request.user, 'is_site_admin', False):
+            return None
         return self._is_in_warehouse(obj)
 
     def get_data_active(self, obj):
@@ -204,7 +210,11 @@ class DeviceListSerializer(serializers.ModelSerializer):
         return True
 
     def get_data_inactive_reason(self, obj):
-        """Return one concise, highest-priority reason why GPS service is not authorized."""
+        """Return internal diagnostics to admins and a simple service message to customers."""
+        request = self.context.get('request')
+        is_admin = bool(request and getattr(request.user, 'is_site_admin', False))
+        if not is_admin and not self.get_data_active(obj):
+            return 'سرویس دستگاه در حال حاضر فعال نیست'
         link = self._active_subscription_link(obj)
         if not link:
             return 'دستگاه به هیچ قراردادی متصل نیست'
@@ -247,7 +257,10 @@ class DeviceListSerializer(serializers.ModelSerializer):
         return management_status_reasons.get(obj.management_status)
 
     def get_management_status(self, obj):
-        """Keep the existing warehouse display rule without an extra query."""
+        """Management lifecycle is an admin-only field."""
+        request = self.context.get('request')
+        if not request or not getattr(request.user, 'is_site_admin', False):
+            return None
         if self._is_in_warehouse(obj):
             return 'warehouse'
         return obj.management_status
