@@ -926,7 +926,7 @@ function PersonalDevicesView({ devices, onRefresh }) {
                   <div className="min-w-0">
                     <div className="text-[11px] text-text-muted">مجوز سرویس</div>
                     <div className="mt-1">
-                      <Badge variant={device.data_active ? 'success' : 'muted'}>
+                      <Badge variant={device.data_active ? 'success' : 'neutral'}>
                         {device.data_active ? 'فعال' : 'غیرفعال'}
                       </Badge>
                     </div>
