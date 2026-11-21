@@ -186,7 +186,7 @@ class DeviceListSerializer(serializers.ModelSerializer):
 
     def get_is_in_warehouse(self, obj):
         request = self.context.get('request')
-        if not request or not getattr(request.user, 'is_site_admin', False):
+        if request and not getattr(request.user, 'is_site_admin', False):
             return None
         return self._is_in_warehouse(obj)
 
@@ -259,7 +259,7 @@ class DeviceListSerializer(serializers.ModelSerializer):
     def get_management_status(self, obj):
         """Management lifecycle is an admin-only field."""
         request = self.context.get('request')
-        if not request or not getattr(request.user, 'is_site_admin', False):
+        if request and not getattr(request.user, 'is_site_admin', False):
             return None
         if self._is_in_warehouse(obj):
             return 'warehouse'
@@ -455,7 +455,7 @@ class DeviceListSerializer(serializers.ModelSerializer):
 
     def get_management_status(self, obj):
         request = self.context.get('request')
-        if not request or not getattr(request.user, 'is_site_admin', False):
+        if request and not getattr(request.user, 'is_site_admin', False):
             return None
         if self._is_in_warehouse(obj):
             return 'warehouse'
