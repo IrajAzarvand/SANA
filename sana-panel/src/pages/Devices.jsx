@@ -325,13 +325,15 @@ function DevicesTab() {
   };
 
   const getMenuItems = (device) => {
-    const items = [
-      {
+    const items = [];
+
+    if (isSiteAdmin) {
+      items.push({
         label: 'تاریخچه و رویدادها',
         icon: History,
         onClick: () => setDeviceHistoryId(device.id),
-      },
-    ];
+      });
+    }
 
     if (isSiteAdmin) {
       items.push({
@@ -365,18 +367,18 @@ function DevicesTab() {
     if (!device) return;
 
     setSearchParams({}, { replace: true });
-    if (action === 'history') {
+    if (action === 'history' && isSiteAdmin) {
       // The URL action intentionally opens a modal after the device list loads.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setDeviceHistoryId(device.id);
     } else if (action === 'edit') {
       handleEdit(device);
     }
-  }, [devices, searchParams, setSearchParams]);
+  }, [devices, searchParams, setSearchParams, isSiteAdmin]);
 
   if (loading) return <Card><LoadingSpinner /></Card>;
   if (error) return <Card><ErrorState error={error} onRetry={refetch} /></Card>;
-  if (isPersonal) return <PersonalDevicesView devices={devices || []} onOpenHistory={setDeviceHistoryId} deviceHistoryId={deviceHistoryId} onCloseHistory={() => setDeviceHistoryId(null)} onRefresh={refetch} />;
+  if (isPersonal) return <PersonalDevicesView devices={devices || []} onRefresh={refetch} />;
 
   return (
     <div className="space-y-6">
@@ -592,12 +594,12 @@ function DevicesTab() {
         )}
       </Card>
 
-      <DeviceHistoryModal
+      {isSiteAdmin && <DeviceHistoryModal
         open={Boolean(deviceHistoryId)}
         deviceId={deviceHistoryId}
         onClose={() => setDeviceHistoryId(null)}
         onOperationSaved={refetch}
-      />
+      />}
 
       {/* مودال افزودن */}
       <AddDeviceModal
@@ -701,7 +703,7 @@ const personalGpsStatus = {
   unknown: { label: 'وضعیت نامشخص', variant: 'muted', icon: Wifi },
 };
 
-function PersonalDevicesView({ devices, onOpenHistory, deviceHistoryId, onCloseHistory, onRefresh }) {
+function PersonalDevicesView({ devices, onRefresh }) {
   const [positions, setPositions] = useState([]);
   const [gpsAvailable, setGpsAvailable] = useState(null);
   const [gpsLoading, setGpsLoading] = useState(true);
@@ -892,9 +894,7 @@ function PersonalDevicesView({ devices, onOpenHistory, deviceHistoryId, onCloseH
                       </div>
                     )}
                   </div>
-                  <Button size="sm" variant="secondary" icon={History} onClick={() => onOpenHistory(device.id)}>
-                    سوابق
-                  </Button>
+
                 </div>
 
                 <div className="grid grid-cols-2 gap-x-4 gap-y-4 px-4 py-4 sm:grid-cols-3">
@@ -944,12 +944,7 @@ function PersonalDevicesView({ devices, onOpenHistory, deviceHistoryId, onCloseH
         </div>
       )}
 
-      <DeviceHistoryModal
-        open={Boolean(deviceHistoryId)}
-        deviceId={deviceHistoryId}
-        onClose={onCloseHistory}
-        onOperationSaved={onRefresh}
-      />
+
     </div>
   );
 }
