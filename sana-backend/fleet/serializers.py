@@ -413,7 +413,7 @@ class DeviceListSerializer(serializers.ModelSerializer):
     def get_subscription_device_type(self, obj):
         link = self._display_subscription_link(obj)
         if not link:
-            return None
+            return 'free'
 
         replacement_operation = self._current_replacement_operation(obj)
         if replacement_operation and replacement_operation.replacement_type:
@@ -475,8 +475,9 @@ class DeviceListSerializer(serializers.ModelSerializer):
             'primary': 'اصلی',
             'temporary_repair': 'جایگزین موقت',
             'permanent_replacement': 'جایگزین دائم',
-            'replacement': 'دستگاه جایگزین',
-        'replaced': 'جایگزین شده',
+            'replacement': 'جایگزین دائم',
+            'replaced': 'اصلی',
+            'free': 'آزاد',
         }.get(value)
 
     def _latest_replacement_relation(self, obj):
