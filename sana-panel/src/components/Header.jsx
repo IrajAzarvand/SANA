@@ -67,8 +67,7 @@ export default function Header({ onMenuClick }) {
             {profileOpen && <>
               <div className="fixed inset-0 z-10" onClick={() => setProfileOpen(false)} />
               <div className="absolute left-0 top-full mt-2 w-48 bg-bg-overlay border border-border-base rounded-field shadow-xl z-20 overflow-hidden">
-                <button className="w-full flex items-center gap-3 px-4 py-3 text-sm text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"><User size={16} /><span>پروفایل من</span></button>
-                <button className="w-full flex items-center gap-3 px-4 py-3 text-sm text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"><Settings size={16} /><span>تنظیمات</span></button>
+                <button onClick={() => { setProfileOpen(false); navigate('/panel/settings'); }} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors"><User size={16} /><span>پروفایل من</span></button>
                 <div className="border-t border-border-base" />
                 <button onClick={() => logout()} className="w-full flex items-center gap-3 px-4 py-3 text-sm text-danger hover:bg-danger/10 transition-colors"><LogOut size={16} /><span>خروج</span></button>
               </div>
