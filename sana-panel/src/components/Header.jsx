@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
-import { Command, Bell, Menu, ChevronDown, LogOut, User, Settings } from 'lucide-react';
+import { Command, Bell, Menu, ChevronDown, LogOut, User } from 'lucide-react';
 import SanaLogo from './SanaLogo';
 import CommandPalette from './CommandPalette';
 import NotificationCenter from './NotificationCenter';
 import { useAuth } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 export default function Header({ onMenuClick }) {
   const [profileOpen, setProfileOpen] = useState(false);
+  const navigate = useNavigate();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const { user, logout } = useAuth();
   const fullName = [user?.first_name, user?.last_name].filter(Boolean).join(' ').trim()
