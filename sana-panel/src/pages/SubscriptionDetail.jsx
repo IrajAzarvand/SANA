@@ -54,7 +54,7 @@ const getContractDeviceStatus = (device, isSiteAdmin = false) => {
 
   const management = isSiteAdmin ? getManagementStatus(device.management_status) : null;
   const showManagementStatus = Boolean(
-    isSiteAdmin && device.management_status && !['active', 'installed'].includes(device.management_status)
+    isSiteAdmin && device.management_status
   );
 
   return { relationLabel, relationVariant, management, showManagementStatus };
