@@ -197,8 +197,8 @@ class DeviceListSerializer(serializers.ModelSerializer):
             return False
 
         if obj.management_status in {
-            'faulty', 'ready', 'lost', 'stolen',
-            'disconnected', 'retired', 'disposed',
+            'faulty', 'in_repair', 'ready', 'lost', 'stolen',
+            'disconnected', 'unusable', 'disposed',
         }:
             return False
         return True
@@ -236,12 +236,13 @@ class DeviceListSerializer(serializers.ModelSerializer):
 
         management_status_reasons = {
             'faulty': 'دستگاه خراب است',
+            'in_repair': 'دستگاه در حال تعمیر است',
             'ready': 'دستگاه آماده تعیین تکلیف است',
             'lost': 'دستگاه گمشده ثبت شده است',
             'stolen': 'دستگاه سرقت‌شده ثبت شده است',
             'disconnected': 'سرویس دستگاه قطع شده است',
-            'retired': 'دستگاه بازنشسته شده است',
-            'disposed': 'دستگاه از رده خارج و امحاء شده است',
+            'unusable': 'دستگاه غیرقابل استفاده است',
+            'disposed': 'دستگاه امحاء شده است',
         }
         return management_status_reasons.get(obj.management_status)
 
@@ -433,7 +434,7 @@ class DeviceListSerializer(serializers.ModelSerializer):
         else:
             source_relation = source_relations[0] if source_relations else None
         if source_relation and obj.management_status in {
-            'faulty', 'lost', 'stolen', 'ready'
+            'faulty', 'in_repair', 'lost', 'stolen', 'ready'
         }:
             return 'replaced'
 
@@ -448,7 +449,7 @@ class DeviceListSerializer(serializers.ModelSerializer):
             if replacement_operation.replacement_type == 'temporary_repair':
                 return 'installed'
             if replacement_operation.replacement_type == 'permanent_replacement':
-                return 'sold'
+                return 'installed'
 
         return obj.management_status
 
