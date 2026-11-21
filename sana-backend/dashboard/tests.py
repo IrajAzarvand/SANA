@@ -198,7 +198,7 @@ class PersonalDashboardGPSStatusTests(TestCase):
 
         moving = self.make_accessible_device('860000000000301', management_status='installed')
         stopped = self.make_accessible_device('860000000000302', management_status='faulty')
-        stale = self.make_accessible_device('860000000000303', management_status='sold')
+        stale = self.make_accessible_device('860000000000303', management_status='installed')
         no_position = self.make_accessible_device('860000000000304', management_status='warehouse')
         other = self.make_accessible_device(
             '860000000000305',
@@ -257,10 +257,8 @@ class PersonalDashboardGPSStatusTests(TestCase):
             'moving': 1,
             'stopped': 1,
         })
-        self.assertEqual(response.data['devices_by_management_status']['installed'], 1)
-        self.assertEqual(response.data['devices_by_management_status']['faulty'], 1)
-        self.assertEqual(response.data['devices_by_management_status']['sold'], 1)
-        self.assertEqual(response.data['devices_by_management_status']['warehouse'], 1)
+        self.assertNotIn('devices_by_management_status', response.data)
+        self.assertNotIn('devices_by_status', response.data)
 
     def test_personal_stats_report_gps_unavailable_without_marking_devices_offline(self):
         from unittest.mock import patch
