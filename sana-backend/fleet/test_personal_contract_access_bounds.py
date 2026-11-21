@@ -23,7 +23,7 @@ class PersonalDeviceContractBoundsTests(TestCase):
     def add_device_with_mismatched_parent_contract(self, *, imei, start_date, end_date):
         device = Device.objects.create(
             imei=imei,
-            management_status='sold',
+            management_status='installed',
         )
         subscription = Subscription.objects.create(
             contract_number=f'CONTRACT-BOUNDS-{imei[-4:]}',
