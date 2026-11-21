@@ -1035,6 +1035,45 @@ class PersonalTraccarAlertsTests(TestCase):
 
     @patch('fleet.views.traccar_device_events')
     @patch('fleet.views.traccar_devices')
+    def test_refresh_preserves_existing_user_workflow_state(
+        self, list_devices, fetch_events
+    ):
+        event_time = timezone.now().replace(microsecond=0)
+        read_at = event_time - timedelta(minutes=5)
+        DeviceAlertState.objects.create(
+            user=self.user,
+            device=self.device,
+            event_key=f'gps:{self.device.pk}:704',
+            notification_type='gps',
+            traccar_event_id='704',
+            event_type='deviceOffline',
+            event_time=event_time,
+            status='read',
+            read_at=read_at,
+        )
+        list_devices.return_value = [{'id': 42, 'uniqueId': self.device.imei}]
+        fetch_events.return_value = [{
+            'id': 704,
+            'deviceId': 42,
+            'type': 'deviceOffline',
+            'eventTime': event_time.isoformat(),
+            'attributes': {},
+        }]
+        request = APIRequestFactory().get('/api/devices/alerts/')
+        force_authenticate(request, user=self.user)
+
+        response = DeviceViewSet.as_view({'get': 'alerts'})(request)
+
+        self.assertEqual(response.status_code, 200)
+        state = DeviceAlertState.objects.get(
+            user=self.user, device=self.device, traccar_event_id='704'
+        )
+        self.assertEqual(state.status, 'read')
+        self.assertEqual(state.read_at, read_at)
+        self.assertEqual(response.data['results'][0]['status'], 'read')
+
+    @patch('fleet.views.traccar_device_events')
+    @patch('fleet.views.traccar_devices')
     def test_online_event_resolves_previous_offline_event(
         self, list_devices, fetch_events
     ):
