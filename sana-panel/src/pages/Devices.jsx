@@ -19,6 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSearchParams } from 'react-router-dom';
 import { devicesAPI, deviceModelsAPI } from '../api/services/fleet';
 import { useApi } from '../hooks/useApi';
+import { managementStatusMap, getManagementStatus } from '../utils/deviceStatus';
 
 const protocolLabelMap = {
   teltonika: 'Teltonika',
@@ -69,20 +70,6 @@ const DeviceModelCell = ({ device }) => {
 const formatProtocol = (protocol) => (
   protocolLabelMap[(protocol || '').toLowerCase()] || protocol
 );
-
-const managementStatusMap = {
-  warehouse:    { label: 'در انبار',      variant: 'info'    },
-  sold:         { label: 'فروخته شده',    variant: 'brand'   },
-  installed:    { label: 'نصب شده',       variant: 'brand'   },
-  active:       { label: 'فعال',          variant: 'success' },
-  ready:        { label: 'آماده تعیین تکلیف', variant: 'info' },
-  faulty:       { label: 'خراب',          variant: 'danger'  },
-  lost:         { label: 'گمشده',         variant: 'warning' },
-  stolen:       { label: 'سرقت شده',      variant: 'danger'  },
-  disconnected: { label: 'قطع سرویس',     variant: 'muted'   },
-  retired:      { label: 'بازنشسته',       variant: 'muted'   },
-  disposed:     { label: 'امحاء شده',      variant: 'danger'  },
-};
 
 export default function Devices() {
   const { isPersonal } = useAuth();
@@ -470,7 +457,7 @@ function DevicesTab() {
           <>
           <div className="grid grid-cols-1 gap-3 sm:hidden">
             {filtered.map((d) => {
-              const mgmt = managementStatusMap[d.management_status] || managementStatusMap.warehouse;
+              const mgmt = getManagementStatus(d.management_status);
               return (
                 <article id={`device-card-${d.id}`} key={d.id} className="rounded-card border border-border-base bg-bg-base p-3">
                   <div className="flex items-start justify-between gap-3">
