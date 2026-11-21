@@ -383,8 +383,10 @@ function DevicesTab() {
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <DeviceMetric label="کل دستگاه‌ها" value={devices.length} icon={Cpu} />
         <DeviceMetric label="مجوز سرویس GPS فعال" value={devices.filter((d) => d.data_active).length} icon={Activity} />
-        <DeviceMetric label="در انبار" value={devices.filter((d) => d.is_in_warehouse).length} icon={Package} />
-        <DeviceMetric label="تخصیص‌یافته" value={devices.filter((d) => !d.is_in_warehouse).length} icon={Truck} />
+        {isSiteAdmin && <>
+          <DeviceMetric label="در انبار" value={devices.filter((d) => d.is_in_warehouse).length} icon={Package} />
+          <DeviceMetric label="تخصیص‌یافته" value={devices.filter((d) => !d.is_in_warehouse).length} icon={Truck} />
+        </>}
       </div>
 
       <Card>
@@ -415,7 +417,7 @@ function DevicesTab() {
                 { value: 'no', label: 'فقط تخصیص‌یافته' },
               ]}
             />
-          </div>
+          </div>}
         </div>
         <div className="mt-3 flex items-center justify-between border-t border-border-base pt-3 text-[11px] text-text-muted">
           <span>نمایش {filtered.length.toLocaleString('fa-IR')} از {devices.length.toLocaleString('fa-IR')} دستگاه</span>
@@ -499,7 +501,7 @@ function DevicesTab() {
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">قرارداد مرتبط</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">نوع ارتباط</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">خودرو</th>
-                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">وضعیت مدیریتی</th>
+                  {isSiteAdmin && <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">وضعیت مدیریتی</th>}
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">آخرین دریافت GPS</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">مجوز سرویس GPS</th>
                   <th className="w-12"></th>
@@ -507,7 +509,7 @@ function DevicesTab() {
               </thead>
               <tbody>
                 {filtered.map((d) => {
-                  const mgmt = managementStatusMap[d.management_status] || managementStatusMap.warehouse;
+                  const mgmt = getManagementStatus(d.management_status);
                   return (
                     <tr id={`device-row-${d.id}`} key={d.id} className="border-b border-border-base last:border-0 hover:bg-bg-hover transition-colors">
                       <td className="py-3 px-4">
