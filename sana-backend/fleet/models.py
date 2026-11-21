@@ -354,7 +354,7 @@ class DeviceOperation(models.Model):
         ('transfer_customer', 'انتقال به مشتری دیگر'),
         ('transfer_branch', 'انتقال بین شعب'),
         ('transfer_vehicle', 'انتقال بین خودروها'),
-        ('retire', 'بازنشستگی'),
+        ('retire', 'خارج کردن از چرخه استفاده'),
         ('dispose', 'امحاء'),
     ]
 
@@ -417,7 +417,7 @@ class DeviceOperation(models.Model):
             ('customer_spare', 'تحویل به مشتری به عنوان دستگاه یدکی'),
             ('install_other_vehicle', 'نصب روی خودروی دیگر'),
             ('transfer_customer', 'انتقال به مشتری دیگر'),
-            ('retire', 'بازنشستگی'),
+            ('retire', 'خارج کردن از چرخه استفاده'),
             ('dispose', 'امحاء'),
             ('other', 'سایر'),
         ],
