@@ -126,11 +126,8 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
     device_model_manufacturer = serializers.CharField(source='device.device_model.manufacturer', read_only=True, allow_null=True)
     device_sim = serializers.CharField(source='device.sim_number', read_only=True)
     vehicle_plate = serializers.CharField(source='device.vehicle.plate', read_only=True)
-    management_status = serializers.CharField(source='device.management_status', read_only=True)
-    management_status_display = serializers.CharField(
-        source='device.get_management_status_display',
-        read_only=True,
-    )
+    management_status = serializers.SerializerMethodField()
+    management_status_display = serializers.SerializerMethodField()
     replacement_relation = serializers.SerializerMethodField()
     is_active = serializers.BooleanField(read_only=True)
     is_expired = serializers.BooleanField(read_only=True)
@@ -150,8 +147,19 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'assigned_at', 'unassigned_at']
 
+    def _is_site_admin(self):
+        request = self.context.get('request')
+        return bool(request and getattr(request.user, 'is_site_admin', False))
+
+    def get_management_status(self, obj):
+        return obj.device.management_status if self._is_site_admin() else None
+
+    def get_management_status_display(self, obj):
+        return obj.device.get_management_status_display() if self._is_site_admin() else None
+
     def get_replacement_relation(self, obj):
         device = obj.device
+        is_admin = self._is_site_admin()
 
         source_relations = list(device.replacement_relations_as_source.all())
         if source_relations:
@@ -166,8 +174,8 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
                 'related_device_imei': related.imei,
                 'related_device_model': related.device_model.name if related.device_model else None,
                 'related_device_sim': related.sim_number,
-                'related_device_status': related.management_status,
-                'related_device_status_display': related.get_management_status_display(),
+                'related_device_status': related.management_status if is_admin else None,
+                'related_device_status_display': related.get_management_status_display() if is_admin else None,
             }
 
         replacement_relations = list(device.replacement_relations_as_replacement.all())
@@ -177,7 +185,7 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
             label = (
                 'جایگزین موقت'
                 if relation.replacement_type == 'temporary_repair'
-                else 'تعویض دائمی'
+                else 'جایگزین دائم'
             )
             return {
                 'direction': 'replacement',
@@ -188,8 +196,8 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
                 'related_device_imei': related.imei,
                 'related_device_model': related.device_model.name if related.device_model else None,
                 'related_device_sim': related.sim_number,
-                'related_device_status': related.management_status,
-                'related_device_status_display': related.get_management_status_display(),
+                'related_device_status': related.management_status if is_admin else None,
+                'related_device_status_display': related.get_management_status_display() if is_admin else None,
             }
 
         return None
@@ -244,7 +252,7 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
 
         # آپدیت وضعیت
         if device.management_status == 'warehouse':
-            device.management_status = 'sold'
+            device.management_status = 'installed'
 
         device.save()
         request = self.context.get('request')
@@ -1054,7 +1062,7 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                     device.current_holder_user = user
 
                 # آپدیت وضعیت مدیریتی دستگاه — از انبار خارج شد
-                device.management_status = 'sold'
+                device.management_status = 'installed'
                 device.save()
                 record_device_lifecycle_event(
                     device=device,

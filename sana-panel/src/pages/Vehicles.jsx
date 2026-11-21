@@ -17,15 +17,9 @@ import { branchesAPI } from '../api/services/organizations';
 import { useApi } from '../hooks/useApi';
 
 const deviceStatusMap = {
-  active:       { label: 'آنلاین',      variant: 'success' },
-  offline:      { label: 'آفلاین',      variant: 'muted'   },
-  faulty:       { label: 'خراب',        variant: 'danger'  },
-  sold:         { label: 'فروخته شده',  variant: 'info'    },
-  installed:    { label: 'نصب شده',     variant: 'brand'   },
-  lost:         { label: 'گمشده',       variant: 'warning' },
-  stolen:       { label: 'سرقت شده',    variant: 'danger'  },
-  disconnected: { label: 'قطع سرویس',   variant: 'muted'   },
-  none:         { label: 'بدون دستگاه', variant: 'neutral' },
+  active: { label: 'سرویس فعال', variant: 'success' },
+  offline: { label: 'سرویس غیرفعال', variant: 'neutral' },
+  none: { label: 'بدون دستگاه', variant: 'neutral' },
 };
 
 export default function Vehicles() {

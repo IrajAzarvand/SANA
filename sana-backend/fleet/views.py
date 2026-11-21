@@ -1526,54 +1526,19 @@ class DriverVehicleAssignmentViewSet(viewsets.ModelViewSet):
 
 
 class DeviceLifecycleEventViewSet(viewsets.ModelViewSet):
-    """تاریخچه و ثبت رویدادهای چرخه عمر دستگاه."""
+    """تاریخچه داخلی چرخه عمر دستگاه؛ فقط برای ادمین سایت."""
     queryset = DeviceLifecycleEvent.objects.select_related(
         'device', 'subscription', 'organization', 'user', 'vehicle', 'branch', 'performed_by'
     ).all()
     serializer_class = DeviceLifecycleEventSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsSiteAdmin]
     filter_backends = [filters.OrderingFilter]
     ordering_fields = ['event_date', 'created_at']
 
     def get_queryset(self):
-        user = self.request.user
+        if not self.request.user.is_site_admin:
+            return self.queryset.none()
         qs = self.queryset
-        if user.is_site_admin:
-            pass
-        elif user.is_main_user and user.organization_id:
-            access = DeviceCustomerAccessPeriod.objects.filter(device=OuterRef('device_id'), organization_id=user.organization_id, started_at__lte=OuterRef('event_date')).filter(Q(ended_at__isnull=True) | Q(ended_at__gte=OuterRef('event_date')))
-            qs = qs.filter(Exists(access))
-        elif user.is_branch_manager and user.branch_id:
-            access = DeviceCustomerAccessPeriod.objects.filter(device=OuterRef('device_id'), organization_id=user.organization_id, branch_id=user.branch_id, started_at__lte=OuterRef('event_date')).filter(Q(ended_at__isnull=True) | Q(ended_at__gte=OuterRef('event_date')))
-            qs = qs.filter(Exists(access))
-        elif user.is_personal_user:
-            # A personal customer may see lifecycle events from either an
-            # access period or a subscription-device assignment that covered
-            # the event timestamp. Keep this historical check independent
-            # from the subscription's current status.
-            access = DeviceCustomerAccessPeriod.objects.filter(
-                device=OuterRef('device_id'),
-                user_id=user.id,
-                started_at__lte=OuterRef('event_date'),
-            ).filter(
-                Q(ended_at__isnull=True) | Q(ended_at__gte=OuterRef('event_date'))
-            )
-            contract_access = SubscriptionDevice.objects.filter(
-                device=OuterRef('device_id'),
-                subscription__user_id=user.id,
-                subscription__start_date__lte=OuterRef('event_date__date'),
-                subscription__end_date__gte=OuterRef('event_date__date'),
-                start_date__lte=OuterRef('event_date__date'),
-                end_date__gte=OuterRef('event_date__date'),
-                assigned_at__lte=OuterRef('event_date'),
-            ).filter(
-                Q(unassigned_at__isnull=True)
-                | Q(unassigned_at__gte=OuterRef('event_date'))
-            )
-            qs = qs.filter(Exists(access) | Exists(contract_access))
-        else:
-            qs = qs.none()
-
         device = self.request.query_params.get('device')
         if device:
             qs = qs.filter(device_id=device)
@@ -1581,12 +1546,6 @@ class DeviceLifecycleEventViewSet(viewsets.ModelViewSet):
         if event_type:
             qs = qs.filter(event_type=event_type)
         return qs
-
-    def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsSiteAdmin()]
-        return super().get_permissions()
-
 
 class DeviceReplacementRelationViewSet(viewsets.ModelViewSet):
     """رابطه‌های جایگزینی دستگاه‌ها؛ تغییر/ثبت فقط توسط ادمین سایت."""
@@ -1627,37 +1586,20 @@ class DeviceReplacementRelationViewSet(viewsets.ModelViewSet):
 
 
 class DeviceOperationViewSet(viewsets.ModelViewSet):
-    """عملیات واقعی دستگاه؛ اجرای تغییرات فقط توسط ادمین سایت."""
+    """عملیات واقعی و سوابق داخلی دستگاه؛ فقط برای ادمین سایت."""
     queryset = DeviceOperation.objects.select_related(
         'device', 'replacement_device', 'subscription', 'target_subscription',
         'target_organization', 'target_user', 'target_branch', 'target_vehicle', 'performed_by'
     ).all()
     serializer_class = DeviceOperationSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsSiteAdmin]
     http_method_names = ['get', 'post', 'head', 'options']
 
     def get_queryset(self):
-        user = self.request.user
+        if not self.request.user.is_site_admin:
+            return self.queryset.none()
         qs = self.queryset
-        if user.is_site_admin:
-            pass
-        elif user.is_main_user and user.organization_id:
-            access = DeviceCustomerAccessPeriod.objects.filter(device=OuterRef('device_id'), organization_id=user.organization_id, started_at__lte=OuterRef('performed_at')).filter(Q(ended_at__isnull=True) | Q(ended_at__gte=OuterRef('performed_at')))
-            qs = qs.filter(Exists(access))
-        elif user.is_branch_manager and user.branch_id:
-            access = DeviceCustomerAccessPeriod.objects.filter(device=OuterRef('device_id'), organization_id=user.organization_id, branch_id=user.branch_id, started_at__lte=OuterRef('performed_at')).filter(Q(ended_at__isnull=True) | Q(ended_at__gte=OuterRef('performed_at')))
-            qs = qs.filter(Exists(access))
-        elif user.is_personal_user:
-            access = DeviceCustomerAccessPeriod.objects.filter(device=OuterRef('device_id'), user_id=user.id, started_at__lte=OuterRef('performed_at')).filter(Q(ended_at__isnull=True) | Q(ended_at__gte=OuterRef('performed_at')))
-            qs = qs.filter(Exists(access))
-        else:
-            qs = qs.none()
         device = self.request.query_params.get('device')
         if device:
             qs = qs.filter(device_id=device) | qs.filter(replacement_device_id=device)
         return qs.distinct()
-
-    def get_permissions(self):
-        if self.action == 'create':
-            return [IsSiteAdmin()]
-        return super().get_permissions()

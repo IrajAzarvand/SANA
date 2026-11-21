@@ -28,15 +28,14 @@ def record_device_lifecycle_event(
 
     status_map = {
         'received': 'warehouse',
-        'sold': 'sold',
-        'assigned_to_contract': 'sold',
+        'assigned_to_contract': 'installed',
         'returned': 'warehouse',
-        'sent_to_repair': 'faulty',
+        'sent_to_repair': 'in_repair',
         'repaired': 'warehouse',
         'lost': 'lost',
         'found': 'ready',
         'stolen': 'stolen',
-        'retired': 'retired',
+        'retired': 'unusable',
         'disposed': 'disposed',
     }
     target_status = new_status if new_status is not None else status_map.get(event_type)

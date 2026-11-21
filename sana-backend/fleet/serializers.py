@@ -67,10 +67,10 @@ class VehicleListSerializer(serializers.ModelSerializer):
         ]
 
     def get_device_status(self, obj):
-        device = obj.devices.filter(management_status='active').first()
+        device = obj.devices.order_by('-updated_at', '-id').first()
         if not device:
             return 'none'
-        return device.management_status
+        return 'active' if device.is_data_active else 'offline'
 
 
 class DeviceModelSerializer(serializers.ModelSerializer):
@@ -105,6 +105,9 @@ class DeviceSerializer(serializers.ModelSerializer):
     data_active = serializers.BooleanField(source='is_data_active', read_only=True)
 
     def get_management_status(self, obj):
+        request = self.context.get('request')
+        if request and not getattr(request.user, 'is_site_admin', False):
+            return None
         if obj.is_in_warehouse:
             return 'warehouse'
         return obj.management_status
@@ -182,6 +185,9 @@ class DeviceListSerializer(serializers.ModelSerializer):
         )
 
     def get_is_in_warehouse(self, obj):
+        request = self.context.get('request')
+        if request and not getattr(request.user, 'is_site_admin', False):
+            return None
         return self._is_in_warehouse(obj)
 
     def get_data_active(self, obj):
@@ -197,14 +203,18 @@ class DeviceListSerializer(serializers.ModelSerializer):
             return False
 
         if obj.management_status in {
-            'faulty', 'ready', 'lost', 'stolen',
-            'disconnected', 'retired', 'disposed',
+            'faulty', 'in_repair', 'ready', 'lost', 'stolen',
+            'disconnected', 'unusable', 'disposed',
         }:
             return False
         return True
 
     def get_data_inactive_reason(self, obj):
-        """Return one concise, highest-priority reason why GPS service is not authorized."""
+        """Return internal diagnostics to admins and a simple service message to customers."""
+        request = self.context.get('request')
+        is_admin = not request or getattr(request.user, 'is_site_admin', False)
+        if not is_admin and not self.get_data_active(obj):
+            return 'سرویس دستگاه در حال حاضر فعال نیست'
         link = self._active_subscription_link(obj)
         if not link:
             return 'دستگاه به هیچ قراردادی متصل نیست'
@@ -236,17 +246,21 @@ class DeviceListSerializer(serializers.ModelSerializer):
 
         management_status_reasons = {
             'faulty': 'دستگاه خراب است',
+            'in_repair': 'دستگاه در حال تعمیر است',
             'ready': 'دستگاه آماده تعیین تکلیف است',
             'lost': 'دستگاه گمشده ثبت شده است',
             'stolen': 'دستگاه سرقت‌شده ثبت شده است',
             'disconnected': 'سرویس دستگاه قطع شده است',
-            'retired': 'دستگاه بازنشسته شده است',
-            'disposed': 'دستگاه از رده خارج و امحاء شده است',
+            'unusable': 'دستگاه غیرقابل استفاده است',
+            'disposed': 'دستگاه امحاء شده است',
         }
         return management_status_reasons.get(obj.management_status)
 
     def get_management_status(self, obj):
-        """Keep the existing warehouse display rule without an extra query."""
+        """Management lifecycle is an admin-only field."""
+        request = self.context.get('request')
+        if request and not getattr(request.user, 'is_site_admin', False):
+            return None
         if self._is_in_warehouse(obj):
             return 'warehouse'
         return obj.management_status
@@ -399,7 +413,7 @@ class DeviceListSerializer(serializers.ModelSerializer):
     def get_subscription_device_type(self, obj):
         link = self._display_subscription_link(obj)
         if not link:
-            return None
+            return 'free'
 
         replacement_operation = self._current_replacement_operation(obj)
         if replacement_operation and replacement_operation.replacement_type:
@@ -433,13 +447,16 @@ class DeviceListSerializer(serializers.ModelSerializer):
         else:
             source_relation = source_relations[0] if source_relations else None
         if source_relation and obj.management_status in {
-            'faulty', 'lost', 'stolen', 'ready'
+            'faulty', 'in_repair', 'lost', 'stolen', 'ready'
         }:
             return 'replaced'
 
         return 'primary'
 
     def get_management_status(self, obj):
+        request = self.context.get('request')
+        if request and not getattr(request.user, 'is_site_admin', False):
+            return None
         if self._is_in_warehouse(obj):
             return 'warehouse'
 
@@ -448,18 +465,19 @@ class DeviceListSerializer(serializers.ModelSerializer):
             if replacement_operation.replacement_type == 'temporary_repair':
                 return 'installed'
             if replacement_operation.replacement_type == 'permanent_replacement':
-                return 'sold'
+                return 'installed'
 
         return obj.management_status
 
     def get_subscription_device_type_display(self, obj):
         value = self.get_subscription_device_type(obj)
         return {
-            'primary': 'دستگاه اصلی',
+            'primary': 'اصلی',
             'temporary_repair': 'جایگزین موقت',
-            'permanent_replacement': 'جایگزین دائمی',
-            'replacement': 'دستگاه جایگزین',
-        'replaced': 'جایگزین شده',
+            'permanent_replacement': 'جایگزین دائم',
+            'replacement': 'جایگزین دائم',
+            'replaced': 'اصلی',
+            'free': 'آزاد',
         }.get(value)
 
     def _latest_replacement_relation(self, obj):

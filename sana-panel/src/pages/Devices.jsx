@@ -19,6 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSearchParams } from 'react-router-dom';
 import { devicesAPI, deviceModelsAPI } from '../api/services/fleet';
 import { useApi } from '../hooks/useApi';
+import { managementStatusMap, getManagementStatus } from '../utils/deviceStatus';
 
 const protocolLabelMap = {
   teltonika: 'Teltonika',
@@ -69,20 +70,6 @@ const DeviceModelCell = ({ device }) => {
 const formatProtocol = (protocol) => (
   protocolLabelMap[(protocol || '').toLowerCase()] || protocol
 );
-
-const managementStatusMap = {
-  warehouse:    { label: 'در انبار',      variant: 'info'    },
-  sold:         { label: 'فروخته شده',    variant: 'brand'   },
-  installed:    { label: 'نصب شده',       variant: 'brand'   },
-  active:       { label: 'فعال',          variant: 'success' },
-  ready:        { label: 'آماده تعیین تکلیف', variant: 'info' },
-  faulty:       { label: 'خراب',          variant: 'danger'  },
-  lost:         { label: 'گمشده',         variant: 'warning' },
-  stolen:       { label: 'سرقت شده',      variant: 'danger'  },
-  disconnected: { label: 'قطع سرویس',     variant: 'muted'   },
-  retired:      { label: 'بازنشسته',       variant: 'muted'   },
-  disposed:     { label: 'امحاء شده',      variant: 'danger'  },
-};
 
 export default function Devices() {
   const { isPersonal } = useAuth();
@@ -166,15 +153,15 @@ function DevicesTab() {
           !(d.device_model_name && d.device_model_name.toLowerCase().includes(search.toLowerCase())) &&
           !(d.traccar_model && d.traccar_model.toLowerCase().includes(search.toLowerCase())) &&
           !(d.vehicle_plate && d.vehicle_plate.includes(search))) return false;
-      if (filterStatus && d.management_status !== filterStatus) return false;
-      if (filterWarehouse === 'yes' && !d.is_in_warehouse) return false;
-      if (filterWarehouse === 'no' && d.is_in_warehouse) return false;
+      if (isSiteAdmin && filterStatus && d.management_status !== filterStatus) return false;
+      if (isSiteAdmin && filterWarehouse === 'yes' && !d.is_in_warehouse) return false;
+      if (isSiteAdmin && filterWarehouse === 'no' && d.is_in_warehouse) return false;
       return true;
     });
-  }, [devices, search, filterStatus, filterWarehouse]);
+  }, [devices, search, filterStatus, filterWarehouse, isSiteAdmin]);
 
   const statusOptions = useMemo(() => {
-    return Object.entries(managementStatusMap).map(([value, { label }]) => ({
+    return Object.entries(managementStatusMap).filter(([value]) => !['sold', 'retired'].includes(value)).map(([value, { label }]) => ({
       value, label,
     }));
   }, []);
@@ -338,13 +325,15 @@ function DevicesTab() {
   };
 
   const getMenuItems = (device) => {
-    const items = [
-      {
+    const items = [];
+
+    if (isSiteAdmin) {
+      items.push({
         label: 'تاریخچه و رویدادها',
         icon: History,
         onClick: () => setDeviceHistoryId(device.id),
-      },
-    ];
+      });
+    }
 
     if (isSiteAdmin) {
       items.push({
@@ -378,26 +367,28 @@ function DevicesTab() {
     if (!device) return;
 
     setSearchParams({}, { replace: true });
-    if (action === 'history') {
+    if (action === 'history' && isSiteAdmin) {
       // The URL action intentionally opens a modal after the device list loads.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setDeviceHistoryId(device.id);
     } else if (action === 'edit') {
       handleEdit(device);
     }
-  }, [devices, searchParams, setSearchParams]);
+  }, [devices, searchParams, setSearchParams, isSiteAdmin]);
 
   if (loading) return <Card><LoadingSpinner /></Card>;
   if (error) return <Card><ErrorState error={error} onRetry={refetch} /></Card>;
-  if (isPersonal) return <PersonalDevicesView devices={devices || []} onOpenHistory={setDeviceHistoryId} deviceHistoryId={deviceHistoryId} onCloseHistory={() => setDeviceHistoryId(null)} onRefresh={refetch} />;
+  if (isPersonal) return <PersonalDevicesView devices={devices || []} onRefresh={refetch} />;
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         <DeviceMetric label="کل دستگاه‌ها" value={devices.length} icon={Cpu} />
         <DeviceMetric label="مجوز سرویس GPS فعال" value={devices.filter((d) => d.data_active).length} icon={Activity} />
-        <DeviceMetric label="در انبار" value={devices.filter((d) => d.is_in_warehouse).length} icon={Package} />
-        <DeviceMetric label="تخصیص‌یافته" value={devices.filter((d) => !d.is_in_warehouse).length} icon={Truck} />
+        {isSiteAdmin && <>
+          <DeviceMetric label="در انبار" value={devices.filter((d) => d.is_in_warehouse).length} icon={Package} />
+          <DeviceMetric label="تخصیص‌یافته" value={devices.filter((d) => !d.is_in_warehouse).length} icon={Truck} />
+        </>}
       </div>
 
       <Card>
@@ -410,15 +401,15 @@ function DevicesTab() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
-          <div title="وضعیت مدیریتی">
+          {isSiteAdmin && <div title="وضعیت مدیریتی">
             <Select
               placeholder="همه وضعیت‌ها"
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
               options={statusOptions}
             />
-          </div>
-          <div title="محل استقرار">
+          </div>}
+          {isSiteAdmin && <div title="محل استقرار">
             <Select
               value={filterWarehouse}
               onChange={(e) => setFilterWarehouse(e.target.value)}
@@ -428,7 +419,7 @@ function DevicesTab() {
                 { value: 'no', label: 'فقط تخصیص‌یافته' },
               ]}
             />
-          </div>
+          </div>}
         </div>
         <div className="mt-3 flex items-center justify-between border-t border-border-base pt-3 text-[11px] text-text-muted">
           <span>نمایش {filtered.length.toLocaleString('fa-IR')} از {devices.length.toLocaleString('fa-IR')} دستگاه</span>
@@ -470,7 +461,7 @@ function DevicesTab() {
           <>
           <div className="grid grid-cols-1 gap-3 sm:hidden">
             {filtered.map((d) => {
-              const mgmt = managementStatusMap[d.management_status] || managementStatusMap.warehouse;
+              const mgmt = getManagementStatus(d.management_status);
               return (
                 <article id={`device-card-${d.id}`} key={d.id} className="rounded-card border border-border-base bg-bg-base p-3">
                   <div className="flex items-start justify-between gap-3">
@@ -488,10 +479,10 @@ function DevicesTab() {
                     <div><div className="text-text-muted">قرارداد مرتبط</div><div className="mt-1 font-mono text-text-primary">{d.subscription_number || '—'}</div></div>
                     <div><div className="text-text-muted">نوع ارتباط</div><div className="mt-1 text-text-primary">{d.subscription_device_type_display || '—'}</div></div>
                     <div><div className="text-text-muted">خودرو</div><div className="mt-1 font-mono text-text-primary">{d.vehicle_plate || '—'}</div></div>
-                    <div><div className="text-text-muted">وضعیت مدیریتی</div><div className="mt-1"><Badge variant={mgmt.variant}>{mgmt.label}</Badge></div></div>
+                    {isSiteAdmin && <div><div className="text-text-muted">وضعیت مدیریتی</div><div className="mt-1"><Badge variant={mgmt.variant}>{mgmt.label}</Badge></div></div>}
                     <div><div className="text-text-muted">آخرین دریافت GPS</div><div className="mt-1 text-text-primary">{formatReceivedAt(d.last_data_received_at)}</div></div>
                     <div><div className="text-text-muted">مجوز سرویس GPS</div><div className="mt-1"><span title={!d.data_active ? (d.data_inactive_reason || 'علت غیرفعال بودن مشخص نیست') : undefined}>
-                        <Badge variant={d.data_active ? 'success' : 'muted'}>{d.data_active ? 'سرویس فعال' : 'سرویس غیرفعال'}</Badge>
+                        <Badge variant={d.data_active ? 'success' : 'neutral'}>{d.data_active ? 'سرویس فعال' : 'سرویس غیرفعال'}</Badge>
                       </span></div></div>
                     {d.replacement_device_imei && <div className="col-span-2"><div className="text-text-muted">دستگاه مرتبط</div><button type="button" onClick={() => focusRelatedDevice(d.replacement_device_imei)} className="mt-1 text-brand-400">{d.replacement_device_imei}</button></div>}
                   </div>
@@ -512,7 +503,7 @@ function DevicesTab() {
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">قرارداد مرتبط</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">نوع ارتباط</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">خودرو</th>
-                  <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">وضعیت مدیریتی</th>
+                  {isSiteAdmin && <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">وضعیت مدیریتی</th>}
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">آخرین دریافت GPS</th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">مجوز سرویس GPS</th>
                   <th className="w-12"></th>
@@ -520,7 +511,7 @@ function DevicesTab() {
               </thead>
               <tbody>
                 {filtered.map((d) => {
-                  const mgmt = managementStatusMap[d.management_status] || managementStatusMap.warehouse;
+                  const mgmt = getManagementStatus(d.management_status);
                   return (
                     <tr id={`device-row-${d.id}`} key={d.id} className="border-b border-border-base last:border-0 hover:bg-bg-hover transition-colors">
                       <td className="py-3 px-4">
@@ -558,7 +549,7 @@ function DevicesTab() {
                              {d.subscription_device_type_display || 'جایگزین شده'}
                            </button>
                          ) : d.subscription_device_type_display ? (
-                           <Badge variant={d.subscription_device_type === 'primary' ? 'muted' : 'brand'}>
+                           <Badge variant={d.subscription_device_type === 'primary' ? 'info' : d.subscription_device_type === 'temporary_repair' ? 'warning' : d.subscription_device_type === 'permanent_replacement' ? 'brand' : 'neutral'}>
                              {d.subscription_device_type_display}
                            </Badge>
                          ) : (
@@ -572,9 +563,9 @@ function DevicesTab() {
                            <span className="text-text-muted text-xs">—</span>
                          )}
                        </td>
-                      <td className="py-3 px-4">
+                      {isSiteAdmin && <td className="py-3 px-4">
                         <Badge variant={mgmt.variant}>{mgmt.label}</Badge>
-                      </td>
+                      </td>}
                       <td className="py-3 px-4 text-xs text-text-secondary whitespace-nowrap" title={d.last_data_received_at || ''}>
                         <span className={d.last_data_received_at ? 'text-text-primary' : 'text-text-muted'}>
                           {formatReceivedAt(d.last_data_received_at)}
@@ -582,7 +573,7 @@ function DevicesTab() {
                       </td>
                       <td className="py-3 px-4">
                         <span title={!d.data_active ? (d.data_inactive_reason || 'علت غیرفعال بودن مشخص نیست') : undefined}>
-                          <Badge variant={d.data_active ? 'success' : 'muted'}>
+                          <Badge variant={d.data_active ? 'success' : 'neutral'}>
                             <span className="inline-flex items-center gap-1.5">
                               <Activity size={12} />
                               {d.data_active ? 'سرویس فعال' : 'سرویس غیرفعال'}
@@ -603,12 +594,12 @@ function DevicesTab() {
         )}
       </Card>
 
-      <DeviceHistoryModal
+      {isSiteAdmin && <DeviceHistoryModal
         open={Boolean(deviceHistoryId)}
         deviceId={deviceHistoryId}
         onClose={() => setDeviceHistoryId(null)}
         onOperationSaved={refetch}
-      />
+      />}
 
       {/* مودال افزودن */}
       <AddDeviceModal
@@ -709,10 +700,10 @@ const personalGpsStatus = {
   moving: { label: 'در حال حرکت', variant: 'success', icon: CarFront },
   stopped: { label: 'متوقف', variant: 'info', icon: MapPin },
   offline: { label: 'آفلاین', variant: 'danger', icon: WifiOff },
-  unknown: { label: 'وضعیت نامشخص', variant: 'muted', icon: Wifi },
+  unknown: { label: 'وضعیت نامشخص', variant: 'neutral', icon: Wifi },
 };
 
-function PersonalDevicesView({ devices, onOpenHistory, deviceHistoryId, onCloseHistory, onRefresh }) {
+function PersonalDevicesView({ devices, onRefresh }) {
   const [positions, setPositions] = useState([]);
   const [gpsAvailable, setGpsAvailable] = useState(null);
   const [gpsLoading, setGpsLoading] = useState(true);
@@ -903,9 +894,7 @@ function PersonalDevicesView({ devices, onOpenHistory, deviceHistoryId, onCloseH
                       </div>
                     )}
                   </div>
-                  <Button size="sm" variant="secondary" icon={History} onClick={() => onOpenHistory(device.id)}>
-                    سوابق
-                  </Button>
+
                 </div>
 
                 <div className="grid grid-cols-2 gap-x-4 gap-y-4 px-4 py-4 sm:grid-cols-3">
@@ -937,7 +926,7 @@ function PersonalDevicesView({ devices, onOpenHistory, deviceHistoryId, onCloseH
                   <div className="min-w-0">
                     <div className="text-[11px] text-text-muted">مجوز سرویس</div>
                     <div className="mt-1">
-                      <Badge variant={device.data_active ? 'success' : 'muted'}>
+                      <Badge variant={device.data_active ? 'success' : 'neutral'}>
                         {device.data_active ? 'فعال' : 'غیرفعال'}
                       </Badge>
                     </div>
@@ -955,12 +944,7 @@ function PersonalDevicesView({ devices, onOpenHistory, deviceHistoryId, onCloseH
         </div>
       )}
 
-      <DeviceHistoryModal
-        open={Boolean(deviceHistoryId)}
-        deviceId={deviceHistoryId}
-        onClose={onCloseHistory}
-        onOperationSaved={onRefresh}
-      />
+
     </div>
   );
 }

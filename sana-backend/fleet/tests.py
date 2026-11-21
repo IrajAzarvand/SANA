@@ -757,7 +757,7 @@ class PersonalDeviceAccessQueryTests(TestCase):
         today = timezone.localdate()
         device = Device.objects.create(
             imei='860000000000106',
-            management_status='sold',
+            management_status='installed',
         )
         subscription = Subscription.objects.create(
             contract_number='PERSONAL-ACCESS-TEST-001',
@@ -794,7 +794,7 @@ class PersonalDeviceAccessQueryTests(TestCase):
         today = timezone.localdate()
         device = Device.objects.create(
             imei='860000000000110',
-            management_status='sold',
+            management_status='installed',
         )
         subscription = Subscription.objects.create(
             contract_number='PERSONAL-REPORT-PAGING-TEST-001',
@@ -870,7 +870,7 @@ class PersonalDeviceAccessQueryTests(TestCase):
         today = timezone.localdate()
         device = Device.objects.create(
             imei='860000000000107',
-            management_status='sold',
+            management_status='installed',
         )
         subscription = Subscription.objects.create(
             contract_number='PERSONAL-REPORT-TEST-001',
@@ -913,7 +913,7 @@ class PersonalDeviceAccessQueryTests(TestCase):
         )
         device = Device.objects.create(
             imei='860000000000109',
-            management_status='sold',
+            management_status='installed',
         )
         subscription = Subscription.objects.create(
             contract_number='PERSONAL-REPORT-RANGE-TEST-001',
@@ -1184,13 +1184,21 @@ class PersonalLifecycleEventAccessTests(TestCase):
             role='personal_user',
             account_type='personal',
         )
+        self.admin = User.objects.create_user(
+            username='lifecycle_admin_access',
+            password='test-password',
+            role='site_admin',
+            account_type='admin',
+            is_staff=True,
+            is_superuser=True,
+        )
         self.today = timezone.localdate()
         self.now = timezone.now()
 
     def make_contract_event(self, *, user, imei, event_date=None):
         device = Device.objects.create(
             imei=imei,
-            management_status='sold',
+            management_status='installed',
         )
         subscription = Subscription.objects.create(
             contract_number=f'PERSONAL-LIFECYCLE-{imei[-4:]}',
@@ -1222,7 +1230,7 @@ class PersonalLifecycleEventAccessTests(TestCase):
         view.request = view.initialize_request(request)
         return set(view.get_queryset().values_list('id', flat=True))
 
-    def test_personal_user_sees_events_for_contract_link_without_access_period(self):
+    def test_personal_user_cannot_see_internal_lifecycle_events(self):
         _, _, event = self.make_contract_event(
             user=self.user,
             imei='860000000000201',
@@ -1231,10 +1239,18 @@ class PersonalLifecycleEventAccessTests(TestCase):
         self.assertFalse(
             DeviceCustomerAccessPeriod.objects.filter(device=event.device).exists()
         )
-        self.assertEqual(self.get_visible_event_ids(self.user), {event.id})
+        self.assertEqual(self.get_visible_event_ids(self.user), set())
+
+    def test_site_admin_can_see_lifecycle_events(self):
+        _, _, event = self.make_contract_event(
+            user=self.user,
+            imei='860000000000205',
+        )
+
+        self.assertEqual(self.get_visible_event_ids(self.admin), {event.id})
 
     def test_personal_user_cannot_see_another_users_contract_events(self):
-        _, _, own_event = self.make_contract_event(
+        self.make_contract_event(
             user=self.user,
             imei='860000000000202',
         )
@@ -1243,7 +1259,7 @@ class PersonalLifecycleEventAccessTests(TestCase):
             imei='860000000000203',
         )
 
-        self.assertEqual(self.get_visible_event_ids(self.user), {own_event.id})
+        self.assertEqual(self.get_visible_event_ids(self.user), set())
 
     def test_contract_event_is_hidden_after_device_assignment_ended(self):
         _, link, event = self.make_contract_event(

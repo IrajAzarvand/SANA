@@ -119,15 +119,7 @@ export const devices = [
   },
 ];
 
-export const managementStatusMap = {
-  sold:         { label: 'فروخته شده',  variant: 'info'    },
-  installed:    { label: 'نصب شده',     variant: 'brand'   },
-  active:       { label: 'فعال',        variant: 'success' },
-  faulty:       { label: 'خراب',        variant: 'danger'  },
-  lost:         { label: 'گمشده',       variant: 'warning' },
-  stolen:       { label: 'سرقت شده',    variant: 'danger'  },
-  disconnected: { label: 'قطع سرویس',   variant: 'muted'   },
-};
+export { managementStatusMap } from '../utils/deviceStatus';
 
 export const liveStateMap = {
   online:  { label: 'آنلاین',  color: 'text-success', dot: 'bg-success' },

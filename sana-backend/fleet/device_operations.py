@@ -187,11 +187,11 @@ def execute_device_operation(
             device.branch = None
             device.current_holder_organization = None
             device.current_holder_user = None
-            device.management_status = 'faulty'
+            device.management_status = 'in_repair'
             device.save()
 
             replacement_device.management_status = (
-                'installed' if replacement_type == 'temporary_repair' else 'sold'
+                'installed'
             )
             replacement_device.vehicle = old_vehicle
             replacement_device.branch = old_branch
@@ -244,7 +244,7 @@ def execute_device_operation(
             device.branch = None
             device.current_holder_organization = None
             device.current_holder_user = None
-            device.management_status = 'faulty'
+            device.management_status = 'in_repair'
             device.save()
 
             record_device_lifecycle_event(
@@ -262,7 +262,7 @@ def execute_device_operation(
             )
 
     elif operation_type in {'temporary_replacement', 'permanent_replacement'}:
-        if device.management_status not in {'faulty', 'lost', 'stolen'}:
+        if device.management_status not in {'faulty', 'in_repair', 'lost', 'stolen'}:
             raise ValidationError({
                 'device': 'فقط دستگاه خراب، گمشده یا سرقت‌شده می‌تواند بعداً جایگزین دریافت کند.'
             })
@@ -301,7 +301,7 @@ def execute_device_operation(
         )
 
         replacement_device.management_status = (
-            'installed' if replacement_type == 'temporary_repair' else 'sold'
+            'installed'
         )
         replacement_device.vehicle = previous_vehicle
         replacement_device.branch = previous_branch
@@ -346,7 +346,7 @@ def execute_device_operation(
         )
 
     elif operation_type == 'repaired':
-        if device.management_status != 'faulty':
+        if device.management_status not in {'faulty', 'in_repair'}:
             raise ValidationError({
                 'device': 'فقط دستگاهی که در وضعیت خرابی/تعمیر است قابل ثبت به عنوان تعمیرشده است.'
             })
@@ -423,7 +423,7 @@ def execute_device_operation(
             replacement_device.current_holder_organization = old_org
             replacement_device.current_holder_user = old_user
             replacement_device.management_status = (
-                'installed' if replacement_type == 'temporary_repair' else 'sold'
+                'installed'
             )
             if replacement_type == 'permanent_replacement':
                 replacement_device.organization = old_org
@@ -505,7 +505,7 @@ def execute_device_operation(
                     'outcome_action': 'خودروی قبلی برای بازگشت مشخص نیست؛ خودروی مقصد را انتخاب کنید.'
                 })
             if Device.objects.filter(vehicle=target).exclude(pk=device.pk).exclude(
-                management_status__in=['faulty', 'lost', 'stolen', 'retired', 'disposed']
+                management_status__in=['faulty', 'in_repair', 'lost', 'stolen', 'unusable', 'disposed']
             ).exists():
                 raise ValidationError({
                     'outcome_action': 'خودروی قبلی هنوز دستگاه دیگری دارد؛ ابتدا تکلیف آن دستگاه را مشخص کنید.'
@@ -521,7 +521,7 @@ def execute_device_operation(
             device.branch = None
             device.current_holder_organization = previous_org
             device.current_holder_user = previous_user
-            device.management_status = 'sold'
+            device.management_status = 'installed'
 
         elif outcome_action == 'sana_warehouse':
             device.vehicle = None
@@ -535,7 +535,7 @@ def execute_device_operation(
             device.branch = None
             device.current_holder_organization = previous_org
             device.current_holder_user = previous_user
-            device.management_status = 'sold'
+            device.management_status = 'installed'
 
         elif outcome_action == 'install_other_vehicle':
             if not target_vehicle:
@@ -547,7 +547,7 @@ def execute_device_operation(
                     'target_vehicle': 'خودروی مقصد باید متعلق به همان مشتری دستگاه باشد'
                 })
             if Device.objects.filter(vehicle=target_vehicle).exclude(pk=device.pk).exclude(
-                management_status__in=['faulty', 'lost', 'stolen', 'retired', 'disposed']
+                management_status__in=['faulty', 'in_repair', 'lost', 'stolen', 'unusable', 'disposed']
             ).exists():
                 raise ValidationError({'target_vehicle': 'خودروی مقصد در حال حاضر دستگاه دیگری دارد.'})
             device.vehicle = target_vehicle
@@ -565,14 +565,14 @@ def execute_device_operation(
             device.current_holder_user = target_user
             device.vehicle = target_vehicle
             device.branch = target_vehicle.branch if target_vehicle else target_branch
-            device.management_status = 'sold'
+            device.management_status = 'installed'
 
         elif outcome_action == 'retire':
             device.vehicle = None
             device.branch = None
             device.current_holder_organization = previous_org
             device.current_holder_user = previous_user
-            device.management_status = 'retired'
+            device.management_status = 'unusable'
 
         elif outcome_action == 'dispose':
             device.organization = None
@@ -634,7 +634,7 @@ def execute_device_operation(
         device.current_holder_user = target_user
         device.branch = None
         device.vehicle = None
-        device.management_status = 'sold'
+        device.management_status = 'installed'
         device.save()
         if target_subscription:
             _add_to_subscription(device, target_subscription, operation)
@@ -680,7 +680,7 @@ def execute_device_operation(
                 'target_vehicle': 'خودرو مقصد باید متعلق به همان مشتری دستگاه باشد'
             })
         if Device.objects.filter(vehicle=target_vehicle).exclude(pk=device.pk).exclude(
-            management_status__in=['faulty', 'lost', 'stolen', 'retired', 'disposed']
+            management_status__in=['faulty', 'in_repair', 'lost', 'stolen', 'unusable', 'disposed']
         ).exists():
             raise ValidationError({'target_vehicle': 'خودروی مقصد در حال حاضر دستگاه دیگری دارد.'})
         old_vehicle = device.vehicle
@@ -705,7 +705,7 @@ def execute_device_operation(
         )
 
     elif operation_type == 'retire':
-        device.management_status = 'retired'
+        device.management_status = 'unusable'
         device.vehicle = None
         device.branch = None
         device.save(update_fields=['management_status', 'vehicle', 'branch', 'updated_at'])
@@ -722,8 +722,8 @@ def execute_device_operation(
         )
 
     elif operation_type == 'dispose':
-        if device.management_status != 'retired':
-            raise ValidationError({'device': 'برای امحاء ابتدا دستگاه باید بازنشسته شود.'})
+        if device.management_status != 'unusable':
+            raise ValidationError({'device': 'برای امحاء ابتدا دستگاه باید از چرخه استفاده خارج شده باشد.'})
         _close_active_link(device, operation)
         device.management_status = 'disposed'
         device.vehicle = None

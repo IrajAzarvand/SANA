@@ -68,14 +68,12 @@ function CustomerDashboard() {
   }
 
   // محاسبه آمار
-  const deviceStatus = stats?.devices_by_management_status || stats?.devices_by_status || {};
-  const isDevicesActive = (deviceStatus.active || 0) + (deviceStatus.installed || 0);
-  const isDevicesOffline = (deviceStatus.disconnected || 0) + (deviceStatus.lost || 0) + (deviceStatus.stolen || 0);
-  const isDevicesFaulty = deviceStatus.faulty || 0;
+  const gpsStatus = stats?.gps_status;
+  const gpsAvailable = gpsStatus?.available === true;
+  const isDevicesActive = gpsAvailable ? Number(gpsStatus.online || 0) : '—';
+  const isDevicesOffline = gpsAvailable ? Number(gpsStatus.offline || 0) : '—';
 
   if (isPersonal) {
-    const gpsStatus = stats?.gps_status;
-    const gpsAvailable = gpsStatus?.available === true;
     const gpsTotal = Number(gpsStatus?.total ?? stats?.devices ?? 0);
     const gpsValue = (key) => gpsAvailable ? Number(gpsStatus?.[key] ?? 0) : '—';
     const onlineCount = gpsAvailable ? Number(gpsStatus?.online ?? 0) : 0;
@@ -406,9 +404,9 @@ function CustomerDashboard() {
       {!isSiteAdmin && !isPersonal && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard title="خودروها"        value={stats.vehicles || 0}  icon={Truck}         color="brand" />
-          <StatCard title="دستگاه‌های فعال" value={isDevicesActive}     icon={Cpu}           color="success" />
-          <StatCard title="دستگاه‌های آفلاین" value={isDevicesOffline}  icon={WifiOff}       color="muted" />
-          <StatCard title="دستگاه‌های خراب"  value={isDevicesFaulty}    icon={AlertTriangle} color="danger" />
+          <StatCard title="دستگاه‌های آنلاین" value={isDevicesActive} icon={Cpu} color="success" />
+          <StatCard title="دستگاه‌های آفلاین" value={isDevicesOffline} icon={WifiOff} color="muted" />
+          <StatCard title="کل دستگاه‌ها" value={stats.devices || 0} icon={Activity} color="info" />
         </div>
       )}
 
@@ -417,7 +415,7 @@ function CustomerDashboard() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard title="خودروهای من"     value={stats.vehicles || 0}   icon={Car}    color="brand" />
           <StatCard title="دستگاه‌های من"    value={stats.devices || 0}    icon={Cpu}    color="info" />
-          <StatCard title="دستگاه‌های فعال"  value={isDevicesActive}       icon={Cpu}    color="success" />
+          <StatCard title="دستگاه‌های آنلاین" value={isDevicesActive} icon={Cpu} color="success" />
           <StatCard title="هشدارهای امروز"  value={3}                       icon={Bell}   color="warning" />
         </div>
       )}

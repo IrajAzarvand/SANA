@@ -12,6 +12,7 @@ import Badge from '../components/Badge';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
 import { dashboardAPI } from '../api/services/dashboard';
+import { getManagementStatus } from '../utils/deviceStatus';
 import { useApi } from '../hooks/useApi';
 
 const number = (value) => value == null ? '—' : new Intl.NumberFormat('fa-IR').format(value);
@@ -41,19 +42,7 @@ const serviceState = {
   deactivating: { label: 'در حال توقف', variant: 'warning', icon: Clock3 },
   unknown: { label: 'نامشخص', variant: 'neutral', icon: AlertTriangle },
 };
-const managementLabels = {
-  warehouse: 'انبار',
-  sold: 'فروخته‌شده',
-  installed: 'نصب‌شده',
-  active: 'فعال',
-  ready: 'آماده تعیین تکلیف',
-  faulty: 'خراب',
-  lost: 'گمشده',
-  stolen: 'سرقت‌شده',
-  disconnected: 'قطع سرویس',
-  retired: 'بازنشسته',
-  disposed: 'امحاء‌شده',
-};
+
 
 function ProgressRow({ label, value, total, color = 'bg-brand-500' }) {
   const hasData = value != null && total != null;
@@ -286,7 +275,7 @@ export default function AdminDashboard() {
         <Card title="وضعیت مدیریتی دستگاه‌ها" subtitle="طبقه‌بندی موجودی مستقل از آنلاین یا آفلاین بودن">
           <div className="space-y-3">
             {Object.entries(fleet.devices_by_management_status || {}).map(([key, value]) => (
-              <ProgressRow key={key} label={managementLabels[key] || key} value={value} total={fleet.devices || 0}
+              <ProgressRow key={key} label={getManagementStatus(key).label} value={value} total={fleet.devices || 0}
                 color={key === 'faulty' || key === 'lost' || key === 'stolen' ? 'bg-danger' : key === 'warehouse' ? 'bg-warning' : 'bg-brand-500'} />
             ))}
             {!Object.keys(fleet.devices_by_management_status || {}).length && <p className="text-sm text-text-muted">هنوز دستگاهی ثبت نشده است.</p>}

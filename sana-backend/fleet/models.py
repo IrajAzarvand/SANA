@@ -105,15 +105,15 @@ class Device(models.Model):
 
     MANAGEMENT_STATUS_CHOICES = [
         ('warehouse', 'در انبار'),
-        ('sold', 'فروخته شده'),
         ('installed', 'نصب شده'),
         ('active', 'فعال'),
         ('ready', 'آماده تعیین تکلیف'),
+        ('in_repair', 'در حال تعمیر'),
         ('faulty', 'خراب'),
         ('lost', 'گمشده'),
         ('stolen', 'سرقت شده'),
         ('disconnected', 'قطع سرویس'),
-        ('retired', 'بازنشسته'),
+        ('unusable', 'غیرقابل استفاده'),
         ('disposed', 'امحاء شده'),
     ]
 
@@ -230,7 +230,7 @@ class Device(models.Model):
         link = self.active_subscription_link
         if not link:
             return False
-        if self.management_status in {'faulty', 'ready', 'lost', 'stolen', 'disconnected', 'retired', 'disposed'}:
+        if self.management_status in {'faulty', 'in_repair', 'ready', 'lost', 'stolen', 'disconnected', 'unusable', 'disposed'}:
             return False
         return link.is_active
 
@@ -354,7 +354,7 @@ class DeviceOperation(models.Model):
         ('transfer_customer', 'انتقال به مشتری دیگر'),
         ('transfer_branch', 'انتقال بین شعب'),
         ('transfer_vehicle', 'انتقال بین خودروها'),
-        ('retire', 'بازنشستگی'),
+        ('retire', 'خارج کردن از چرخه استفاده'),
         ('dispose', 'امحاء'),
     ]
 
@@ -417,7 +417,7 @@ class DeviceOperation(models.Model):
             ('customer_spare', 'تحویل به مشتری به عنوان دستگاه یدکی'),
             ('install_other_vehicle', 'نصب روی خودروی دیگر'),
             ('transfer_customer', 'انتقال به مشتری دیگر'),
-            ('retire', 'بازنشستگی'),
+            ('retire', 'خارج کردن از چرخه استفاده'),
             ('dispose', 'امحاء'),
             ('other', 'سایر'),
         ],
@@ -612,7 +612,7 @@ class DeviceLifecycleEvent(models.Model):
         ('found', 'پیدا شدن'),
         ('disposition', 'تعیین تکلیف'),
         ('stolen', 'سرقت'),
-        ('retired', 'بازنشستگی'),
+        ('retired', 'خروج از چرخه استفاده'),
         ('disposed', 'امحاء'),
     ]
 

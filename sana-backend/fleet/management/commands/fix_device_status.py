@@ -20,10 +20,10 @@ class Command(BaseCommand):
         for link in active_links:
             device = link.device
             if device.management_status == 'warehouse':
-                device.management_status = 'sold'
+                device.management_status = 'installed'
                 device.save(update_fields=['management_status'])
                 self.stdout.write(
-                    self.style.WARNING(f'✅ {device.imei} → sold')
+                    self.style.WARNING(f'✅ {device.imei} → installed')
                 )
                 fixed += 1
             else:

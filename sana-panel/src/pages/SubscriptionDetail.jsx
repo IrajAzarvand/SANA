@@ -8,6 +8,7 @@ import {
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
 import Badge from '../components/Badge';
+import { getManagementStatus } from '../utils/deviceStatus';
 import Button from '../components/Button';
 import Input from '../components/Input';
 import Select from '../components/Select';
@@ -35,44 +36,25 @@ const statusMap = {
   cancelled: { label: 'لغو‌شده',        variant: 'danger'  },
 };
 
-const deviceManagementStatusMap = {
-  warehouse: { label: 'در انبار', variant: 'muted' },
-  sold: { label: 'فروخته شده', variant: 'info' },
-  installed: { label: 'نصب شده', variant: 'success' },
-  active: { label: 'فعال', variant: 'success' },
-  ready: { label: 'آماده تعیین تکلیف', variant: 'warning' },
-  faulty: { label: 'خراب', variant: 'danger' },
-  lost: { label: 'گمشده', variant: 'danger' },
-  stolen: { label: 'سرقت شده', variant: 'danger' },
-  disconnected: { label: 'قطع سرویس', variant: 'warning' },
-  retired: { label: 'بازنشسته', variant: 'muted' },
-  disposed: { label: 'امحاء شده', variant: 'muted' },
-};
-
-const getContractDeviceStatus = (device) => {
-  const managementStatus = device.management_status;
+const getContractDeviceStatus = (device, isSiteAdmin = false) => {
   const relation = device.replacement_relation;
 
-  let relationLabel = 'فعال';
-  let relationVariant = 'success';
+  let relationLabel = 'آزاد';
+  let relationVariant = 'neutral';
 
-  if (relation?.direction === 'replaced') {
-    relationLabel = 'جایگزین شده';
-    relationVariant = 'brand';
-  } else if (relation?.direction === 'replacement') {
-    relationLabel = relation.label || 'جایگزین';
-    relationVariant = relation.replacement_type === 'temporary_repair' ? 'info' : 'warning';
-  } else if (['faulty', 'lost', 'stolen', 'ready', 'disconnected', 'retired', 'disposed'].includes(managementStatus)) {
-    relationLabel = 'بدون جایگزین';
-    relationVariant = 'muted';
-  } else if (!device.is_active) {
-    relationLabel = 'غیرفعال';
-    relationVariant = 'muted';
+  if (device.is_active && relation?.direction === 'replacement') {
+    relationLabel = relation.replacement_type === 'temporary_repair'
+      ? 'جایگزین موقت'
+      : 'جایگزین دائم';
+    relationVariant = relation.replacement_type === 'temporary_repair' ? 'warning' : 'brand';
+  } else if (device.is_active) {
+    relationLabel = 'اصلی';
+    relationVariant = 'info';
   }
 
-  const management = deviceManagementStatusMap[managementStatus];
+  const management = isSiteAdmin ? getManagementStatus(device.management_status) : null;
   const showManagementStatus = Boolean(
-    managementStatus && managementStatus !== 'active' && managementStatus !== 'installed'
+    isSiteAdmin && device.management_status
   );
 
   return { relationLabel, relationVariant, management, showManagementStatus };
@@ -578,7 +560,7 @@ export default function SubscriptionDetail() {
   };
 
   const openDeviceHistory = (deviceId) => {
-    if (!deviceId) return;
+    if (!isSiteAdmin || !deviceId) return;
     setDeviceHistoryId(deviceId);
   };
 
@@ -1018,7 +1000,7 @@ export default function SubscriptionDetail() {
                     <td className="py-3 px-4 text-text-secondary font-mono text-xs">{toJalali(d.end_date)}</td>
                     <td className="py-3 px-4">
                       {(() => {
-                        const deviceStatus = getContractDeviceStatus(d);
+                        const deviceStatus = getContractDeviceStatus(d, isSiteAdmin);
                         const relation = d.replacement_relation;
                         const relatedDevice = relation?.related_device_id
                           ? 'IMEI: ' + (relation.related_device_imei || '—') +
@@ -1029,7 +1011,7 @@ export default function SubscriptionDetail() {
 
                         return (
                           <div className="flex flex-wrap items-center gap-1.5">
-                            {relation?.related_device_id ? (
+                            {relation?.related_device_id && isSiteAdmin ? (
                               <button
                                 type="button"
                                 onClick={() => openDeviceHistory(relation.related_device_id)}
@@ -1052,7 +1034,7 @@ export default function SubscriptionDetail() {
                       })()}
                     </td>
                     <td className="py-3 px-2">
-                      <ActionMenu
+                      {isSiteAdmin && <ActionMenu
                         items={[
                           {
                             label: 'تاریخچه و رویدادها',
@@ -1081,7 +1063,7 @@ export default function SubscriptionDetail() {
                             },
                           ] : []),
                         ]}
-                      />
+                      />}
                     </td>
                   </tr>
                 ))}
@@ -1424,11 +1406,11 @@ export default function SubscriptionDetail() {
         </section>
       )}
 
-      <DeviceHistoryModalHost
+      {isSiteAdmin && <DeviceHistoryModalHost
         deviceHistoryId={deviceHistoryId}
         onClose={() => setDeviceHistoryId(null)}
         onOperationSaved={refetch}
-      />
+      />}
 
       {/* ═══ مودال ویرایش قرارداد ═══ */}
       <Modal

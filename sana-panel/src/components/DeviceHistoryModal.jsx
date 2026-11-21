@@ -19,20 +19,7 @@ import { toJalali } from '../utils/dateUtils';
 import { useAuth } from '../context/AuthContext';
 import { organizationsAPI, branchesAPI } from '../api/services/organizations';
 import { subscriptionsAPI } from '../api/services/subscriptions';
-
-const managementStatusMap = {
-  warehouse: { label: 'در انبار', variant: 'info' },
-  sold: { label: 'فروخته شده', variant: 'brand' },
-  installed: { label: 'نصب شده', variant: 'brand' },
-  active: { label: 'فعال', variant: 'success' },
-  ready: { label: 'آماده تعیین تکلیف', variant: 'info' },
-  faulty: { label: 'خراب', variant: 'danger' },
-  lost: { label: 'گمشده', variant: 'warning' },
-  stolen: { label: 'سرقت شده', variant: 'danger' },
-  disconnected: { label: 'قطع سرویس', variant: 'muted' },
-  retired: { label: 'بازنشسته', variant: 'muted' },
-  disposed: { label: 'امحاء', variant: 'danger' },
-};
+import { getManagementStatus } from '../utils/deviceStatus';
 
 const deviceOperationTypeMap = {
   return_for_repair: 'بازگشت برای تعمیر',
@@ -46,7 +33,7 @@ const deviceOperationTypeMap = {
   transfer_customer: 'انتقال به مشتری دیگر',
   transfer_branch: 'انتقال بین شعب',
   transfer_vehicle: 'انتقال بین خودروها',
-  retire: 'بازنشستگی',
+  retire: 'خارج کردن از چرخه استفاده',
   dispose: 'امحاء',
 };
 
@@ -79,7 +66,7 @@ const deviceOutcomeActionMap = {
   customer_spare: 'تحویل به مشتری به عنوان دستگاه یدکی',
   install_other_vehicle: 'نصب روی خودروی دیگر',
   transfer_customer: 'انتقال به مشتری دیگر',
-  retire: 'بازنشستگی',
+  retire: 'خارج کردن از چرخه استفاده',
   dispose: 'امحاء',
   other: 'سایر',
 };
@@ -303,7 +290,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
     }));
   };
 
-  const canAddFollowUpReplacement = ['faulty', 'lost', 'stolen'].includes(historyDevice?.management_status);
+  const canAddFollowUpReplacement = ['faulty', 'in_repair', 'lost', 'stolen'].includes(historyDevice?.management_status);
   const operationNeedsReplacement = ['return_for_repair', 'lost', 'stolen', 'temporary_replacement', 'permanent_replacement'].includes(operationForm.operation_type);
   const operationNeedsReplacementType = operationNeedsReplacement && Boolean(operationForm.replacement_device);
   const operationNeedsReplacementMethod = operationNeedsReplacement && Boolean(operationForm.replacement_device);
@@ -351,8 +338,8 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
               <div>
                 <div className="text-[11px] text-text-muted">وضعیت فعلی</div>
                 <div className="mt-1">
-                  <Badge variant={(managementStatusMap[historyDevice.management_status] || managementStatusMap.warehouse).variant}>
-                    {(managementStatusMap[historyDevice.management_status] || managementStatusMap.warehouse).label}
+                  <Badge variant={getManagementStatus(historyDevice.management_status).variant}>
+                    {getManagementStatus(historyDevice.management_status).label}
                   </Badge>
                 </div>
               </div>
@@ -387,10 +374,10 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
 
                           <div className="flex flex-wrap gap-2 mt-3 text-[11px] text-text-muted">
                             {operation.old_status && (
-                              <span>وضعیت قبل: {managementStatusMap[operation.old_status]?.label || '—'}</span>
+                              <span>وضعیت قبل: {getManagementStatus(operation.old_status).label}</span>
                             )}
                             {operation.new_status && (
-                              <span>وضعیت بعد: {managementStatusMap[operation.new_status]?.label || '—'}</span>
+                              <span>وضعیت بعد: {getManagementStatus(operation.new_status).label}</span>
                             )}
                             {operation.subscription_number && <span>قرارداد: {operation.subscription_number}</span>}
                             {linkedEvent?.organization_name && <span>مشتری: {linkedEvent.organization_name}</span>}
@@ -461,8 +448,8 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
                         {event.event_date ? toJalali(event.event_date) : '—'}
                       </div>
                     </div>
-                    <Badge variant={event.new_status === 'warehouse' ? 'info' : 'brand'}>
-                      {managementStatusMap[event.new_status]?.label || '—'}
+                    <Badge variant={getManagementStatus(event.new_status).variant}>
+                      {getManagementStatus(event.new_status).label}
                     </Badge>
                   </div>
                   {event.reason_display && <div className="text-xs text-text-secondary mt-2">دلیل: {event.reason_display}</div>}
@@ -549,7 +536,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
                         { value: 'transfer_customer', label: 'انتقال به مشتری دیگر' },
                         { value: 'transfer_branch', label: 'انتقال بین شعب' },
                         { value: 'transfer_vehicle', label: 'انتقال بین خودروها' },
-                        { value: 'retire', label: 'بازنشستگی' },
+                        { value: 'retire', label: 'خارج کردن از چرخه استفاده' },
                         { value: 'dispose', label: 'امحاء' },
                       ]}
                     />
