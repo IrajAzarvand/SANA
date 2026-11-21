@@ -97,7 +97,7 @@ class Migration(migrations.Migration):
                     ('ready', 'آماده تعیین تکلیف'),
                     ('in_repair', 'در حال تعمیر'),
                     ('faulty', 'خراب'),
-                    ('lost', 'گم‌شده'),
+                    ('lost', 'گمشده'),
                     ('stolen', 'سرقت شده'),
                     ('disconnected', 'قطع سرویس'),
                     ('unusable', 'غیرقابل استفاده'),
