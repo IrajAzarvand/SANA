@@ -1,4 +1,5 @@
 import logging
+from bisect import bisect_right
 from time import perf_counter
 
 from django.utils import timezone
@@ -756,7 +757,10 @@ class DeviceViewSet(viewsets.ModelViewSet):
             events_fetch_ms = (perf_counter() - events_fetch_started_at) * 1000
             event_processing_started_at = perf_counter()
             persistence_ms = 0.0
+            eligible_events = []
+            online_times_by_device = {}
 
+            # Validate and scope Traccar events before querying alert-state rows.
             for event in sorted(events, key=lambda item: str(item.get('eventTime') or '')):
                 try:
                     traccar_id = int(event.get('deviceId'))
@@ -780,35 +784,140 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 ):
                     continue
 
-                persistence_started_at = perf_counter()
-                state, _created = DeviceAlertState.objects.update_or_create(
-                    user=request.user,
-                    device=device,
-                    traccar_event_id=event_id,
-                    defaults={'event_key': f'gps:{device.pk}:{event_id}', 'notification_type': 'gps', 'event_type': event_type, 'event_time': event_time},
-                )
-                persistence_ms += (perf_counter() - persistence_started_at) * 1000
+                eligible_events.append({
+                    'event': event,
+                    'device': device,
+                    'event_id': event_id,
+                    'event_type': event_type,
+                    'event_time': event_time,
+                })
                 if event_type == 'deviceOnline':
-                    persistence_started_at = perf_counter()
+                    online_times_by_device.setdefault(device.pk, []).append(event_time)
+
+            # Fetch existing states once, then create missing states in batches.
+            persistence_started_at = perf_counter()
+            device_ids = {item['device'].pk for item in eligible_events}
+            event_ids = {item['event_id'] for item in eligible_events}
+            states_by_key = {}
+            if device_ids and event_ids:
+                existing_states = DeviceAlertState.objects.filter(
+                    user=request.user,
+                    device_id__in=device_ids,
+                    traccar_event_id__in=event_ids,
+                )
+                for state in existing_states:
+                    states_by_key[(state.device_id, state.traccar_event_id)] = state
+
+            states_to_create = []
+            states_to_update = []
+            for item in eligible_events:
+                key = (item['device'].pk, item['event_id'])
+                state = states_by_key.get(key)
+                if state is None:
+                    states_to_create.append(DeviceAlertState(
+                        user=request.user,
+                        device=item['device'],
+                        event_key=f"gps:{item['device'].pk}:{item['event_id']}",
+                        notification_type='gps',
+                        traccar_event_id=item['event_id'],
+                        event_type=item['event_type'],
+                        event_time=item['event_time'],
+                    ))
+                    continue
+
+                changed = False
+                if state.event_type != item['event_type']:
+                    state.event_type = item['event_type']
+                    changed = True
+                if state.event_time != item['event_time']:
+                    state.event_time = item['event_time']
+                    changed = True
+                if changed:
+                    states_to_update.append(state)
+
+            if states_to_create:
+                DeviceAlertState.objects.bulk_create(
+                    states_to_create,
+                    batch_size=500,
+                    ignore_conflicts=True,
+                )
+            if states_to_update:
+                DeviceAlertState.objects.bulk_update(
+                    states_to_update,
+                    fields=['event_type', 'event_time'],
+                    batch_size=500,
+                )
+
+            # Re-read once so concurrent inserts and existing rows have
+            # authoritative persisted state objects for response construction.
+            if device_ids and event_ids:
+                states_by_key = {
+                    (state.device_id, state.traccar_event_id): state
+                    for state in DeviceAlertState.objects.filter(
+                        user=request.user,
+                        device_id__in=device_ids,
+                        traccar_event_id__in=event_ids,
+                    )
+                }
+            persistence_ms += (perf_counter() - persistence_started_at) * 1000
+
+            # Resolve earlier offline alerts in batches, preserving the first
+            # subsequent online event as the resolution timestamp.
+            if online_times_by_device:
+                persistence_started_at = perf_counter()
+                online_times_by_device = {
+                    device_id: sorted(times)
+                    for device_id, times in online_times_by_device.items()
+                }
+                offline_scope = Q(pk__in=[])
+                for device_id, online_times in online_times_by_device.items():
+                    if online_times:
+                        offline_scope |= Q(
+                            device_id=device_id,
+                            event_time__lt=online_times[-1],
+                        )
+                offline_states = list(
                     DeviceAlertState.objects.filter(
                         user=request.user,
-                        device=device,
                         event_type='deviceOffline',
-                        event_time__lt=event_time,
-                    ) .exclude(status='resolved').update(
-                        status='resolved', read_at=event_time, reviewed_at=event_time, resolved_at=event_time
-                    )
-                    persistence_ms += (perf_counter() - persistence_started_at) * 1000
-                    for previous_alert in results:
-                        if (
-                            previous_alert['device_id'] == device.pk
-                            and previous_alert['type'] == 'deviceOffline'
-                            and previous_alert['event_time'] < event_time
-                        ):
-                            previous_alert['status'] = 'resolved'
-                            previous_alert['resolved_at'] = event_time
+                    ).exclude(status='resolved').filter(offline_scope)
+                )
+                states_to_resolve = []
+                for offline_state in offline_states:
+                    online_times = online_times_by_device.get(offline_state.device_id, [])
+                    online_index = bisect_right(online_times, offline_state.event_time)
+                    if online_index >= len(online_times):
+                        continue
+                    resolving_time = online_times[online_index]
+                    offline_state.status = 'resolved'
+                    offline_state.read_at = resolving_time
+                    offline_state.reviewed_at = resolving_time
+                    offline_state.resolved_at = resolving_time
+                    states_to_resolve.append(offline_state)
 
-                if event_type in disabled_event_types:
+                    cached_state = states_by_key.get(
+                        (offline_state.device_id, offline_state.traccar_event_id)
+                    )
+                    if cached_state is not None:
+                        cached_state.status = 'resolved'
+                        cached_state.read_at = resolving_time
+                        cached_state.reviewed_at = resolving_time
+                        cached_state.resolved_at = resolving_time
+
+                if states_to_resolve:
+                    DeviceAlertState.objects.bulk_update(
+                        states_to_resolve,
+                        fields=['status', 'read_at', 'reviewed_at', 'resolved_at'],
+                        batch_size=500,
+                    )
+                persistence_ms += (perf_counter() - persistence_started_at) * 1000
+
+            for item in eligible_events:
+                device = item['device']
+                state = states_by_key.get((device.pk, item['event_id']))
+                if state is None:
+                    continue
+                if item['event_type'] in disabled_event_types:
                     continue
 
                 results.append({
@@ -821,7 +930,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     'status': state.status,
                     'acknowledged_at': state.acknowledged_at,
                     'resolved_at': state.resolved_at,
-                    'attributes': event.get('attributes') if isinstance(event.get('attributes'), dict) else {},
+                    'attributes': item['event'].get('attributes') if isinstance(item['event'].get('attributes'), dict) else {},
                 })
             event_processing_ms = (perf_counter() - event_processing_started_at) * 1000
         except TraccarAPIError:
