@@ -238,13 +238,6 @@ export default function NotificationCenter() {
     }
   };
 
-  const openNotification = async (item) => {
-    const success = await markRead(item);
-    if (!success) return;
-    setOpen(false);
-    navigate(item.path || '/panel/alerts');
-  };
-
   const openAll = () => {
     setOpen(false);
     navigate('/panel/alerts');
@@ -287,7 +280,7 @@ export default function NotificationCenter() {
                 <button
                   type="button"
                   key={item.notification_key}
-                  onClick={() => openNotification(item)}
+                  onClick={() => markRead(item)}
                   className={`flex w-full gap-3 px-4 py-3 text-right transition-colors hover:bg-bg-hover ${!item.is_read ? 'bg-brand-500/5' : ''}`}
                 >
                   <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${!item.is_read ? 'bg-brand-500' : 'bg-transparent'}`} />
