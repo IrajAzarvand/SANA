@@ -36,11 +36,11 @@ class OrganizationSerializer(serializers.ModelSerializer):
             'id', 'name', 'code',
             'registration_number', 'economy_code',
             'phone', 'email', 'address', 'website', 'logo',
-            'status',
+            'status', 'archived_at', 'archived_by',
             'branches_count', 'vehicles_count', 'devices_count', 'users_count', 'subscriptions_count', 'drivers_count', 'vehicle_types_count',
             'created_at', 'updated_at',
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'archived_at', 'archived_by', 'created_at', 'updated_at']
 
 
 class OrganizationSettingsSerializer(serializers.ModelSerializer):
@@ -65,7 +65,7 @@ class OrganizationSettingsSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at',
         ]
         read_only_fields = [
-            'id', 'code', 'logo', 'status',
+            'id', 'code', 'logo', 'status', 'archived_at', 'archived_by',
             'branches_count', 'vehicles_count', 'devices_count', 'users_count', 'subscriptions_count', 'drivers_count', 'vehicle_types_count',
             'created_at', 'updated_at',
         ]
