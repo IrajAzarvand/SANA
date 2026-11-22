@@ -9,6 +9,7 @@ from fleet.views import (
     DeviceOperationViewSet,
     DeviceReplacementRelationViewSet,
     DeviceViewSet,
+    DriverVehicleAssignmentViewSet,
     VehicleTypeViewSet,
     VehicleViewSet,
 )
@@ -197,3 +198,84 @@ class BranchManagerReplacementHistoryScopeTests(TestCase):
         visible_ids = set(view.get_queryset().values_list('id', flat=True))
         self.assertIn(visible.id, visible_ids)
         self.assertNotIn(hidden.id, visible_ids)
+
+
+class DriverVehicleAssignmentReadScopeTests(TestCase):
+    def test_branch_manager_assignment_history_requires_both_records_in_branch(self):
+        from datetime import timedelta
+        from types import SimpleNamespace
+
+        from django.utils import timezone
+        from accounts.models import User
+        from fleet.models import Driver, DriverVehicleAssignment, Vehicle
+        from organizations.models import Branch, Organization
+
+        organization = Organization.objects.create(
+            name='Assignment Scope Org',
+            code='ASSIGN-SCOPE-ORG',
+        )
+        other_organization = Organization.objects.create(
+            name='Assignment Other Org',
+            code='ASSIGN-OTHER-ORG',
+        )
+        branch = Branch.objects.create(
+            organization=organization,
+            name='Assignment Scope Branch',
+            code='ASSIGN-SCOPE',
+        )
+        other_branch = Branch.objects.create(
+            organization=organization,
+            name='Assignment Other Branch',
+            code='ASSIGN-OTHER',
+        )
+        manager = User.objects.create_user(
+            username='assignment_scope_manager',
+            password='test-password',
+            role='branch_manager',
+            account_type='organization',
+            organization=organization,
+            branch=branch,
+        )
+        driver = Driver.objects.create(
+            first_name='Branch',
+            last_name='Driver',
+            organization=organization,
+            branch=branch,
+        )
+        own_vehicle = Vehicle.objects.create(
+            plate='11الف111',
+            organization=organization,
+            branch=branch,
+        )
+        other_branch_vehicle = Vehicle.objects.create(
+            plate='22ب222',
+            organization=organization,
+            branch=other_branch,
+        )
+        external_vehicle = Vehicle.objects.create(
+            plate='33ج333',
+            organization=other_organization,
+        )
+        now = timezone.now()
+        visible = DriverVehicleAssignment.objects.create(
+            driver=driver,
+            vehicle=own_vehicle,
+            started_at=now - timedelta(days=2),
+        )
+        hidden_branch = DriverVehicleAssignment.objects.create(
+            driver=driver,
+            vehicle=other_branch_vehicle,
+            started_at=now - timedelta(days=1),
+        )
+        hidden_external = DriverVehicleAssignment.objects.create(
+            driver=driver,
+            vehicle=external_vehicle,
+            started_at=now,
+        )
+
+        view = DriverVehicleAssignmentViewSet()
+        view.request = SimpleNamespace(user=manager, query_params={})
+        visible_ids = set(view.get_queryset().values_list('id', flat=True))
+        self.assertIn(visible.pk, visible_ids)
+        self.assertNotIn(hidden_branch.pk, visible_ids)
+        self.assertNotIn(hidden_external.pk, visible_ids)
