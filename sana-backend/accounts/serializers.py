@@ -314,7 +314,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         # چک کردن دسترسی کاربر
         if not user.is_site_admin:
             # چک ۱: سازمان غیرفعال
-            if user.organization_id and user.organization.status != 'active':
+            if not user.is_organization_active:
                 raise serializers.ValidationError({
                     'detail': 'حساب سازمانی شما غیرفعال شده است. لطفاً با پشتیبانی سانا تماس بگیرید.'
                 })
