@@ -11,6 +11,7 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
 import { useAuth } from '../context/AuthContext';
 import { organizationsAPI, branchesAPI } from '../api/services/organizations';
+import { subscriptionsAPI } from '../api/services/subscriptions';
 import { useApi } from '../hooks/useApi';
 
 export default function Companies() {
@@ -19,6 +20,7 @@ export default function Companies() {
   const [editingOrganization, setEditingOrganization] = useState(null);
   const [detailOrganization, setDetailOrganization] = useState(null);
   const [detailBranches, setDetailBranches] = useState([]);
+  const [detailSubscriptions, setDetailSubscriptions] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [deleteOrganization, setDeleteOrganization] = useState(null);
   const [deleteName, setDeleteName] = useState('');
@@ -308,6 +310,10 @@ export default function Companies() {
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
               {[['شعبه', detailOrganization.branches_count], ['کاربر', detailOrganization.users_count], ['قرارداد', detailOrganization.subscriptions_count], ['خودرو', detailOrganization.vehicles_count], ['دستگاه', detailOrganization.devices_count]].map(([label, count]) => <div key={label} className="rounded-lg bg-bg-base border border-border-base p-3 text-center"><div className="text-text-muted text-xs">{label}</div><div className="mt-1 font-semibold text-text-primary">{count ?? 0}</div></div>)}
+            </div>
+            <div className="rounded-lg border border-border-base p-3">
+              <h4 className="font-medium mb-2">قراردادهای شرکت ({detailSubscriptions.length})</h4>
+              {detailSubscriptions.length ? <ul className="space-y-1">{detailSubscriptions.map((subscription) => <li key={subscription.id} className="flex flex-wrap justify-between gap-2 border-b last:border-0 border-border-base py-2"><span>{subscription.contract_number}</span><span className="text-text-muted">{subscription.status} · {subscription.end_date || '—'}</span></li>)}</ul> : <p className="text-text-muted">قراردادی ثبت نشده است.</p>}
             </div>
             <div className="rounded-lg border border-border-base p-3">
               <h4 className="font-medium mb-2">شعب شرکت ({detailBranches.length})</h4>
