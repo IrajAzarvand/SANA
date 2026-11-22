@@ -98,6 +98,8 @@ class UserCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'organization': 'برای مدیر شرکت، انتخاب شرکت الزامی است.'})
         if role in {'site_admin', 'personal_user'} and (organization or branch):
             raise serializers.ValidationError('ادمین سایت و کاربر شخصی نباید به شرکت یا شعبه سازمانی متصل باشند.')
+        if self.instance and self.instance.archived_at and attrs.get('is_active') is True:
+            raise serializers.ValidationError({'is_active': 'برای فعال‌سازی حساب بایگانی‌شده ابتدا آن را بازیابی کنید.'})
         return attrs
 
     def create(self, validated_data):
@@ -120,6 +122,8 @@ class UserUpdateSerializer(serializers.ModelSerializer):
         fields = super().get_fields()
         request = self.context.get('request')
         actor = getattr(request, 'user', None)
+        if actor and actor.is_main_user:
+            fields['is_active'] = serializers.BooleanField(required=False)
         if actor and actor.is_site_admin:
             fields.update({
                 'role': serializers.ChoiceField(choices=User.ROLE_CHOICES, required=False),
@@ -140,8 +144,8 @@ class UserUpdateSerializer(serializers.ModelSerializer):
                 branch = attrs['branch']
                 if branch and branch.organization_id != actor.organization_id:
                     raise serializers.ValidationError({'branch': 'شعبه باید متعلق به سازمان خودتان باشد.'})
-            if self.instance and self.instance.role in {'site_admin', 'main_user'}:
-                raise serializers.ValidationError('مدیر شرکت فقط می‌تواند کاربران عادی سازمان را مدیریت کند.')
+            if self.instance and self.instance.role != 'branch_manager':
+                raise serializers.ValidationError('مدیر شرکت فقط می‌تواند حساب مدیران شعبه را مدیریت کند.')
         organization = attrs.get('organization', getattr(self.instance, 'organization', None))
         branch = attrs.get('branch', getattr(self.instance, 'branch', None))
         role = attrs.get('role', getattr(self.instance, 'role', None))
