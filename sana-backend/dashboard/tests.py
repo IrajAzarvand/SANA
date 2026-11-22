@@ -509,10 +509,16 @@ class BranchManagerDashboardTenantScopeTests(TestCase):
             organization=organization,
             branch=branch,
         )
-        Vehicle.objects.create(
+        own_vehicle = Vehicle.objects.create(
             plate='66ج666',
             organization=organization,
             branch=branch,
+        )
+        Device.objects.create(
+            imei='860000000000971',
+            organization=organization,
+            branch=branch,
+            vehicle=own_vehicle,
         )
         Vehicle.objects.create(
             plate='77د777',
