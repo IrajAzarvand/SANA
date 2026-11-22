@@ -139,7 +139,7 @@ class VehicleTypeViewSet(viewsets.ModelViewSet):
         if user.is_site_admin:
             return VehicleType.objects.all()
         if user.organization_id:
-            return VehicleType.objects.filter(organization_id=user.organization_id, organization__status='active')
+            return VehicleType.objects.filter(organization_id=user.organization_id).exclude(organization__status='archived')
         return VehicleType.objects.none()
 
 
@@ -162,16 +162,16 @@ class VehicleViewSet(viewsets.ModelViewSet):
         if user.is_site_admin:
             pass
         elif user.is_main_user and user.organization:
-            qs = qs.filter(organization=user.organization)
+            qs = qs.filter(organization=user.organization).exclude(organization__status='archived').exclude(organization__status='archived')
         elif user.is_branch_manager and user.branch:
-            qs = qs.filter(branch=user.branch)
+            qs = qs.filter(branch=user.branch).exclude(organization__status='archived')
         elif user.is_personal_user:
             qs = qs.filter(owner_user=user)
         else:
             qs = qs.none()
 
         if not user.is_site_admin:
-            qs = qs.filter(Q(organization__isnull=True) | Q(organization__status='active'))
+            qs = qs.exclude(organization__status='archived')
 
         # فیلترها
         branch = self.request.query_params.get('branch')
@@ -1488,7 +1488,7 @@ class DriverVehicleAssignmentViewSet(viewsets.ModelViewSet):
         if user.is_site_admin:
             pass
         elif user.is_main_user and user.organization_id:
-            qs = qs.filter(driver__organization_id=user.organization_id, driver__organization__status='active')
+            qs = qs.filter(driver__organization_id=user.organization_id, driver__organization__status__in=['active', 'inactive', 'suspended'])
         elif user.is_branch_manager and user.branch_id:
             qs = qs.filter(driver__organization_id=user.organization_id, driver__organization__status='active', driver__branch_id=user.branch_id)
         else:
