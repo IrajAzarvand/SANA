@@ -110,6 +110,33 @@ class ContractExpirationAccessTests(TestCase):
         denied_response = self.client.get('/api/users/me/')
         self.assertEqual(denied_response.status_code, 401)
 
+    def test_legacy_branch_user_cannot_login_when_parent_organization_is_inactive(self):
+        branch = Branch.objects.create(
+            organization=self.organization,
+            name='Inactive Parent Branch',
+            code='INACTIVE-PARENT-BRANCH',
+        )
+        branch_user = User.objects.create_user(
+            username='inactive_parent_branch_user',
+            password='test-password-123',
+            account_type='organization',
+            role='branch_manager',
+            branch=branch,
+        )
+        self.subscription.end_date = self.today + timedelta(days=10)
+        self.subscription.save(update_fields=['end_date'])
+        self.organization.status = 'inactive'
+        self.organization.save(update_fields=['status'])
+
+        response = self.client.post(
+            '/api/auth/login/',
+            {'username': branch_user.username, 'password': 'test-password-123'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('غیرفعال شده است', response.data['detail'])
+
     def test_site_admin_is_not_blocked_by_customer_contracts(self):
         admin = User.objects.create_user(
             username='site-admin',
