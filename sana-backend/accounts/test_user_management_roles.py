@@ -65,6 +65,40 @@ class UserManagementRoleBoundaryTests(TestCase):
         archive_response = self.client.post(f'/api/users/{target.id}/archive/', {}, format='json')
         self.assertEqual(archive_response.status_code, 403)
 
+    def test_branch_manager_cannot_create_vehicles_or_devices(self):
+        self.client.force_authenticate(self.branch_manager)
+        vehicle_response = self.client.post('/api/vehicles/', {
+            'plate': '12الف345',
+            'branch': self.branch.id,
+        }, format='json')
+        device_response = self.client.post('/api/devices/', {
+            'imei': '123456789012345',
+            'branch': self.branch.id,
+        }, format='json')
+        self.assertEqual(vehicle_response.status_code, 403)
+        self.assertEqual(device_response.status_code, 403)
+
+    def test_company_manager_can_deactivate_user_and_sessions_are_revoked(self):
+        target = User.objects.create_user(
+            username='deactivate-target', password='test-password-123',
+            role='branch_manager', account_type='organization',
+            organization=self.organization, branch=self.branch,
+        )
+        session = UserSession.objects.create(
+            user=target, expires_at=timezone.now() + timedelta(hours=2),
+        )
+        self.client.force_authenticate(self.company_manager)
+        response = self.client.patch(
+            f'/api/users/{target.id}/',
+            {'is_active': False},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        target.refresh_from_db()
+        session.refresh_from_db()
+        self.assertFalse(target.is_active)
+        self.assertIsNotNone(session.revoked_at)
+
     def test_branch_manager_cannot_manage_branches_or_drivers(self):
         self.client.force_authenticate(self.branch_manager)
         branch_response = self.client.post('/api/branches/', {
