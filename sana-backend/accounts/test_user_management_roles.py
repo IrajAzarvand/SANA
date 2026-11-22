@@ -45,6 +45,18 @@ class UserManagementRoleBoundaryTests(TestCase):
         payload = response.data['results'] if isinstance(response.data, dict) else response.data
         self.assertEqual([item['id'] for item in payload], [self.branch_manager.id])
 
+    def test_company_manager_can_manage_legacy_branch_user_without_organization_fk(self):
+        legacy_user = User.objects.create_user(
+            username='legacy-branch-user', password='test-password-123',
+            role='branch_manager', account_type='organization', branch=self.branch,
+        )
+        self.client.force_authenticate(self.company_manager)
+        listed = self.client.get('/api/users/')
+        payload = listed.data['results'] if isinstance(listed.data, dict) else listed.data
+        self.assertIn(legacy_user.id, [item['id'] for item in payload])
+        archived = self.client.post(f'/api/users/{legacy_user.id}/archive/', {}, format='json')
+        self.assertEqual(archived.status_code, 200)
+
     def test_branch_manager_cannot_create_or_archive_users(self):
         self.client.force_authenticate(self.branch_manager)
         create_response = self.client.post('/api/users/', {
