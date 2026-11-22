@@ -77,9 +77,15 @@ export default function Companies() {
   };
 
   // حذف سازمان با تأیید آگاهانه
-  const handleDelete = (org) => {
-    setDeleteOrganization(org);
+  const handleDelete = async (org) => {
     setDeleteName('');
+    try {
+      const details = await organizationsAPI.get(org.id);
+      setDeleteOrganization(details);
+    } catch (err) {
+      console.error('Unable to load organization deletion details:', err);
+      setDeleteOrganization(org);
+    }
   };
 
   const confirmDeleteOrganization = async () => {
