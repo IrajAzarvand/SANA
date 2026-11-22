@@ -278,6 +278,49 @@ class PersonalDashboardGPSStatusTests(TestCase):
         self.assertIsNone(response.data['gps_status']['offline'])
 
 
+
+class MainUserDashboardSubscriptionTests(TestCase):
+    def test_main_user_sees_current_active_organization_subscription(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+        from organizations.models import Organization, Subscription
+
+        organization = Organization.objects.create(
+            name='Main Dashboard Org',
+            code='MAIN-DASH-ORG',
+        )
+        manager = User.objects.create_user(
+            username='main_dashboard_manager',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=organization,
+        )
+        today = timezone.localdate()
+        subscription = Subscription.objects.create(
+            contract_number='ORG-DASH-CURRENT-001',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=manager)
+        response = self.client.get('/api/dashboard/stats/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['current_subscription'], {
+            'contract_number': subscription.contract_number,
+            'end_date': subscription.end_date,
+            'days_until_expiry': subscription.days_until_expiry,
+            'is_expiring_soon': subscription.is_expiring_soon,
+        })
+
+
+
 class BranchManagerDashboardAccessTests(TestCase):
     def setUp(self):
         from django.utils import timezone
@@ -344,3 +387,4 @@ class BranchManagerDashboardAccessTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['devices'], 1)
         self.assertEqual(response.data['gps_status']['total'], 1)
+        self.assertIsNone(response.data['current_subscription'])
