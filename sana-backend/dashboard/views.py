@@ -317,6 +317,27 @@ class DashboardStatsView(APIView):
         if owner:
             qs = qs.filter(owner_user=owner)
 
+        if org or branch:
+            organization_id = org or branch.organization_id
+            now = timezone.now()
+            authorized_vehicle_devices = Device.objects.filter(
+                vehicle_id=OuterRef('pk'),
+                customer_access_periods__organization_id=organization_id,
+                customer_access_periods__started_at__lte=now,
+                customer_access_periods__ended_at__isnull=True,
+            )
+            if branch:
+                authorized_vehicle_devices = authorized_vehicle_devices.filter(
+                    customer_access_periods__branch=branch
+                )
+            qs = qs.annotate(
+                has_authorized_device=Exists(authorized_vehicle_devices)
+            )
+            return {
+                'with_device': qs.filter(has_authorized_device=True).count(),
+                'without_device': qs.filter(has_authorized_device=False).count(),
+            }
+
         result = {
             'with_device': qs.filter(devices__isnull=False).distinct().count(),
             'without_device': qs.filter(devices__isnull=True).count(),
