@@ -1081,9 +1081,9 @@ class OrganizationAndBranchDeletionPermissionTests(TestCase):
         manager = self.company_manager
 
         self.client.force_authenticate(user=self.site_admin)
-        response = self.client.delete(f'/api/organizations/{self.organization.id}/')
+        response = self.client.post(f'/api/organizations/{self.organization.id}/archive/')
 
-        self.assertEqual(response.status_code, 204)
+        self.assertEqual(response.status_code, 200)
         self.organization.refresh_from_db()
         self.assertEqual(self.organization.status, 'archived')
         self.assertIsNotNone(self.organization.archived_at)
