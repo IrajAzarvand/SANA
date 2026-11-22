@@ -239,6 +239,7 @@ class DriverVehicleAssignmentReadScopeTests(TestCase):
         driver = Driver.objects.create(
             first_name='Branch',
             last_name='Driver',
+            mobile='09120000000',
             organization=organization,
             branch=branch,
         )
