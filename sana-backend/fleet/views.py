@@ -366,7 +366,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
             ).distinct()
 
         if not user.is_site_admin:
-            qs = qs.filter(Q(organization__isnull=True) | Q(organization__status='active'))
+            qs = qs.exclude(organization__status='archived')
 
         return qs
 
