@@ -444,6 +444,12 @@ class BranchManagerVehicleAndDriverTenantScopeTests(TestCase):
             organization=other_organization,
             branch=branch,
         )
+        unassigned_vehicle_device = Device.objects.create(
+            imei='860000000000950',
+            organization=organization,
+            branch=branch,
+            vehicle=own_vehicle,
+        )
         device = Device.objects.create(
             imei='860000000000951',
             organization=organization,
@@ -463,6 +469,7 @@ class BranchManagerVehicleAndDriverTenantScopeTests(TestCase):
         self.assertEqual(vehicles.status_code, 200)
         vehicle_payload = vehicles.data['results'] if isinstance(vehicles.data, dict) else vehicles.data
         self.assertEqual([item['id'] for item in vehicle_payload], [own_vehicle.id])
+        self.assertEqual(vehicle_payload[0]['device_status'], 'none')
 
         drivers = client.get('/api/drivers/')
         self.assertEqual(drivers.status_code, 200)
