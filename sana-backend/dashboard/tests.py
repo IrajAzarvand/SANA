@@ -276,3 +276,71 @@ class PersonalDashboardGPSStatusTests(TestCase):
         self.assertEqual(response.data['gps_status']['total'], 1)
         self.assertIsNone(response.data['gps_status']['online'])
         self.assertIsNone(response.data['gps_status']['offline'])
+
+
+class BranchManagerDashboardAccessTests(TestCase):
+    def setUp(self):
+        from django.utils import timezone
+        from accounts.models import User
+        from fleet.models import Device, DeviceCustomerAccessPeriod
+        from organizations.models import Organization, Branch
+
+        self.client = APIClient()
+        self.organization = Organization.objects.create(
+            name='Branch Dashboard Org',
+            code='BR-DASH-ORG',
+        )
+        self.branch = Branch.objects.create(
+            organization=self.organization,
+            name='Branch Dashboard Branch',
+            code='BR-DASH',
+        )
+        self.manager = User.objects.create_user(
+            username='branch_dashboard_manager',
+            password='test-password',
+            role='branch_manager',
+            account_type='organization',
+            organization=self.organization,
+            branch=self.branch,
+        )
+        self.now = timezone.now()
+        self.Device = Device
+        self.DeviceCustomerAccessPeriod = DeviceCustomerAccessPeriod
+
+    def test_dashboard_counts_only_devices_with_current_branch_access(self):
+        from datetime import timedelta
+        from unittest.mock import patch
+
+        active = self.Device.objects.create(
+            imei='860000000000901',
+            organization=self.organization,
+            branch=self.branch,
+        )
+        ended = self.Device.objects.create(
+            imei='860000000000902',
+            organization=self.organization,
+            branch=self.branch,
+        )
+        self.DeviceCustomerAccessPeriod.objects.create(
+            device=active,
+            organization=self.organization,
+            branch=self.branch,
+            started_at=self.now - timedelta(days=1),
+        )
+        self.DeviceCustomerAccessPeriod.objects.create(
+            device=ended,
+            organization=self.organization,
+            branch=self.branch,
+            started_at=self.now - timedelta(days=3),
+            ended_at=self.now - timedelta(days=1),
+        )
+
+        self.client.force_authenticate(user=self.manager)
+        with patch('dashboard.views.traccar_devices', return_value=[
+            {'id': 901, 'uniqueId': active.imei, 'status': 'online'},
+        ]), patch('dashboard.views.traccar_current_positions', return_value=[]):
+            response = self.client.get('/api/dashboard/stats/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['devices'], 1)
+        self.assertEqual(response.data['gps_status']['total'], 1)
