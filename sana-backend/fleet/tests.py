@@ -625,6 +625,7 @@ class PersonalAlertPreferencesSecurityTests(SimpleTestCase):
                 pk=1,
                 is_authenticated=True,
                 is_personal_user=False,
+                is_branch_manager=False,
             ),
         )
 
@@ -632,6 +633,46 @@ class PersonalAlertPreferencesSecurityTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertIn('فقط برای مشتری شخصی', response.data['detail'])
+
+
+class BranchManagerAlertPreferencesTests(TestCase):
+    def test_branch_manager_can_read_and_update_own_alert_preferences(self):
+        from rest_framework.test import APIClient
+
+        organization = Organization.objects.create(
+            name='Branch Alert Preferences Org',
+            code='BR-ALERT-PREF',
+        )
+        branch = Branch.objects.create(
+            organization=organization,
+            name='Branch Alert Preferences',
+            code='BR-ALERT-PREF',
+        )
+        manager = User.objects.create_user(
+            username='branch_alert_preferences',
+            password='test-password',
+            role='branch_manager',
+            account_type='organization',
+            organization=organization,
+            branch=branch,
+        )
+        client = APIClient()
+        client.force_authenticate(user=manager)
+
+        initial = client.get('/api/devices/alert-preferences/')
+        self.assertEqual(initial.status_code, 200)
+        self.assertEqual(initial.data, {'disabled_event_types': []})
+
+        updated = client.put(
+            '/api/devices/alert-preferences/',
+            {'disabled_event_types': ['deviceOffline', 'deviceOverspeed']},
+            format='json',
+        )
+        self.assertEqual(updated.status_code, 200)
+        self.assertEqual(
+            updated.data['disabled_event_types'],
+            ['deviceOffline', 'deviceOverspeed'],
+        )
 
 
 class AlertsEndpointUnsupportedRoleTests(SimpleTestCase):
