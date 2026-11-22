@@ -226,6 +226,9 @@ class DeviceViewSet(viewsets.ModelViewSet):
             'current_holder_organization', 'current_holder_user',
         )
 
+        if not user.is_site_admin and user.organization_id and user.organization.status == 'archived':
+            return qs.none()
+
         # The list serializer needs a compact, preloaded snapshot of the
         # subscription and replacement history. Keep these prefetches off
         # detail/actions so unrelated endpoints do not pay for list-only data.
