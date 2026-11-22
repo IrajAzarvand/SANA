@@ -998,7 +998,7 @@ class OrganizationAndBranchDeletionPermissionTests(TestCase):
         vehicle = Vehicle.objects.create(
             organization=self.organization,
             branch=self.branch,
-            plate='TEST-ORG-DELETE-VEHICLE',
+            plate='ORGDELTEST01',
         )
         device = Device.objects.create(
             imei='987654321098765',
