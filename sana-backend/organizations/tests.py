@@ -910,3 +910,58 @@ class PersonalSubscriptionReadOnlyAccessTests(TestCase):
         self.own_subscription.refresh_from_db()
         self.assertEqual(self.own_subscription.status, 'active')
         self.assertEqual(self.own_subscription.notes, '')
+
+
+class OrganizationAndBranchDeletionPermissionTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.organization = Organization.objects.create(
+            name='Deletion Test Organization',
+            code='DELETE-ORG-TEST',
+        )
+        from organizations.models import Branch
+        self.branch = Branch.objects.create(
+            organization=self.organization,
+            name='Deletion Test Branch',
+            code='DELETE-BR-TEST',
+        )
+        self.company_manager = User.objects.create_user(
+            username='delete-test-company-manager',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=self.organization,
+        )
+        self.site_admin = User.objects.create_user(
+            username='delete-test-site-admin',
+            password='test-password',
+            role='site_admin',
+            account_type='admin',
+            is_staff=True,
+            is_superuser=True,
+        )
+
+    def test_company_manager_cannot_physically_delete_organization(self):
+        self.client.force_authenticate(user=self.company_manager)
+        response = self.client.delete(f'/api/organizations/{self.organization.id}/')
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(Organization.objects.filter(pk=self.organization.pk).exists())
+
+    def test_site_admin_company_deletion_cascades_to_branches(self):
+        self.client.force_authenticate(user=self.site_admin)
+        response = self.client.delete(f'/api/organizations/{self.organization.id}/')
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Organization.objects.filter(pk=self.organization.pk).exists())
+        self.assertFalse(self.branch.__class__.objects.filter(pk=self.branch.pk).exists())
+
+    def test_company_manager_cannot_physically_delete_branch(self):
+        self.client.force_authenticate(user=self.company_manager)
+        response = self.client.delete(f'/api/branches/{self.branch.id}/')
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(self.branch.__class__.objects.filter(pk=self.branch.pk).exists())
+
+    def test_site_admin_can_physically_delete_branch(self):
+        self.client.force_authenticate(user=self.site_admin)
+        response = self.client.delete(f'/api/branches/{self.branch.id}/')
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(self.branch.__class__.objects.filter(pk=self.branch.pk).exists())
