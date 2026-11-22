@@ -139,7 +139,7 @@ class VehicleTypeViewSet(viewsets.ModelViewSet):
         if user.is_site_admin:
             return VehicleType.objects.all()
         if user.organization_id:
-            return VehicleType.objects.filter(organization_id=user.organization_id)
+            return VehicleType.objects.filter(organization_id=user.organization_id, organization__status='active')
         return VehicleType.objects.none()
 
 
@@ -169,6 +169,12 @@ class VehicleViewSet(viewsets.ModelViewSet):
             qs = qs.filter(owner_user=user)
         else:
             qs = qs.none()
+
+        if not user.is_site_admin:
+            qs = qs.filter(Q(organization__isnull=True) | Q(organization__status='active'))
+
+        if not user.is_site_admin:
+            qs = qs.filter(organization__status='active')
 
         # فیلترها
         branch = self.request.query_params.get('branch')
@@ -358,6 +364,9 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 subscription_links__end_date__gte=today,
                 subscription_links__subscription__status='active',
             ).distinct()
+
+        if not user.is_site_admin:
+            qs = qs.filter(Q(organization__isnull=True) | Q(organization__status='active'))
 
         return qs
 
@@ -1479,9 +1488,9 @@ class DriverVehicleAssignmentViewSet(viewsets.ModelViewSet):
         if user.is_site_admin:
             pass
         elif user.is_main_user and user.organization_id:
-            qs = qs.filter(driver__organization_id=user.organization_id)
+            qs = qs.filter(driver__organization_id=user.organization_id, driver__organization__status='active')
         elif user.is_branch_manager and user.branch_id:
-            qs = qs.filter(driver__organization_id=user.organization_id, driver__branch_id=user.branch_id)
+            qs = qs.filter(driver__organization_id=user.organization_id, driver__organization__status='active', driver__branch_id=user.branch_id)
         else:
             qs = qs.none()
 
