@@ -977,12 +977,12 @@ class OrganizationAndBranchDeletionPermissionTests(TestCase):
             organization=self.organization,
             name='Test Vehicle Type',
         )
-        vehicle = Vehicle.objects.create(
+        Vehicle.objects.create(
             organization=self.organization,
             branch=self.branch,
             plate='BRCOUNTTEST01',
         )
-        device = Device.objects.create(
+        Device.objects.create(
             imei='987654321098761',
             organization=self.organization,
             branch=self.branch,
