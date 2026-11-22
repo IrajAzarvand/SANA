@@ -171,11 +171,7 @@ export default function Users() {
       <PageHeader
         title={isSiteAdmin ? 'همه کاربران' : 'کاربران سازمان'}
         subtitle={isSiteAdmin ? 'مدیریت کاربران به تفکیک شرکت' : 'مدیریت کاربران سازمان شما'}
-        actions={
-          <Button icon={Plus} onClick={() => setModalOpen(true)}>
-            افزودن کاربر
-          </Button>
-        }
+        actions={canManageUsers ? <Button icon={Plus} onClick={() => { setEditingUser(null); setForm(emptyForm); setFormError(''); setModalOpen(true); }}>افزودن کاربر</Button> : null}
       />
 
       {canManageUsers && <div className="flex justify-end"><Button size="sm" variant="secondary" onClick={() => setShowArchived((value) => !value)}>{showArchived ? 'نمایش کاربران فعال' : 'نمایش کاربران بایگانی‌شده'}</Button></div>}
