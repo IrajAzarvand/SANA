@@ -19,9 +19,11 @@ from .serializers import (
     VehicleTypeSerializer,
     VehicleSerializer,
     VehicleListSerializer,
+    BranchManagerVehicleSerializer,
     DeviceModelSerializer,
     DeviceSerializer,
     DeviceListSerializer,
+    BranchManagerDeviceSerializer,
     DriverSerializer,
     DeviceLifecycleEventSerializer,
     DeviceReplacementRelationSerializer,
@@ -151,6 +153,8 @@ class VehicleViewSet(viewsets.ModelViewSet):
     ordering_fields = ['plate', 'created_at']
 
     def get_serializer_class(self):
+        if self.request.user.is_branch_manager:
+            return BranchManagerVehicleSerializer
         if self.action == 'list':
             return VehicleListSerializer
         return VehicleSerializer
@@ -215,6 +219,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
     ordering_fields = ['created_at', 'imei']
 
     def get_serializer_class(self):
+        if self.request.user.is_branch_manager:
+            return BranchManagerDeviceSerializer
         if self.action == 'list':
             return DeviceListSerializer
         return DeviceSerializer
