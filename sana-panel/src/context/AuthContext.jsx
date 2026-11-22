@@ -90,7 +90,7 @@ export function AuthProvider({ children }) {
       case 'main_user':
         return ['view', 'edit', 'manage_branches', 'manage_branch_users'];
       case 'branch_manager':
-        return ['view', 'edit'];
+        return ['view'];
       case 'personal_user':
         return ['view'];
       default:
