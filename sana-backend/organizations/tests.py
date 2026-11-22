@@ -1036,12 +1036,12 @@ class OrganizationAndBranchDeletionPermissionTests(TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertTrue(Organization.objects.filter(pk=self.organization.pk).exists())
 
-    def test_site_admin_company_deletion_cascades_to_organization_resources(self):
+    def test_site_admin_company_delete_archives_and_preserves_all_related_records(self):
         today = timezone.localdate()
         vehicle = Vehicle.objects.create(
             organization=self.organization,
             branch=self.branch,
-            plate='ORGDELTEST01',
+            plate='ORGARCHIVE01',
         )
         device = Device.objects.create(
             imei='987654321098765',
@@ -1049,21 +1049,53 @@ class OrganizationAndBranchDeletionPermissionTests(TestCase):
             branch=self.branch,
         )
         subscription = Subscription.objects.create(
-            contract_number='DELETE-ORG-CASCADE-001',
+            contract_number='DELETE-ORG-ARCHIVE-001',
             customer_type='organization',
             organization=self.organization,
             start_date=today,
             end_date=today + timedelta(days=30),
             price=1000,
         )
+        payment = SubscriptionPayment.objects.create(
+            subscription=subscription,
+            amount=1000,
+            received_at=today,
+            description='Archived company payment history',
+        )
+        manager = self.company_manager
 
         self.client.force_authenticate(user=self.site_admin)
         response = self.client.delete(f'/api/organizations/{self.organization.id}/')
 
         self.assertEqual(response.status_code, 204)
-        self.assertFalse(Organization.objects.filter(pk=self.organization.pk).exists())
-        self.assertFalse(self.branch.__class__.objects.filter(pk=self.branch.pk).exists())
-        self.assertFalse(Vehicle.objects.filter(pk=vehicle.pk).exists())
-        self.assertFalse(Device.objects.filter(pk=device.pk).exists())
-        self.assertFalse(Subscription.objects.filter(pk=subscription.pk).exists())
+        self.organization.refresh_from_db()
+        self.assertEqual(self.organization.status, 'archived')
+        self.assertIsNotNone(self.organization.archived_at)
+        self.assertEqual(self.organization.archived_by, self.site_admin)
+        self.assertTrue(self.branch.__class__.objects.filter(pk=self.branch.pk).exists())
+        self.assertTrue(Vehicle.objects.filter(pk=vehicle.pk).exists())
+        self.assertTrue(Device.objects.filter(pk=device.pk).exists())
+        self.assertTrue(Subscription.objects.filter(pk=subscription.pk).exists())
+        self.assertTrue(SubscriptionPayment.objects.filter(pk=payment.pk).exists())
+        manager.refresh_from_db()
+        self.assertEqual(manager.organization_id, self.organization.pk)
+
+        self.client.force_authenticate(user=self.company_manager)
+        hidden_response = self.client.get(f'/api/organizations/{self.organization.id}/')
+        self.assertEqual(hidden_response.status_code, 404)
+
+    def test_site_admin_can_restore_archived_company_without_losing_history(self):
+        self.organization.status = 'archived'
+        self.organization.archived_at = timezone.now()
+        self.organization.archived_by = self.site_admin
+        self.organization.save(update_fields=['status', 'archived_at', 'archived_by'])
+
+        self.client.force_authenticate(user=self.site_admin)
+        response = self.client.post(f'/api/organizations/{self.organization.id}/restore/')
+
+        self.assertEqual(response.status_code, 200)
+        self.organization.refresh_from_db()
+        self.assertEqual(self.organization.status, 'active')
+        self.assertIsNone(self.organization.archived_at)
+        self.assertIsNone(self.organization.archived_by)
 
