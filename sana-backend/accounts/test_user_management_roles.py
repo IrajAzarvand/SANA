@@ -117,6 +117,12 @@ class UserManagementRoleBoundaryTests(TestCase):
         self.assertIsNotNone(session.revoked_at)
         self.assertTrue(User.objects.filter(pk=target.pk).exists())
 
+        restore_response = self.client.post(f'/api/users/{target.id}/restore/', {}, format='json')
+        self.assertEqual(restore_response.status_code, 200)
+        target.refresh_from_db()
+        self.assertIsNone(target.archived_at)
+        self.assertTrue(target.is_active)
+
     def test_company_manager_cannot_archive_users_outside_own_organization(self):
         foreign = User.objects.create_user(
             username='foreign-user', password='test-password-123',
