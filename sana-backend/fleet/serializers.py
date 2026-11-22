@@ -5,6 +5,16 @@ from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DriverVeh
 
 
 class VehicleTypeSerializer(serializers.ModelSerializer):
+    def validate(self, attrs):
+        request = self.context.get('request')
+        user = request.user if request else None
+        if user and user.is_main_user:
+            organization = attrs.get('organization', getattr(self.instance, 'organization', None))
+            if organization and organization.pk != user.organization_id:
+                raise serializers.ValidationError({'organization': 'نوع خودرو باید متعلق به سازمان خودتان باشد.'})
+            attrs['organization'] = user.organization
+        return attrs
+
     class Meta:
         model = VehicleType
         fields = ['id', 'name', 'organization', 'created_at']
@@ -166,6 +176,17 @@ class DeviceSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({'branch': 'شعبه انتخاب‌شده متعلق به سازمان شما نیست.'})
             if vehicle and vehicle.organization_id != user.organization_id:
                 raise serializers.ValidationError({'vehicle': 'خودرو انتخاب‌شده متعلق به سازمان شما نیست.'})
+            owner = attrs.get('owner_user', getattr(self.instance, 'owner_user', None))
+            if owner and owner.organization_id != user.organization_id:
+                raise serializers.ValidationError({'owner_user': 'مالک دستگاه متعلق به سازمان شما نیست.'})
+            holder_org = attrs.get('current_holder_organization', getattr(self.instance, 'current_holder_organization', None))
+            if holder_org and holder_org.pk != user.organization_id:
+                raise serializers.ValidationError({'current_holder_organization': 'دارنده دستگاه باید سازمان خودتان باشد.'})
+            holder_user = attrs.get('current_holder_user', getattr(self.instance, 'current_holder_user', None))
+            if holder_user and holder_user.organization_id != user.organization_id:
+                raise serializers.ValidationError({'current_holder_user': 'دارنده دستگاه متعلق به سازمان شما نیست.'})
+            if vehicle and branch and vehicle.branch_id and vehicle.branch_id != branch.pk:
+                raise serializers.ValidationError({'vehicle': 'خودرو و دستگاه باید در یک شعبه باشند.'})
         return attrs
 
     def create(self, validated_data):
