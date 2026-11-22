@@ -8,6 +8,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, Toke
 from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User, UserSession
+from organizations.models import Organization
 from .session_utils import ABSOLUTE_SESSION_LIFETIME, IDLE_TIMEOUT, touch_session
 
 
@@ -105,7 +106,7 @@ class UserUpdateSerializer(serializers.ModelSerializer):
                 'role': serializers.ChoiceField(choices=User.ROLE_CHOICES, required=False),
                 'account_type': serializers.ChoiceField(choices=User.ACCOUNT_TYPE_CHOICES, required=False),
                 'organization': serializers.PrimaryKeyRelatedField(
-                    queryset=__import__('organizations.models', fromlist=['Organization']).Organization.objects.all(),
+                    queryset=Organization.objects.all(),
                     required=False, allow_null=True,
                 ),
                 'is_active': serializers.BooleanField(required=False),
