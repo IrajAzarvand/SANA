@@ -29,7 +29,7 @@ from .serializers import (
     DriverVehicleAssignmentSerializer,
 )
 from organizations.models import SubscriptionDevice
-from accounts.permissions import IsSiteAdmin, IsOrganizationMember
+from accounts.permissions import IsSiteAdmin, IsOrganizationMember, IsMainUserOrSiteAdmin
 from .traccar_api import TraccarAPIError, traccar_current_positions, traccar_device_by_unique_id, traccar_device_positions, traccar_device_events, traccar_devices
 
 
@@ -1450,7 +1450,7 @@ class DriverViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsOrganizationMember()]
+            return [IsMainUserOrSiteAdmin()]
         return super().get_permissions()
 
     def get_queryset(self):
