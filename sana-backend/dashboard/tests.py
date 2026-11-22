@@ -485,7 +485,7 @@ class BranchManagerDashboardTenantScopeTests(TestCase):
     def test_dashboard_counts_only_vehicles_and_drivers_from_branch_organization(self):
         from unittest.mock import patch
         from accounts.models import User
-        from fleet.models import Driver, Vehicle
+        from fleet.models import Device, Driver, Vehicle
         from organizations.models import Branch, Organization
 
         organization = Organization.objects.create(
