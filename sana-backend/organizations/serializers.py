@@ -36,7 +36,7 @@ class OrganizationSerializer(serializers.ModelSerializer):
             'phone', 'email', 'address', 'website', 'logo',
             'status',
             'branches_count', 'vehicles_count', 'devices_count', 'users_count', 'subscriptions_count',
-            'created_at', 'updated_at,
+            'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
@@ -58,12 +58,12 @@ class OrganizationSettingsSerializer(serializers.ModelSerializer):
             'registration_number', 'economy_code',
             'phone', 'email', 'address', 'website', 'logo',
             'status',
-            'branches_count', 'vehicles_count', 'devices_count', 'users_count',
+            'branches_count', 'vehicles_count', 'devices_count', 'users_count', 'subscriptions_count',
             'created_at', 'updated_at',
         ]
         read_only_fields = [
             'id', 'code', 'logo', 'status',
-            'branches_count', 'vehicles_count', 'devices_count', 'users_count',
+            'branches_count', 'vehicles_count', 'devices_count', 'users_count', 'subscriptions_count',
             'created_at', 'updated_at',
         ]
 
@@ -117,7 +117,7 @@ class BranchListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'organization', 'organization_name',
             'name', 'code', 'phone', 'status',
-            'vehicles_count', 'devices_count', 'drivers_count',
+            'vehicles_count', 'devices_count', 'drivers_count', 'users_count,
             'created_at',
         ]
 
