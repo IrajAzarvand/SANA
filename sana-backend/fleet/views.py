@@ -574,8 +574,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get', 'put'], url_path='alert-preferences', throttle_classes=[ScopedRateThrottle], throttle_scope='personal_alert_preferences')
     def alert_preferences(self, request):
         """Read or update the signed-in personal user's Traccar alert filters."""
-        if not request.user.is_personal_user:
-            return Response({'detail': 'این تنظیمات فقط برای مشتری شخصی فعال است.'}, status=403)
+        if not (request.user.is_personal_user or request.user.is_branch_manager):
+            return Response({'detail': 'این تنظیمات فقط برای مشتری شخصی و مدیر شعبه فعال است.'}, status=403)
 
         if request.method == 'GET':
             preference = PersonalAlertPreference.objects.filter(user=request.user).first()
@@ -732,7 +732,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
             for period in access_periods.order_by('started_at', 'id'):
                 access_by_device.setdefault(period.device_id, []).append(period)
 
-        if request.user.is_personal_user:
+        if request.user.is_personal_user or request.user.is_branch_manager:
             preference = PersonalAlertPreference.objects.filter(user=request.user).only('disabled_event_types').first()
             disabled_event_types = set(preference.disabled_event_types or []) if preference else set()
         else:
