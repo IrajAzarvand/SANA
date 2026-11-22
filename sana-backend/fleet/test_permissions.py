@@ -280,3 +280,71 @@ class DriverVehicleAssignmentReadScopeTests(TestCase):
         self.assertIn(visible.pk, visible_ids)
         self.assertNotIn(hidden_branch.pk, visible_ids)
         self.assertNotIn(hidden_external.pk, visible_ids)
+
+
+class LegacyBranchManagerReportHistoryScopeTests(TestCase):
+    def test_report_history_uses_branch_organization_when_user_organization_is_null(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+        from rest_framework.test import APIClient
+        from accounts.models import User
+        from fleet.models import Device, DeviceCustomerAccessPeriod
+        from organizations.models import Branch, Organization, Subscription, SubscriptionDevice
+
+        today = timezone.localdate()
+        now = timezone.now()
+        organization = Organization.objects.create(
+            name='Legacy Report Org',
+            code='LEGACY-REPORT-ORG',
+        )
+        branch = Branch.objects.create(
+            organization=organization,
+            name='Legacy Report Branch',
+            code='LEGACY-REPORT',
+        )
+        manager = User.objects.create_user(
+            username='legacy_report_branch_manager',
+            password='test-password',
+            role='branch_manager',
+            account_type='organization',
+            branch=branch,
+        )
+        device = Device.objects.create(
+            imei='860000000000941',
+            organization=organization,
+            branch=branch,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            branch=branch,
+            started_at=now - timedelta(days=2),
+        )
+        subscription = Subscription.objects.create(
+            contract_number='LEGACY-REPORT-CONTRACT',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=10),
+            end_date=today + timedelta(days=10),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=today - timedelta(days=10),
+            end_date=today + timedelta(days=10),
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=manager)
+        response = client.get(
+            '/api/devices/report-history/',
+            {'device_id': device.id, 'metadata': 'true'},
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['device']['id'], device.id)
+        self.assertFalse(response.data['unrestricted'])
+        self.assertIsNotNone(response.data['range_start'])
+        self.assertIsNotNone(response.data['range_end'])
