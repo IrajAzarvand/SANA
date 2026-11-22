@@ -32,7 +32,7 @@ export default function Users() {
   const emptyForm = { username: '', password: '', first_name: '', last_name: '', email: '', mobile: '', role: 'branch_manager', account_type: 'organization', organization: '', branch: '' };
   const [form, setForm] = useState(emptyForm);
 
-  const { isSiteAdmin, isMainUser } = useAuth();
+  const { user: currentUser, isSiteAdmin, isMainUser } = useAuth();
   const canManageUsers = isSiteAdmin || isMainUser;
 
   // دریافت کاربران از API
@@ -140,6 +140,7 @@ export default function Users() {
         icon: Pencil,
         onClick: () => { setEditingUser(user); setForm({ ...emptyForm, ...user, password: '', organization: user.organization || '', branch: user.branch || '' }); setFormError(''); setModalOpen(true); },
       });
+      if (user.id === currentUser?.id) return items;
       if (user.archived_at) {
         items.push({
           label: 'بازیابی کاربر',
