@@ -190,7 +190,7 @@ class VehicleViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsSiteAdmin()]
+            return [IsMainUserOrSiteAdmin()]
         return super().get_permissions()
 
 
@@ -281,21 +281,10 @@ class DeviceViewSet(viewsets.ModelViewSet):
 
         if user.is_site_admin:
             pass
-        elif user.is_main_user and user.organization:
-            now = timezone.now()
-            qs = qs.filter(
-                customer_access_periods__organization=user.organization,
-                customer_access_periods__started_at__lte=now,
-                customer_access_periods__ended_at__isnull=True,
-            ).distinct()
-        elif user.is_branch_manager and user.branch:
-            now = timezone.now()
-            qs = qs.filter(
-                customer_access_periods__organization=user.organization,
-                customer_access_periods__branch=user.branch,
-                customer_access_periods__started_at__lte=now,
-                customer_access_periods__ended_at__isnull=True,
-            ).distinct()
+        elif user.is_main_user and user.organization_id:
+            qs = qs.filter(organization_id=user.organization_id)
+        elif user.is_branch_manager and user.branch_id:
+            qs = qs.filter(branch_id=user.branch_id)
         elif user.is_personal_user:
             now = timezone.now()
             today = timezone.localdate()
@@ -1417,7 +1406,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsSiteAdmin()]
+            return [IsMainUserOrSiteAdmin()]
         return super().get_permissions()
 
     def destroy(self, request, *args, **kwargs):
