@@ -927,8 +927,8 @@ class PersonalAndTenantFinancialNotificationTests(TestCase):
         detail = self.client.get(f'/api/subscriptions/{contract.pk}/')
         notifications = self.client.get('/api/users/notifications/')
 
-        self.assertEqual(detail.status_code, 200)
-        self.assertTrue(any(
+        self.assertEqual(detail.status_code, 404)
+        self.assertFalse(any(
             item['id'].startswith(f'installment:{installment.pk}:')
             for item in notifications.data['results']
         ))
@@ -1030,23 +1030,29 @@ class PersonalAndTenantFinancialNotificationTests(TestCase):
             branch=branch,
         )
 
-        for user in (self.org_user, branch_manager):
-            self.client.force_authenticate(user=user)
-            response = self.client.get('/api/users/notifications/')
-            self.assertEqual(response.status_code, 200)
-            ids = [item['id'] for item in response.data['results']]
-            self.assertTrue(any(
-                item.startswith(f'installment:{own_installment.pk}:')
-                for item in ids
-            ))
-            self.assertFalse(any(
-                item.startswith(f'installment:{other_installment.pk}:')
-                for item in ids
-            ))
-            self.assertFalse(any(
-                'ORG-SCOPE-OTHER-001' in item['message']
-                for item in response.data['results']
-            ))
+        self.client.force_authenticate(user=self.org_user)
+        organization_notifications = self.client.get('/api/users/notifications/')
+        self.assertEqual(organization_notifications.status_code, 200)
+        organization_ids = [item['id'] for item in organization_notifications.data['results']]
+        self.assertTrue(any(
+            item.startswith(f'installment:{own_installment.pk}:')
+            for item in organization_ids
+        ))
+        self.assertFalse(any(
+            item.startswith(f'installment:{other_installment.pk}:')
+            for item in organization_ids
+        ))
+        self.assertFalse(any(
+            'ORG-SCOPE-OTHER-001' in item['message']
+            for item in organization_notifications.data['results']
+        ))
+
+        self.client.force_authenticate(user=branch_manager)
+        branch_notifications = self.client.get('/api/users/notifications/')
+        self.assertEqual(branch_notifications.status_code, 200)
+        branch_ids = [item['id'] for item in branch_notifications.data['results']]
+        self.assertFalse(any(item.startswith('installment:') for item in branch_ids))
+        self.assertFalse(any(item.startswith('payment-received:') for item in branch_ids))
 
     def test_contract_suspend_activate_and_cancel_operations_generate_notifications(self):
         contract = self.make_contract(
