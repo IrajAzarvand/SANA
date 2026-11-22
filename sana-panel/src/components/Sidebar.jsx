@@ -3,7 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard, Map as MapIcon, Truck, Users, Cpu, BarChart3,
   AlertTriangle, Settings, ChevronDown, Building2, Shield, Globe,
-  FileText, BrainCircuit,
+  FileText,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
@@ -38,7 +38,6 @@ export default function Sidebar({ isOpen, onClose }) {
     { path: '/panel/users',          icon: Shield,           label: 'کاربران' },
     { path: '/panel/companies',      icon: Building2,        label: 'شرکت‌ها' },
     { path: '/panel/subscriptions',  icon: FileText,         label: 'قراردادها' },
-    { path: '/panel/ai',             icon: BrainCircuit,     label: 'هوش مصنوعی' },
     { id: 'reports', icon: BarChart3, label: 'گزارش‌ها', children: [{ path: '/panel/reports/trips', label: 'گزارش مسیرها' }, { path: '/panel/reports/live-logs', label: 'لاگ زنده' }] },
     { path: '/panel/alerts',         icon: AlertTriangle,    label: 'هشدارها', badge: unreadCount },
     { path: '/panel/settings',       icon: Settings,         label: 'تنظیمات سایت' },
