@@ -348,7 +348,9 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
 
         # افزودن اطلاعات اشتراک
         subscription = user.active_subscription
-        if subscription:
+        # Branch managers inherit contract eligibility for login, but contract
+        # identifiers and financial dates are not part of their account data.
+        if subscription and not user.is_branch_manager:
             data['subscription'] = {
                 'contract_number': subscription.contract_number,
                 'start_date': subscription.start_date,
