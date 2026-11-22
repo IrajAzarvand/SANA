@@ -78,7 +78,7 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         return Organization.objects.none()
 
     def get_permissions(self):
-        if self.action in ['create', 'destroy', 'restore']:
+        if self.action in ['create', 'destroy', 'restore', 'archive']:
             return [IsSiteAdmin()]
         if self.action in ['update', 'partial_update']:
             return [CanManageOrganizationSettings()]
@@ -92,6 +92,12 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         instance.archived_at = timezone.now()
         instance.archived_by = self.request.user
         instance.save(update_fields=['status', 'archived_at', 'archived_by', 'updated_at'])
+
+    @action(detail=True, methods=['post'])
+    def archive(self, request, pk=None):
+        organization = self.get_object()
+        self.perform_destroy(organization)
+        return Response(self.get_serializer(organization).data)
 
     @action(detail=True, methods=['post'])
     def restore(self, request, pk=None):
