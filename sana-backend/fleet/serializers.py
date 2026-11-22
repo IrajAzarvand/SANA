@@ -78,6 +78,13 @@ class VehicleSerializer(serializers.ModelSerializer):
 
         return super().create(validated_data)
 
+class BranchManagerVehicleSerializer(VehicleListSerializer):
+    """Expose only vehicle data assigned to the branch, not owner/account metadata."""
+    class Meta:
+        model = Vehicle
+        fields = ['id', 'plate', 'vehicle_type_name', 'branch_name', 'device_status', 'created_at']
+
+
 class VehicleListSerializer(serializers.ModelSerializer):
     vehicle_type_name = serializers.CharField(source='vehicle_type.name', read_only=True)
     branch_name = serializers.CharField(source='branch.name', read_only=True)
@@ -207,6 +214,23 @@ class DeviceSerializer(serializers.ModelSerializer):
             description='دستگاه به موجودی سانا اضافه شد.',
         )
         return instance
+
+class BranchManagerDeviceSerializer(serializers.ModelSerializer):
+    device_model_name = serializers.CharField(source='device_model.name', read_only=True, allow_null=True)
+    device_model_manufacturer = serializers.CharField(source='device_model.manufacturer', read_only=True, allow_null=True)
+    branch_name = serializers.CharField(source='branch.name', read_only=True)
+    vehicle_plate = serializers.CharField(source='vehicle.plate', read_only=True)
+    data_active = serializers.BooleanField(source='is_data_active', read_only=True)
+    last_data_received_at = serializers.DateTimeField(read_only=True, allow_null=True)
+
+    class Meta:
+        model = Device
+        fields = [
+            'id', 'imei', 'device_model_name', 'device_model_manufacturer',
+            'protocol', 'sim_number', 'branch_name', 'vehicle_plate',
+            'data_active', 'last_data_received_at', 'installed_at', 'created_at',
+        ]
+
 
 class DeviceListSerializer(serializers.ModelSerializer):
     management_status = serializers.SerializerMethodField()
