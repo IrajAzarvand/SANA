@@ -312,8 +312,8 @@ export default function Branches() {
               <p className="font-semibold text-red-500">حذف شعبه برگشت‌پذیر نیست.</p>
               <p className="mt-2">شرکت «{deleteBranch.organization_name || '—'}» حذف نمی‌شود؛ اما ارتباط کاربران، خودروها، دستگاه‌ها و سوابق وابسته به شعبه ممکن است تغییر کند یا قطع شود.</p>
             </div>
-            <div className="grid grid-cols-3 gap-2 text-center text-sm">
-              {[['خودرو', deleteBranch.vehicles_count], ['دستگاه', deleteBranch.devices_count], ['راننده', deleteBranch.drivers_count]].map(([label, count]) => <div key={label} className="rounded-lg border border-border-base p-3"><div className="text-xs text-text-muted">{label}</div><div className="mt-1 font-semibold">{count ?? '—'}</div></div>)}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-sm">
+              {[['کاربر', deleteBranch.users_count], ['خودرو', deleteBranch.vehicles_count], ['دستگاه', deleteBranch.devices_count], ['راننده', deleteBranch.drivers_count]].map(([label, count]) => <div key={label} className="rounded-lg border border-border-base p-3"><div className="text-xs text-text-muted">{label}</div><div className="mt-1 font-semibold">{count ?? '—'}</div></div>)}
             </div>
             <p className="text-sm">برای تأیید، نام شعبه را دقیقاً وارد کنید:</p>
             <Input value={deleteBranchName} onChange={(e) => setDeleteBranchName(e.target.value)} placeholder={deleteBranch.name} />
