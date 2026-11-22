@@ -20,7 +20,6 @@ const Branches = lazy(() => import('./pages/Branches'));
 const Subscriptions = lazy(() => import('./pages/Subscriptions'));
 const SubscriptionWizard = lazy(() => import('./pages/SubscriptionWizard'));
 const SubscriptionDetail = lazy(() => import('./pages/SubscriptionDetail'));
-const AIManagement = lazy(() => import('./pages/AIManagement'));
 
 export default function App() {
   return (
@@ -49,13 +48,6 @@ export default function App() {
             } />
             <Route path="alerts"    element={<Alerts />} />
             <Route path="settings"  element={<Settings />} />
-
-            {/* مدیریت هوش مصنوعی — فقط ادمین سایت */}
-            <Route path="ai" element={
-              <ProtectedRoute allowRoles={['site_admin']}>
-                <AIManagement />
-              </ProtectedRoute>
-            } />
 
             {/* خودروها */}
             <Route path="vehicles" element={

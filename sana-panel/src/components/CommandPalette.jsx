@@ -33,7 +33,6 @@ function getCommands(user) {
       { path: '/panel/users', label: 'کاربران', keywords: 'حساب کاربری' },
       { path: '/panel/companies', label: 'شرکت‌ها', keywords: 'سازمان' },
       { path: '/panel/subscriptions', label: 'قراردادها', keywords: 'اشتراک' },
-      { path: '/panel/ai', label: 'مدیریت هوش مصنوعی', keywords: 'ai هوش' },
       { path: '/panel/reports/live-logs', label: 'لاگ زنده سامانه', keywords: 'لاگ ثبت رخداد tcp ترافیک شبکه systemd traccar' },
       { path: '/panel/reports', label: 'گزارش‌ها', keywords: 'آمار' },
     ];
