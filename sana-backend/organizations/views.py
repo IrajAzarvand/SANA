@@ -155,6 +155,8 @@ class BranchViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         user = self.request.user
+        if user.is_main_user and user.organization and user.organization.status == 'archived':
+            raise serializers.ValidationError('شرکت بایگانی شده و امکان ایجاد یا تغییر شعبه ندارد.')
         if user.is_main_user:
             if not user.organization_id:
                 raise serializers.ValidationError('حساب مدیر شرکت به سازمان معتبری متصل نیست.')
