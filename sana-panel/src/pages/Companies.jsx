@@ -475,16 +475,16 @@ export default function Companies() {
               <h4 className="font-medium mb-2">شعب شرکت ({detailOrganization.branches_count ?? detailBranches.length}) — نمایش {detailBranches.length} مورد</h4>
               {detailSectionLoading.branches || detailErrors.branches ? renderSectionFallback('branches') : detailBranches.length ? <ul className="space-y-1">{detailBranches.map((branch) => <li key={branch.id} className="flex justify-between gap-2 border-b last:border-0 border-border-base py-1"><span>{branch.name}</span><span className="text-text-muted">{branch.code}</span></li>)}</ul> : <p className="text-text-muted">شعبه‌ای ثبت نشده است.</p>}
             </div>
-            <p className="text-xs text-text-muted">قراردادها و ارتباطات وابسته نیز در صورت حذف شرکت، مطابق روابط دیتابیس تحت تأثیر قرار می‌گیرند.</p>
+            <p className="text-xs text-text-muted">آرشیو شرکت هیچ سابقه‌ای را حذف نمی‌کند؛ برای بازگشت شرکت به چرخه فعال، مدیر سایت می‌تواند آن را از بایگانی بازیابی کند.</p>
           </div>
         )}
       </Modal>
 
-      {/* تأیید حذف شرکت */}
+      {/* تأیید آرشیو شرکت */}
       <Modal open={Boolean(deleteOrganization)} onClose={() => { setDeleteOrganization(null); setDeleteName(''); }} title="تأیید آرشیو شرکت" size="lg">
         {deleteOrganization && (
           <div className="space-y-4">
-            <div className="rounded-lg border border-red-500/40 bg-red-500/5 p-3 text-sm">
+            <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
               <p className="font-semibold text-amber-500">شرکت از چرخه فعال خارج و به بایگانی منتقل می‌شود.</p>
               <p className="mt-2">با آرشیو «{deleteOrganization.name}»، هیچ‌یک از شعب، قراردادها، خودروها، دستگاه‌ها، رانندگان، انواع خودرو، کاربران یا سوابق مالی و عملیاتی حذف نمی‌شوند. شرکت از فهرست فعال خارج می‌شود و فقط مدیر سایت می‌تواند آن را بازگردانی کند.</p>
             </div>
