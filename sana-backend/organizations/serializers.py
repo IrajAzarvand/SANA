@@ -100,6 +100,14 @@ class OrganizationListSerializer(serializers.ModelSerializer):
 
 class BranchSerializer(serializers.ModelSerializer):
     organization_name = serializers.CharField(source='organization.name', read_only=True)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request and getattr(request.user, 'is_branch_manager', False):
+            data['organization'] = None
+            data['organization_name'] = None
+        return data
     vehicles_count = serializers.IntegerField(source='vehicles.count', read_only=True)
     devices_count = serializers.IntegerField(source='devices.count', read_only=True)
     drivers_count = serializers.IntegerField(source='drivers.count', read_only=True)
@@ -118,6 +126,14 @@ class BranchSerializer(serializers.ModelSerializer):
 
 class BranchListSerializer(serializers.ModelSerializer):
     organization_name = serializers.CharField(source='organization.name', read_only=True)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request and getattr(request.user, 'is_branch_manager', False):
+            data['organization'] = None
+            data['organization_name'] = None
+        return data
     vehicles_count = serializers.IntegerField(source='vehicles.count', read_only=True)
     devices_count = serializers.IntegerField(source='devices.count', read_only=True)
     drivers_count = serializers.IntegerField(source='drivers.count', read_only=True)
