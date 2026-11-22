@@ -1,4 +1,20 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
+
+import { Search, Plus, Building2, Pencil, Trash2, Eye } from 'lucide-react';
+import PageHeader from '../components/PageHeader';
+import Card from '../components/Card';
+import Badge from '../components/Badge';
+import Button from '../components/Button';
+import Input from '../components/Input';
+import Modal from '../components/Modal';
+import ActionMenu from '../components/ActionMenu';
+import LoadingSpinner from '../components/LoadingSpinner';
+import ErrorState from '../components/ErrorState';
+import { useAuth } from '../context/AuthContext';
+import { organizationsAPI, branchesAPI } from '../api/services/organizations';
+import { subscriptionsAPI } from '../api/services/subscriptions';
+import { usersAPI, vehiclesAPI, devicesAPI } from '../api/services/fleet';
+import { useApi } from '../hooks/useApi';
 
 async function fetchAllPages(listFn, params = {}) {
   const results = [];
@@ -34,21 +50,6 @@ async function fetchAllPages(listFn, params = {}) {
 
   throw new Error('Organization details pagination exceeded the safety limit');
 }
-import { Search, Plus, Building2, Pencil, Trash2, Eye } from 'lucide-react';
-import PageHeader from '../components/PageHeader';
-import Card from '../components/Card';
-import Badge from '../components/Badge';
-import Button from '../components/Button';
-import Input from '../components/Input';
-import Modal from '../components/Modal';
-import ActionMenu from '../components/ActionMenu';
-import LoadingSpinner from '../components/LoadingSpinner';
-import ErrorState from '../components/ErrorState';
-import { useAuth } from '../context/AuthContext';
-import { organizationsAPI, branchesAPI } from '../api/services/organizations';
-import { subscriptionsAPI } from '../api/services/subscriptions';
-import { usersAPI, vehiclesAPI, devicesAPI } from '../api/services/fleet';
-import { useApi } from '../hooks/useApi';
 
 export default function Companies() {
   const [search, setSearch] = useState('');
@@ -61,6 +62,10 @@ export default function Companies() {
   const [detailVehicles, setDetailVehicles] = useState([]);
   const [detailDevices, setDetailDevices] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [detailOrganizationError, setDetailOrganizationError] = useState(null);
+  const [detailSectionLoading, setDetailSectionLoading] = useState({});
+  const [detailErrors, setDetailErrors] = useState({});
+  const detailRequestIdRef = useRef(0);
   const [deleteOrganization, setDeleteOrganization] = useState(null);
   const [deleteName, setDeleteName] = useState('');
   const [form, setForm] = useState({
@@ -148,35 +153,103 @@ export default function Companies() {
     }
   };
 
-  const handleViewOrganization = async (org) => {
-    setDetailOrganization(org);
+  const organizationSectionLoaders = {
+    branches: (org) => fetchAllPages(branchesAPI.list, { organization: org.id }),
+    subscriptions: (org) => fetchAllPages(subscriptionsAPI.list, { organization: org.id }),
+    users: (org) => fetchAllPages(usersAPI.list, { organization: org.id }),
+    vehicles: (org) => fetchAllPages(vehiclesAPI.list, { organization: org.id }),
+    devices: (org) => fetchAllPages(devicesAPI.list, { organization: org.id }),
+  };
+  const organizationSectionSetters = {
+    branches: setDetailBranches,
+    subscriptions: setDetailSubscriptions,
+    users: setDetailUsers,
+    vehicles: setDetailVehicles,
+    devices: setDetailDevices,
+  };
+
+  const loadOrganizationSection = async (org, section, requestId) => {
+    const loader = organizationSectionLoaders[section];
+    const setter = organizationSectionSetters[section];
+    if (!loader || !setter) return;
+
+    setDetailSectionLoading((current) => ({ ...current, [section]: true }));
+    setDetailErrors((current) => ({ ...current, [section]: null }));
+    try {
+      const result = await loader(org);
+      if (requestId !== detailRequestIdRef.current) return;
+      const data = section === 'branches'
+        ? result.filter((branch) => Number(branch.organization) === Number(org.id))
+        : result;
+      setter(data);
+    } catch (err) {
+      if (requestId !== detailRequestIdRef.current) return;
+      console.error(`Error loading organization ${section}:`, err);
+      setDetailErrors((current) => ({ ...current, [section]: 'دریافت این فهرست ناموفق بود.' }));
+    } finally {
+      if (requestId === detailRequestIdRef.current) {
+        setDetailSectionLoading((current) => ({ ...current, [section]: false }));
+      }
+    }
+  };
+
+  const loadOrganizationCore = async (org, requestId) => {
     setDetailLoading(true);
+    setDetailOrganizationError(null);
+    try {
+      const details = await organizationsAPI.get(org.id);
+      if (requestId === detailRequestIdRef.current) setDetailOrganization(details);
+    } catch (err) {
+      if (requestId !== detailRequestId.current) return;
+      console.error('Error loading organization core details:', err);
+      setDetailOrganizationError('دریافت اطلاعات اصلی شرکت ناموفق بود.');
+    } finally {
+      if (requestId === detailRequestId.current) setDetailLoading(false);
+    }
+  };
+
+  const handleViewOrganization = (org) => {
+    const requestId = detailRequestIdRef.current + 1;
+    detailRequestId.current = requestId;
+    setDetailOrganization(org);
+    setDetailOrganizationError(null);
+    setDetailSectionLoading(Object.fromEntries(Object.keys(organizationSectionLoaders).map((key) => [key, true])));
+    setDetailErrors({});
     setDetailBranches([]);
     setDetailSubscriptions([]);
     setDetailUsers([]);
     setDetailVehicles([]);
     setDetailDevices([]);
-    try {
-      const [details, branchList, subscriptionList, userList, vehicleList, deviceList] = await Promise.all([
-        organizationsAPI.get(org.id),
-        fetchAllPages(branchesAPI.list, { organization: org.id }),
-        fetchAllPages(subscriptionsAPI.list, { organization: org.id }),
-        fetchAllPages(usersAPI.list, { organization: org.id }),
-        fetchAllPages(vehiclesAPI.list, { organization: org.id }),
-        fetchAllPages(devicesAPI.list, { organization: org.id }),
-      ]);
-      setDetailOrganization(details);
-      setDetailBranches(branchList.filter((branch) => Number(branch.organization) === Number(org.id)));
-      setDetailSubscriptions(subscriptionList);
-      setDetailUsers(userList);
-      setDetailVehicles(vehicleList);
-      setDetailDevices(deviceList);
-    } catch (err) {
-      console.error('Error loading organization details:', err);
-      alert('دریافت جزئیات شرکت ناموفق بود.');
-    } finally {
-      setDetailLoading(false);
+    loadOrganizationCore(org, requestId);
+    Object.keys(organizationSectionLoaders).forEach((section) => {
+      loadOrganizationSection(org, section, requestId);
+    });
+  };
+
+  const closeOrganizationDetails = () => {
+    detailRequestId.current += 1;
+    setDetailOrganization(null);
+    setDetailOrganizationError(null);
+    setDetailLoading(false);
+    setDetailSectionLoading({});
+    setDetailErrors({});
+  };
+
+  const renderSectionFallback = (section) => {
+    if (detailSectionLoading[section]) {
+      return <p className="text-text-muted py-2">در حال دریافت اطلاعات...</p>;
     }
+    if (detailErrors[section]) {
+      return (
+        <div className="space-y-2 py-2">
+          <p className="text-danger-500">{detailErrors[section]}</p>
+          <Button variant="secondary" size="sm" onClick={() => loadOrganizationSection(detailOrganization, section, detailRequestId.current)}>
+            تلاش مجدد
+          </Button>
+        </div>
+      );
+    }
+    return null;
   };
 
   const getMenuItems = (org) => {
@@ -345,9 +418,20 @@ export default function Companies() {
       </Card>
 
       {/* جزئیات شرکت */}
-      <Modal open={Boolean(detailOrganization)} onClose={() => setDetailOrganization(null)} title={detailOrganization ? `جزئیات شرکت: ${detailOrganization.name}` : 'جزئیات شرکت'} size="lg">
-        {detailLoading ? <LoadingSpinner /> : detailOrganization && (
+      <Modal open={Boolean(detailOrganization)} onClose={closeOrganizationDetails} title={detailOrganization ? `جزئیات شرکت: ${detailOrganization.name}` : 'جزئیات شرکت'} size="lg">
+        {detailOrganization && (
           <div className="space-y-4 text-sm">
+            {(detailLoading || detailOrganizationError) && (
+              <div className="rounded-lg border border-border-base p-3 space-y-2">
+                {detailLoading && <LoadingSpinner />}
+                {detailOrganizationError && (
+                  <>
+                    <p className="text-danger-500">{detailOrganizationError}</p>
+                    <Button variant="secondary" size="sm" onClick={() => loadOrganizationCore(detailOrganization, detailRequestId.current)}>تلاش مجدد</Button>
+                  </>
+                )}
+              </div>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {[
                 ['کد شرکت', detailOrganization.code],
@@ -365,24 +449,24 @@ export default function Companies() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="rounded-lg border border-border-base p-3">
                 <h4 className="font-medium mb-2">کاربران شرکت ({detailOrganization.users_count ?? detailUsers.length}) — نمایش {detailUsers.length} مورد</h4>
-                {detailUsers.length ? <ul className="space-y-1 max-h-52 overflow-y-auto">{detailUsers.map((user) => <li key={user.id} className="flex flex-wrap justify-between gap-2 border-b last:border-0 border-border-base py-1"><span>{user.full_name || user.username}</span><span className="text-text-muted">{user.branch_name || user.role || '—'}</span></li>)}</ul> : <p className="text-text-muted">کاربری ثبت نشده است.</p>}
+                {detailSectionLoading.users || detailErrors.users ? renderSectionFallback('users') : detailUsers.length ? <ul className="space-y-1 max-h-52 overflow-y-auto">{detailUsers.map((user) => <li key={user.id} className="flex flex-wrap justify-between gap-2 border-b last:border-0 border-border-base py-1"><span>{user.full_name || user.username}</span><span className="text-text-muted">{user.branch_name || user.role || '—'}</span></li>)}</ul> : <p className="text-text-muted">کاربری ثبت نشده است.</p>}
               </div>
               <div className="rounded-lg border border-border-base p-3">
                 <h4 className="font-medium mb-2">خودروها ({detailOrganization.vehicles_count ?? detailVehicles.length}) — نمایش {detailVehicles.length} مورد</h4>
-                {detailVehicles.length ? <ul className="space-y-1 max-h-52 overflow-y-auto">{detailVehicles.map((vehicle) => <li key={vehicle.id} className="flex flex-wrap justify-between gap-2 border-b last:border-0 border-border-base py-1"><span>{vehicle.plate}</span><span className="text-text-muted">{vehicle.vehicle_type_name || vehicle.branch_name || '—'}</span></li>)}</ul> : <p className="text-text-muted">خودرویی ثبت نشده است.</p>}
+                {detailSectionLoading.vehicles || detailErrors.vehicles ? renderSectionFallback('vehicles') : detailVehicles.length ? <ul className="space-y-1 max-h-52 overflow-y-auto">{detailVehicles.map((vehicle) => <li key={vehicle.id} className="flex flex-wrap justify-between gap-2 border-b last:border-0 border-border-base py-1"><span>{vehicle.plate}</span><span className="text-text-muted">{vehicle.vehicle_type_name || vehicle.branch_name || '—'}</span></li>)}</ul> : <p className="text-text-muted">خودرویی ثبت نشده است.</p>}
               </div>
               <div className="rounded-lg border border-border-base p-3 md:col-span-2">
                 <h4 className="font-medium mb-2">دستگاه‌ها ({detailOrganization.devices_count ?? detailDevices.length}) — نمایش {detailDevices.length} مورد</h4>
-                {detailDevices.length ? <ul className="space-y-1 max-h-52 overflow-y-auto">{detailDevices.map((device) => <li key={device.id} className="flex flex-wrap justify-between gap-2 border-b last:border-0 border-border-base py-1"><span className="font-mono">{device.imei}</span><span className="text-text-muted">{device.device_model_name || device.device_model_manufacturer || device.vehicle_plate || '—'}</span></li>)}</ul> : <p className="text-text-muted">دستگاهی ثبت نشده است.</p>}
+                {detailSectionLoading.devices || detailErrors.devices ? renderSectionFallback('devices') : detailDevices.length ? <ul className="space-y-1 max-h-52 overflow-y-auto">{detailDevices.map((device) => <li key={device.id} className="flex flex-wrap justify-between gap-2 border-b last:border-0 border-border-base py-1"><span className="font-mono">{device.imei}</span><span className="text-text-muted">{device.device_model_name || device.device_model_manufacturer || device.vehicle_plate || '—'}</span></li>)}</ul> : <p className="text-text-muted">دستگاهی ثبت نشده است.</p>}
               </div>
             </div>
             <div className="rounded-lg border border-border-base p-3">
               <h4 className="font-medium mb-2">قراردادهای شرکت ({detailOrganization.subscriptions_count ?? detailSubscriptions.length}) — نمایش {detailSubscriptions.length} مورد</h4>
-              {detailSubscriptions.length ? <ul className="space-y-1">{detailSubscriptions.map((subscription) => <li key={subscription.id} className="flex flex-wrap justify-between gap-2 border-b last:border-0 border-border-base py-2"><span>{subscription.contract_number}</span><span className="text-text-muted">{subscription.status} · {subscription.end_date || '—'}</span></li>)}</ul> : <p className="text-text-muted">قراردادی ثبت نشده است.</p>}
+              {detailSectionLoading.subscriptions || detailErrors.subscriptions ? renderSectionFallback('subscriptions') : detailSubscriptions.length ? <ul className="space-y-1">{detailSubscriptions.map((subscription) => <li key={subscription.id} className="flex flex-wrap justify-between gap-2 border-b last:border-0 border-border-base py-2"><span>{subscription.contract_number}</span><span className="text-text-muted">{subscription.status} · {subscription.end_date || '—'}</span></li>)}</ul> : <p className="text-text-muted">قراردادی ثبت نشده است.</p>}
             </div>
             <div className="rounded-lg border border-border-base p-3">
               <h4 className="font-medium mb-2">شعب شرکت ({detailOrganization.branches_count ?? detailBranches.length}) — نمایش {detailBranches.length} مورد</h4>
-              {detailBranches.length ? <ul className="space-y-1">{detailBranches.map((branch) => <li key={branch.id} className="flex justify-between gap-2 border-b last:border-0 border-border-base py-1"><span>{branch.name}</span><span className="text-text-muted">{branch.code}</span></li>)}</ul> : <p className="text-text-muted">شعبه‌ای ثبت نشده است.</p>}
+              {detailSectionLoading.branches || detailErrors.branches ? renderSectionFallback('branches') : detailBranches.length ? <ul className="space-y-1">{detailBranches.map((branch) => <li key={branch.id} className="flex justify-between gap-2 border-b last:border-0 border-border-base py-1"><span>{branch.name}</span><span className="text-text-muted">{branch.code}</span></li>)}</ul> : <p className="text-text-muted">شعبه‌ای ثبت نشده است.</p>}
             </div>
             <p className="text-xs text-text-muted">قراردادها و ارتباطات وابسته نیز در صورت حذف شرکت، مطابق روابط دیتابیس تحت تأثیر قرار می‌گیرند.</p>
           </div>
