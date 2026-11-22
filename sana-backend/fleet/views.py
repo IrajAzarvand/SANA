@@ -1411,7 +1411,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsMainUserOrSiteAdmin()]
+            return [IsSiteAdmin()]
         return super().get_permissions()
 
     def destroy(self, request, *args, **kwargs):
