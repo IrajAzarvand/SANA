@@ -21,6 +21,7 @@ export default function Branches() {
   const [editingBranch, setEditingBranch] = useState(null);
   const [deleteBranch, setDeleteBranch] = useState(null);
   const [deleteBranchName, setDeleteBranchName] = useState('');
+  const [viewBranch, setViewBranch] = useState(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     organization: '', name: '', code: '', phone: '', address: '', status: 'active',
@@ -154,7 +155,7 @@ export default function Branches() {
       items.push({
         label: 'مشاهده جزئیات',
         icon: Eye,
-        onClick: () => console.log('View branch:', branch.id),
+        onClick: () => setViewBranch(branch),
       });
     }
 
@@ -303,6 +304,45 @@ export default function Branches() {
           </>
         )}
       </Card>
+
+      {/* جزئیات شعبه */}
+      <Modal open={Boolean(viewBranch)} onClose={() => setViewBranch(null)} title={viewBranch ? `جزئیات شعبه: ${viewBranch.name}` : 'جزئیات شعبه'} size="md">
+        {viewBranch && (
+          <div className="space-y-4 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {[
+                ['شرکت', viewBranch.organization_name],
+                ['نام شعبه', viewBranch.name],
+                ['کد شعبه', viewBranch.code],
+                ['تلفن', viewBranch.phone],
+                ['آدرس', viewBranch.address],
+                ['وضعیت', viewBranch.status === 'active' ? 'فعال' : 'غیرفعال'],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-lg border border-border-base p-3">
+                  <div className="text-xs text-text-muted">{label}</div>
+                  <div className="mt-1 text-text-primary break-words">{value || '—'}</div>
+                </div>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+              {[
+                ['کاربر', viewBranch.users_count],
+                ['خودرو', viewBranch.vehicles_count],
+                ['دستگاه', viewBranch.devices_count],
+                ['راننده', viewBranch.drivers_count],
+              ].map(([label, count]) => (
+                <div key={label} className="rounded-lg bg-bg-base border border-border-base p-3">
+                  <div className="text-xs text-text-muted">{label}</div>
+                  <div className="mt-1 font-semibold text-text-primary">{count ?? 0}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="flex justify-end pt-3">
+          <Button variant="secondary" onClick={() => setViewBranch(null)}>بستن</Button>
+        </div>
+      </Modal>
 
       {/* تأیید حذف شعبه */}
       <Modal open={Boolean(deleteBranch)} onClose={() => { setDeleteBranch(null); setDeleteBranchName(''); }} title="تأیید حذف شعبه" size="md">
