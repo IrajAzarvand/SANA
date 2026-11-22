@@ -84,6 +84,21 @@ export default function Users() {
     return Array.from(map.values());
   }, [users]);
 
+  // حساب‌های مدیریتی سایت (فقط برای مدیر سایت)
+  const adminUsers = useMemo(() => {
+    if (!isSiteAdmin || !users) return [];
+    return users.filter((u) => u.account_type === 'admin');
+  }, [users, isSiteAdmin]);
+
+  const filteredAdmins = useMemo(() => {
+    if (!search) return adminUsers;
+    return adminUsers.filter((u) =>
+      `${u.first_name} ${u.last_name}`.includes(search) ||
+      u.username.includes(search) ||
+      (u.mobile && u.mobile.includes(search))
+    );
+  }, [adminUsers, search]);
+
   // کاربران شخصی
   const personalUsers = useMemo(() => {
     if (!users) return [];
@@ -199,7 +214,7 @@ export default function Users() {
       </Card>
 
       {/* شرکت‌ها با کاربران درختی */}
-      {filteredCompanies.length === 0 && filteredPersonal.length === 0 ? (
+      {filteredCompanies.length === 0 && filteredPersonal.length === 0 && filteredAdmins.length === 0 ? (
         <Card>
           <div className="py-12 text-center">
             <UsersIcon size={40} className="text-text-muted mx-auto mb-3" />
@@ -208,6 +223,24 @@ export default function Users() {
         </Card>
       ) : (
         <>
+          {filteredAdmins.length > 0 && (
+            <Card title="ادمین‌های سایت">
+              <div className="divide-y divide-border-base">
+                {filteredAdmins.map((u) => (
+                  <div key={u.id} className="flex items-center justify-between gap-3 py-3">
+                    <div>
+                      <div className="text-sm font-medium text-text-primary">{u.full_name || u.username}</div>
+                      <div className="mt-1 font-mono text-[10px] text-text-muted">{u.username}</div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Badge variant={u.is_active ? 'success' : 'muted'}>{u.is_active ? 'فعال' : 'غیرفعال'}</Badge>
+                      <ActionMenu items={getUserMenu(u)} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
           <div className="space-y-3">
             {filteredCompanies.map((company) => {
               const isExpanded = expanded[company.id] !== false; // پیش‌فرض باز
