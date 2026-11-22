@@ -121,7 +121,7 @@ class DashboardStatsView(APIView):
             return Response({
                 'vehicles': Vehicle.objects.filter(branch_id=branch.id, organization_id=branch.organization_id).count(),
                 'devices': len(branch_devices),
-                'drivers': Driver.objects.filter(branch_id=branch, organization_id=branch.organization_id).count(),
+                'drivers': Driver.objects.filter(branch_id=branch.id, organization_id=branch.organization_id).count(),
                 'current_subscription': {
                     'contract_number': active_sub.contract_number,
                     'end_date': active_sub.end_date,
