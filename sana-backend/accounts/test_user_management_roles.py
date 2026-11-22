@@ -53,6 +53,49 @@ class UserManagementRoleBoundaryTests(TestCase):
         branch_user = next(item for item in admin_payload if item['id'] == self.branch_manager.id)
         self.assertEqual(branch_user['organization_data']['code'], self.organization.code)
 
+    def test_branch_manager_responses_do_not_expose_parent_organization(self):
+        from accounts.serializers import CustomTokenObtainPairSerializer
+        from fleet.models import Driver
+
+        self.client.force_authenticate(self.branch_manager)
+
+        profile = self.client.get('/api/users/me/')
+        self.assertEqual(profile.status_code, 200)
+        self.assertIsNone(profile.data['organization'])
+        self.assertIsNone(profile.data['organization_name'])
+        self.assertIsNone(profile.data['organization_data'])
+
+        branch_list = self.client.get('/api/branches/')
+        self.assertEqual(branch_list.status_code, 200)
+        branch_payload = branch_list.data['results'] if isinstance(branch_list.data, dict) else branch_list.data
+        own_branch = next(item for item in branch_payload if item['id'] == self.branch.id)
+        self.assertIsNone(own_branch['organization'])
+        self.assertIsNone(own_branch['organization_name'])
+
+        branch_detail = self.client.get(f'/api/branches/{self.branch.id}/')
+        self.assertEqual(branch_detail.status_code, 200)
+        self.assertIsNone(branch_detail.data['organization'])
+        self.assertIsNone(branch_detail.data['organization_name'])
+
+        Driver.objects.create(
+            first_name='Branch',
+            last_name='Driver',
+            mobile='09120000000',
+            organization=self.organization,
+            branch=self.branch,
+        )
+        drivers = self.client.get('/api/drivers/')
+        self.assertEqual(drivers.status_code, 200)
+        driver_payload = drivers.data['results'] if isinstance(drivers.data, dict) else drivers.data
+        self.assertEqual(len(driver_payload), 1)
+        self.assertIsNone(driver_payload[0]['organization'])
+        self.assertIsNone(driver_payload[0]['organization_name'])
+
+        token = CustomTokenObtainPairSerializer.get_token(self.branch_manager)
+        self.assertNotIn('organization_id', token.payload)
+        self.assertNotIn('organization_name', token.payload)
+        self.assertEqual(token.payload['branch_id'], self.branch.id)
+
     def test_branch_manager_user_list_contains_only_self(self):
         User.objects.create_user(
             username='another-branch-user', password='test-password-123',
