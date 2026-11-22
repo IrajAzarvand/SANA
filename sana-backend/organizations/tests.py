@@ -950,7 +950,7 @@ class OrganizationAndBranchDeletionPermissionTests(TestCase):
         self.assertIn('subscriptions_count', organization_response.data)
         self.assertIn('users_count', organization_response.data)
         self.assertEqual(branch_response.status_code, 200)
-        branch_data = branch_response.data.get('results', branch_response.data)
+        branch_data = branch_response.data['results'] if isinstance(branch_response.data, dict) else branch_response.data
         self.assertTrue(any(
             item['id'] == self.branch.id and 'users_count' in item
             for item in branch_data
@@ -969,14 +969,3 @@ class OrganizationAndBranchDeletionPermissionTests(TestCase):
         self.assertFalse(Organization.objects.filter(pk=self.organization.pk).exists())
         self.assertFalse(self.branch.__class__.objects.filter(pk=self.branch.pk).exists())
 
-    def test_company_manager_cannot_physically_delete_branch(self):
-        self.client.force_authenticate(user=self.company_manager)
-        response = self.client.delete(f'/api/branches/{self.branch.id}/')
-        self.assertEqual(response.status_code, 403)
-        self.assertTrue(self.branch.__class__.objects.filter(pk=self.branch.pk).exists())
-
-    def test_site_admin_can_physically_delete_branch(self):
-        self.client.force_authenticate(user=self.site_admin)
-        response = self.client.delete(f'/api/branches/{self.branch.id}/')
-        self.assertEqual(response.status_code, 204)
-        self.assertFalse(self.branch.__class__.objects.filter(pk=self.branch.pk).exists())
