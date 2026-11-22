@@ -112,9 +112,9 @@ class DashboardStatsView(APIView):
             ).order_by('-end_date').first()
 
             return Response({
-                'vehicles': Vehicle.objects.filter(branch_id=branch.id).count(),
+                'vehicles': Vehicle.objects.filter(branch_id=branch.id, organization_id=branch.organization_id).count(),
                 'devices': len(branch_devices),
-                'drivers': Driver.objects.filter(branch_id=branch).count(),
+                'drivers': Driver.objects.filter(branch_id=branch, organization_id=branch.organization_id).count(),
                 'current_subscription': {
                     'contract_number': active_sub.contract_number,
                     'end_date': active_sub.end_date,
@@ -271,7 +271,7 @@ class DashboardStatsView(APIView):
         if org:
             qs = qs.filter(organization_id=org)
         if branch:
-            qs = qs.filter(branch_id=branch)
+            qs = qs.filter(branch_id=branch, organization_id=branch.organization_id)
         if owner:
             qs = qs.filter(owner_user=owner)
         if access_user:
