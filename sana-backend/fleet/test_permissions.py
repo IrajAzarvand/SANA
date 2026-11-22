@@ -348,3 +348,43 @@ class LegacyBranchManagerReportHistoryScopeTests(TestCase):
         self.assertFalse(response.data['unrestricted'])
         self.assertIsNotNone(response.data['range_start'])
         self.assertIsNotNone(response.data['range_end'])
+
+
+class BranchManagerVehicleTypeScopeTests(TestCase):
+    def test_legacy_branch_manager_sees_only_branch_organization_vehicle_types_without_org_id(self):
+        from rest_framework.test import APIClient
+        from fleet.models import VehicleType
+        from accounts.models import User
+        from organizations.models import Branch, Organization
+
+        organization = Organization.objects.create(
+            name='Vehicle Type Scope Org',
+            code='VT-SCOPE-ORG',
+        )
+        other_organization = Organization.objects.create(
+            name='Other Vehicle Type Scope Org',
+            code='VT-OTHER-ORG',
+        )
+        branch = Branch.objects.create(
+            organization=organization,
+            name='Vehicle Type Scope Branch',
+            code='VT-SCOPE',
+        )
+        manager = User.objects.create_user(
+            username='vehicle_type_legacy_manager',
+            password='test-password',
+            role='branch_manager',
+            account_type='organization',
+            branch=branch,
+        )
+        own_type = VehicleType.objects.create(name='Branch Bus', organization=organization)
+        VehicleType.objects.create(name='External Truck', organization=other_organization)
+
+        client = APIClient()
+        client.force_authenticate(user=manager)
+        response = client.get('/api/vehicle-types/')
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.data['results'] if isinstance(response.data, dict) else response.data
+        self.assertEqual([item['id'] for item in payload], [own_type.id])
+        self.assertIsNone(payload[0]['organization'])
