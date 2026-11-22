@@ -30,7 +30,7 @@ from .serializers import (
     DriverVehicleAssignmentSerializer,
 )
 from organizations.models import SubscriptionDevice
-from accounts.permissions import IsSiteAdmin, IsOrganizationMember, IsMainUserOrSiteAdmin
+from accounts.permissions import IsSiteAdmin, IsMainUserOrSiteAdmin
 from .traccar_api import TraccarAPIError, traccar_current_positions, traccar_device_by_unique_id, traccar_device_positions, traccar_device_events, traccar_devices
 
 
