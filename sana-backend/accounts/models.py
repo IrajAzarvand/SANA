@@ -74,6 +74,12 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     # دسترسی‌ها
     is_active = models.BooleanField(default=True, verbose_name='فعال')
+    archived_at = models.DateTimeField(null=True, blank=True, verbose_name='زمان بایگانی')
+    archived_by = models.ForeignKey(
+        'self', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='archived_users', verbose_name='بایگانی‌کننده',
+    )
+    archived_was_active = models.BooleanField(default=True, verbose_name='وضعیت فعال پیش از بایگانی')
     is_staff = models.BooleanField(default=False, verbose_name='دسترسی ادمین')
     date_joined = models.DateTimeField(default=timezone.now, verbose_name='تاریخ عضویت')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='آخرین به‌روزرسانی')

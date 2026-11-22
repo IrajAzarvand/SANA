@@ -60,7 +60,14 @@ class DashboardStatsView(APIView):
         if user.is_main_user and user.organization_id:
             org = user.organization_id
             subscriptions = Subscription.objects.filter(organization_id=org)
-            organization_devices = list(Device.objects.filter(organization_id=org).only('id', 'imei'))
+            now = timezone.now()
+            organization_devices = list(
+                Device.objects.filter(
+                    customer_access_periods__organization_id=org,
+                    customer_access_periods__started_at__lte=now,
+                    customer_access_periods__ended_at__isnull=True,
+                ).distinct().only('id', 'imei')
+            )
             gps_status = self.get_personal_gps_status(organization_devices)
             active_sub = subscriptions.filter(
                 status='active',
@@ -70,9 +77,9 @@ class DashboardStatsView(APIView):
 
             return Response({
                 'vehicles': Vehicle.objects.filter(organization_id=org).count(),
-                'devices': Device.objects.filter(organization_id=org).count(),
+                'devices': len(organization_devices),
                 'drivers': Driver.objects.filter(organization_id=org).count(),
-                'users': User.objects.filter(organization_id=org).count(),
+                'users': User.objects.filter(Q(organization_id=org) | Q(branch__organization_id=org)).distinct().count(),
                 'branches': Branch.objects.filter(organization_id=org).count(),
                 'subscriptions_total': subscriptions.count(),
                 'subscriptions_active': subscriptions.filter(status='active').count(),
@@ -93,10 +100,17 @@ class DashboardStatsView(APIView):
 
         # مدیر شعبه
         if user.is_branch_manager and user.branch_id:
-            branch = user.branch_id
-            org_id = user.organization_id
-            subscriptions = Subscription.objects.filter(organization_id=org_id)
-            branch_devices = list(Device.objects.filter(branch_id=branch).only('id', 'imei'))
+            branch = user.branch
+            now = timezone.now()
+            subscriptions = Subscription.objects.none()
+            branch_devices = list(
+                Device.objects.filter(
+                    customer_access_periods__organization=branch.organization,
+                    customer_access_periods__branch=branch,
+                    customer_access_periods__started_at__lte=now,
+                    customer_access_periods__ended_at__isnull=True,
+                ).distinct().only('id', 'imei')
+            )
             gps_status = self.get_personal_gps_status(branch_devices)
             active_sub = subscriptions.filter(
                 status='active',
@@ -105,9 +119,9 @@ class DashboardStatsView(APIView):
             ).order_by('-end_date').first()
 
             return Response({
-                'vehicles': Vehicle.objects.filter(branch_id=branch).count(),
-                'devices': Device.objects.filter(branch_id=branch).count(),
-                'drivers': Driver.objects.filter(branch_id=branch).count(),
+                'vehicles': Vehicle.objects.filter(branch_id=branch.id, organization_id=branch.organization_id).count(),
+                'devices': len(branch_devices),
+                'drivers': Driver.objects.filter(branch_id=branch.id, organization_id=branch.organization_id).count(),
                 'current_subscription': {
                     'contract_number': active_sub.contract_number,
                     'end_date': active_sub.end_date,
@@ -264,7 +278,7 @@ class DashboardStatsView(APIView):
         if org:
             qs = qs.filter(organization_id=org)
         if branch:
-            qs = qs.filter(branch_id=branch)
+            qs = qs.filter(branch_id=branch, organization_id=branch.organization_id)
         if owner:
             qs = qs.filter(owner_user=owner)
         if access_user:
@@ -299,9 +313,30 @@ class DashboardStatsView(APIView):
         if org:
             qs = qs.filter(organization_id=org)
         if branch:
-            qs = qs.filter(branch_id=branch)
+            qs = qs.filter(branch_id=branch.pk, organization_id=branch.organization_id)
         if owner:
             qs = qs.filter(owner_user=owner)
+
+        if org or branch:
+            organization_id = org or branch.organization_id
+            now = timezone.now()
+            authorized_vehicle_devices = Device.objects.filter(
+                vehicle_id=OuterRef('pk'),
+                customer_access_periods__organization_id=organization_id,
+                customer_access_periods__started_at__lte=now,
+                customer_access_periods__ended_at__isnull=True,
+            )
+            if branch:
+                authorized_vehicle_devices = authorized_vehicle_devices.filter(
+                    customer_access_periods__branch=branch
+                )
+            qs = qs.annotate(
+                has_authorized_device=Exists(authorized_vehicle_devices)
+            )
+            return {
+                'with_device': qs.filter(has_authorized_device=True).count(),
+                'without_device': qs.filter(has_authorized_device=False).count(),
+            }
 
         result = {
             'with_device': qs.filter(devices__isnull=False).distinct().count(),

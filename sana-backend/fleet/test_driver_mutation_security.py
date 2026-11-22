@@ -102,10 +102,10 @@ class DriverMutationTenantSecurityTests(TestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 403)
         self.assertFalse(Driver.objects.filter(mobile='09120000002').exists())
 
-    def test_branch_manager_can_create_driver_in_own_branch(self):
+    def test_branch_manager_cannot_create_driver_in_own_branch(self):
         self.client.force_authenticate(user=self.branch_manager)
 
         response = self.client.post(
@@ -114,10 +114,8 @@ class DriverMutationTenantSecurityTests(TestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, 201, response.data)
-        created = Driver.objects.get(mobile='09120000002')
-        self.assertEqual(created.organization_id, self.organization_a.id)
-        self.assertEqual(created.branch_id, self.branch_a.id)
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(Driver.objects.filter(mobile='09120000002').exists())
 
     def test_branch_manager_cannot_move_existing_driver_to_another_branch(self):
         self.client.force_authenticate(user=self.branch_manager)
@@ -128,6 +126,6 @@ class DriverMutationTenantSecurityTests(TestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 403)
         self.own_driver.refresh_from_db()
         self.assertEqual(self.own_driver.branch_id, self.branch_a.id)

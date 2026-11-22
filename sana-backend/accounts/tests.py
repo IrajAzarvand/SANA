@@ -110,6 +110,60 @@ class ContractExpirationAccessTests(TestCase):
         denied_response = self.client.get('/api/users/me/')
         self.assertEqual(denied_response.status_code, 401)
 
+    def test_branch_manager_login_does_not_return_parent_subscription_metadata(self):
+        branch = Branch.objects.create(
+            organization=self.organization,
+            name='Contract Private Branch',
+            code='CONTRACT-PRIVATE-BRANCH',
+        )
+        branch_user = User.objects.create_user(
+            username='contract_private_branch_user',
+            password='test-password-123',
+            account_type='organization',
+            role='branch_manager',
+            branch=branch,
+        )
+        self.subscription.end_date = self.today + timedelta(days=10)
+        self.subscription.save(update_fields=['end_date'])
+
+        response = self.client.post(
+            '/api/auth/login/',
+            {'username': branch_user.username, 'password': 'test-password-123'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertNotIn('subscription', response.data)
+        self.assertNotIn('organization_id', response.data['user'])
+        self.assertIsNone(response.data['user']['organization'])
+
+    def test_legacy_branch_user_cannot_login_when_parent_organization_is_inactive(self):
+        branch = Branch.objects.create(
+            organization=self.organization,
+            name='Inactive Parent Branch',
+            code='INACTIVE-PARENT-BRANCH',
+        )
+        branch_user = User.objects.create_user(
+            username='inactive_parent_branch_user',
+            password='test-password-123',
+            account_type='organization',
+            role='branch_manager',
+            branch=branch,
+        )
+        self.subscription.end_date = self.today + timedelta(days=10)
+        self.subscription.save(update_fields=['end_date'])
+        self.organization.status = 'inactive'
+        self.organization.save(update_fields=['status'])
+
+        response = self.client.post(
+            '/api/auth/login/',
+            {'username': branch_user.username, 'password': 'test-password-123'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('غیرفعال شده است', str(response.data['detail']))
+
     def test_site_admin_is_not_blocked_by_customer_contracts(self):
         admin = User.objects.create_user(
             username='site-admin',
@@ -525,6 +579,36 @@ class PanelNotificationTests(TestCase):
         self.assertIn('Main Branch', branch_events[0]['message'])
         self.assertEqual(response.data['counts']['unread'], 2)
 
+    def test_branch_manager_does_not_receive_device_events_without_active_access(self):
+        from fleet.models import Device, DeviceLifecycleEvent, DeviceOperation
+
+        device = Device.objects.create(
+            imei='860000000000771',
+            organization=self.organization,
+            branch=self.branch,
+        )
+        operation = DeviceOperation.objects.create(
+            operation_type='transfer_branch',
+            device=device,
+            target_branch=self.branch,
+            description='private device transfer',
+        )
+        lifecycle = DeviceLifecycleEvent.objects.create(
+            device=device,
+            event_type='transferred',
+            branch=self.branch,
+            description='private lifecycle event',
+        )
+
+        self.client.force_authenticate(user=self.branch_user)
+        response = self.client.get('/api/users/notifications/')
+
+        self.assertEqual(response.status_code, 200)
+        notification_ids = [item['id'] for item in response.data['results']]
+        self.assertNotIn(f'device-operation:{operation.pk}', notification_ids)
+        self.assertNotIn(f'device-lifecycle:{lifecycle.pk}', notification_ids)
+        self.assertFalse(any('860000000000771' in item['message'] for item in response.data['results']))
+
     def test_branch_manager_only_receives_its_branch_events(self):
         self.client.force_authenticate(user=self.branch_user)
         response = self.client.get('/api/users/notifications/')
@@ -904,7 +988,7 @@ class PersonalAndTenantFinancialNotificationTests(TestCase):
         self.assertTrue(any('PRS-EXPIRED-001' in message for message in messages))
 
 
-    def test_branch_manager_without_duplicate_organization_field_can_open_org_contract(self):
+    def test_branch_manager_without_organization_fk_cannot_access_org_contract_or_finance(self):
         branch = Branch.objects.create(
             organization=self.organization,
             name='Financial Branch',
@@ -927,8 +1011,8 @@ class PersonalAndTenantFinancialNotificationTests(TestCase):
         detail = self.client.get(f'/api/subscriptions/{contract.pk}/')
         notifications = self.client.get('/api/users/notifications/')
 
-        self.assertEqual(detail.status_code, 200)
-        self.assertTrue(any(
+        self.assertEqual(detail.status_code, 404)
+        self.assertFalse(any(
             item['id'].startswith(f'installment:{installment.pk}:')
             for item in notifications.data['results']
         ))
@@ -1003,6 +1087,11 @@ class PersonalAndTenantFinancialNotificationTests(TestCase):
         own_contract = self.make_contract(
             organization=self.organization, number='ORG-SCOPE-OWN-001'
         )
+        from organizations.models import SubscriptionOperation
+        own_operation = SubscriptionOperation.objects.create(
+            subscription=own_contract,
+            operation_type='modify',
+        )
         other_org = Organization.objects.create(
             name='Other Notification Tenant', code='FIN-NOTIF-ORG-099'
         )
@@ -1030,23 +1119,31 @@ class PersonalAndTenantFinancialNotificationTests(TestCase):
             branch=branch,
         )
 
-        for user in (self.org_user, branch_manager):
-            self.client.force_authenticate(user=user)
-            response = self.client.get('/api/users/notifications/')
-            self.assertEqual(response.status_code, 200)
-            ids = [item['id'] for item in response.data['results']]
-            self.assertTrue(any(
-                item.startswith(f'installment:{own_installment.pk}:')
-                for item in ids
-            ))
-            self.assertFalse(any(
-                item.startswith(f'installment:{other_installment.pk}:')
-                for item in ids
-            ))
-            self.assertFalse(any(
-                'ORG-SCOPE-OTHER-001' in item['message']
-                for item in response.data['results']
-            ))
+        self.client.force_authenticate(user=self.org_user)
+        organization_notifications = self.client.get('/api/users/notifications/')
+        self.assertEqual(organization_notifications.status_code, 200)
+        organization_ids = [item['id'] for item in organization_notifications.data['results']]
+        self.assertTrue(any(
+            item.startswith(f'installment:{own_installment.pk}:')
+            for item in organization_ids
+        ))
+        self.assertIn(f'subscription-operation:{own_operation.pk}', organization_ids)
+        self.assertFalse(any(
+            item.startswith(f'installment:{other_installment.pk}:')
+            for item in organization_ids
+        ))
+        self.assertFalse(any(
+            'ORG-SCOPE-OTHER-001' in item['message']
+            for item in organization_notifications.data['results']
+        ))
+
+        self.client.force_authenticate(user=branch_manager)
+        branch_notifications = self.client.get('/api/users/notifications/')
+        self.assertEqual(branch_notifications.status_code, 200)
+        branch_ids = [item['id'] for item in branch_notifications.data['results']]
+        self.assertFalse(any(item.startswith('installment:') for item in branch_ids))
+        self.assertFalse(any(item.startswith('payment-received:') for item in branch_ids))
+        self.assertFalse(any(item.startswith('subscription-operation:') for item in branch_ids))
 
     def test_contract_suspend_activate_and_cancel_operations_generate_notifications(self):
         contract = self.make_contract(

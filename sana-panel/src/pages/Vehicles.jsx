@@ -33,7 +33,7 @@ export default function Vehicles() {
     plate: '', vehicle_type: '', branch: '',
   });
 
-  const { isPersonal, isMainUser, isBranchManager } = useAuth();
+  const { isSiteAdmin, isPersonal, isMainUser, isBranchManager } = useAuth();
 
   // Fetch
   const fetchVehicles = useCallback(async () => {
@@ -92,8 +92,8 @@ export default function Vehicles() {
     }
   }, [isBranchManager, branches]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const canCreate = isMainUser || isBranchManager;
-  const showBranchColumn = isMainUser;
+  const canCreate = isSiteAdmin || isMainUser;
+  const showBranchColumn = isSiteAdmin || isMainUser;
 
   // ذخیره
   const handleSubmit = async (e) => {
@@ -156,7 +156,7 @@ export default function Vehicles() {
   const getMenuItems = (vehicle) => {
     const items = [];
 
-    if (isMainUser || isBranchManager) {
+    if (isSiteAdmin || isMainUser) {
       items.push({
         label: 'ویرایش',
         icon: Pencil,
@@ -165,7 +165,7 @@ export default function Vehicles() {
     }
 
     // حذف برای شرکت و شعبه هم مجاز (چون خودشون خودرو رو خریدن)
-    if (isMainUser || isBranchManager) {
+    if (isSiteAdmin || isMainUser) {
       items.push({
         label: 'حذف',
         icon: Trash2,

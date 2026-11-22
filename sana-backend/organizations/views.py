@@ -73,6 +73,8 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if user.is_site_admin:
             return Organization.objects.all()
+        if user.is_branch_manager:
+            return Organization.objects.none()
         if user.organization_id:
             return Organization.objects.filter(id=user.organization_id).exclude(status='archived')
         return Organization.objects.none()
@@ -205,10 +207,10 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
 
         if user.is_site_admin:
             pass
-        elif user.organization_id:
+        elif user.is_branch_manager:
+            qs = qs.none()
+        elif user.is_main_user and user.organization_id:
             qs = qs.filter(organization_id=user.organization_id)
-        elif user.is_branch_manager and user.branch_id:
-            qs = qs.filter(organization_id=user.branch.organization_id)
         elif user.is_personal_user:
             qs = qs.filter(user=user)
         else:
@@ -717,7 +719,9 @@ class SubscriptionDeviceViewSet(viewsets.ModelViewSet):
 
         if user.is_site_admin:
             pass
-        elif user.organization_id:
+        elif user.is_branch_manager:
+            qs = qs.none()
+        elif user.is_main_user and user.organization_id:
             qs = qs.filter(subscription__organization_id=user.organization_id)
         elif user.is_personal_user:
             qs = qs.filter(subscription__user=user)
@@ -806,7 +810,9 @@ class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
 
         if user.is_site_admin:
             pass
-        elif user.organization_id:
+        elif user.is_branch_manager:
+            qs = qs.none()
+        elif user.is_main_user and user.organization_id:
             qs = qs.filter(subscription__organization_id=user.organization_id)
         elif user.is_personal_user:
             qs = qs.filter(subscription__user=user)

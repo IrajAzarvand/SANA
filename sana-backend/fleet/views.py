@@ -22,6 +22,7 @@ from .serializers import (
     DeviceModelSerializer,
     DeviceSerializer,
     DeviceListSerializer,
+    BranchManagerDeviceSerializer,
     DriverSerializer,
     DeviceLifecycleEventSerializer,
     DeviceReplacementRelationSerializer,
@@ -29,7 +30,7 @@ from .serializers import (
     DriverVehicleAssignmentSerializer,
 )
 from organizations.models import SubscriptionDevice
-from accounts.permissions import IsSiteAdmin, IsOrganizationMember
+from accounts.permissions import IsSiteAdmin, IsMainUserOrSiteAdmin
 from .traccar_api import TraccarAPIError, traccar_current_positions, traccar_device_by_unique_id, traccar_device_positions, traccar_device_events, traccar_devices
 
 
@@ -131,15 +132,18 @@ class VehicleTypeViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsSiteAdmin()]
+            return [IsMainUserOrSiteAdmin()]
         return super().get_permissions()
 
     def get_queryset(self):
         user = self.request.user
         if user.is_site_admin:
             return VehicleType.objects.all()
-        if user.organization_id:
-            return VehicleType.objects.filter(organization_id=user.organization_id).exclude(organization__status='archived')
+        organization_id = user.organization_id
+        if user.is_branch_manager and user.branch_id:
+            organization_id = user.branch.organization_id
+        if organization_id:
+            return VehicleType.objects.filter(organization_id=organization_id).exclude(organization__status='archived')
         return VehicleType.objects.none()
 
 
@@ -151,6 +155,8 @@ class VehicleViewSet(viewsets.ModelViewSet):
     ordering_fields = ['plate', 'created_at']
 
     def get_serializer_class(self):
+        if self.request.user.is_branch_manager:
+            return VehicleListSerializer
         if self.action == 'list':
             return VehicleListSerializer
         return VehicleSerializer
@@ -164,7 +170,7 @@ class VehicleViewSet(viewsets.ModelViewSet):
         elif user.is_main_user and user.organization:
             qs = qs.filter(organization=user.organization).exclude(organization__status='archived')
         elif user.is_branch_manager and user.branch:
-            qs = qs.filter(branch=user.branch).exclude(organization__status='archived')
+            qs = qs.filter(branch=user.branch, organization_id=user.branch.organization_id).exclude(organization__status='archived')
         elif user.is_personal_user:
             qs = qs.filter(owner_user=user)
         else:
@@ -190,7 +196,7 @@ class VehicleViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsSiteAdmin()]
+            return [IsMainUserOrSiteAdmin()]
         return super().get_permissions()
 
 
@@ -215,6 +221,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
     ordering_fields = ['created_at', 'imei']
 
     def get_serializer_class(self):
+        if self.request.user.is_branch_manager:
+            return BranchManagerDeviceSerializer
         if self.action == 'list':
             return DeviceListSerializer
         return DeviceSerializer
@@ -229,6 +237,63 @@ class DeviceViewSet(viewsets.ModelViewSet):
         if not user.is_site_admin and user.organization_id and user.organization.status == 'archived':
             return qs.none()
 
+        # Replacement history can expose the other device's IMEI. For
+        # non-admin users, prefetch only relations whose two devices are
+        # both inside the same currently authorized device scope.
+        if user.is_site_admin:
+            replacement_scope = Q()
+        elif user.is_main_user and user.organization_id:
+            now = timezone.now()
+            authorized_device_ids = DeviceCustomerAccessPeriod.objects.filter(
+                organization=user.organization,
+                started_at__lte=now,
+                ended_at__isnull=True,
+            ).values_list('device_id', flat=True)
+            replacement_scope = Q(
+                source_device_id__in=authorized_device_ids,
+                replacement_device_id__in=authorized_device_ids,
+            )
+        elif user.is_branch_manager and user.branch_id:
+            now = timezone.now()
+            authorized_device_ids = DeviceCustomerAccessPeriod.objects.filter(
+                organization=user.branch.organization,
+                branch=user.branch,
+                started_at__lte=now,
+                ended_at__isnull=True,
+            ).values_list('device_id', flat=True)
+            replacement_scope = Q(
+                source_device_id__in=authorized_device_ids,
+                replacement_device_id__in=authorized_device_ids,
+            )
+        elif user.is_personal_user:
+            authorized_device_ids = Device.objects.filter(
+                owner_user=user
+            ).values_list('id', flat=True)
+            replacement_scope = Q(
+                source_device_id__in=authorized_device_ids,
+                replacement_device_id__in=authorized_device_ids,
+            )
+        else:
+            replacement_scope = Q(pk__in=[])
+
+        # Contract details embedded in a device row must belong to the same
+        # tenant that authorized the device itself.
+        subscription_link_queryset = SubscriptionDevice.objects.select_related(
+            'subscription'
+        ).order_by('-assigned_at', '-id')
+        if user.is_main_user and user.organization_id:
+            subscription_link_queryset = subscription_link_queryset.filter(
+                subscription__organization_id=user.organization_id
+            )
+        elif user.is_branch_manager and user.branch_id:
+            subscription_link_queryset = subscription_link_queryset.filter(
+                subscription__organization_id=user.branch.organization_id
+            )
+        elif user.is_personal_user:
+            subscription_link_queryset = subscription_link_queryset.filter(
+                subscription__user=user
+            )
+
         # The list serializer needs a compact, preloaded snapshot of the
         # subscription and replacement history. Keep these prefetches off
         # detail/actions so unrelated endpoints do not pay for list-only data.
@@ -241,23 +306,25 @@ class DeviceViewSet(viewsets.ModelViewSet):
             qs = qs.prefetch_related(
                 Prefetch(
                     'replacement_relations_as_source',
-                    queryset=DeviceReplacementRelation.objects.select_related(
+                    queryset=DeviceReplacementRelation.objects.filter(
+                        replacement_scope
+                    ).select_related(
                         'replacement_device'
                     ).order_by('-replacement_date', '-id'),
                     to_attr='_replacement_relations_as_source',
                 ),
                 Prefetch(
                     'replacement_relations_as_replacement',
-                    queryset=DeviceReplacementRelation.objects.select_related(
+                    queryset=DeviceReplacementRelation.objects.filter(
+                        replacement_scope
+                    ).select_related(
                         'source_device'
                     ).order_by('-replacement_date', '-id'),
                     to_attr='_replacement_relations_as_replacement',
                 ),
                 Prefetch(
                     'subscription_links',
-                    queryset=SubscriptionDevice.objects.select_related(
-                        'subscription'
-                    ).order_by('-assigned_at', '-id'),
+                    queryset=subscription_link_queryset,
                     to_attr='_prefetched_subscription_links',
                 ),
                 Prefetch(
@@ -291,7 +358,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
         elif user.is_branch_manager and user.branch:
             now = timezone.now()
             qs = qs.filter(
-                customer_access_periods__organization=user.organization,
+                customer_access_periods__organization=user.branch.organization,
                 customer_access_periods__branch=user.branch,
                 customer_access_periods__started_at__lte=now,
                 customer_access_periods__ended_at__isnull=True,
@@ -526,8 +593,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get', 'put'], url_path='alert-preferences', throttle_classes=[ScopedRateThrottle], throttle_scope='personal_alert_preferences')
     def alert_preferences(self, request):
         """Read or update the signed-in personal user's Traccar alert filters."""
-        if not request.user.is_personal_user:
-            return Response({'detail': 'این تنظیمات فقط برای مشتری شخصی فعال است.'}, status=403)
+        if not (request.user.is_personal_user or request.user.is_branch_manager):
+            return Response({'detail': 'این تنظیمات فقط برای مشتری شخصی و مدیر شعبه فعال است.'}, status=403)
 
         if request.method == 'GET':
             preference = PersonalAlertPreference.objects.filter(user=request.user).first()
@@ -684,7 +751,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
             for period in access_periods.order_by('started_at', 'id'):
                 access_by_device.setdefault(period.device_id, []).append(period)
 
-        if request.user.is_personal_user:
+        if request.user.is_personal_user or request.user.is_branch_manager:
             preference = PersonalAlertPreference.objects.filter(user=request.user).only('disabled_event_types').first()
             disabled_event_types = set(preference.disabled_event_types or []) if preference else set()
         else:
@@ -1019,13 +1086,16 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 ))
             else:
                 if request.user.is_branch_manager:
+                    # Legacy branch-manager accounts may have organization_id=NULL;
+                    # the branch's organization is the authoritative tenant link.
+                    branch_organization_id = request.user.branch.organization_id
                     access_query = access_query.filter(
-                        organization_id=request.user.organization_id,
+                        organization_id=branch_organization_id,
                         branch_id=request.user.branch_id,
                     )
                     links = [
                         link for link in links
-                        if link.subscription.organization_id == request.user.organization_id
+                        if link.subscription.organization_id == branch_organization_id
                     ]
                 elif request.user.is_main_user:
                     access_query = access_query.filter(organization_id=request.user.organization_id)
@@ -1450,7 +1520,7 @@ class DriverViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsOrganizationMember()]
+            return [IsMainUserOrSiteAdmin()]
         return super().get_permissions()
 
     def get_queryset(self):
@@ -1462,7 +1532,7 @@ class DriverViewSet(viewsets.ModelViewSet):
         elif user.is_main_user and user.organization:
             qs = qs.filter(organization=user.organization)
         elif user.is_branch_manager and user.branch:
-            qs = qs.filter(branch=user.branch)
+            qs = qs.filter(branch=user.branch, organization_id=user.branch.organization_id)
         else:
             qs = qs.none()
 
@@ -1501,9 +1571,17 @@ class DriverVehicleAssignmentViewSet(viewsets.ModelViewSet):
         if user.is_site_admin:
             pass
         elif user.is_main_user and user.organization_id:
-            qs = qs.filter(driver__organization_id=user.organization_id).exclude(driver__organization__status='archived')
+            qs = qs.filter(
+                driver__organization_id=user.organization_id,
+                vehicle__organization_id=user.organization_id,
+            ).exclude(driver__organization__status='archived')
         elif user.is_branch_manager and user.branch_id:
-            qs = qs.filter(driver__organization_id=user.organization_id, driver__branch_id=user.branch_id).exclude(driver__organization__status='archived')
+            qs = qs.filter(
+                driver__branch__organization_id=user.branch.organization_id,
+                driver__branch_id=user.branch_id,
+                vehicle__organization_id=user.branch.organization_id,
+                vehicle__branch_id=user.branch_id,
+            ).exclude(driver__organization__status='archived')
         else:
             qs = qs.none()
 
@@ -1522,7 +1600,7 @@ class DriverVehicleAssignmentViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsOrganizationMember()]
+            return [IsMainUserOrSiteAdmin()]
         return super().get_permissions()
 
 
@@ -1572,17 +1650,38 @@ class DeviceReplacementRelationViewSet(viewsets.ModelViewSet):
         qs = self.queryset
         if user.is_site_admin:
             pass
-        elif user.organization_id:
+        elif user.is_branch_manager and user.branch_id:
+            now = timezone.now()
+            authorized_device_ids = DeviceCustomerAccessPeriod.objects.filter(
+                organization=user.branch.organization,
+                branch=user.branch,
+                started_at__lte=now,
+                ended_at__isnull=True,
+            ).values_list('device_id', flat=True)
+            # Both sides must be currently accessible; otherwise a relation
+            # could reveal the IMEI of a device no longer assigned to this branch.
             qs = qs.filter(
-                source_device__organization_id=user.organization_id
-            ) | qs.filter(
-                replacement_device__organization_id=user.organization_id
+                source_device_id__in=authorized_device_ids,
+                replacement_device_id__in=authorized_device_ids,
+            )
+        elif user.is_main_user and user.organization_id:
+            now = timezone.now()
+            authorized_device_ids = DeviceCustomerAccessPeriod.objects.filter(
+                organization=user.organization,
+                started_at__lte=now,
+                ended_at__isnull=True,
+            ).values_list('device_id', flat=True)
+            qs = qs.filter(
+                source_device_id__in=authorized_device_ids,
+                replacement_device_id__in=authorized_device_ids,
             )
         elif user.is_personal_user:
+            authorized_device_ids = Device.objects.filter(
+                owner_user=user
+            ).values_list('id', flat=True)
             qs = qs.filter(
-                source_device__owner_user_id=user.id
-            ) | qs.filter(
-                replacement_device__owner_user_id=user.id
+                source_device_id__in=authorized_device_ids,
+                replacement_device_id__in=authorized_device_ids,
             )
         else:
             qs = qs.none()

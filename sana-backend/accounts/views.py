@@ -20,7 +20,7 @@ from .serializers import (
     ChangePasswordSerializer,
     CustomTokenObtainPairSerializer,
 )
-from .permissions import IsSiteAdminOrReadOnly
+from .permissions import IsSiteAdminOrReadOnly, IsMainUserOrSiteAdmin
 
 from organizations.models import (
     SubscriptionDevice,
@@ -50,6 +50,9 @@ class UserViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsSiteAdminOrReadOnly]
 
     def get_permissions(self):
+        if getattr(self, 'action', None) in ['create', 'update', 'partial_update', 'destroy', 'archive', 'restore']:
+            return [IsAuthenticated(), IsMainUserOrSiteAdmin()]
+
         # The self-profile endpoint is safe for every authenticated role;
         # its serializer limits writes to the current user's contact details.
         if getattr(self, 'action', None) in ['me', 'change_password', 'notifications']:
@@ -73,10 +76,15 @@ class UserViewSet(viewsets.ModelViewSet):
             qs = User.objects.all()
         # مدیر شرکت فقط کاربران سازمان خودش
         elif user.is_main_user and user.organization:
-            qs = User.objects.filter(organization=user.organization).exclude(organization__status='archived')
+            qs = User.objects.filter(
+                branch__organization=user.organization,
+                role='branch_manager',
+            ).exclude(
+                branch__organization__status='archived'
+            )
         # مدیر شعبه فقط کاربران شعبه خودش
         elif user.is_branch_manager and user.branch:
-            qs = User.objects.filter(branch=user.branch).exclude(organization__status='archived')
+            qs = User.objects.filter(id=user.id)
         # کاربر شخصی فقط خودش
         else:
             qs = User.objects.filter(id=user.id)
@@ -94,7 +102,52 @@ class UserViewSet(viewsets.ModelViewSet):
         if organization:
             qs = qs.filter(organization_id=organization)
 
-        return qs.select_related('organization', 'branch')
+        if user.is_main_user:
+            qs = qs.exclude(role__in=['site_admin', 'main_user'])
+        archived = self.request.query_params.get('archived')
+        if archived == 'true' or self.action == 'restore':
+            qs = qs.filter(archived_at__isnull=False)
+        else:
+            qs = qs.filter(archived_at__isnull=True)
+        return qs.select_related('organization', 'branch', 'archived_by')
+
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        if not instance.is_active:
+            UserSession.objects.filter(user=instance, revoked_at__isnull=True).update(revoked_at=timezone.now())
+
+    def perform_destroy(self, instance):
+        self._archive_user(instance)
+
+    def _archive_user(self, instance):
+        if instance.pk == self.request.user.pk:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError('امکان بایگانی حساب کاربری خودتان وجود ندارد.')
+        now = timezone.now()
+        if instance.archived_at is None:
+            instance.archived_was_active = instance.is_active
+            instance.archived_at = now
+            instance.archived_by = self.request.user
+            instance.is_active = False
+            instance.save(update_fields=['archived_was_active', 'archived_at', 'archived_by', 'is_active', 'updated_at'])
+            UserSession.objects.filter(user=instance, revoked_at__isnull=True).update(revoked_at=now)
+
+    @action(detail=True, methods=['post'])
+    def archive(self, request, pk=None):
+        user = self.get_object()
+        self._archive_user(user)
+        return Response(UserSerializer(user).data)
+
+    @action(detail=True, methods=['post'])
+    def restore(self, request, pk=None):
+        user = self.get_object()
+        if user.archived_at is None:
+            return Response({'detail': 'این کاربر بایگانی نشده است.'}, status=status.HTTP_409_CONFLICT)
+        user.is_active = user.archived_was_active
+        user.archived_at = None
+        user.archived_by = None
+        user.save(update_fields=['is_active', 'archived_at', 'archived_by', 'updated_at'])
+        return Response(UserSerializer(user).data)
 
     @action(detail=False, methods=['get'], url_path='username-availability')
     def username_availability(self, request):
@@ -126,7 +179,7 @@ class UserViewSet(viewsets.ModelViewSet):
             )
             serializer.is_valid(raise_exception=True)
             serializer.save()
-        return Response(UserSerializer(request.user).data)
+        return Response(UserSerializer(request.user, context={'request': request}).data)
 
 
     @action(detail=False, methods=['get', 'post'], url_path='notifications', throttle_classes=[ScopedRateThrottle], throttle_scope='panel_notifications')
@@ -287,23 +340,18 @@ class UserViewSet(viewsets.ModelViewSet):
         elif is_branch:
             organization_id = user.branch.organization_id if user.branch_id else user.organization_id
             branch_id = user.branch_id
-            subscriptions = Subscription.objects.filter(
-                organization_id=organization_id, customer_type='organization'
-            )
+            subscriptions = Subscription.objects.none()
             organizations = Organization.objects.none()
             branches = Branch.objects.filter(pk=branch_id) if branch_id else Branch.objects.none()
-            users = User.objects.filter(branch_id=branch_id).exclude(pk=user.pk) if branch_id else User.objects.none()
+            users = User.objects.none()
             devices = Device.objects.filter(
                 customer_access_periods__organization_id=organization_id,
                 customer_access_periods__branch_id=branch_id,
                 customer_access_periods__started_at__lte=now,
                 customer_access_periods__ended_at__isnull=True,
             ).distinct() if branch_id else Device.objects.none()
-            # Subscription access is organization-scoped in SubscriptionViewSet, so keep
-            # contract/financial notifications consistent with that read-only API scope.
-            subscription_ops = SubscriptionOperation.objects.select_related(
-                'subscription', 'subscription__organization', 'performed_by'
-            ).filter(subscription__organization_id=organization_id, performed_at__gte=cutoff)
+            # Branch managers must not receive contract lifecycle or financial events.
+            subscription_ops = SubscriptionOperation.objects.none()
         else:
             return []
 
@@ -488,20 +536,12 @@ class UserViewSet(viewsets.ModelViewSet):
             )
             device_operations = device_operations.filter(Exists(operation_contract_access))
             lifecycle_events = lifecycle_events.filter(Exists(lifecycle_contract_access))
-        elif is_main:
-            device_operations = device_operations.filter(
-                Q(device__in=devices) | Q(target_organization_id=user.organization_id)
-            )
-            lifecycle_events = lifecycle_events.filter(
-                Q(device__in=devices) | Q(organization_id=user.organization_id)
-            )
-        elif is_branch:
-            device_operations = device_operations.filter(
-                Q(device__in=devices) | Q(target_branch_id=user.branch_id)
-            )
-            lifecycle_events = lifecycle_events.filter(
-                Q(device__in=devices) | Q(branch_id=user.branch_id)
-            )
+        elif is_main or is_branch:
+            # Tenant/branch labels on an operation are not an independent
+            # authorization grant. Device identifiers are visible only while
+            # the device itself is inside the user's active access scope.
+            device_operations = device_operations.filter(device__in=devices)
+            lifecycle_events = lifecycle_events.filter(device__in=devices)
 
         for operation in device_operations[:100]:
             add(

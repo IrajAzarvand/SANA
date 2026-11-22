@@ -1,10 +1,27 @@
 from rest_framework import serializers
 from django.db.models import Q
 from django.utils import timezone
-from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DriverVehicleAssignment, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation
+from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DriverVehicleAssignment, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation, DeviceCustomerAccessPeriod
 
 
 class VehicleTypeSerializer(serializers.ModelSerializer):
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request and getattr(request.user, 'is_branch_manager', False):
+            data['organization'] = None
+        return data
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        user = request.user if request else None
+        if user and user.is_main_user:
+            organization = attrs.get('organization', getattr(self.instance, 'organization', None))
+            if organization and organization.pk != user.organization_id:
+                raise serializers.ValidationError({'organization': 'نوع خودرو باید متعلق به سازمان خودتان باشد.'})
+            attrs['organization'] = user.organization
+        return attrs
+
     class Meta:
         model = VehicleType
         fields = ['id', 'name', 'organization', 'created_at']
@@ -39,6 +56,25 @@ class VehicleSerializer(serializers.ModelSerializer):
         device = obj.devices.filter(management_status='active').first()
         return device.imei if device else None
 
+    def validate(self, attrs):
+        request = self.context.get('request')
+        user = request.user if request else None
+        if user and user.is_main_user:
+            organization = attrs.get('organization', getattr(self.instance, 'organization', None))
+            branch = attrs.get('branch', getattr(self.instance, 'branch', None))
+            owner = attrs.get('owner_user', getattr(self.instance, 'owner_user', None))
+            vehicle_type = attrs.get('vehicle_type', getattr(self.instance, 'vehicle_type', None))
+            if organization and organization.pk != user.organization_id:
+                raise serializers.ValidationError({'organization': 'خودرو باید متعلق به سازمان خودتان باشد.'})
+            attrs['organization'] = user.organization
+            if branch and branch.organization_id != user.organization_id:
+                raise serializers.ValidationError({'branch': 'شعبه انتخاب‌شده متعلق به سازمان شما نیست.'})
+            if owner and owner.organization_id != user.organization_id:
+                raise serializers.ValidationError({'owner_user': 'مالک انتخاب‌شده متعلق به سازمان شما نیست.'})
+            if vehicle_type and vehicle_type.organization_id not in (None, user.organization_id):
+                raise serializers.ValidationError({'vehicle_type': 'نوع خودرو متعلق به سازمان دیگری است.'})
+        return attrs
+
     def create(self, validated_data):
         request = self.context.get('request')
         if request:
@@ -67,7 +103,55 @@ class VehicleListSerializer(serializers.ModelSerializer):
         ]
 
     def get_device_status(self, obj):
-        device = obj.devices.order_by('-updated_at', '-id').first()
+        request = self.context.get('request')
+        user = request.user if request else None
+        devices = obj.devices.all()
+        now = timezone.now()
+
+        if user and user.is_main_user and user.organization_id:
+            devices = devices.filter(
+                customer_access_periods__organization_id=user.organization_id,
+                customer_access_periods__started_at__lte=now,
+                customer_access_periods__ended_at__isnull=True,
+            ).distinct()
+        elif user and user.is_branch_manager and user.branch_id:
+            devices = devices.filter(
+                customer_access_periods__organization_id=user.branch.organization_id,
+                customer_access_periods__branch_id=user.branch_id,
+                customer_access_periods__started_at__lte=now,
+                customer_access_periods__ended_at__isnull=True,
+            ).distinct()
+        elif user and user.is_branch_manager:
+            devices = devices.none()
+        elif user and user.is_personal_user:
+            from django.db.models import Exists, OuterRef
+            from organizations.models import SubscriptionDevice
+
+            today = timezone.localdate()
+            active_access = DeviceCustomerAccessPeriod.objects.filter(
+                device=OuterRef('pk'),
+                user=user,
+                started_at__lte=now,
+            ).filter(
+                Q(ended_at__isnull=True) | Q(ended_at__gte=now)
+            )
+            active_contract_link = SubscriptionDevice.objects.filter(
+                device=OuterRef('pk'),
+                subscription__user=user,
+                subscription__status='active',
+                subscription__start_date__lte=today,
+                subscription__end_date__gte=today,
+                unassigned_at__isnull=True,
+                start_date__lte=today,
+                end_date__gte=today,
+            )
+            devices = devices.annotate(
+                has_personal_access=Exists(active_access) | Exists(active_contract_link)
+            ).filter(has_personal_access=True)
+        elif user and not user.is_site_admin:
+            devices = devices.none()
+
+        device = devices.order_by('-updated_at', '-id').first()
         if not device:
             return 'none'
         return 'active' if device.is_data_active else 'offline'
@@ -136,6 +220,33 @@ class DeviceSerializer(serializers.ModelSerializer):
             'vehicle': {'required': False, 'allow_null': True},
         }
 
+    def validate(self, attrs):
+        request = self.context.get('request')
+        user = request.user if request else None
+        if user and user.is_main_user:
+            organization = attrs.get('organization', getattr(self.instance, 'organization', None))
+            branch = attrs.get('branch', getattr(self.instance, 'branch', None))
+            vehicle = attrs.get('vehicle', getattr(self.instance, 'vehicle', None))
+            if organization and organization.pk != user.organization_id:
+                raise serializers.ValidationError({'organization': 'دستگاه باید متعلق به سازمان خودتان باشد.'})
+            attrs['organization'] = user.organization
+            if branch and branch.organization_id != user.organization_id:
+                raise serializers.ValidationError({'branch': 'شعبه انتخاب‌شده متعلق به سازمان شما نیست.'})
+            if vehicle and vehicle.organization_id != user.organization_id:
+                raise serializers.ValidationError({'vehicle': 'خودرو انتخاب‌شده متعلق به سازمان شما نیست.'})
+            owner = attrs.get('owner_user', getattr(self.instance, 'owner_user', None))
+            if owner and owner.organization_id != user.organization_id:
+                raise serializers.ValidationError({'owner_user': 'مالک دستگاه متعلق به سازمان شما نیست.'})
+            holder_org = attrs.get('current_holder_organization', getattr(self.instance, 'current_holder_organization', None))
+            if holder_org and holder_org.pk != user.organization_id:
+                raise serializers.ValidationError({'current_holder_organization': 'دارنده دستگاه باید سازمان خودتان باشد.'})
+            holder_user = attrs.get('current_holder_user', getattr(self.instance, 'current_holder_user', None))
+            if holder_user and holder_user.organization_id != user.organization_id:
+                raise serializers.ValidationError({'current_holder_user': 'دارنده دستگاه متعلق به سازمان شما نیست.'})
+            if vehicle and branch and vehicle.branch_id and vehicle.branch_id != branch.pk:
+                raise serializers.ValidationError({'vehicle': 'خودرو و دستگاه باید در یک شعبه باشند.'})
+        return attrs
+
     def create(self, validated_data):
         request = self.context.get('request')
         if request:
@@ -154,6 +265,23 @@ class DeviceSerializer(serializers.ModelSerializer):
             description='دستگاه به موجودی سانا اضافه شد.',
         )
         return instance
+
+class BranchManagerDeviceSerializer(serializers.ModelSerializer):
+    device_model_name = serializers.CharField(source='device_model.name', read_only=True, allow_null=True)
+    device_model_manufacturer = serializers.CharField(source='device_model.manufacturer', read_only=True, allow_null=True)
+    branch_name = serializers.CharField(source='branch.name', read_only=True)
+    vehicle_plate = serializers.CharField(source='vehicle.plate', read_only=True)
+    data_active = serializers.BooleanField(source='is_data_active', read_only=True)
+    last_data_received_at = serializers.DateTimeField(read_only=True, allow_null=True)
+
+    class Meta:
+        model = Device
+        fields = [
+            'id', 'imei', 'device_model_name', 'device_model_manufacturer',
+            'protocol', 'sim_number', 'branch_name', 'vehicle_plate',
+            'data_active', 'last_data_received_at', 'installed_at', 'created_at',
+        ]
+
 
 class DeviceListSerializer(serializers.ModelSerializer):
     management_status = serializers.SerializerMethodField()
@@ -514,6 +642,14 @@ class DeviceListSerializer(serializers.ModelSerializer):
 
 class DriverSerializer(serializers.ModelSerializer):
     organization_name = serializers.CharField(source='organization.name', read_only=True)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request and getattr(request.user, 'is_branch_manager', False):
+            data['organization'] = None
+            data['organization_name'] = None
+        return data
     branch_name = serializers.CharField(source='branch.name', read_only=True)
     full_name = serializers.SerializerMethodField()
 

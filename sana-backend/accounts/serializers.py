@@ -8,12 +8,13 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, Toke
 from rest_framework_simplejwt.settings import api_settings
 from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User, UserSession
+from organizations.models import Organization
 from .session_utils import ABSOLUTE_SESSION_LIFETIME, IDLE_TIMEOUT, touch_session
 
 
 class UserSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(read_only=True)
-    organization_name = serializers.CharField(source='organization.name', read_only=True)
+    organization_name = serializers.SerializerMethodField()
     branch_name = serializers.CharField(source='branch.name', read_only=True)
 
     # اطلاعات کامل سازمان
@@ -28,12 +29,32 @@ class UserSerializer(serializers.ModelSerializer):
             'account_type', 'role',
             'organization', 'organization_name', 'organization_data',
             'branch', 'branch_name',
-            'is_active', 'date_joined',
+            'is_active', 'archived_at', 'archived_by', 'date_joined',
         ]
-        read_only_fields = ['id', 'date_joined']
+        read_only_fields = ['id', 'date_joined', 'archived_at', 'archived_by']
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request and getattr(request.user, 'is_branch_manager', False):
+            # A branch manager may see their own branch, but not parent-organization identifiers.
+            data['organization'] = None
+            data['organization_name'] = None
+            data['organization_data'] = None
+        return data
+
+    def get_organization_name(self, obj):
+        if obj.organization_id:
+            return obj.organization.name
+        if obj.branch_id and obj.branch.organization_id:
+            return obj.branch.organization.name
+        return None
 
     def get_organization_data(self, obj):
-        """اطلاعات کامل سازمان کاربر"""
+        """اطلاعات کامل سازمان را فقط به نقش‌های مجاز نمایش بده."""
+        request = self.context.get('request')
+        if request and getattr(request.user, 'is_branch_manager', False):
+            return None
         if not obj.organization_id:
             return None
         org = obj.organization
@@ -62,6 +83,47 @@ class UserCreateSerializer(serializers.ModelSerializer):
             'organization', 'branch',
         ]
 
+    def validate(self, attrs):
+        request = self.context.get('request')
+        actor = getattr(request, 'user', None)
+        if actor and actor.is_main_user:
+            branch = attrs.get('branch')
+            if not actor.organization_id:
+                raise serializers.ValidationError('مدیر شرکت فاقد سازمان معتبر است.')
+            if attrs.get('role') != 'branch_manager' or attrs.get('account_type') != 'organization':
+                raise serializers.ValidationError('مدیر شرکت فقط می‌تواند مدیر شعبه برای سازمان خودش ایجاد کند.')
+            if not branch or branch.organization_id != actor.organization_id:
+                raise serializers.ValidationError({'branch': 'شعبه باید متعلق به سازمان خودتان باشد.'})
+            attrs['organization'] = actor.organization
+        organization = attrs.get('organization')
+        branch = attrs.get('branch')
+        role = attrs.get('role')
+        account_type = attrs.get('account_type')
+        expected_type = {
+            'site_admin': 'admin',
+            'main_user': 'organization',
+            'branch_manager': 'organization',
+            'personal_user': 'personal',
+        }.get(role)
+        if expected_type and account_type != expected_type:
+            raise serializers.ValidationError({'account_type': 'نوع حساب با نقش انتخاب‌شده سازگار نیست.'})
+        if branch and organization and branch.organization_id != organization.id:
+            raise serializers.ValidationError({'branch': 'شعبه انتخاب‌شده متعلق به سازمان انتخاب‌شده نیست.'})
+        if branch and not organization:
+            attrs['organization'] = branch.organization
+            organization = branch.organization
+        if role == 'branch_manager' and (not organization or not branch):
+            raise serializers.ValidationError({'branch': 'برای مدیر شعبه، انتخاب شرکت و شعبه الزامی است.'})
+        if role == 'main_user' and not organization:
+            raise serializers.ValidationError({'organization': 'برای مدیر شرکت، انتخاب شرکت الزامی است.'})
+        if role == 'main_user' and branch:
+            raise serializers.ValidationError({'branch': 'مدیر شرکت نباید به یک شعبه خاص متصل باشد.'})
+        if role in {'site_admin', 'personal_user'} and (organization or branch):
+            raise serializers.ValidationError('ادمین سایت و کاربر شخصی نباید به شرکت یا شعبه سازمانی متصل باشند.')
+        if self.instance and self.instance.archived_at and attrs.get('is_active') is True:
+            raise serializers.ValidationError({'is_active': 'برای فعال‌سازی حساب بایگانی‌شده ابتدا آن را بازیابی کنید.'})
+        return attrs
+
     def create(self, validated_data):
         password = validated_data.pop('password')
         user = User(**validated_data)
@@ -77,6 +139,61 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             'email', 'mobile', 'first_name', 'last_name', 'national_id',
             'branch',
         ]
+
+    def get_fields(self):
+        fields = super().get_fields()
+        request = self.context.get('request')
+        actor = getattr(request, 'user', None)
+        if actor and actor.is_main_user:
+            fields['is_active'] = serializers.BooleanField(required=False)
+        if actor and actor.is_site_admin:
+            fields.update({
+                'role': serializers.ChoiceField(choices=User.ROLE_CHOICES, required=False),
+                'account_type': serializers.ChoiceField(choices=User.ACCOUNT_TYPE_CHOICES, required=False),
+                'organization': serializers.PrimaryKeyRelatedField(
+                    queryset=Organization.objects.all(),
+                    required=False, allow_null=True,
+                ),
+                'is_active': serializers.BooleanField(required=False),
+            })
+        return fields
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        actor = getattr(request, 'user', None)
+        if actor and actor.is_main_user:
+            if 'branch' in attrs:
+                branch = attrs['branch']
+                if branch and branch.organization_id != actor.organization_id:
+                    raise serializers.ValidationError({'branch': 'شعبه باید متعلق به سازمان خودتان باشد.'})
+                if branch is None:
+                    raise serializers.ValidationError({'branch': 'مدیر شعبه باید به یک شعبه متصل باشد.'})
+            if self.instance and self.instance.role != 'branch_manager':
+                raise serializers.ValidationError('مدیر شرکت فقط می‌تواند حساب مدیران شعبه را مدیریت کند.')
+        organization = attrs.get('organization', getattr(self.instance, 'organization', None))
+        branch = attrs.get('branch', getattr(self.instance, 'branch', None))
+        role = attrs.get('role', getattr(self.instance, 'role', None))
+        account_type = attrs.get('account_type', getattr(self.instance, 'account_type', None))
+        expected_type = {
+            'site_admin': 'admin',
+            'main_user': 'organization',
+            'branch_manager': 'organization',
+            'personal_user': 'personal',
+        }.get(role)
+        if expected_type and account_type != expected_type:
+            raise serializers.ValidationError({'account_type': 'نوع حساب با نقش انتخاب‌شده سازگار نیست.'})
+        if branch and organization and branch.organization_id != organization.id:
+            raise serializers.ValidationError({'branch': 'شعبه انتخاب‌شده متعلق به سازمان انتخاب‌شده نیست.'})
+        if branch and not organization:
+            attrs['organization'] = branch.organization
+            organization = branch.organization
+        if role == 'branch_manager' and (not organization or not branch):
+            raise serializers.ValidationError({'branch': 'برای مدیر شعبه، انتخاب شرکت و شعبه الزامی است.'})
+        if role == 'main_user' and not organization:
+            raise serializers.ValidationError({'organization': 'برای مدیر شرکت، انتخاب شرکت الزامی است.'})
+        if role in {'site_admin', 'personal_user'} and (organization or branch):
+            raise serializers.ValidationError('ادمین سایت و کاربر شخصی نباید به شرکت یا شعبه سازمانی متصل باشند.')
+        return attrs
 
 
 class UserProfileUpdateSerializer(serializers.ModelSerializer):
@@ -179,7 +296,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         token['role'] = user.role
         token['account_type'] = user.account_type
         token['full_name'] = user.full_name
-        if user.organization_id:
+        if user.organization_id and not user.is_branch_manager:
             token['organization_id'] = user.organization_id
             token['organization_name'] = user.organization.name
         if user.branch_id:
@@ -197,7 +314,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         # چک کردن دسترسی کاربر
         if not user.is_site_admin:
             # چک ۱: سازمان غیرفعال
-            if user.organization_id and user.organization.status != 'active':
+            if not user.is_organization_active:
                 raise serializers.ValidationError({
                     'detail': 'حساب سازمانی شما غیرفعال شده است. لطفاً با پشتیبانی سانا تماس بگیرید.'
                 })
@@ -227,11 +344,13 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         data['access'] = str(refresh.access_token)
 
         # افزودن اطلاعات کامل کاربر به پاسخ
-        data['user'] = UserSerializer(user).data
+        data['user'] = UserSerializer(user, context={'request': request}).data
 
         # افزودن اطلاعات اشتراک
         subscription = user.active_subscription
-        if subscription:
+        # Branch managers inherit contract eligibility for login, but contract
+        # identifiers and financial dates are not part of their account data.
+        if subscription and not user.is_branch_manager:
             data['subscription'] = {
                 'contract_number': subscription.contract_number,
                 'start_date': subscription.start_date,

@@ -276,3 +276,282 @@ class PersonalDashboardGPSStatusTests(TestCase):
         self.assertEqual(response.data['gps_status']['total'], 1)
         self.assertIsNone(response.data['gps_status']['online'])
         self.assertIsNone(response.data['gps_status']['offline'])
+
+
+
+class MainUserDashboardSubscriptionTests(TestCase):
+    def test_main_user_sees_current_active_organization_subscription(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+        from organizations.models import Organization, Subscription
+
+        organization = Organization.objects.create(
+            name='Main Dashboard Org',
+            code='MAIN-DASH-ORG',
+        )
+        manager = User.objects.create_user(
+            username='main_dashboard_manager',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=organization,
+        )
+        today = timezone.localdate()
+        subscription = Subscription.objects.create(
+            contract_number='ORG-DASH-CURRENT-001',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=manager)
+        response = self.client.get('/api/dashboard/stats/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['current_subscription'], {
+            'contract_number': subscription.contract_number,
+            'end_date': subscription.end_date,
+            'days_until_expiry': subscription.days_until_expiry,
+            'is_expiring_soon': subscription.is_expiring_soon,
+        })
+
+
+
+class BranchManagerDashboardAccessTests(TestCase):
+    def setUp(self):
+        from django.utils import timezone
+        from accounts.models import User
+        from fleet.models import Device, DeviceCustomerAccessPeriod
+        from organizations.models import Organization, Branch
+
+        self.client = APIClient()
+        self.organization = Organization.objects.create(
+            name='Branch Dashboard Org',
+            code='BR-DASH-ORG',
+        )
+        self.branch = Branch.objects.create(
+            organization=self.organization,
+            name='Branch Dashboard Branch',
+            code='BR-DASH',
+        )
+        self.manager = User.objects.create_user(
+            username='branch_dashboard_manager',
+            password='test-password',
+            role='branch_manager',
+            account_type='organization',
+            organization=self.organization,
+            branch=self.branch,
+        )
+        self.now = timezone.now()
+        self.Device = Device
+        self.DeviceCustomerAccessPeriod = DeviceCustomerAccessPeriod
+
+    def test_dashboard_counts_only_devices_with_current_branch_access(self):
+        from datetime import timedelta
+        from unittest.mock import patch
+
+        active = self.Device.objects.create(
+            imei='860000000000901',
+            organization=self.organization,
+            branch=self.branch,
+        )
+        ended = self.Device.objects.create(
+            imei='860000000000902',
+            organization=self.organization,
+            branch=self.branch,
+        )
+        self.DeviceCustomerAccessPeriod.objects.create(
+            device=active,
+            organization=self.organization,
+            branch=self.branch,
+            started_at=self.now - timedelta(days=1),
+        )
+        self.DeviceCustomerAccessPeriod.objects.create(
+            device=ended,
+            organization=self.organization,
+            branch=self.branch,
+            started_at=self.now - timedelta(days=3),
+            ended_at=self.now - timedelta(days=1),
+        )
+
+        self.client.force_authenticate(user=self.manager)
+        with patch('dashboard.views.traccar_devices', return_value=[
+            {'id': 901, 'uniqueId': active.imei, 'status': 'online'},
+        ]), patch('dashboard.views.traccar_current_positions', return_value=[]):
+            response = self.client.get('/api/dashboard/stats/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['devices'], 1)
+        self.assertEqual(response.data['gps_status']['total'], 1)
+        self.assertIsNone(response.data['current_subscription'])
+
+
+class MainUserDashboardLegacyUserCountTests(TestCase):
+    def test_dashboard_counts_legacy_branch_manager_through_branch_organization(self):
+        from accounts.models import User
+        from organizations.models import Branch, Organization
+
+        organization = Organization.objects.create(
+            name='Legacy User Count Org',
+            code='LEGACY-USER-COUNT',
+        )
+        manager = User.objects.create_user(
+            username='legacy_count_main_user',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=organization,
+        )
+        branch = Branch.objects.create(
+            organization=organization,
+            name='Legacy Count Branch',
+            code='LEGACY-COUNT-BR',
+        )
+        User.objects.create_user(
+            username='legacy_count_branch_manager',
+            password='test-password',
+            role='branch_manager',
+            account_type='organization',
+            branch=branch,
+        )
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=manager)
+        response = self.client.get('/api/dashboard/stats/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['users'], 2)
+
+
+class MainUserDashboardDeviceAccessTests(TestCase):
+    def test_dashboard_counts_only_devices_with_active_organization_access(self):
+        from datetime import timedelta
+        from unittest.mock import patch
+        from django.utils import timezone
+        from accounts.models import User
+        from fleet.models import Device, DeviceCustomerAccessPeriod
+        from organizations.models import Organization
+
+        organization = Organization.objects.create(
+            name='Main Device Access Org',
+            code='MAIN-DEVICE-ACCESS',
+        )
+        manager = User.objects.create_user(
+            username='main_device_access_manager',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=organization,
+        )
+        now = timezone.now()
+        active_device = Device.objects.create(
+            imei='860000000000961',
+            organization=organization,
+        )
+        stale_device = Device.objects.create(
+            imei='860000000000962',
+            organization=organization,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=active_device,
+            organization=organization,
+            started_at=now - timedelta(days=1),
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=stale_device,
+            organization=organization,
+            started_at=now - timedelta(days=3),
+            ended_at=now - timedelta(days=1),
+        )
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=manager)
+        with patch('dashboard.views.traccar_devices', return_value=[]), patch(
+            'dashboard.views.traccar_current_positions',
+            return_value=[],
+        ):
+            response = self.client.get('/api/dashboard/stats/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['devices'], 1)
+        self.assertEqual(response.data['gps_status']['total'], 1)
+
+
+class BranchManagerDashboardTenantScopeTests(TestCase):
+    def test_dashboard_counts_only_vehicles_and_drivers_from_branch_organization(self):
+        from unittest.mock import patch
+        from accounts.models import User
+        from fleet.models import Device, Driver, Vehicle
+        from organizations.models import Branch, Organization
+
+        organization = Organization.objects.create(
+            name='Dashboard Branch Tenant',
+            code='DASH-BR-OWN',
+        )
+        other_organization = Organization.objects.create(
+            name='Dashboard Foreign Tenant',
+            code='DASH-BR-OTHER',
+        )
+        branch = Branch.objects.create(
+            organization=organization,
+            name='Dashboard Scoped Branch',
+            code='DASH-BR',
+        )
+        manager = User.objects.create_user(
+            username='dashboard_branch_tenant',
+            password='test-password',
+            role='branch_manager',
+            account_type='organization',
+            organization=organization,
+            branch=branch,
+        )
+        own_vehicle = Vehicle.objects.create(
+            plate='66ج666',
+            organization=organization,
+            branch=branch,
+        )
+        Device.objects.create(
+            imei='860000000000971',
+            organization=organization,
+            branch=branch,
+            vehicle=own_vehicle,
+        )
+        Vehicle.objects.create(
+            plate='77د777',
+            organization=other_organization,
+            branch=branch,
+        )
+        Driver.objects.create(
+            first_name='Own',
+            last_name='Driver',
+            mobile='09120000003',
+            organization=organization,
+            branch=branch,
+        )
+        Driver.objects.create(
+            first_name='Foreign',
+            last_name='Driver',
+            mobile='09120000004',
+            organization=other_organization,
+            branch=branch,
+        )
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=manager)
+        with patch('dashboard.views.traccar_devices', return_value=[]), patch(
+            'dashboard.views.traccar_current_positions',
+            return_value=[],
+        ):
+            response = self.client.get('/api/dashboard/stats/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['vehicles'], 1)
+        self.assertEqual(response.data['drivers'], 1)
+        self.assertEqual(response.data['vehicles_by_status'], {
+            'with_device': 0,
+            'without_device': 1,
+        })
