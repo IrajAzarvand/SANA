@@ -162,7 +162,7 @@ class ContractExpirationAccessTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn('غیرفعال شده است', response.data['detail'])
+        self.assertIn('غیرفعال شده است', str(response.data['detail']))
 
     def test_site_admin_is_not_blocked_by_customer_contracts(self):
         admin = User.objects.create_user(
