@@ -10,6 +10,14 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        migrations.AlterField(
+            model_name='organization',
+            name='status',
+            field=models.CharField(
+                choices=[('active', 'فعال'), ('inactive', 'غیرفعال'), ('suspended', 'تعلیق‌شده'), ('archived', 'بایگانی‌شده')],
+                default='active', max_length=20, verbose_name='وضعیت',
+            ),
+        ),
         migrations.AddField(
             model_name='organization',
             name='archived_at',
