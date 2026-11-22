@@ -20,7 +20,7 @@ from .serializers import (
     ChangePasswordSerializer,
     CustomTokenObtainPairSerializer,
 )
-from .permissions import IsSiteAdminOrReadOnly, IsSiteAdminOrMainUser
+from .permissions import IsSiteAdminOrReadOnly, IsMainUserOrSiteAdmin
 
 from organizations.models import (
     SubscriptionDevice,
@@ -51,7 +51,7 @@ class UserViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if getattr(self, 'action', None) in ['create', 'update', 'partial_update', 'destroy', 'archive', 'restore']:
-            return [IsAuthenticated(), IsSiteAdminOrMainUser()]
+            return [IsAuthenticated(), IsMainUserOrSiteAdmin()]
 
         # The self-profile endpoint is safe for every authenticated role;
         # its serializer limits writes to the current user's contact details.
