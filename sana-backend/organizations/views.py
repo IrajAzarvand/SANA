@@ -88,10 +88,11 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         # Organization deletion is archival: financial and operational history must survive.
         if instance.status == 'archived':
             return
+        instance.archived_from_status = instance.status
         instance.status = 'archived'
         instance.archived_at = timezone.now()
         instance.archived_by = self.request.user
-        instance.save(update_fields=['status', 'archived_at', 'archived_by', 'updated_at'])
+        instance.save(update_fields=['status', 'archived_at', 'archived_by', 'archived_from_status', 'updated_at'])
 
     @action(detail=True, methods=['post'])
     def archive(self, request, pk=None):
@@ -107,10 +108,11 @@ class OrganizationViewSet(viewsets.ModelViewSet):
                 {'detail': 'این شرکت در وضعیت بایگانی نیست.'},
                 status=status.HTTP_409_CONFLICT,
             )
-        organization.status = 'active'
+        organization.status = organization.archived_from_status if organization.archived_from_status in {'active', 'inactive', 'suspended'} else 'active'
         organization.archived_at = None
         organization.archived_by = None
-        organization.save(update_fields=['status', 'archived_at', 'archived_by', 'updated_at'])
+        organization.archived_from_status = ''
+        organization.save(update_fields=['status', 'archived_at', 'archived_by', 'archived_from_status', 'updated_at'])
         return Response(self.get_serializer(organization).data)
 
 
