@@ -19,6 +19,8 @@ export default function Branches() {
   const [filterOrg, setFilterOrg] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingBranch, setEditingBranch] = useState(null);
+  const [deleteBranch, setDeleteBranch] = useState(null);
+  const [deleteBranchName, setDeleteBranchName] = useState('');
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     organization: '', name: '', code: '', phone: '', address: '', status: 'active',
@@ -110,10 +112,17 @@ export default function Branches() {
     setModalOpen(true);
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm('آیا از حذف این شعبه اطمینان دارید؟')) return;
+  const handleDelete = (branch) => {
+    setDeleteBranch(branch);
+    setDeleteBranchName('');
+  };
+
+  const confirmDeleteBranch = async () => {
+    if (!deleteBranch || deleteBranchName.trim() !== deleteBranch.name) return;
     try {
-      await branchesAPI.delete(id);
+      await branchesAPI.delete(deleteBranch.id);
+      setDeleteBranch(null);
+      setDeleteBranchName('');
       refetch();
     } catch (err) {
       console.error('Error deleting branch:', err);
@@ -137,7 +146,7 @@ export default function Branches() {
         label: 'حذف',
         icon: Trash2,
         variant: 'danger',
-        onClick: () => handleDelete(branch.id),
+        onClick: () => handleDelete(branch),
       });
     }
 
@@ -294,6 +303,27 @@ export default function Branches() {
           </>
         )}
       </Card>
+
+      {/* تأیید حذف شعبه */}
+      <Modal open={Boolean(deleteBranch)} onClose={() => { setDeleteBranch(null); setDeleteBranchName(''); }} title="تأیید حذف شعبه" size="md">
+        {deleteBranch && (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-red-500/40 bg-red-500/5 p-3 text-sm">
+              <p className="font-semibold text-red-500">حذف شعبه برگشت‌پذیر نیست.</p>
+              <p className="mt-2">شرکت «{deleteBranch.organization_name || '—'}» حذف نمی‌شود؛ اما ارتباط کاربران، خودروها، دستگاه‌ها و سوابق وابسته به شعبه ممکن است تغییر کند یا قطع شود.</p>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-center text-sm">
+              {[['خودرو', deleteBranch.vehicles_count], ['دستگاه', deleteBranch.devices_count], ['راننده', deleteBranch.drivers_count]].map(([label, count]) => <div key={label} className="rounded-lg border border-border-base p-3"><div className="text-xs text-text-muted">{label}</div><div className="mt-1 font-semibold">{count ?? '—'}</div></div>)}
+            </div>
+            <p className="text-sm">برای تأیید، نام شعبه را دقیقاً وارد کنید:</p>
+            <Input value={deleteBranchName} onChange={(e) => setDeleteBranchName(e.target.value)} placeholder={deleteBranch.name} />
+          </div>
+        )}
+        <div className="flex justify-end gap-2 pt-4">
+          <Button variant="secondary" onClick={() => { setDeleteBranch(null); setDeleteBranchName(''); }}>انصراف</Button>
+          <Button variant="danger" disabled={!deleteBranch || deleteBranchName.trim() !== deleteBranch.name} onClick={confirmDeleteBranch}>حذف فیزیکی شعبه</Button>
+        </div>
+      </Modal>
 
       {/* مودال افزودن/ویرایش */}
       {(isSiteAdmin || isMainUser) && (
