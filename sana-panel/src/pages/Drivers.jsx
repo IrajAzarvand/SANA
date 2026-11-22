@@ -53,7 +53,7 @@ export default function Drivers() {
     branch: '',
   });
 
-  const { isBranchManager, isMainUser } = useAuth();
+  const { isSiteAdmin, isBranchManager, isMainUser } = useAuth();
 
   const fetchDrivers = useCallback(async () => {
     const result = await driversAPI.list();
@@ -105,8 +105,8 @@ export default function Drivers() {
     }
   }, [isBranchManager, branches]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const canEdit = isMainUser || isBranchManager;
-  const showBranchColumn = isMainUser;
+  const canEdit = isSiteAdmin || isMainUser;
+  const showBranchColumn = isSiteAdmin || isMainUser;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
