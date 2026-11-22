@@ -112,14 +112,18 @@ export default function Companies() {
     setDetailOrganization(org);
     setDetailLoading(true);
     setDetailBranches([]);
+    setDetailSubscriptions([]);
     try {
-      const [details, branchResult] = await Promise.all([
+      const [details, branchResult, subscriptionResult] = await Promise.all([
         organizationsAPI.get(org.id),
         branchesAPI.list({ organization: org.id }),
+        subscriptionsAPI.list({ organization: org.id }),
       ]);
       const branchList = Array.isArray(branchResult) ? branchResult : branchResult.results || [];
+      const subscriptionList = Array.isArray(subscriptionResult) ? subscriptionResult : subscriptionResult.results || [];
       setDetailOrganization(details);
       setDetailBranches(branchList.filter((branch) => Number(branch.organization) === Number(org.id)));
+      setDetailSubscriptions(subscriptionList);
     } catch (err) {
       console.error('Error loading organization details:', err);
       alert('دریافت جزئیات شرکت ناموفق بود.');
