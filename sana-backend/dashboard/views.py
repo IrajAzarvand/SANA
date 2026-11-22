@@ -62,7 +62,11 @@ class DashboardStatsView(APIView):
             subscriptions = Subscription.objects.filter(organization_id=org)
             organization_devices = list(Device.objects.filter(organization_id=org).only('id', 'imei'))
             gps_status = self.get_personal_gps_status(organization_devices)
-            active_sub = None
+            active_sub = subscriptions.filter(
+                status='active',
+                start_date__lte=today,
+                end_date__gte=today,
+            ).order_by('-end_date').first()
 
             return Response({
                 'vehicles': Vehicle.objects.filter(organization_id=org).count(),
