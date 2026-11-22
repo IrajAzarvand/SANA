@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase
 from rest_framework.permissions import IsAuthenticated
 
 from accounts.permissions import IsMainUserOrSiteAdmin, IsOrganizationMember, IsSiteAdmin
@@ -69,7 +69,7 @@ class DeviceManagementPermissionTests(SimpleTestCase):
         request = SimpleNamespace(user=personal, method='POST')
         self.assertFalse(IsOrganizationMember().has_permission(request, None))
 
-class BranchManagerReplacementHistoryScopeTests(__import__('django.test', fromlist=['TestCase']).TestCase):
+class BranchManagerReplacementHistoryScopeTests(TestCase):
     def test_replacement_history_requires_active_access_to_both_devices(self):
         from datetime import timedelta
         from types import SimpleNamespace
