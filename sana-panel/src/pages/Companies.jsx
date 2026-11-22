@@ -359,8 +359,8 @@ export default function Companies() {
                 ['آدرس', detailOrganization.address],
               ].map(([label, value]) => <div key={label} className="rounded-lg border border-border-base p-3"><div className="text-xs text-text-muted">{label}</div><div className="mt-1 text-text-primary break-words">{value || '—'}</div></div>)}
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-              {[['شعبه', detailOrganization.branches_count], ['کاربر', detailOrganization.users_count], ['قرارداد', detailOrganization.subscriptions_count], ['خودرو', detailOrganization.vehicles_count], ['دستگاه', detailOrganization.devices_count]].map(([label, count]) => <div key={label} className="rounded-lg bg-bg-base border border-border-base p-3 text-center"><div className="text-text-muted text-xs">{label}</div><div className="mt-1 font-semibold text-text-primary">{count ?? 0}</div></div>)}
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+              {[['شعبه', detailOrganization.branches_count], ['کاربر', detailOrganization.users_count], ['قرارداد', detailOrganization.subscriptions_count], ['خودرو', detailOrganization.vehicles_count], ['دستگاه', detailOrganization.devices_count], ['راننده', detailOrganization.drivers_count], ['نوع خودرو', detailOrganization.vehicle_types_count]].map(([label, count]) => <div key={label} className="rounded-lg bg-bg-base border border-border-base p-3 text-center"><div className="text-text-muted text-xs">{label}</div><div className="mt-1 font-semibold text-text-primary">{count ?? 0}</div></div>)}
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="rounded-lg border border-border-base p-3">
@@ -397,8 +397,8 @@ export default function Companies() {
               <p className="font-semibold text-red-500">این عملیات برگشت‌پذیر نیست.</p>
               <p className="mt-2">با حذف «{deleteOrganization.name}»، شعب، قراردادهای سازمانی، خودروها، دستگاه‌ها، انواع خودرو و رانندگان وابسته حذف می‌شوند. کاربران حذف نمی‌شوند، اما ارتباط سازمانی آن‌ها قطع می‌شود. برخی سوابق وابسته نیز حذف یا از ارتباط با شرکت جدا خواهند شد. این عملیات برگشت‌پذیر نیست.</p>
             </div>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-sm">
-              {[['شعبه', deleteOrganization.branches_count], ['قرارداد', deleteOrganization.subscriptions_count], ['خودرو', deleteOrganization.vehicles_count], ['دستگاه', deleteOrganization.devices_count], ['کاربر', deleteOrganization.users_count]].map(([label, count]) => <div key={label} className="rounded-lg border border-border-base p-3"><div className="text-xs text-text-muted">{label}</div><div className="mt-1 font-semibold">{count ?? '—'}</div></div>)}
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 text-center text-sm">
+              {[['شعبه', deleteOrganization.branches_count], ['قرارداد', deleteOrganization.subscriptions_count], ['خودرو', deleteOrganization.vehicles_count], ['دستگاه', deleteOrganization.devices_count], ['راننده', deleteOrganization.drivers_count], ['نوع خودرو', deleteOrganization.vehicle_types_count], ['کاربر', deleteOrganization.users_count]].map(([label, count]) => <div key={label} className="rounded-lg border border-border-base p-3"><div className="text-xs text-text-muted">{label}</div><div className="mt-1 font-semibold">{count ?? '—'}</div></div>)}
             </div>
             <p className="text-sm">برای تأیید، نام شرکت را دقیقاً وارد کنید:</p>
             <Input value={deleteName} onChange={(e) => setDeleteName(e.target.value)} placeholder={deleteOrganization.name} />
