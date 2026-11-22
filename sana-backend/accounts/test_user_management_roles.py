@@ -74,6 +74,8 @@ class UserManagementRoleBoundaryTests(TestCase):
         listed = self.client.get('/api/users/')
         payload = listed.data['results'] if isinstance(listed.data, dict) else listed.data
         self.assertIn(legacy_user.id, [item['id'] for item in payload])
+        legacy_payload = next(item for item in payload if item['id'] == legacy_user.id)
+        self.assertEqual(legacy_payload['organization_name'], self.organization.name)
         archived = self.client.post(f'/api/users/{legacy_user.id}/archive/', {}, format='json')
         self.assertEqual(archived.status_code, 200)
 
