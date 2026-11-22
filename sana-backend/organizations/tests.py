@@ -944,11 +944,20 @@ class OrganizationAndBranchDeletionPermissionTests(TestCase):
     def test_organization_and_branch_list_include_relationship_counts(self):
         self.client.force_authenticate(user=self.site_admin)
         organization_response = self.client.get(f'/api/organizations/{self.organization.id}/')
+        organization_list_response = self.client.get('/api/organizations/')
         branch_response = self.client.get('/api/branches/')
 
         self.assertEqual(organization_response.status_code, 200)
         self.assertIn('subscriptions_count', organization_response.data)
         self.assertIn('users_count', organization_response.data)
+        self.assertEqual(organization_list_response.status_code, 200)
+        list_data = organization_list_response.data['results'] if isinstance(organization_list_response.data, dict) else organization_list_response.data
+        self.assertTrue(any(
+            item['id'] == self.organization.id
+            and 'drivers_count' in item
+            and 'vehicle_types_count' in item
+            for item in list_data
+        ))
         self.assertEqual(branch_response.status_code, 200)
         branch_data = branch_response.data['results'] if isinstance(branch_response.data, dict) else branch_response.data
         self.assertTrue(any(
