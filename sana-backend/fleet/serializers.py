@@ -39,6 +39,22 @@ class VehicleSerializer(serializers.ModelSerializer):
         device = obj.devices.filter(management_status='active').first()
         return device.imei if device else None
 
+    def validate(self, attrs):
+        request = self.context.get('request')
+        user = request.user if request else None
+        if user and user.is_main_user:
+            organization = attrs.get('organization', getattr(self.instance, 'organization', None))
+            branch = attrs.get('branch', getattr(self.instance, 'branch', None))
+            owner = attrs.get('owner_user', getattr(self.instance, 'owner_user', None))
+            if organization and organization.pk != user.organization_id:
+                raise serializers.ValidationError({'organization': 'خودرو باید متعلق به سازمان خودتان باشد.'})
+            attrs['organization'] = user.organization
+            if branch and branch.organization_id != user.organization_id:
+                raise serializers.ValidationError({'branch': 'شعبه انتخاب‌شده متعلق به سازمان شما نیست.'})
+            if owner and owner.organization_id != user.organization_id:
+                raise serializers.ValidationError({'owner_user': 'مالک انتخاب‌شده متعلق به سازمان شما نیست.'})
+        return attrs
+
     def create(self, validated_data):
         request = self.context.get('request')
         if request:
@@ -135,6 +151,22 @@ class DeviceSerializer(serializers.ModelSerializer):
             'owner_user': {'required': False, 'allow_null': True},
             'vehicle': {'required': False, 'allow_null': True},
         }
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        user = request.user if request else None
+        if user and user.is_main_user:
+            organization = attrs.get('organization', getattr(self.instance, 'organization', None))
+            branch = attrs.get('branch', getattr(self.instance, 'branch', None))
+            vehicle = attrs.get('vehicle', getattr(self.instance, 'vehicle', None))
+            if organization and organization.pk != user.organization_id:
+                raise serializers.ValidationError({'organization': 'دستگاه باید متعلق به سازمان خودتان باشد.'})
+            attrs['organization'] = user.organization
+            if branch and branch.organization_id != user.organization_id:
+                raise serializers.ValidationError({'branch': 'شعبه انتخاب‌شده متعلق به سازمان شما نیست.'})
+            if vehicle and vehicle.organization_id != user.organization_id:
+                raise serializers.ValidationError({'vehicle': 'خودرو انتخاب‌شده متعلق به سازمان شما نیست.'})
+        return attrs
 
     def create(self, validated_data):
         request = self.context.get('request')
