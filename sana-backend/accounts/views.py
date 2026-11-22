@@ -77,10 +77,8 @@ class UserViewSet(viewsets.ModelViewSet):
         # مدیر شرکت فقط کاربران سازمان خودش
         elif user.is_main_user and user.organization:
             qs = User.objects.filter(
-                Q(organization=user.organization) | Q(branch__organization=user.organization),
+                branch__organization=user.organization,
                 role='branch_manager',
-            ).exclude(
-                organization__status='archived'
             ).exclude(
                 branch__organization__status='archived'
             )
