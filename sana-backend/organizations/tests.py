@@ -941,6 +941,21 @@ class OrganizationAndBranchDeletionPermissionTests(TestCase):
             is_superuser=True,
         )
 
+    def test_organization_and_branch_list_include_relationship_counts(self):
+        self.client.force_authenticate(user=self.site_admin)
+        organization_response = self.client.get(f'/api/organizations/{self.organization.id}/')
+        branch_response = self.client.get('/api/branches/')
+
+        self.assertEqual(organization_response.status_code, 200)
+        self.assertIn('subscriptions_count', organization_response.data)
+        self.assertIn('users_count', organization_response.data)
+        self.assertEqual(branch_response.status_code, 200)
+        branch_data = branch_response.data.get('results', branch_response.data)
+        self.assertTrue(any(
+            item['id'] == self.branch.id and 'users_count' in item
+            for item in branch_data
+        ))
+
     def test_company_manager_cannot_physically_delete_organization(self):
         self.client.force_authenticate(user=self.company_manager)
         response = self.client.delete(f'/api/organizations/{self.organization.id}/')
