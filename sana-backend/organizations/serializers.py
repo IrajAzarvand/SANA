@@ -30,6 +30,11 @@ class OrganizationSerializer(serializers.ModelSerializer):
     drivers_count = serializers.IntegerField(source='drivers.count', read_only=True)
     vehicle_types_count = serializers.IntegerField(source='vehicle_types.count', read_only=True)
 
+    def validate_status(self, value):
+        if value == 'archived':
+            raise serializers.ValidationError('برای بایگانی شرکت از عملیات آرشیو استفاده کنید.')
+        return value
+
     class Meta:
         model = Organization
         fields = [
