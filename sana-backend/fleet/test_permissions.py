@@ -128,6 +128,16 @@ class BranchManagerReplacementHistoryScopeTests(TestCase):
         self.assertIn(visible.id, visible_ids)
         self.assertNotIn(hidden.id, visible_ids)
 
+        # The device list embeds the replacement device IMEI as a convenience
+        # field, so its nested prefetch must enforce the same two-sided scope.
+        device_view = DeviceViewSet()
+        device_view.request = SimpleNamespace(user=manager, query_params={})
+        device_view.action = 'list'
+        listed_devices = list(device_view.get_queryset())
+        listed_own_device = next(item for item in listed_devices if item.pk == own_device.pk)
+        prefetched_relations = listed_own_device._replacement_relations_as_source
+        self.assertEqual([item.pk for item in prefetched_relations], [visible.pk])
+
     def test_company_manager_cannot_see_replacement_of_external_device(self):
         from datetime import timedelta
         from types import SimpleNamespace
