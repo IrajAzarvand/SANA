@@ -74,7 +74,7 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         if user.is_site_admin:
             return Organization.objects.all()
         if user.organization_id:
-            return Organization.objects.filter(id=user.organization_id, status='active')
+            return Organization.objects.filter(id=user.organization_id).exclude(status='archived')
         return Organization.objects.none()
 
     def get_permissions(self):
@@ -138,7 +138,7 @@ class BranchViewSet(viewsets.ModelViewSet):
             qs = qs.none()
 
         if not user.is_site_admin:
-            qs = qs.filter(organization__status='active')
+            qs = qs.exclude(organization__status='archived')
 
         org = self.request.query_params.get('organization')
         if org:
@@ -205,7 +205,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             qs = qs.none()
 
         if not user.is_site_admin:
-            qs = qs.filter(Q(organization__isnull=True) | Q(organization__status='active'))
+            qs = qs.exclude(organization__status='archived')
 
         # فیلترها
         status_filter = self.request.query_params.get('status')
@@ -715,7 +715,7 @@ class SubscriptionDeviceViewSet(viewsets.ModelViewSet):
             qs = qs.none()
 
         if not user.is_site_admin:
-            qs = qs.filter(Q(subscription__organization__isnull=True) | Q(subscription__organization__status='active'))
+            qs = qs.exclude(subscription__organization__status='archived')
 
         subscription = self.request.query_params.get('subscription')
         if subscription:
