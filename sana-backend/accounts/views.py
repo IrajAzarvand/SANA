@@ -79,7 +79,9 @@ class UserViewSet(viewsets.ModelViewSet):
             qs = User.objects.filter(
                 Q(organization=user.organization) | Q(branch__organization=user.organization)
             ).exclude(
-                Q(organization__status='archived') | Q(branch__organization__status='archived')
+                organization__status='archived'
+            ).exclude(
+                branch__organization__status='archived'
             )
         # مدیر شعبه فقط کاربران شعبه خودش
         elif user.is_branch_manager and user.branch:
