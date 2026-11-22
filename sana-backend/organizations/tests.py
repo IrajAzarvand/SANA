@@ -1043,6 +1043,13 @@ class OrganizationAndBranchDeletionPermissionTests(TestCase):
             branch=self.branch,
             plate='ORGARCHIVE01',
         )
+        driver = Driver.objects.create(
+            organization=self.organization,
+            branch=self.branch,
+            first_name='Archive',
+            last_name='Driver',
+            mobile='09120000002',
+        )
         device = Device.objects.create(
             imei='987654321098765',
             organization=self.organization,
@@ -1088,9 +1095,11 @@ class OrganizationAndBranchDeletionPermissionTests(TestCase):
         self.assertEqual(self.organization.status, 'archived')
         self.assertIsNotNone(self.organization.archived_at)
         self.assertEqual(self.organization.archived_by, self.site_admin)
+        self.assertEqual(self.organization.archived_from_status, 'active')
         self.assertTrue(self.branch.__class__.objects.filter(pk=self.branch.pk).exists())
         self.assertTrue(Vehicle.objects.filter(pk=vehicle.pk).exists())
         self.assertTrue(Device.objects.filter(pk=device.pk).exists())
+        self.assertTrue(Driver.objects.filter(pk=driver.pk).exists())
         self.assertTrue(Subscription.objects.filter(pk=subscription.pk).exists())
         self.assertTrue(SubscriptionPayment.objects.filter(pk=payment.pk).exists())
         self.assertTrue(SubscriptionInstallmentPlan.objects.filter(pk=plan.pk).exists())
@@ -1101,19 +1110,25 @@ class OrganizationAndBranchDeletionPermissionTests(TestCase):
         self.client.force_authenticate(user=self.company_manager)
         hidden_response = self.client.get(f'/api/organizations/{self.organization.id}/')
         self.assertEqual(hidden_response.status_code, 404)
+        self.assertEqual(self.client.get('/api/branches/').data['count'], 0)
+        self.assertEqual(self.client.get('/api/vehicles/').data['count'], 0)
+        self.assertEqual(self.client.get('/api/drivers/').data['count'], 0)
+        self.assertEqual(self.client.get('/api/subscriptions/').data['count'], 0)
+        self.assertEqual(self.client.get('/api/users/').data['count'], 0)
 
     def test_site_admin_can_restore_archived_company_without_losing_history(self):
         self.organization.status = 'archived'
+        self.organization.archived_from_status = 'suspended'
         self.organization.archived_at = timezone.now()
         self.organization.archived_by = self.site_admin
-        self.organization.save(update_fields=['status', 'archived_at', 'archived_by'])
+        self.organization.save(update_fields=['status', 'archived_from_status', 'archived_at', 'archived_by'])
 
         self.client.force_authenticate(user=self.site_admin)
         response = self.client.post(f'/api/organizations/{self.organization.id}/restore/')
 
         self.assertEqual(response.status_code, 200)
         self.organization.refresh_from_db()
-        self.assertEqual(self.organization.status, 'active')
+        self.assertEqual(self.organization.status, 'suspended')
         self.assertIsNone(self.organization.archived_at)
         self.assertIsNone(self.organization.archived_by)
 
