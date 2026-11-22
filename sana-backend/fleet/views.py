@@ -139,8 +139,11 @@ class VehicleTypeViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if user.is_site_admin:
             return VehicleType.objects.all()
-        if user.organization_id:
-            return VehicleType.objects.filter(organization_id=user.organization_id).exclude(organization__status='archived')
+        organization_id = user.organization_id
+        if user.is_branch_manager and user.branch_id:
+            organization_id = user.branch.organization_id
+        if organization_id:
+            return VehicleType.objects.filter(organization_id=organization_id).exclude(organization__status='archived')
         return VehicleType.objects.none()
 
 
