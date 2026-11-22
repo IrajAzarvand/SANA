@@ -388,3 +388,88 @@ class BranchManagerVehicleTypeScopeTests(TestCase):
         payload = response.data['results'] if isinstance(response.data, dict) else response.data
         self.assertEqual([item['id'] for item in payload], [own_type.id])
         self.assertIsNone(payload[0]['organization'])
+
+
+class BranchManagerVehicleAndDriverTenantScopeTests(TestCase):
+    def test_branch_manager_lists_and_branch_counts_exclude_foreign_tenant_records(self):
+        from rest_framework.test import APIClient
+        from accounts.models import User
+        from fleet.models import Device, DeviceCustomerAccessPeriod, Driver, Vehicle
+        from organizations.models import Branch, Organization
+
+        organization = Organization.objects.create(
+            name='Scoped Branch Tenant',
+            code='BR-TENANT-OWN',
+        )
+        other_organization = Organization.objects.create(
+            name='Foreign Branch Tenant',
+            code='BR-TENANT-OTHER',
+        )
+        branch = Branch.objects.create(
+            organization=organization,
+            name='Tenant Scoped Branch',
+            code='BR-TENANT',
+        )
+        manager = User.objects.create_user(
+            username='branch_tenant_scope_manager',
+            password='test-password',
+            role='branch_manager',
+            account_type='organization',
+            organization=organization,
+            branch=branch,
+        )
+        own_vehicle = Vehicle.objects.create(
+            plate='44الف444',
+            organization=organization,
+            branch=branch,
+        )
+        Vehicle.objects.create(
+            plate='55ب555',
+            organization=other_organization,
+            branch=branch,
+        )
+        own_driver = Driver.objects.create(
+            first_name='Own',
+            last_name='Driver',
+            mobile='09120000001',
+            organization=organization,
+            branch=branch,
+        )
+        Driver.objects.create(
+            first_name='Foreign',
+            last_name='Driver',
+            mobile='09120000002',
+            organization=other_organization,
+            branch=branch,
+        )
+        device = Device.objects.create(
+            imei='860000000000951',
+            organization=organization,
+            branch=branch,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            branch=branch,
+            started_at=timezone.now() - timedelta(days=1),
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=manager)
+
+        vehicles = client.get('/api/vehicles/')
+        self.assertEqual(vehicles.status_code, 200)
+        vehicle_payload = vehicles.data['results'] if isinstance(vehicles.data, dict) else vehicles.data
+        self.assertEqual([item['id'] for item in vehicle_payload], [own_vehicle.id])
+
+        drivers = client.get('/api/drivers/')
+        self.assertEqual(drivers.status_code, 200)
+        driver_payload = drivers.data['results'] if isinstance(drivers.data, dict) else drivers.data
+        self.assertEqual([item['id'] for item in driver_payload], [own_driver.id])
+
+        branch_detail = client.get(f'/api/branches/{branch.id}/')
+        self.assertEqual(branch_detail.status_code, 200)
+        self.assertEqual(branch_detail.data['vehicles_count'], 1)
+        self.assertEqual(branch_detail.data['drivers_count'], 1)
+        self.assertEqual(branch_detail.data['devices_count'], 1)
+        self.assertIsNone(branch_detail.data['users_count'])
