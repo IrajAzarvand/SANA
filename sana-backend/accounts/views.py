@@ -106,6 +106,11 @@ class UserViewSet(viewsets.ModelViewSet):
             qs = qs.filter(archived_at__isnull=True)
         return qs.select_related('organization', 'branch', 'archived_by')
 
+    def perform_update(self, serializer):
+        instance = serializer.save()
+        if not instance.is_active:
+            UserSession.objects.filter(user=instance, revoked_at__isnull=True).update(revoked_at=timezone.now())
+
     def perform_destroy(self, instance):
         self._archive_user(instance)
 
