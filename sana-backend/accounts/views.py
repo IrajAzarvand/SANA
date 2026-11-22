@@ -336,7 +336,9 @@ class UserViewSet(viewsets.ModelViewSet):
                 customer_access_periods__started_at__lte=now,
                 customer_access_periods__ended_at__isnull=True,
             ).distinct()
-            subscription_ops = SubscriptionOperation.objects.none()
+            subscription_ops = SubscriptionOperation.objects.select_related(
+                'subscription', 'subscription__organization', 'performed_by'
+            ).filter(subscription__organization_id=organization_id, performed_at__gte=cutoff)
         elif is_branch:
             organization_id = user.branch.organization_id if user.branch_id else user.organization_id
             branch_id = user.branch_id
@@ -350,11 +352,8 @@ class UserViewSet(viewsets.ModelViewSet):
                 customer_access_periods__started_at__lte=now,
                 customer_access_periods__ended_at__isnull=True,
             ).distinct() if branch_id else Device.objects.none()
-            # Subscription access is organization-scoped in SubscriptionViewSet, so keep
-            # contract/financial notifications consistent with that read-only API scope.
-            subscription_ops = SubscriptionOperation.objects.select_related(
-                'subscription', 'subscription__organization', 'performed_by'
-            ).filter(subscription__organization_id=organization_id, performed_at__gte=cutoff)
+            # Branch managers must not receive contract lifecycle or financial events.
+            subscription_ops = SubscriptionOperation.objects.none()
         else:
             return []
 
