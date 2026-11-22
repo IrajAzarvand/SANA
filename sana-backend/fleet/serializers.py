@@ -121,16 +121,8 @@ class VehicleListSerializer(serializers.ModelSerializer):
                 customer_access_periods__started_at__lte=now,
                 customer_access_periods__ended_at__isnull=True,
             ).distinct()
-        elif user and not user.is_site_admin:
-            # Do not infer GPS visibility from the vehicle-device foreign key.
-            # Personal and unsupported roles must use their authorized device list.
-            authorized_ids = DeviceCustomerAccessPeriod.objects.filter(
-                user=user,
-                started_at__lte=now,
-            ).filter(
-                Q(ended_at__isnull=True) | Q(ended_at__gte=now)
-            ).values_list('device_id', flat=True)
-            devices = devices.filter(pk__in=authorized_ids)
+        elif user and user.is_branch_manager:
+            devices = devices.none()
 
         device = devices.order_by('-updated_at', '-id').first()
         if not device:
