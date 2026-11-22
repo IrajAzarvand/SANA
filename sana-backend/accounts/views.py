@@ -538,20 +538,12 @@ class UserViewSet(viewsets.ModelViewSet):
             )
             device_operations = device_operations.filter(Exists(operation_contract_access))
             lifecycle_events = lifecycle_events.filter(Exists(lifecycle_contract_access))
-        elif is_main:
-            device_operations = device_operations.filter(
-                Q(device__in=devices) | Q(target_organization_id=user.organization_id)
-            )
-            lifecycle_events = lifecycle_events.filter(
-                Q(device__in=devices) | Q(organization_id=user.organization_id)
-            )
-        elif is_branch:
-            device_operations = device_operations.filter(
-                Q(device__in=devices) | Q(target_branch_id=user.branch_id)
-            )
-            lifecycle_events = lifecycle_events.filter(
-                Q(device__in=devices) | Q(branch_id=user.branch_id)
-            )
+        elif is_main or is_branch:
+            # Tenant/branch labels on an operation are not an independent
+            # authorization grant. Device identifiers are visible only while
+            # the device itself is inside the user's active access scope.
+            device_operations = device_operations.filter(device__in=devices)
+            lifecycle_events = lifecycle_events.filter(device__in=devices)
 
         for operation in device_operations[:100]:
             add(
