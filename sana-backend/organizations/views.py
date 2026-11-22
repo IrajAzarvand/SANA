@@ -73,15 +73,38 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         if user.is_site_admin:
             return Organization.objects.all()
         if user.organization_id:
-            return Organization.objects.filter(id=user.organization_id)
+            return Organization.objects.filter(id=user.organization_id, status='active')
         return Organization.objects.none()
 
     def get_permissions(self):
-        if self.action in ['create', 'destroy']:
+        if self.action in ['create', 'destroy', 'restore']:
             return [IsSiteAdmin()]
         if self.action in ['update', 'partial_update']:
             return [CanManageOrganizationSettings()]
         return super().get_permissions()
+
+    def perform_destroy(self, instance):
+        # Organization deletion is archival: financial and operational history must survive.
+        if instance.status == 'archived':
+            return
+        instance.status = 'archived'
+        instance.archived_at = timezone.now()
+        instance.archived_by = self.request.user
+        instance.save(update_fields=['status', 'archived_at', 'archived_by', 'updated_at'])
+
+    @action(detail=True, methods=['post'])
+    def restore(self, request, pk=None):
+        organization = self.get_object()
+        if organization.status != 'archived':
+            return Response(
+                {'detail': 'این شرکت در وضعیت بایگانی نیست.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        organization.status = 'active'
+        organization.archived_at = None
+        organization.archived_by = None
+        organization.save(update_fields=['status', 'archived_at', 'archived_by', 'updated_at'])
+        return Response(self.get_serializer(organization).data)
 
 
 # ═══════════════════════════════════════════════
