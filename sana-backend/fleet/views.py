@@ -1474,6 +1474,13 @@ class DriverViewSet(viewsets.ModelViewSet):
         return qs
 
 
+    def perform_create(self, serializer):
+        user = self.request.user
+        if not user.is_site_admin and user.organization and user.organization.status == 'archived':
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError('شرکت بایگانی شده و امکان ثبت راننده جدید ندارد.')
+        serializer.save()
+
 class DriverVehicleAssignmentViewSet(viewsets.ModelViewSet):
     """تاریخچه و مدیریت تخصیص راننده به خودرو."""
     queryset = DriverVehicleAssignment.objects.select_related(
@@ -1493,7 +1500,7 @@ class DriverVehicleAssignmentViewSet(viewsets.ModelViewSet):
         elif user.is_main_user and user.organization_id:
             qs = qs.filter(driver__organization_id=user.organization_id).exclude(driver__organization__status='archived')
         elif user.is_branch_manager and user.branch_id:
-            qs = qs.filter(driver__organization_id=user.organization_id, driver__branch_id=user.branch_id)
+            qs = qs.filter(driver__organization_id=user.organization_id, driver__branch_id=user.branch_id).exclude(driver__organization__status='archived')
         else:
             qs = qs.none()
 
@@ -1515,6 +1522,17 @@ class DriverVehicleAssignmentViewSet(viewsets.ModelViewSet):
             return [IsOrganizationMember()]
         return super().get_permissions()
 
+
+    def perform_create(self, serializer):
+        driver = serializer.validated_data.get('driver')
+        vehicle = serializer.validated_data.get('vehicle')
+        if not self.request.user.is_site_admin and (
+            (driver and driver.organization.status == 'archived')
+            or (vehicle and vehicle.organization_id and vehicle.organization.status == 'archived')
+        ):
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError('شرکت بایگانی شده و امکان ثبت تخصیص جدید ندارد.')
+        serializer.save()
 
 class DeviceLifecycleEventViewSet(viewsets.ModelViewSet):
     """تاریخچه داخلی چرخه عمر دستگاه؛ فقط برای ادمین سایت."""
