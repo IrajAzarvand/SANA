@@ -525,6 +525,36 @@ class PanelNotificationTests(TestCase):
         self.assertIn('Main Branch', branch_events[0]['message'])
         self.assertEqual(response.data['counts']['unread'], 2)
 
+    def test_branch_manager_does_not_receive_device_events_without_active_access(self):
+        from fleet.models import Device, DeviceLifecycleEvent, DeviceOperation
+
+        device = Device.objects.create(
+            imei='860000000000771',
+            organization=self.organization,
+            branch=self.branch,
+        )
+        operation = DeviceOperation.objects.create(
+            operation_type='transfer_branch',
+            device=device,
+            target_branch=self.branch,
+            description='private device transfer',
+        )
+        lifecycle = DeviceLifecycleEvent.objects.create(
+            device=device,
+            event_type='transferred',
+            branch=self.branch,
+            description='private lifecycle event',
+        )
+
+        self.client.force_authenticate(user=self.branch_user)
+        response = self.client.get('/api/users/notifications/')
+
+        self.assertEqual(response.status_code, 200)
+        notification_ids = [item['id'] for item in response.data['results']]
+        self.assertNotIn(f'device-operation:{operation.pk}', notification_ids)
+        self.assertNotIn(f'device-lifecycle:{lifecycle.pk}', notification_ids)
+        self.assertFalse(any('860000000000771' in item['message'] for item in response.data['results']))
+
     def test_branch_manager_only_receives_its_branch_events(self):
         self.client.force_authenticate(user=self.branch_user)
         response = self.client.get('/api/users/notifications/')
