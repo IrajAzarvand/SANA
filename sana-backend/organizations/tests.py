@@ -977,12 +977,27 @@ class OrganizationAndBranchDeletionPermissionTests(TestCase):
             organization=self.organization,
             name='Test Vehicle Type',
         )
+        vehicle = Vehicle.objects.create(
+            organization=self.organization,
+            branch=self.branch,
+            plate='BRCOUNTTEST01',
+        )
+        device = Device.objects.create(
+            imei='987654321098761',
+            organization=self.organization,
+            branch=self.branch,
+        )
         self.client.force_authenticate(user=self.site_admin)
         response = self.client.get(f'/api/organizations/{self.organization.id}/')
+        branch_response = self.client.get(f'/api/branches/{self.branch.id}/')
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['drivers_count'], 1)
         self.assertEqual(response.data['vehicle_types_count'], 1)
+        self.assertEqual(branch_response.status_code, 200)
+        self.assertEqual(branch_response.data['drivers_count'], 1)
+        self.assertEqual(branch_response.data['vehicles_count'], 1)
+        self.assertEqual(branch_response.data['devices_count'], 1)
 
     def test_subscription_list_can_be_scoped_to_organization(self):
         today = timezone.localdate()
