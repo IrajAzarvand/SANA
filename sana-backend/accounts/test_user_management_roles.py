@@ -122,6 +122,18 @@ class UserManagementRoleBoundaryTests(TestCase):
         archived = self.client.post(f'/api/users/{legacy_user.id}/archive/', {}, format='json')
         self.assertEqual(archived.status_code, 200)
 
+    def test_company_manager_does_not_list_branch_manager_with_mismatched_tenant_links(self):
+        inconsistent = User.objects.create_user(
+            username='tenant-mismatch-branch-manager', password='test-password-123',
+            role='branch_manager', account_type='organization',
+            organization=self.organization, branch=self.other_branch,
+        )
+        self.client.force_authenticate(self.company_manager)
+        response = self.client.get('/api/users/')
+        self.assertEqual(response.status_code, 200)
+        payload = response.data['results'] if isinstance(response.data, dict) else response.data
+        self.assertNotIn(inconsistent.id, [item['id'] for item in payload])
+
     def test_branch_manager_cannot_create_or_archive_users(self):
         self.client.force_authenticate(self.branch_manager)
         create_response = self.client.post('/api/users/', {
