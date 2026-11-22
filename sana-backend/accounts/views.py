@@ -102,7 +102,7 @@ class UserViewSet(viewsets.ModelViewSet):
         archived = self.request.query_params.get('archived')
         if archived == 'true':
             qs = qs.filter(archived_at__isnull=False)
-        elif archived == 'false':
+        else:
             qs = qs.filter(archived_at__isnull=True)
         return qs.select_related('organization', 'branch', 'archived_by')
 
@@ -332,12 +332,7 @@ class UserViewSet(viewsets.ModelViewSet):
             organizations = Organization.objects.none()
             branches = Branch.objects.none()
             users = User.objects.none()
-            devices = Device.objects.filter(
-                customer_access_periods__organization_id=organization_id,
-                customer_access_periods__branch_id=branch_id,
-                customer_access_periods__started_at__lte=now,
-                customer_access_periods__ended_at__isnull=True,
-            ).distinct() if branch_id else Device.objects.none()
+            devices = Device.objects.filter(branch_id=branch_id).distinct() if branch_id else Device.objects.none()
             # Subscription access is organization-scoped in SubscriptionViewSet, so keep
             # contract/financial notifications consistent with that read-only API scope.
             subscription_ops = SubscriptionOperation.objects.select_related(
