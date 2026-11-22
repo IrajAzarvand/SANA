@@ -73,7 +73,7 @@ export default function App() {
 
             {/* قراردادها */}
             <Route path="subscriptions" element={
-              <ProtectedRoute allowRoles={['site_admin', 'main_user', 'branch_manager', 'personal_user']}>
+              <ProtectedRoute allowRoles={['site_admin', 'main_user', 'personal_user']}>
                 <Subscriptions />
               </ProtectedRoute>
             } />
@@ -85,7 +85,7 @@ export default function App() {
             } />
 
             <Route path="subscriptions/:id" element={
-              <ProtectedRoute allowRoles={['site_admin', 'main_user', 'branch_manager', 'personal_user']}>
+              <ProtectedRoute allowRoles={['site_admin', 'main_user', 'personal_user']}>
                 <SubscriptionDetail />
               </ProtectedRoute>
             } />
