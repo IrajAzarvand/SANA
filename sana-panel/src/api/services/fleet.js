@@ -169,6 +169,14 @@ export const usersAPI = {
   delete: async (id) => {
     await apiClient.delete(`/users/${id}/`);
   },
+  archive: async (id) => {
+    const response = await apiClient.post(`/users/${id}/archive/`);
+    return response.data;
+  },
+  restore: async (id) => {
+    const response = await apiClient.post(`/users/${id}/restore/`);
+    return response.data;
+  },
 };
 
 
