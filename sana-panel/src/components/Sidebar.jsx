@@ -58,6 +58,17 @@ export default function Sidebar({ isOpen, onClose }) {
     { path: '/panel/settings',   icon: Settings,         label: 'تنظیمات' },
   ];
 
+  const branchManagerMenu = [
+    { path: '/panel/dashboard', icon: LayoutDashboard, label: 'داشبورد' },
+    { path: '/panel/map', icon: MapIcon, label: 'نقشه زنده' },
+    { path: '/panel/vehicles', icon: Truck, label: 'خودروهای شعبه' },
+    { path: '/panel/drivers', icon: Users, label: 'رانندگان شعبه' },
+    { path: '/panel/devices', icon: Cpu, label: 'دستگاه‌های شعبه' },
+    { id: 'reports', icon: BarChart3, label: 'گزارش‌ها', children: [{ path: '/panel/reports/trips', label: 'گزارش مسیرها' }] },
+    { path: '/panel/alerts', icon: AlertTriangle, label: 'هشدارها', badge: unreadCount },
+    { path: '/panel/settings', icon: Settings, label: 'تنظیمات' },
+  ];
+
   const personalMenu = [
     { path: '/panel/dashboard',  icon: LayoutDashboard, label: 'داشبورد' },
     { path: '/panel/map',        icon: MapIcon,          label: 'نقشه' },
@@ -68,7 +79,7 @@ export default function Sidebar({ isOpen, onClose }) {
     { path: '/panel/settings',   icon: Settings,         label: 'تنظیمات' },
   ];
 
-  const menuItems = isSiteAdmin ? adminMenu : isPersonal ? personalMenu : companyMenu;
+  const menuItems = isSiteAdmin ? adminMenu : isPersonal ? personalMenu : isBranchManager ? branchManagerMenu : companyMenu;
 
   return (
     <>
