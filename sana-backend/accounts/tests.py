@@ -110,6 +110,33 @@ class ContractExpirationAccessTests(TestCase):
         denied_response = self.client.get('/api/users/me/')
         self.assertEqual(denied_response.status_code, 401)
 
+    def test_branch_manager_login_does_not_return_parent_subscription_metadata(self):
+        branch = Branch.objects.create(
+            organization=self.organization,
+            name='Contract Private Branch',
+            code='CONTRACT-PRIVATE-BRANCH',
+        )
+        branch_user = User.objects.create_user(
+            username='contract_private_branch_user',
+            password='test-password-123',
+            account_type='organization',
+            role='branch_manager',
+            branch=branch,
+        )
+        self.subscription.end_date = self.today + timedelta(days=10)
+        self.subscription.save(update_fields=['end_date'])
+
+        response = self.client.post(
+            '/api/auth/login/',
+            {'username': branch_user.username, 'password': 'test-password-123'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertNotIn('subscription', response.data)
+        self.assertNotIn('organization_id', response.data['user'])
+        self.assertIsNone(response.data['user']['organization'])
+
     def test_legacy_branch_user_cannot_login_when_parent_organization_is_inactive(self):
         branch = Branch.objects.create(
             organization=self.organization,
