@@ -324,18 +324,14 @@ class UserViewSet(viewsets.ModelViewSet):
                 customer_access_periods__started_at__lte=now,
                 customer_access_periods__ended_at__isnull=True,
             ).distinct()
-            subscription_ops = SubscriptionOperation.objects.select_related(
-                'subscription', 'subscription__organization', 'performed_by'
-            ).filter(subscription__organization_id=organization_id, performed_at__gte=cutoff)
+            subscription_ops = SubscriptionOperation.objects.none()
         elif is_branch:
             organization_id = user.branch.organization_id if user.branch_id else user.organization_id
             branch_id = user.branch_id
-            subscriptions = Subscription.objects.filter(
-                organization_id=organization_id, customer_type='organization'
-            )
+            subscriptions = Subscription.objects.none()
             organizations = Organization.objects.none()
-            branches = Branch.objects.filter(pk=branch_id) if branch_id else Branch.objects.none()
-            users = User.objects.filter(branch_id=branch_id).exclude(pk=user.pk) if branch_id else User.objects.none()
+            branches = Branch.objects.none()
+            users = User.objects.none()
             devices = Device.objects.filter(
                 customer_access_periods__organization_id=organization_id,
                 customer_access_periods__branch_id=branch_id,
