@@ -68,3 +68,62 @@ class DeviceManagementPermissionTests(SimpleTestCase):
         personal = SimpleNamespace(is_authenticated=True, is_site_admin=False, account_type='personal')
         request = SimpleNamespace(user=personal, method='POST')
         self.assertFalse(IsOrganizationMember().has_permission(request, None))
+
+class BranchManagerReplacementHistoryScopeTests(__import__('django.test', fromlist=['TestCase']).TestCase):
+    def test_replacement_history_requires_active_access_to_both_devices(self):
+        from datetime import timedelta
+        from types import SimpleNamespace
+
+        from django.utils import timezone
+        from organizations.models import Organization, Branch
+        from fleet.models import Device, DeviceCustomerAccessPeriod, DeviceReplacementRelation
+        from accounts.models import User
+
+        organization = Organization.objects.create(
+            name='Replacement Scope Org',
+            code='REPL-SCOPE-ORG',
+        )
+        branch = Branch.objects.create(
+            organization=organization,
+            name='Replacement Scope Branch',
+            code='REPL-SCOPE',
+        )
+        manager = User.objects.create_user(
+            username='replacement_scope_manager',
+            password='test-password',
+            role='branch_manager',
+            account_type='organization',
+            organization=organization,
+            branch=branch,
+        )
+        first = Device.objects.create(imei='860000000000911', organization=organization, branch=branch)
+        second = Device.objects.create(imei='860000000000912', organization=organization, branch=branch)
+        no_longer_assigned = Device.objects.create(
+            imei='860000000000913',
+            organization=organization,
+            branch=branch,
+        )
+        now = timezone.now()
+        for device in (first, second):
+            DeviceCustomerAccessPeriod.objects.create(
+                device=device,
+                organization=organization,
+                branch=branch,
+                started_at=now - timedelta(days=1),
+            )
+        visible = DeviceReplacementRelation.objects.create(
+            source_device=first,
+            replacement_device=second,
+            replacement_type='temporary_repair',
+        )
+        hidden = DeviceReplacementRelation.objects.create(
+            source_device=no_longer_assigned,
+            replacement_device=second,
+            replacement_type='temporary_repair',
+        )
+
+        view = DeviceReplacementRelationViewSet()
+        view.request = SimpleNamespace(user=manager, query_params={})
+        visible_ids = set(view.get_queryset().values_list('id', flat=True))
+        self.assertIn(visible.id, visible_ids)
+        self.assertNotIn(hidden.id, visible_ids)
