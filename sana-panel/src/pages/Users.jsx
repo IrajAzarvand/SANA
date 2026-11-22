@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { Search, Plus, Users as UsersIcon, Pencil, Trash2, UserX, ChevronDown, ChevronLeft, Building2 } from 'lucide-react';
+import { Search, Plus, Users as UsersIcon, Pencil, UserX, ChevronDown, ChevronLeft, Building2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
 import Badge from '../components/Badge';
@@ -129,15 +129,6 @@ export default function Users() {
         label: user.archived_at ? 'بازیابی کاربر' : 'بایگانی کاربر',
         icon: UserX,
         onClick: async () => { try { if (user.archived_at) await usersAPI.restore(user.id); else if (window.confirm('این کاربر بایگانی شود؟ دسترسی ورود او قطع می‌شود، اما سوابقش باقی می‌ماند.')) await usersAPI.archive(user.id); await refetchUsers(); } catch (error) { window.alert(error?.response?.data?.detail || 'عملیات انجام نشد.'); } },
-      });
-    }
-
-    if (isSiteAdmin) {
-      items.push({
-        label: 'بایگانی',
-        icon: Trash2,
-        variant: 'danger',
-        onClick: async () => { if (!window.confirm('کاربر بایگانی شود؟ اطلاعات و سوابق او حذف نخواهند شد.')) return; try { await usersAPI.archive(user.id); await refetchUsers(); } catch (error) { window.alert(error?.response?.data?.detail || 'بایگانی انجام نشد.'); } },
       });
     }
 
