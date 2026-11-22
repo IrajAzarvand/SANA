@@ -306,7 +306,7 @@ class DashboardStatsView(APIView):
         if org:
             qs = qs.filter(organization_id=org)
         if branch:
-            qs = qs.filter(branch_id=branch)
+            qs = qs.filter(branch_id=branch.pk, organization_id=branch.organization_id)
         if owner:
             qs = qs.filter(owner_user=owner)
 
