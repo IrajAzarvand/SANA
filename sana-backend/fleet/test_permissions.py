@@ -156,19 +156,24 @@ class BranchManagerReplacementHistoryScopeTests(TestCase):
             imei='860000000000921',
             organization=organization,
         )
+        second_own_device = Device.objects.create(
+            imei='860000000000923',
+            organization=organization,
+        )
         external_device = Device.objects.create(
             imei='860000000000922',
             organization=other,
         )
         now = timezone.now()
-        DeviceCustomerAccessPeriod.objects.create(
-            device=own_device,
-            organization=organization,
-            started_at=now - timedelta(days=1),
-        )
+        for device in (own_device, second_own_device):
+            DeviceCustomerAccessPeriod.objects.create(
+                device=device,
+                organization=organization,
+                started_at=now - timedelta(days=1),
+            )
         visible = DeviceReplacementRelation.objects.create(
             source_device=own_device,
-            replacement_device=own_device,
+            replacement_device=second_own_device,
             replacement_type='temporary_repair',
         )
         hidden = DeviceReplacementRelation.objects.create(
