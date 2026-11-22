@@ -1578,7 +1578,19 @@ class DeviceReplacementRelationViewSet(viewsets.ModelViewSet):
         if user.is_site_admin:
             pass
         elif user.is_branch_manager and user.branch_id:
-            qs = qs.filter(source_device__branch_id=user.branch_id) | qs.filter(replacement_device__branch_id=user.branch_id)
+            now = timezone.now()
+            authorized_device_ids = DeviceCustomerAccessPeriod.objects.filter(
+                organization=user.branch.organization,
+                branch=user.branch,
+                started_at__lte=now,
+                ended_at__isnull=True,
+            ).values_list('device_id', flat=True)
+            # Both sides must be currently accessible; otherwise a relation
+            # could reveal the IMEI of a device no longer assigned to this branch.
+            qs = qs.filter(
+                source_device_id__in=authorized_device_ids,
+                replacement_device_id__in=authorized_device_ids,
+            )
         elif user.is_main_user and user.organization_id:
             qs = qs.filter(
                 source_device__organization_id=user.organization_id
