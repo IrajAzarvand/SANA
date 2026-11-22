@@ -804,7 +804,7 @@ class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
             qs = qs.none()
 
         if not user.is_site_admin:
-            qs = qs.filter(Q(subscription__organization__isnull=True) | Q(subscription__organization__status='active'))
+            qs = qs.exclude(subscription__organization__status='archived')
 
         subscription = self.request.query_params.get('subscription')
         if subscription:
