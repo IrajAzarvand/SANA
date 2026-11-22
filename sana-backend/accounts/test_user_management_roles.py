@@ -42,7 +42,7 @@ class UserManagementRoleBoundaryTests(TestCase):
         self.client.force_authenticate(self.branch_manager)
         response = self.client.get('/api/users/')
         self.assertEqual(response.status_code, 200)
-        payload = response.data.get('results', response.data)
+        payload = response.data['results'] if isinstance(response.data, dict) else response.data
         self.assertEqual([item['id'] for item in payload], [self.branch_manager.id])
 
     def test_branch_manager_cannot_create_or_archive_users(self):
