@@ -127,3 +127,58 @@ class BranchManagerReplacementHistoryScopeTests(TestCase):
         visible_ids = set(view.get_queryset().values_list('id', flat=True))
         self.assertIn(visible.id, visible_ids)
         self.assertNotIn(hidden.id, visible_ids)
+
+    def test_company_manager_cannot_see_replacement_of_external_device(self):
+        from datetime import timedelta
+        from types import SimpleNamespace
+
+        from django.utils import timezone
+        from accounts.models import User
+        from fleet.models import Device, DeviceCustomerAccessPeriod, DeviceReplacementRelation
+        from organizations.models import Organization
+
+        organization = Organization.objects.create(
+            name='Company Replacement Scope',
+            code='COMP-REPL-SCOPE',
+        )
+        other = Organization.objects.create(
+            name='External Replacement Scope',
+            code='EXT-REPL-SCOPE',
+        )
+        manager = User.objects.create_user(
+            username='company_replacement_scope',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=organization,
+        )
+        own_device = Device.objects.create(
+            imei='860000000000921',
+            organization=organization,
+        )
+        external_device = Device.objects.create(
+            imei='860000000000922',
+            organization=other,
+        )
+        now = timezone.now()
+        DeviceCustomerAccessPeriod.objects.create(
+            device=own_device,
+            organization=organization,
+            started_at=now - timedelta(days=1),
+        )
+        visible = DeviceReplacementRelation.objects.create(
+            source_device=own_device,
+            replacement_device=own_device,
+            replacement_type='temporary_repair',
+        )
+        hidden = DeviceReplacementRelation.objects.create(
+            source_device=own_device,
+            replacement_device=external_device,
+            replacement_type='temporary_repair',
+        )
+
+        view = DeviceReplacementRelationViewSet()
+        view.request = SimpleNamespace(user=manager, query_params={})
+        visible_ids = set(view.get_queryset().values_list('id', flat=True))
+        self.assertIn(visible.id, visible_ids)
+        self.assertNotIn(hidden.id, visible_ids)
