@@ -34,7 +34,10 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'date_joined', 'archived_at', 'archived_by']
 
     def get_organization_data(self, obj):
-        """اطلاعات کامل سازمان کاربر"""
+        """اطلاعات کامل سازمان را فقط به نقش‌های مجاز نمایش بده."""
+        request = self.context.get('request')
+        if request and getattr(request.user, 'is_branch_manager', False):
+            return None
         if not obj.organization_id:
             return None
         org = obj.organization
