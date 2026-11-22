@@ -205,10 +205,10 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
 
         if user.is_site_admin:
             pass
-        elif user.organization_id:
-            qs = qs.filter(organization_id=user.organization_id)
         elif user.is_branch_manager:
             qs = qs.none()
+        elif user.is_main_user and user.organization_id:
+            qs = qs.filter(organization_id=user.organization_id)
         elif user.is_personal_user:
             qs = qs.filter(user=user)
         else:
@@ -717,7 +717,9 @@ class SubscriptionDeviceViewSet(viewsets.ModelViewSet):
 
         if user.is_site_admin:
             pass
-        elif user.organization_id:
+        elif user.is_branch_manager:
+            qs = qs.none()
+        elif user.is_main_user and user.organization_id:
             qs = qs.filter(subscription__organization_id=user.organization_id)
         elif user.is_personal_user:
             qs = qs.filter(subscription__user=user)
