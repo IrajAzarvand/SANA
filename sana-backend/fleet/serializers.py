@@ -5,6 +5,13 @@ from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DriverVeh
 
 
 class VehicleTypeSerializer(serializers.ModelSerializer):
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request and getattr(request.user, 'is_branch_manager', False):
+            data['organization'] = None
+        return data
+
     def validate(self, attrs):
         request = self.context.get('request')
         user = request.user if request else None
