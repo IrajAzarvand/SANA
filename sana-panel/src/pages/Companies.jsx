@@ -12,6 +12,7 @@ import ErrorState from '../components/ErrorState';
 import { useAuth } from '../context/AuthContext';
 import { organizationsAPI, branchesAPI } from '../api/services/organizations';
 import { subscriptionsAPI } from '../api/services/subscriptions';
+import { usersAPI, vehiclesAPI, devicesAPI } from '../api/services/fleet';
 import { useApi } from '../hooks/useApi';
 
 export default function Companies() {
@@ -21,6 +22,9 @@ export default function Companies() {
   const [detailOrganization, setDetailOrganization] = useState(null);
   const [detailBranches, setDetailBranches] = useState([]);
   const [detailSubscriptions, setDetailSubscriptions] = useState([]);
+  const [detailUsers, setDetailUsers] = useState([]);
+  const [detailVehicles, setDetailVehicles] = useState([]);
+  const [detailDevices, setDetailDevices] = useState([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [deleteOrganization, setDeleteOrganization] = useState(null);
   const [deleteName, setDeleteName] = useState('');
@@ -113,17 +117,29 @@ export default function Companies() {
     setDetailLoading(true);
     setDetailBranches([]);
     setDetailSubscriptions([]);
+    setDetailUsers([]);
+    setDetailVehicles([]);
+    setDetailDevices([]);
     try {
-      const [details, branchResult, subscriptionResult] = await Promise.all([
+      const [details, branchResult, subscriptionResult, userResult, vehicleResult, deviceResult] = await Promise.all([
         organizationsAPI.get(org.id),
         branchesAPI.list({ organization: org.id }),
         subscriptionsAPI.list({ organization: org.id }),
+        usersAPI.list({ organization: org.id }),
+        vehiclesAPI.list({ organization: org.id }),
+        devicesAPI.list({ organization: org.id }),
       ]);
       const branchList = Array.isArray(branchResult) ? branchResult : branchResult.results || [];
       const subscriptionList = Array.isArray(subscriptionResult) ? subscriptionResult : subscriptionResult.results || [];
+      const userList = Array.isArray(userResult) ? userResult : userResult.results || [];
+      const vehicleList = Array.isArray(vehicleResult) ? vehicleResult : vehicleResult.results || [];
+      const deviceList = Array.isArray(deviceResult) ? deviceResult : deviceResult.results || [];
       setDetailOrganization(details);
       setDetailBranches(branchList.filter((branch) => Number(branch.organization) === Number(org.id)));
       setDetailSubscriptions(subscriptionList);
+      setDetailUsers(userList);
+      setDetailVehicles(vehicleList);
+      setDetailDevices(deviceList);
     } catch (err) {
       console.error('Error loading organization details:', err);
       alert('دریافت جزئیات شرکت ناموفق بود.');
@@ -314,6 +330,20 @@ export default function Companies() {
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
               {[['شعبه', detailOrganization.branches_count], ['کاربر', detailOrganization.users_count], ['قرارداد', detailOrganization.subscriptions_count], ['خودرو', detailOrganization.vehicles_count], ['دستگاه', detailOrganization.devices_count]].map(([label, count]) => <div key={label} className="rounded-lg bg-bg-base border border-border-base p-3 text-center"><div className="text-text-muted text-xs">{label}</div><div className="mt-1 font-semibold text-text-primary">{count ?? 0}</div></div>)}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="rounded-lg border border-border-base p-3">
+                <h4 className="font-medium mb-2">کاربران شرکت ({detailUsers.length})</h4>
+                {detailUsers.length ? <ul className="space-y-1 max-h-52 overflow-y-auto">{detailUsers.map((user) => <li key={user.id} className="flex flex-wrap justify-between gap-2 border-b last:border-0 border-border-base py-1"><span>{user.full_name || user.username}</span><span className="text-text-muted">{user.branch_name || user.role || '—'}</span></li>)}</ul> : <p className="text-text-muted">کاربری ثبت نشده است.</p>}
+              </div>
+              <div className="rounded-lg border border-border-base p-3">
+                <h4 className="font-medium mb-2">خودروها ({detailVehicles.length})</h4>
+                {detailVehicles.length ? <ul className="space-y-1 max-h-52 overflow-y-auto">{detailVehicles.map((vehicle) => <li key={vehicle.id} className="flex flex-wrap justify-between gap-2 border-b last:border-0 border-border-base py-1"><span>{vehicle.plate}</span><span className="text-text-muted">{vehicle.vehicle_type_name || vehicle.branch_name || '—'}</span></li>)}</ul> : <p className="text-text-muted">خودرویی ثبت نشده است.</p>}
+              </div>
+              <div className="rounded-lg border border-border-base p-3 md:col-span-2">
+                <h4 className="font-medium mb-2">دستگاه‌ها ({detailDevices.length})</h4>
+                {detailDevices.length ? <ul className="space-y-1 max-h-52 overflow-y-auto">{detailDevices.map((device) => <li key={device.id} className="flex flex-wrap justify-between gap-2 border-b last:border-0 border-border-base py-1"><span className="font-mono">{device.imei}</span><span className="text-text-muted">{device.device_model_name || device.device_model_manufacturer || device.vehicle_plate || '—'}</span></li>)}</ul> : <p className="text-text-muted">دستگاهی ثبت نشده است.</p>}
+              </div>
             </div>
             <div className="rounded-lg border border-border-base p-3">
               <h4 className="font-medium mb-2">قراردادهای شرکت ({detailSubscriptions.length})</h4>
