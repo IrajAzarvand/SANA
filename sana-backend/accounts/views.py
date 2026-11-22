@@ -100,7 +100,7 @@ class UserViewSet(viewsets.ModelViewSet):
         if user.is_main_user:
             qs = qs.exclude(role__in=['site_admin', 'main_user'])
         archived = self.request.query_params.get('archived')
-        if archived == 'true':
+        if archived == 'true' or self.action == 'restore':
             qs = qs.filter(archived_at__isnull=False)
         else:
             qs = qs.filter(archived_at__isnull=True)
