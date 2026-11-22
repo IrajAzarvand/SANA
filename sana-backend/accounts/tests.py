@@ -1003,6 +1003,11 @@ class PersonalAndTenantFinancialNotificationTests(TestCase):
         own_contract = self.make_contract(
             organization=self.organization, number='ORG-SCOPE-OWN-001'
         )
+        from organizations.models import SubscriptionOperation
+        own_operation = SubscriptionOperation.objects.create(
+            subscription=own_contract,
+            operation_type='modify',
+        )
         other_org = Organization.objects.create(
             name='Other Notification Tenant', code='FIN-NOTIF-ORG-099'
         )
@@ -1038,6 +1043,7 @@ class PersonalAndTenantFinancialNotificationTests(TestCase):
             item.startswith(f'installment:{own_installment.pk}:')
             for item in organization_ids
         ))
+        self.assertIn(f'subscription-operation:{own_operation.pk}', organization_ids)
         self.assertFalse(any(
             item.startswith(f'installment:{other_installment.pk}:')
             for item in organization_ids
@@ -1053,6 +1059,7 @@ class PersonalAndTenantFinancialNotificationTests(TestCase):
         branch_ids = [item['id'] for item in branch_notifications.data['results']]
         self.assertFalse(any(item.startswith('installment:') for item in branch_ids))
         self.assertFalse(any(item.startswith('payment-received:') for item in branch_ids))
+        self.assertFalse(any(item.startswith('subscription-operation:') for item in branch_ids))
 
     def test_contract_suspend_activate_and_cancel_operations_generate_notifications(self):
         contract = self.make_contract(
