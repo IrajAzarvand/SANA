@@ -170,7 +170,7 @@ class VehicleViewSet(viewsets.ModelViewSet):
         elif user.is_main_user and user.organization:
             qs = qs.filter(organization=user.organization).exclude(organization__status='archived')
         elif user.is_branch_manager and user.branch:
-            qs = qs.filter(branch=user.branch).exclude(organization__status='archived')
+            qs = qs.filter(branch=user.branch, organization_id=user.branch.organization_id).exclude(organization__status='archived')
         elif user.is_personal_user:
             qs = qs.filter(owner_user=user)
         else:
@@ -1516,7 +1516,7 @@ class DriverViewSet(viewsets.ModelViewSet):
         elif user.is_main_user and user.organization:
             qs = qs.filter(organization=user.organization)
         elif user.is_branch_manager and user.branch:
-            qs = qs.filter(branch=user.branch)
+            qs = qs.filter(branch=user.branch, organization_id=user.branch.organization_id)
         else:
             qs = qs.none()
 
