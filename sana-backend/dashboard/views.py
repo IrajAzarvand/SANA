@@ -89,9 +89,17 @@ class DashboardStatsView(APIView):
 
         # مدیر شعبه
         if user.is_branch_manager and user.branch_id:
-            branch = user.branch_id
+            branch = user.branch
+            now = timezone.now()
             subscriptions = Subscription.objects.none()
-            branch_devices = list(Device.objects.filter(branch_id=branch).only('id', 'imei'))
+            branch_devices = list(
+                Device.objects.filter(
+                    customer_access_periods__organization=branch.organization,
+                    customer_access_periods__branch=branch,
+                    customer_access_periods__started_at__lte=now,
+                    customer_access_periods__ended_at__isnull=True,
+                ).distinct().only('id', 'imei')
+            )
             gps_status = self.get_personal_gps_status(branch_devices)
             active_sub = subscriptions.filter(
                 status='active',
@@ -100,8 +108,8 @@ class DashboardStatsView(APIView):
             ).order_by('-end_date').first()
 
             return Response({
-                'vehicles': Vehicle.objects.filter(branch_id=branch).count(),
-                'devices': Device.objects.filter(branch_id=branch).count(),
+                'vehicles': Vehicle.objects.filter(branch_id=branch.id).count(),
+                'devices': len(branch_devices),
                 'drivers': Driver.objects.filter(branch_id=branch).count(),
                 'current_subscription': {
                     'contract_number': active_sub.contract_number,
