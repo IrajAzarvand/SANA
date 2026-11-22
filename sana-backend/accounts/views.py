@@ -20,7 +20,7 @@ from .serializers import (
     ChangePasswordSerializer,
     CustomTokenObtainPairSerializer,
 )
-from .permissions import IsSiteAdminOrReadOnly
+from .permissions import IsSiteAdminOrReadOnly, IsSiteAdminOrMainUser
 
 from organizations.models import (
     SubscriptionDevice,
@@ -50,6 +50,9 @@ class UserViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated, IsSiteAdminOrReadOnly]
 
     def get_permissions(self):
+        if getattr(self, 'action', None) in ['create', 'update', 'partial_update', 'destroy', 'archive', 'restore']:
+            return [IsAuthenticated(), IsSiteAdminOrMainUser()]
+
         # The self-profile endpoint is safe for every authenticated role;
         # its serializer limits writes to the current user's contact details.
         if getattr(self, 'action', None) in ['me', 'change_password', 'notifications']:
@@ -76,7 +79,7 @@ class UserViewSet(viewsets.ModelViewSet):
             qs = User.objects.filter(organization=user.organization).exclude(organization__status='archived')
         # مدیر شعبه فقط کاربران شعبه خودش
         elif user.is_branch_manager and user.branch:
-            qs = User.objects.filter(branch=user.branch).exclude(organization__status='archived')
+            qs = User.objects.filter(id=user.id)
         # کاربر شخصی فقط خودش
         else:
             qs = User.objects.filter(id=user.id)
@@ -94,7 +97,47 @@ class UserViewSet(viewsets.ModelViewSet):
         if organization:
             qs = qs.filter(organization_id=organization)
 
-        return qs.select_related('organization', 'branch')
+        if user.is_main_user:
+            qs = qs.exclude(role__in=['site_admin', 'main_user'])
+        archived = self.request.query_params.get('archived')
+        if archived == 'true':
+            qs = qs.filter(archived_at__isnull=False)
+        elif archived == 'false':
+            qs = qs.filter(archived_at__isnull=True)
+        return qs.select_related('organization', 'branch', 'archived_by')
+
+    def perform_destroy(self, instance):
+        self._archive_user(instance)
+
+    def _archive_user(self, instance):
+        if instance.pk == self.request.user.pk:
+            from rest_framework.exceptions import ValidationError
+            raise ValidationError('امکان بایگانی حساب کاربری خودتان وجود ندارد.')
+        now = timezone.now()
+        if instance.archived_at is None:
+            instance.archived_was_active = instance.is_active
+            instance.archived_at = now
+            instance.archived_by = self.request.user
+            instance.is_active = False
+            instance.save(update_fields=['archived_was_active', 'archived_at', 'archived_by', 'is_active', 'updated_at'])
+            UserSession.objects.filter(user=instance, revoked_at__isnull=True).update(revoked_at=now)
+
+    @action(detail=True, methods=['post'])
+    def archive(self, request, pk=None):
+        user = self.get_object()
+        self._archive_user(user)
+        return Response(UserSerializer(user).data)
+
+    @action(detail=True, methods=['post'])
+    def restore(self, request, pk=None):
+        user = self.get_object()
+        if user.archived_at is None:
+            return Response({'detail': 'این کاربر بایگانی نشده است.'}, status=status.HTTP_409_CONFLICT)
+        user.is_active = user.archived_was_active
+        user.archived_at = None
+        user.archived_by = None
+        user.save(update_fields=['is_active', 'archived_at', 'archived_by', 'updated_at'])
+        return Response(UserSerializer(user).data)
 
     @action(detail=False, methods=['get'], url_path='username-availability')
     def username_availability(self, request):
