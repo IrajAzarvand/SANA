@@ -956,6 +956,37 @@ class OrganizationAndBranchDeletionPermissionTests(TestCase):
             for item in branch_data
         ))
 
+    def test_subscription_list_can_be_scoped_to_organization(self):
+        today = timezone.localdate()
+        other_organization = Organization.objects.create(
+            name='Other Test Organization',
+            code='DELETE-ORG-OTHER',
+        )
+        own_contract = Subscription.objects.create(
+            contract_number='DELETE-ORG-CONTRACT-001',
+            customer_type='organization',
+            organization=self.organization,
+            start_date=today,
+            end_date=today + timedelta(days=30),
+            price=1000,
+        )
+        other_contract = Subscription.objects.create(
+            contract_number='DELETE-ORG-CONTRACT-002',
+            customer_type='organization',
+            organization=other_organization,
+            start_date=today,
+            end_date=today + timedelta(days=30),
+            price=1000,
+        )
+        self.client.force_authenticate(user=self.site_admin)
+        response = self.client.get(f'/api/subscriptions/?organization={self.organization.id}')
+
+        self.assertEqual(response.status_code, 200)
+        contract_data = response.data['results'] if isinstance(response.data, dict) else response.data
+        contract_ids = {item['id'] for item in contract_data}
+        self.assertIn(own_contract.id, contract_ids)
+        self.assertNotIn(other_contract.id, contract_ids)
+
     def test_company_manager_cannot_physically_delete_organization(self):
         self.client.force_authenticate(user=self.company_manager)
         response = self.client.delete(f'/api/organizations/{self.organization.id}/')
