@@ -30,6 +30,11 @@ export const organizationsAPI = {
     await apiClient.delete(`/organizations/${id}/`);
   },
 
+  archive: async (id) => {
+    const response = await apiClient.post(`/organizations/${id}/archive/`);
+    return response.data;
+  },
+
   restore: async (id) => {
     const response = await apiClient.post(`/organizations/${id}/restore/`);
     return response.data;
