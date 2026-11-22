@@ -26,6 +26,7 @@ class Organization(models.Model):
 
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active', verbose_name='وضعیت')
     archived_at = models.DateTimeField(null=True, blank=True, verbose_name='زمان بایگانی')
+    archived_from_status = models.CharField(max_length=20, blank=True, verbose_name='وضعیت پیش از بایگانی')
     archived_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
         null=True, blank=True, related_name='archived_organizations',
