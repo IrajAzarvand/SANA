@@ -482,3 +482,70 @@ class BranchManagerVehicleAndDriverTenantScopeTests(TestCase):
         self.assertEqual(branch_detail.data['drivers_count'], 1)
         self.assertEqual(branch_detail.data['devices_count'], 1)
         self.assertIsNone(branch_detail.data['users_count'])
+
+
+class DeviceListContractTenantScopeTests(TestCase):
+    def test_company_device_list_does_not_embed_foreign_active_contract(self):
+        from datetime import timedelta
+        from unittest.mock import patch
+        from django.utils import timezone
+        from rest_framework.test import APIClient
+        from accounts.models import User
+        from fleet.models import Device, DeviceCustomerAccessPeriod
+        from organizations.models import Organization, Subscription, SubscriptionDevice
+
+        today = timezone.localdate()
+        now = timezone.now()
+        organization = Organization.objects.create(
+            name='Device List Own Org',
+            code='DEVICE-LIST-OWN',
+        )
+        other_organization = Organization.objects.create(
+            name='Device List Foreign Org',
+            code='DEVICE-LIST-FOREIGN',
+        )
+        manager = User.objects.create_user(
+            username='device_list_tenant_manager',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=organization,
+        )
+        device = Device.objects.create(
+            imei='860000000000981',
+            organization=organization,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            started_at=now - timedelta(days=1),
+        )
+        foreign_subscription = Subscription.objects.create(
+            contract_number='FOREIGN-DEVICE-LIST-CONTRACT',
+            customer_type='organization',
+            organization=other_organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=5),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=foreign_subscription,
+            device=device,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=5),
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=manager)
+        with patch('fleet.views.traccar_devices', return_value=[]), patch(
+            'fleet.views.traccar_current_positions',
+            return_value=[],
+        ):
+            response = client.get('/api/devices/')
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.data['results'] if isinstance(response.data, dict) else response.data
+        self.assertEqual(len(payload), 1)
+        self.assertIsNone(payload[0]['subscription_id'])
+        self.assertIsNone(payload[0]['subscription_number'])
+        self.assertNotIn('FOREIGN-DEVICE-LIST-CONTRACT', str(payload[0]))
