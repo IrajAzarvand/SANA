@@ -123,6 +123,33 @@ class VehicleListSerializer(serializers.ModelSerializer):
             ).distinct()
         elif user and user.is_branch_manager:
             devices = devices.none()
+        elif user and user.is_personal_user:
+            from django.db.models import Exists, OuterRef
+            from organizations.models import SubscriptionDevice
+
+            today = timezone.localdate()
+            active_access = DeviceCustomerAccessPeriod.objects.filter(
+                device=OuterRef('pk'),
+                user=user,
+                started_at__lte=now,
+            ).filter(
+                Q(ended_at__isnull=True) | Q(ended_at__gte=now)
+            )
+            active_contract_link = SubscriptionDevice.objects.filter(
+                device=OuterRef('pk'),
+                subscription__user=user,
+                subscription__status='active',
+                subscription__start_date__lte=today,
+                subscription__end_date__gte=today,
+                unassigned_at__isnull=True,
+                start_date__lte=today,
+                end_date__gte=today,
+            )
+            devices = devices.annotate(
+                has_personal_access=Exists(active_access) | Exists(active_contract_link)
+            ).filter(has_personal_access=True)
+        elif user and not user.is_site_admin:
+            devices = devices.none()
 
         device = devices.order_by('-updated_at', '-id').first()
         if not device:
