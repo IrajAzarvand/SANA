@@ -329,7 +329,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         data['access'] = str(refresh.access_token)
 
         # افزودن اطلاعات کامل کاربر به پاسخ
-        data['user'] = UserSerializer(user).data
+        data['user'] = UserSerializer(user, context={'request': request}).data
 
         # افزودن اطلاعات اشتراک
         subscription = user.active_subscription
