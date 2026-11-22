@@ -33,6 +33,26 @@ class UserManagementRoleBoundaryTests(TestCase):
             organization=self.organization, branch=self.branch,
         )
 
+    def test_branch_manager_cannot_read_full_organization_details(self):
+        self.client.force_authenticate(self.branch_manager)
+
+        own_profile = self.client.get('/api/users/me/')
+        self.assertEqual(own_profile.status_code, 200)
+        self.assertIsNone(own_profile.data['organization_data'])
+
+        own_user_list = self.client.get('/api/users/')
+        self.assertEqual(own_user_list.status_code, 200)
+        payload = own_user_list.data['results'] if isinstance(own_user_list.data, dict) else own_user_list.data
+        self.assertEqual(len(payload), 1)
+        self.assertIsNone(payload[0]['organization_data'])
+
+        self.client.force_authenticate(self.admin)
+        admin_list = self.client.get('/api/users/')
+        self.assertEqual(admin_list.status_code, 200)
+        admin_payload = admin_list.data['results'] if isinstance(admin_list.data, dict) else admin_list.data
+        branch_user = next(item for item in admin_payload if item['id'] == self.branch_manager.id)
+        self.assertEqual(branch_user['organization_data']['code'], self.organization.code)
+
     def test_branch_manager_user_list_contains_only_self(self):
         User.objects.create_user(
             username='another-branch-user', password='test-password-123',
