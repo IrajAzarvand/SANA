@@ -148,7 +148,7 @@ export default function Companies() {
       refetch();
     } catch (err) {
       console.error('Error deleting organization:', err);
-      alert('خطا در حذف شرکت. ممکن است وابستگی‌ها یا مجوزها مانع حذف شده باشند.');
+      alert('آرشیو شرکت ناموفق بود. لطفاً دوباره تلاش کنید.');
     }
   };
 
@@ -255,41 +255,49 @@ export default function Companies() {
     const items = [];
 
     if (isSiteAdmin) {
-      items.push({
-        label: 'ویرایش',
-        icon: Pencil,
-        onClick: () => {
-          setEditingOrganization(org);
-          setForm({
-            name: org.name || '',
-            code: org.code || '',
-            registration_number: org.registration_number || '',
-            economy_code: org.economy_code || '',
-            phone: org.phone || '',
-            email: org.email || '',
-            address: org.address || '',
-            status: org.status || 'active',
-          });
-          setModalOpen(true);
-        },
-      });
-      items.push({
-        label: 'جزئیات',
-        icon: Eye,
-        onClick: () => handleViewOrganization(org),
-      });
-      items.push({
-        label: 'حذف',
-        icon: Trash2,
-        variant: 'danger',
-        onClick: () => handleDelete(org),
-      });
+      if (org.status === 'archived') {
+        items.push({
+          label: 'بازگردانی از بایگانی',
+          icon: Eye,
+          onClick: async () => {
+            try {
+              await organizationsAPI.restore(org.id);
+              refetch();
+            } catch (err) {
+              console.error('Error restoring organization:', err);
+              alert('بازگردانی شرکت ناموفق بود. لطفاً دوباره تلاش کنید.');
+            }
+          },
+        });
+      } else {
+        items.push({
+          label: 'ویرایش',
+          icon: Pencil,
+          onClick: () => {
+            setEditingOrganization(org);
+            setForm({
+              name: org.name || '',
+              code: org.code || '',
+              registration_number: org.registration_number || '',
+              economy_code: org.economy_code || '',
+              phone: org.phone || '',
+              email: org.email || '',
+              address: org.address || '',
+              status: org.status || 'active',
+            });
+            setModalOpen(true);
+          },
+        });
+        items.push({ label: 'جزئیات', icon: Eye, onClick: () => handleViewOrganization(org) });
+        items.push({
+          label: 'آرشیو شرکت',
+          icon: Trash2,
+          variant: 'danger',
+          onClick: () => handleDelete(org),
+        });
+      }
     } else {
-      items.push({
-        label: 'مشاهده جزئیات',
-        icon: Eye,
-        onClick: () => handleViewOrganization(org),
-      });
+      items.push({ label: 'مشاهده جزئیات', icon: Eye, onClick: () => handleViewOrganization(org) });
     }
 
     return items;
@@ -361,7 +369,7 @@ export default function Companies() {
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border-base pt-3 text-xs">
                   <div><div className="text-text-muted">تلفن</div><div className="mt-1 font-mono text-text-primary">{c.phone || '—'}</div></div>
-                  <div><div className="text-text-muted">وضعیت</div><div className="mt-1"><Badge variant={c.status === 'active' ? 'success' : 'muted'}>{c.status === 'active' ? 'فعال' : 'غیرفعال'}</Badge></div></div>
+                  <div><div className="text-text-muted">وضعیت</div><div className="mt-1"><Badge variant={c.status === 'active' ? 'success' : 'muted'}>{c.status === 'active' ? 'فعال' : c.status === 'archived' ? 'بایگانی‌شده' : c.status === 'suspended' ? 'تعلیق‌شده' : 'غیرفعال'}</Badge></div></div>
                   <div className="col-span-2"><div className="text-text-muted">منابع</div><div className="mt-1 flex flex-wrap gap-3 text-text-secondary"><span>🏢 {c.branches_count || 0} شعبه</span><span>🚗 {c.vehicles_count || 0} خودرو</span><span>📡 {c.devices_count || 0} دستگاه</span></div></div>
                 </div>
               </article>
@@ -401,7 +409,7 @@ export default function Companies() {
                     </td>
                     <td className="py-3 px-4">
                       <Badge variant={c.status === 'active' ? 'success' : 'muted'}>
-                        {c.status === 'active' ? 'فعال' : 'غیرفعال'}
+                        {c.status === 'active' ? 'فعال' : c.status === 'archived' ? 'بایگانی‌شده' : c.status === 'suspended' ? 'تعلیق‌شده' : 'غیرفعال'}
                       </Badge>
                     </td>
                     <td className="py-3 px-2">
@@ -473,12 +481,12 @@ export default function Companies() {
       </Modal>
 
       {/* تأیید حذف شرکت */}
-      <Modal open={Boolean(deleteOrganization)} onClose={() => { setDeleteOrganization(null); setDeleteName(''); }} title="تأیید حذف فیزیکی شرکت" size="lg">
+      <Modal open={Boolean(deleteOrganization)} onClose={() => { setDeleteOrganization(null); setDeleteName(''); }} title="تأیید آرشیو شرکت" size="lg">
         {deleteOrganization && (
           <div className="space-y-4">
             <div className="rounded-lg border border-red-500/40 bg-red-500/5 p-3 text-sm">
-              <p className="font-semibold text-red-500">این عملیات برگشت‌پذیر نیست.</p>
-              <p className="mt-2">با حذف «{deleteOrganization.name}»، شعب، قراردادهای سازمانی، خودروها، دستگاه‌ها، انواع خودرو و رانندگان وابسته حذف می‌شوند. کاربران حذف نمی‌شوند، اما ارتباط سازمانی آن‌ها قطع می‌شود. برخی سوابق وابسته نیز حذف یا از ارتباط با شرکت جدا خواهند شد. این عملیات برگشت‌پذیر نیست.</p>
+              <p className="font-semibold text-amber-500">شرکت از چرخه فعال خارج و به بایگانی منتقل می‌شود.</p>
+              <p className="mt-2">با آرشیو «{deleteOrganization.name}»، هیچ‌یک از شعب، قراردادها، خودروها، دستگاه‌ها، رانندگان، انواع خودرو، کاربران یا سوابق مالی و عملیاتی حذف نمی‌شوند. شرکت از فهرست فعال خارج می‌شود و فقط مدیر سایت می‌تواند آن را بازگردانی کند.</p>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 text-center text-sm">
               {[['شعبه', deleteOrganization.branches_count], ['قرارداد', deleteOrganization.subscriptions_count], ['خودرو', deleteOrganization.vehicles_count], ['دستگاه', deleteOrganization.devices_count], ['راننده', deleteOrganization.drivers_count], ['نوع خودرو', deleteOrganization.vehicle_types_count], ['کاربر', deleteOrganization.users_count]].map(([label, count]) => <div key={label} className="rounded-lg border border-border-base p-3"><div className="text-xs text-text-muted">{label}</div><div className="mt-1 font-semibold">{count ?? '—'}</div></div>)}
@@ -489,7 +497,7 @@ export default function Companies() {
         )}
         <div className="flex justify-end gap-2 pt-4">
           <Button variant="secondary" onClick={() => { setDeleteOrganization(null); setDeleteName(''); }}>انصراف</Button>
-          <Button variant="danger" disabled={!deleteOrganization || deleteName.trim() !== deleteOrganization.name} onClick={confirmDeleteOrganization}>حذف فیزیکی شرکت</Button>
+          <Button variant="danger" disabled={!deleteOrganization || deleteName.trim() !== deleteOrganization.name} onClick={confirmDeleteOrganization}>انتقال به بایگانی</Button>
         </div>
       </Modal>
 
