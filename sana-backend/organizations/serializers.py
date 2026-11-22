@@ -27,6 +27,8 @@ class OrganizationSerializer(serializers.ModelSerializer):
     devices_count = serializers.IntegerField(source='devices.count', read_only=True)
     users_count = serializers.IntegerField(source='users.count', read_only=True)
     subscriptions_count = serializers.IntegerField(source='subscriptions.count', read_only=True)
+    drivers_count = serializers.IntegerField(source='drivers.count', read_only=True)
+    vehicle_types_count = serializers.IntegerField(source='vehicle_types.count', read_only=True)
 
     class Meta:
         model = Organization
@@ -35,7 +37,7 @@ class OrganizationSerializer(serializers.ModelSerializer):
             'registration_number', 'economy_code',
             'phone', 'email', 'address', 'website', 'logo',
             'status',
-            'branches_count', 'vehicles_count', 'devices_count', 'users_count', 'subscriptions_count',
+            'branches_count', 'vehicles_count', 'devices_count', 'users_count', 'subscriptions_count', 'drivers_count', 'vehicle_types_count',
             'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
@@ -49,6 +51,8 @@ class OrganizationSettingsSerializer(serializers.ModelSerializer):
     devices_count = serializers.IntegerField(source='devices.count', read_only=True)
     users_count = serializers.IntegerField(source='users.count', read_only=True)
     subscriptions_count = serializers.IntegerField(source='subscriptions.count', read_only=True)
+    drivers_count = serializers.IntegerField(source='drivers.count', read_only=True)
+    vehicle_types_count = serializers.IntegerField(source='vehicle_types.count', read_only=True)
 
     class Meta:
         model = Organization
@@ -57,12 +61,12 @@ class OrganizationSettingsSerializer(serializers.ModelSerializer):
             'registration_number', 'economy_code',
             'phone', 'email', 'address', 'website', 'logo',
             'status',
-            'branches_count', 'vehicles_count', 'devices_count', 'users_count', 'subscriptions_count',
+            'branches_count', 'vehicles_count', 'devices_count', 'users_count', 'subscriptions_count', 'drivers_count', 'vehicle_types_count',
             'created_at', 'updated_at',
         ]
         read_only_fields = [
             'id', 'code', 'logo', 'status',
-            'branches_count', 'vehicles_count', 'devices_count', 'users_count', 'subscriptions_count',
+            'branches_count', 'vehicles_count', 'devices_count', 'users_count', 'subscriptions_count', 'drivers_count', 'vehicle_types_count',
             'created_at', 'updated_at',
         ]
 
@@ -73,12 +77,14 @@ class OrganizationListSerializer(serializers.ModelSerializer):
     devices_count = serializers.IntegerField(source='devices.count', read_only=True)
     users_count = serializers.IntegerField(source='users.count', read_only=True)
     subscriptions_count = serializers.IntegerField(source='subscriptions.count', read_only=True)
+    drivers_count = serializers.IntegerField(source='drivers.count', read_only=True)
+    vehicle_types_count = serializers.IntegerField(source='vehicle_types.count', read_only=True)
 
     class Meta:
         model = Organization
         fields = [
             'id', 'name', 'code', 'phone', 'status',
-            'branches_count', 'vehicles_count', 'devices_count', 'users_count', 'subscriptions_count',
+            'branches_count', 'vehicles_count', 'devices_count', 'users_count', 'subscriptions_count', 'drivers_count', 'vehicle_types_count',
             'created_at',
         ]
 
