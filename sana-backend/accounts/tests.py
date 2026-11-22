@@ -904,7 +904,7 @@ class PersonalAndTenantFinancialNotificationTests(TestCase):
         self.assertTrue(any('PRS-EXPIRED-001' in message for message in messages))
 
 
-    def test_branch_manager_without_duplicate_organization_field_can_open_org_contract(self):
+    def test_branch_manager_without_organization_fk_cannot_access_org_contract_or_finance(self):
         branch = Branch.objects.create(
             organization=self.organization,
             name='Financial Branch',
