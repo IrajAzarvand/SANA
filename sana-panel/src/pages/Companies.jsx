@@ -1,5 +1,4 @@
 import { useState, useMemo, useCallback, useRef } from 'react';
-
 import { Search, Plus, Building2, Pencil, Trash2, Eye } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
@@ -242,7 +241,7 @@ export default function Companies() {
     if (detailErrors[section]) {
       return (
         <div className="space-y-2 py-2">
-          <p className="text-danger-500">{detailErrors[section]}</p>
+          <p className="text-red-500">{detailErrors[section]}</p>
           <Button variant="secondary" size="sm" onClick={() => loadOrganizationSection(detailOrganization, section, detailRequestIdRef.current)}>
             تلاش مجدد
           </Button>
@@ -426,7 +425,7 @@ export default function Companies() {
                 {detailLoading && <LoadingSpinner />}
                 {detailOrganizationError && (
                   <>
-                    <p className="text-danger-500">{detailOrganizationError}</p>
+                    <p className="text-red-500">{detailOrganizationError}</p>
                     <Button variant="secondary" size="sm" onClick={() => loadOrganizationCore(detailOrganization, detailRequestIdRef.current)}>تلاش مجدد</Button>
                   </>
                 )}
