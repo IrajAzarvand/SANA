@@ -390,6 +390,60 @@ class BranchManagerDashboardAccessTests(TestCase):
         self.assertIsNone(response.data['current_subscription'])
 
 
+class MainUserDashboardDeviceAccessTests(TestCase):
+    def test_dashboard_counts_only_devices_with_active_organization_access(self):
+        from datetime import timedelta
+        from unittest.mock import patch
+        from django.utils import timezone
+        from accounts.models import User
+        from fleet.models import Device, DeviceCustomerAccessPeriod
+        from organizations.models import Organization
+
+        organization = Organization.objects.create(
+            name='Main Device Access Org',
+            code='MAIN-DEVICE-ACCESS',
+        )
+        manager = User.objects.create_user(
+            username='main_device_access_manager',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=organization,
+        )
+        now = timezone.now()
+        active_device = Device.objects.create(
+            imei='860000000000961',
+            organization=organization,
+        )
+        stale_device = Device.objects.create(
+            imei='860000000000962',
+            organization=organization,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=active_device,
+            organization=organization,
+            started_at=now - timedelta(days=1),
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=stale_device,
+            organization=organization,
+            started_at=now - timedelta(days=3),
+            ended_at=now - timedelta(days=1),
+        )
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=manager)
+        with patch('dashboard.views.traccar_devices', return_value=[]), patch(
+            'dashboard.views.traccar_current_positions',
+            return_value=[],
+        ):
+            response = self.client.get('/api/dashboard/stats/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['devices'], 1)
+        self.assertEqual(response.data['gps_status']['total'], 1)
+
+
 class BranchManagerDashboardTenantScopeTests(TestCase):
     def test_dashboard_counts_only_vehicles_and_drivers_from_branch_organization(self):
         from unittest.mock import patch
