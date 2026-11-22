@@ -2,7 +2,7 @@ import { User, Shield, Building2, GitBranch, Users, Bell, Globe } from 'lucide-r
 import { useAuth } from '../context/AuthContext';
 
 export default function SettingsNav({ active, onChange }) {
-  const { isSiteAdmin, isMainUser, isPersonal } = useAuth();
+  const { isSiteAdmin, isMainUser, isBranchManager, isPersonal } = useAuth();
 
   // لیست آیتم‌ها بر اساس نقش
   const items = [
@@ -11,7 +11,7 @@ export default function SettingsNav({ active, onChange }) {
     { id: 'organization',  label: 'اطلاعات سازمان',   icon: Building2, show: isSiteAdmin || isMainUser },
     { id: 'branches',      label: 'شعبه‌ها',           icon: GitBranch, show: isSiteAdmin || isMainUser },
     { id: 'users',         label: 'کاربران',          icon: Users,     show: isSiteAdmin || isMainUser },
-    { id: 'notifications', label: 'اعلان‌ها',          icon: Bell,      show: isPersonal },
+    { id: 'notifications', label: 'اعلان‌ها',          icon: Bell,      show: isPersonal || isBranchManager },
     { id: 'system',        label: 'تنظیمات سامانه',   icon: Globe,     show: isSiteAdmin },
   ].filter((item) => item.show);
 
