@@ -3,7 +3,7 @@ from rest_framework.test import APIClient
 from unittest.mock import patch
 
 from accounts.models import User
-from fleet.models import Device, Vehicle
+from fleet.models import Device, Vehicle, Driver, VehicleType
 from organizations.models import (
     Organization, Subscription, SubscriptionDevice, SubscriptionPayment, SubscriptionOperation,
     SubscriptionInstallmentPlan, SubscriptionInstallment, SubscriptionPaymentAllocation,
@@ -955,6 +955,25 @@ class OrganizationAndBranchDeletionPermissionTests(TestCase):
             item['id'] == self.branch.id and 'users_count' in item
             for item in branch_data
         ))
+
+    def test_organization_detail_reports_driver_and_vehicle_type_counts(self):
+        Driver.objects.create(
+            organization=self.organization,
+            branch=self.branch,
+            first_name='Test',
+            last_name='Driver',
+            mobile='09120000001',
+        )
+        VehicleType.objects.create(
+            organization=self.organization,
+            name='Test Vehicle Type',
+        )
+        self.client.force_authenticate(user=self.site_admin)
+        response = self.client.get(f'/api/organizations/{self.organization.id}/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['drivers_count'], 1)
+        self.assertEqual(response.data['vehicle_types_count'], 1)
 
     def test_subscription_list_can_be_scoped_to_organization(self):
         today = timezone.localdate()
