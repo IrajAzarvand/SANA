@@ -1067,13 +1067,16 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 ))
             else:
                 if request.user.is_branch_manager:
+                    # Legacy branch-manager accounts may have organization_id=NULL;
+                    # the branch's organization is the authoritative tenant link.
+                    branch_organization_id = request.user.branch.organization_id
                     access_query = access_query.filter(
-                        organization_id=request.user.organization_id,
+                        organization_id=branch_organization_id,
                         branch_id=request.user.branch_id,
                     )
                     links = [
                         link for link in links
-                        if link.subscription.organization_id == request.user.organization_id
+                        if link.subscription.organization_id == branch_organization_id
                     ]
                 elif request.user.is_main_user:
                     access_query = access_query.filter(organization_id=request.user.organization_id)
