@@ -28,7 +28,7 @@ class UserSerializer(serializers.ModelSerializer):
             'account_type', 'role',
             'organization', 'organization_name', 'organization_data',
             'branch', 'branch_name',
-            'is_active', 'date_joined',
+            'is_active', 'archived_at', 'archived_by', 'date_joined',
         ]
         read_only_fields = ['id', 'date_joined']
 
@@ -62,6 +62,24 @@ class UserCreateSerializer(serializers.ModelSerializer):
             'organization', 'branch',
         ]
 
+    def validate(self, attrs):
+        request = self.context.get('request')
+        actor = getattr(request, 'user', None)
+        if actor and actor.is_main_user:
+            branch = attrs.get('branch')
+            if not actor.organization_id:
+                raise serializers.ValidationError('مدیر شرکت فاقد سازمان معتبر است.')
+            if attrs.get('role') != 'branch_manager' or attrs.get('account_type') != 'organization':
+                raise serializers.ValidationError('مدیر شرکت فقط می‌تواند مدیر شعبه برای سازمان خودش ایجاد کند.')
+            if not branch or branch.organization_id != actor.organization_id:
+                raise serializers.ValidationError({'branch': 'شعبه باید متعلق به سازمان خودتان باشد.'})
+            attrs['organization'] = actor.organization
+        organization = attrs.get('organization')
+        branch = attrs.get('branch')
+        if branch and organization and branch.organization_id != organization.id:
+            raise serializers.ValidationError({'branch': 'شعبه انتخاب‌شده متعلق به سازمان انتخاب‌شده نیست.'})
+        return attrs
+
     def create(self, validated_data):
         password = validated_data.pop('password')
         user = User(**validated_data)
@@ -77,6 +95,38 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             'email', 'mobile', 'first_name', 'last_name', 'national_id',
             'branch',
         ]
+
+    def get_fields(self):
+        fields = super().get_fields()
+        request = self.context.get('request')
+        actor = getattr(request, 'user', None)
+        if actor and actor.is_site_admin:
+            fields.update({
+                'role': serializers.ChoiceField(choices=User.ROLE_CHOICES, required=False),
+                'account_type': serializers.ChoiceField(choices=User.ACCOUNT_TYPE_CHOICES, required=False),
+                'organization': serializers.PrimaryKeyRelatedField(
+                    queryset=__import__('organizations.models', fromlist=['Organization']).Organization.objects.all(),
+                    required=False, allow_null=True,
+                ),
+                'is_active': serializers.BooleanField(required=False),
+            })
+        return fields
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        actor = getattr(request, 'user', None)
+        if actor and actor.is_main_user:
+            if 'branch' in attrs:
+                branch = attrs['branch']
+                if branch and branch.organization_id != actor.organization_id:
+                    raise serializers.ValidationError({'branch': 'شعبه باید متعلق به سازمان خودتان باشد.'})
+            if self.instance and self.instance.role in {'site_admin', 'main_user'}:
+                raise serializers.ValidationError('مدیر شرکت فقط می‌تواند کاربران عادی سازمان را مدیریت کند.')
+        organization = attrs.get('organization', getattr(self.instance, 'organization', None))
+        branch = attrs.get('branch', getattr(self.instance, 'branch', None))
+        if branch and organization and branch.organization_id != organization.id:
+            raise serializers.ValidationError({'branch': 'شعبه انتخاب‌شده متعلق به سازمان انتخاب‌شده نیست.'})
+        return attrs
 
 
 class UserProfileUpdateSerializer(serializers.ModelSerializer):
