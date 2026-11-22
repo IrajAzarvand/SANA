@@ -95,7 +95,8 @@ export default function Companies() {
       setDeleteOrganization(details);
     } catch (err) {
       console.error('Unable to load organization deletion details:', err);
-      setDeleteOrganization(org);
+      setDeleteOrganization(null);
+      alert('دریافت اطلاعات وابستگی‌های شرکت ناموفق بود. برای جلوگیری از حذف با اطلاعات ناقص، حذف انجام نشد. لطفاً دوباره تلاش کنید.');
     }
   };
 
@@ -364,7 +365,7 @@ export default function Companies() {
           <div className="space-y-4">
             <div className="rounded-lg border border-red-500/40 bg-red-500/5 p-3 text-sm">
               <p className="font-semibold text-red-500">این عملیات برگشت‌پذیر نیست.</p>
-              <p className="mt-2">شرکت «{deleteOrganization.name}» حذف خواهد شد. شعب و قراردادهای سازمانی وابسته ممکن است حذف شوند؛ ارتباط بعضی سوابق نیز ممکن است قطع شود.</p>
+              <p className="mt-2">با حذف «{deleteOrganization.name}»، شعب، قراردادهای سازمانی، خودروها، دستگاه‌ها، انواع خودرو و رانندگان وابسته به این شرکت حذف می‌شوند. سوابق مرتبط نیز ممکن است حذف شوند یا ارتباطشان با شرکت قطع شود. این عملیات برگشت‌پذیر نیست.</p>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-sm">
               {[['شعبه', deleteOrganization.branches_count], ['قرارداد', deleteOrganization.subscriptions_count], ['خودرو', deleteOrganization.vehicles_count], ['دستگاه', deleteOrganization.devices_count], ['کاربر', deleteOrganization.users_count]].map(([label, count]) => <div key={label} className="rounded-lg border border-border-base p-3"><div className="text-xs text-text-muted">{label}</div><div className="mt-1 font-semibold">{count ?? '—'}</div></div>)}
