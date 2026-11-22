@@ -276,6 +276,24 @@ class DeviceViewSet(viewsets.ModelViewSet):
         else:
             replacement_scope = Q(pk__in=[])
 
+        # Contract details embedded in a device row must belong to the same
+        # tenant that authorized the device itself.
+        subscription_link_queryset = SubscriptionDevice.objects.select_related(
+            'subscription'
+        ).order_by('-assigned_at', '-id')
+        if user.is_main_user and user.organization_id:
+            subscription_link_queryset = subscription_link_queryset.filter(
+                subscription__organization_id=user.organization_id
+            )
+        elif user.is_branch_manager and user.branch_id:
+            subscription_link_queryset = subscription_link_queryset.filter(
+                subscription__organization_id=user.branch.organization_id
+            )
+        elif user.is_personal_user:
+            subscription_link_queryset = subscription_link_queryset.filter(
+                subscription__user=user
+            )
+
         # The list serializer needs a compact, preloaded snapshot of the
         # subscription and replacement history. Keep these prefetches off
         # detail/actions so unrelated endpoints do not pay for list-only data.
@@ -306,9 +324,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 ),
                 Prefetch(
                     'subscription_links',
-                    queryset=SubscriptionDevice.objects.select_related(
-                        'subscription'
-                    ).order_by('-assigned_at', '-id'),
+                    queryset=subscription_link_queryset,
                     to_attr='_prefetched_subscription_links',
                 ),
                 Prefetch(
