@@ -77,8 +77,27 @@ class UserCreateSerializer(serializers.ModelSerializer):
             attrs['organization'] = actor.organization
         organization = attrs.get('organization')
         branch = attrs.get('branch')
+        role = attrs.get('role')
+        account_type = attrs.get('account_type')
+        expected_type = {
+            'site_admin': 'admin',
+            'main_user': 'organization',
+            'branch_manager': 'organization',
+            'personal_user': 'personal',
+        }.get(role)
+        if expected_type and account_type != expected_type:
+            raise serializers.ValidationError({'account_type': 'نوع حساب با نقش انتخاب‌شده سازگار نیست.'})
         if branch and organization and branch.organization_id != organization.id:
             raise serializers.ValidationError({'branch': 'شعبه انتخاب‌شده متعلق به سازمان انتخاب‌شده نیست.'})
+        if branch and not organization:
+            attrs['organization'] = branch.organization
+            organization = branch.organization
+        if role == 'branch_manager' and (not organization or not branch):
+            raise serializers.ValidationError({'branch': 'برای مدیر شعبه، انتخاب شرکت و شعبه الزامی است.'})
+        if role == 'main_user' and not organization:
+            raise serializers.ValidationError({'organization': 'برای مدیر شرکت، انتخاب شرکت الزامی است.'})
+        if role in {'site_admin', 'personal_user'} and (organization or branch):
+            raise serializers.ValidationError('ادمین سایت و کاربر شخصی نباید به شرکت یا شعبه سازمانی متصل باشند.')
         return attrs
 
     def create(self, validated_data):
@@ -125,8 +144,27 @@ class UserUpdateSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError('مدیر شرکت فقط می‌تواند کاربران عادی سازمان را مدیریت کند.')
         organization = attrs.get('organization', getattr(self.instance, 'organization', None))
         branch = attrs.get('branch', getattr(self.instance, 'branch', None))
+        role = attrs.get('role', getattr(self.instance, 'role', None))
+        account_type = attrs.get('account_type', getattr(self.instance, 'account_type', None))
+        expected_type = {
+            'site_admin': 'admin',
+            'main_user': 'organization',
+            'branch_manager': 'organization',
+            'personal_user': 'personal',
+        }.get(role)
+        if expected_type and account_type != expected_type:
+            raise serializers.ValidationError({'account_type': 'نوع حساب با نقش انتخاب‌شده سازگار نیست.'})
         if branch and organization and branch.organization_id != organization.id:
             raise serializers.ValidationError({'branch': 'شعبه انتخاب‌شده متعلق به سازمان انتخاب‌شده نیست.'})
+        if branch and not organization:
+            attrs['organization'] = branch.organization
+            organization = branch.organization
+        if role == 'branch_manager' and (not organization or not branch):
+            raise serializers.ValidationError({'branch': 'برای مدیر شعبه، انتخاب شرکت و شعبه الزامی است.'})
+        if role == 'main_user' and not organization:
+            raise serializers.ValidationError({'organization': 'برای مدیر شرکت، انتخاب شرکت الزامی است.'})
+        if role in {'site_admin', 'personal_user'} and (organization or branch):
+            raise serializers.ValidationError('ادمین سایت و کاربر شخصی نباید به شرکت یا شعبه سازمانی متصل باشند.')
         return attrs
 
 
