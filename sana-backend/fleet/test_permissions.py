@@ -135,7 +135,7 @@ class BranchManagerReplacementHistoryScopeTests(TestCase):
         device_view.request = SimpleNamespace(user=manager, query_params={})
         device_view.action = 'list'
         listed_devices = list(device_view.get_queryset())
-        listed_own_device = next(item for item in listed_devices if item.pk == own_device.pk)
+        listed_own_device = next(item for item in listed_devices if item.pk == first.pk)
         prefetched_relations = listed_own_device._replacement_relations_as_source
         self.assertEqual([item.pk for item in prefetched_relations], [visible.pk])
 
