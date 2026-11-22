@@ -1572,7 +1572,9 @@ class DeviceReplacementRelationViewSet(viewsets.ModelViewSet):
         qs = self.queryset
         if user.is_site_admin:
             pass
-        elif user.organization_id:
+        elif user.is_branch_manager and user.branch_id:
+            qs = qs.filter(source_device__branch_id=user.branch_id) | qs.filter(replacement_device__branch_id=user.branch_id)
+        elif user.is_main_user and user.organization_id:
             qs = qs.filter(
                 source_device__organization_id=user.organization_id
             ) | qs.filter(
