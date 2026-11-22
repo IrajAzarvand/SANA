@@ -11,7 +11,7 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
 import { useAuth } from '../context/AuthContext';
 import { usersAPI } from '../api/services/fleet';
-import { organizationsAPI } from '../api/services/organizations';
+import { organizationsAPI, branchesAPI } from '../api/services/organizations';
 import { useApi } from '../hooks/useApi';
 
 const roleMap = {
@@ -26,15 +26,21 @@ export default function Users() {
   const [modalOpen, setModalOpen] = useState(false);
   const [expanded, setExpanded] = useState({});
   const [showPersonal, setShowPersonal] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [formError, setFormError] = useState('');
+  const emptyForm = { username: '', password: '', first_name: '', last_name: '', email: '', mobile: '', role: 'branch_manager', account_type: 'organization', organization: '', branch: '' };
+  const [form, setForm] = useState(emptyForm);
 
   const { isSiteAdmin, isMainUser } = useAuth();
+  const canManageUsers = isSiteAdmin || isMainUser;
 
   // دریافت کاربران از API
   const fetchUsers = useCallback(async () => {
-    const result = await usersAPI.list();
+    const result = await usersAPI.list(showArchived ? { archived: true } : { archived: false });
     // DRF pagination ممکنه برگردونه { count, next, previous, results }
     return Array.isArray(result) ? result : result.results || [];
-  }, []);
+  }, [showArchived]);
 
   const fetchOrgs = useCallback(async () => {
     try {
@@ -49,6 +55,11 @@ export default function Users() {
     useApi(fetchUsers, []);
 
   const { data: organizations } = useApi(fetchOrgs, []);
+  const fetchBranches = useCallback(async () => {
+    const result = await branchesAPI.list();
+    return Array.isArray(result) ? result : result.results || [];
+  }, []);
+  const { data: branches } = useApi(fetchBranches, []);
 
   // گروه‌بندی کاربران سازمانی بر اساس organization
   const groupedCompanies = useMemo(() => {
@@ -112,21 +123,21 @@ export default function Users() {
       items.push({
         label: 'ویرایش',
         icon: Pencil,
-        onClick: () => console.log('Edit user:', user.id),
+        onClick: () => { setEditingUser(user); setForm({ ...emptyForm, ...user, password: '', organization: user.organization || '', branch: user.branch || '' }); setFormError(''); setModalOpen(true); },
       });
       items.push({
-        label: 'غیرفعال',
+        label: user.archived_at ? 'بازیابی کاربر' : 'بایگانی کاربر',
         icon: UserX,
-        onClick: () => console.log('Disable user:', user.id),
+        onClick: async () => { try { if (user.archived_at) await usersAPI.restore(user.id); else if (window.confirm('این کاربر بایگانی شود؟ دسترسی ورود او قطع می‌شود، اما سوابقش باقی می‌ماند.')) await usersAPI.archive(user.id); await refetchUsers(); } catch (error) { window.alert(error?.response?.data?.detail || 'عملیات انجام نشد.'); } },
       });
     }
 
     if (isSiteAdmin) {
       items.push({
-        label: 'حذف',
+        label: 'بایگانی',
         icon: Trash2,
         variant: 'danger',
-        onClick: () => console.log('Delete user:', user.id),
+        onClick: async () => { if (!window.confirm('کاربر بایگانی شود؟ اطلاعات و سوابق او حذف نخواهند شد.')) return; try { await usersAPI.archive(user.id); await refetchUsers(); } catch (error) { window.alert(error?.response?.data?.detail || 'بایگانی انجام نشد.'); } },
       });
     }
 
@@ -175,6 +186,8 @@ export default function Users() {
           </Button>
         }
       />
+
+      {canManageUsers && <div className="flex justify-end"><Button size="sm" variant="secondary" onClick={() => setShowArchived((value) => !value)}>{showArchived ? 'نمایش کاربران فعال' : 'نمایش کاربران بایگانی‌شده'}</Button></div>}
 
       <Card>
         <Input
@@ -404,73 +417,90 @@ export default function Users() {
 
       <Modal
         open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title="افزودن کاربر"
+        onClose={() => { setModalOpen(false); setEditingUser(null); }}
+        title={editingUser ? 'ویرایش کاربر' : 'افزودن کاربر'}
         size="lg"
         footer={
           <>
-            <Button variant="secondary" onClick={() => setModalOpen(false)}>انصراف</Button>
-            <Button>ذخیره</Button>
+            <Button variant="secondary" onClick={() => { setModalOpen(false); setEditingUser(null); }}>انصراف</Button>
+            <Button onClick={async () => {
+              setFormError('');
+              try {
+                const payload = {
+                  ...(editingUser ? {} : { username: form.username, password: form.password }),
+                  first_name: form.first_name,
+                  last_name: form.last_name,
+                  email: form.email,
+                  mobile: form.mobile,
+                  branch: form.branch ? Number(form.branch) : null,
+                };
+                if (!editingUser) {
+                  payload.role = isSiteAdmin ? form.role : 'branch_manager';
+                  payload.account_type = isSiteAdmin ? (form.role === 'site_admin' ? 'admin' : form.role === 'personal_user' ? 'personal' : 'organization') : 'organization';
+                  if (isSiteAdmin) payload.organization = form.organization ? Number(form.organization) : null;
+                } else if (isSiteAdmin) {
+                  payload.role = form.role;
+                  payload.account_type = form.role === 'site_admin' ? 'admin' : form.role === 'personal_user' ? 'personal' : 'organization';
+                  payload.organization = form.organization ? Number(form.organization) : null;
+                }
+                if (editingUser) await usersAPI.update(editingUser.id, payload);
+                else await usersAPI.create(payload);
+                setModalOpen(false);
+                setEditingUser(null);
+                await refetchUsers();
+              } catch (error) {
+                const data = error?.response?.data;
+                setFormError(data ? Object.values(data).flat().join(' ') : 'ذخیره اطلاعات انجام نشد.');
+              }
+            }}>ذخیره</Button>
           </>
         }
       >
         <div className="space-y-5">
-
-          <div>
-            <h4 className="text-xs font-medium text-text-muted mb-3">اطلاعات ورود</h4>
+          {formError && <div className="rounded-field border border-danger/30 bg-danger/10 p-3 text-sm text-danger">{formError}</div>}
+          {!editingUser && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Input
-                label="نام کاربری"
-                placeholder="مثلاً etminan"
-                autoComplete="off"
-                required
-              />
-              <Input
-                type="password"
-                label="رمز عبور"
-                placeholder="حداقل ۸ کاراکتر"
-                autoComplete="new-password"
-                required
-              />
+              <Input label="نام کاربری" value={form.username} onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))} required />
+              <Input type="password" label="رمز عبور" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} required />
             </div>
+          )}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input label="نام" value={form.first_name || ''} onChange={(e) => setForm((f) => ({ ...f, first_name: e.target.value }))} />
+            <Input label="نام خانوادگی" value={form.last_name || ''} onChange={(e) => setForm((f) => ({ ...f, last_name: e.target.value }))} />
+            <Input label="ایمیل" value={form.email || ''} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} />
+            <Input label="موبایل" value={form.mobile || ''} onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))} />
           </div>
-
-          <div className="border-t border-border-base" />
-
-          <div>
-            <h4 className="text-xs font-medium text-text-muted mb-3">اطلاعات شخصی</h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Input label="نام" />
-              <Input label="نام خانوادگی" />
-              <Input label="ایمیل" />
-              <Input label="موبایل" />
-            </div>
-          </div>
-
-          <div className="border-t border-border-base" />
-
-          <div>
-            <h4 className="text-xs font-medium text-text-muted mb-3">نقش و دسترسی</h4>
+          {isSiteAdmin && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm text-text-secondary mb-2">نقش</label>
-                <select className="w-full bg-bg-base border border-border-base rounded-field px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-brand-500">
+                <select value={form.role || 'branch_manager'} onChange={(e) => setForm((f) => ({ ...f, role: e.target.value, account_type: e.target.value === 'site_admin' ? 'admin' : e.target.value === 'personal_user' ? 'personal' : 'organization', organization: e.target.value === 'personal_user' || e.target.value === 'site_admin' ? '' : f.organization, branch: '' }))} className="w-full bg-bg-base border border-border-base rounded-field px-4 py-2.5 text-sm text-text-primary">
+                  <option value="site_admin">ادمین کل سایت</option>
+                  <option value="main_user">مدیر شرکت</option>
                   <option value="branch_manager">مدیر شعبه</option>
-                  {isSiteAdmin && <option value="main_user">مدیر شرکت</option>}
-                  {isSiteAdmin && <option value="personal_user">کاربر شخصی</option>}
+                  <option value="personal_user">کاربر شخصی</option>
                 </select>
               </div>
-              <div>
-                <label className="block text-sm text-text-secondary mb-2">شرکت</label>
-                <select className="w-full bg-bg-base border border-border-base rounded-field px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-brand-500">
-                  {(organizations || []).map((o) => (
-                    <option key={o.id} value={o.id}>{o.name}</option>
-                  ))}
-                </select>
-              </div>
+              {form.role !== 'site_admin' && form.role !== 'personal_user' && (
+                <div>
+                  <label className="block text-sm text-text-secondary mb-2">شرکت</label>
+                  <select value={form.organization || ''} onChange={(e) => setForm((f) => ({ ...f, organization: e.target.value, branch: '' }))} className="w-full bg-bg-base border border-border-base rounded-field px-4 py-2.5 text-sm text-text-primary">
+                    <option value="">انتخاب شرکت</option>
+                    {(organizations || []).map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                  </select>
+                </div>
+              )}
             </div>
-          </div>
-
+          )}
+          {(form.role === 'branch_manager' || (!isSiteAdmin && !editingUser)) && (
+            <div>
+              <label className="block text-sm text-text-secondary mb-2">شعبه</label>
+              <select value={form.branch || ''} onChange={(e) => setForm((f) => ({ ...f, branch: e.target.value }))} className="w-full bg-bg-base border border-border-base rounded-field px-4 py-2.5 text-sm text-text-primary">
+                <option value="">انتخاب شعبه</option>
+                {(branches || []).filter((b) => !form.organization || String(b.organization) === String(form.organization)).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </div>
+          )}
         </div>
       </Modal>
 
