@@ -67,10 +67,14 @@ export default function Users() {
 
     const orgUsers = users.filter((u) => u.account_type === 'organization');
     const map = new Map();
+    const branchById = new Map((branches || []).map((branch) => [branch.id, branch]));
 
     orgUsers.forEach((u) => {
-      const orgId = u.organization;
-      const orgName = u.organization_name || 'بدون سازمان';
+      // Older branch-manager accounts may have a null organization_id while
+      // their branch still provides an authoritative organization link.
+      const branch = branchById.get(u.branch);
+      const orgId = u.organization || branch?.organization || `legacy-branch-${u.branch || u.id}`;
+      const orgName = u.organization_name || branch?.organization_name || 'بدون سازمان';
       if (!map.has(orgId)) {
         map.set(orgId, {
           id: orgId,
@@ -82,7 +86,7 @@ export default function Users() {
     });
 
     return Array.from(map.values());
-  }, [users]);
+  }, [users, branches]);
 
   // حساب‌های مدیریتی سایت (فقط برای مدیر سایت)
   const adminUsers = useMemo(() => {
