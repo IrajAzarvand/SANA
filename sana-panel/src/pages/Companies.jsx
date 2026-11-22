@@ -1,4 +1,39 @@
 import { useState, useMemo, useCallback } from 'react';
+
+async function fetchAllPages(listFn, params = {}) {
+  const results = [];
+  let page = Number(params.page) || 1;
+  const visitedPages = new Set();
+
+  for (let pageCount = 0; pageCount < 1000; pageCount += 1) {
+    if (visitedPages.has(page)) {
+      throw new Error('Pagination loop detected while loading organization details');
+    }
+    visitedPages.add(page);
+
+    const response = await listFn({ ...params, page });
+    if (Array.isArray(response)) {
+      results.push(...response);
+      return results;
+    }
+
+    const pageResults = Array.isArray(response?.results) ? response.results : [];
+    results.push(...pageResults);
+    if (!response?.next) return results;
+
+    let nextPage = page + 1;
+    try {
+      const nextUrl = new URL(response.next, window.location.origin);
+      const parsedPage = Number(nextUrl.searchParams.get('page'));
+      if (Number.isInteger(parsedPage) && parsedPage > 0) nextPage = parsedPage;
+    } catch {
+      // Fall back to sequential page numbers for an unparseable next link.
+    }
+    page = nextPage;
+  }
+
+  throw new Error('Organization details pagination exceeded the safety limit');
+}
 import { Search, Plus, Building2, Pencil, Trash2, Eye } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
@@ -122,19 +157,14 @@ export default function Companies() {
     setDetailVehicles([]);
     setDetailDevices([]);
     try {
-      const [details, branchResult, subscriptionResult, userResult, vehicleResult, deviceResult] = await Promise.all([
+      const [details, branchList, subscriptionList, userList, vehicleList, deviceList] = await Promise.all([
         organizationsAPI.get(org.id),
-        branchesAPI.list({ organization: org.id }),
-        subscriptionsAPI.list({ organization: org.id }),
-        usersAPI.list({ organization: org.id }),
-        vehiclesAPI.list({ organization: org.id }),
-        devicesAPI.list({ organization: org.id }),
+        fetchAllPages(branchesAPI.list, { organization: org.id }),
+        fetchAllPages(subscriptionsAPI.list, { organization: org.id }),
+        fetchAllPages(usersAPI.list, { organization: org.id }),
+        fetchAllPages(vehiclesAPI.list, { organization: org.id }),
+        fetchAllPages(devicesAPI.list, { organization: org.id }),
       ]);
-      const branchList = Array.isArray(branchResult) ? branchResult : branchResult.results || [];
-      const subscriptionList = Array.isArray(subscriptionResult) ? subscriptionResult : subscriptionResult.results || [];
-      const userList = Array.isArray(userResult) ? userResult : userResult.results || [];
-      const vehicleList = Array.isArray(vehicleResult) ? vehicleResult : vehicleResult.results || [];
-      const deviceList = Array.isArray(deviceResult) ? deviceResult : deviceResult.results || [];
       setDetailOrganization(details);
       setDetailBranches(branchList.filter((branch) => Number(branch.organization) === Number(org.id)));
       setDetailSubscriptions(subscriptionList);
