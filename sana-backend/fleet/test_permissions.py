@@ -392,6 +392,8 @@ class BranchManagerVehicleTypeScopeTests(TestCase):
 
 class BranchManagerVehicleAndDriverTenantScopeTests(TestCase):
     def test_branch_manager_lists_and_branch_counts_exclude_foreign_tenant_records(self):
+        from datetime import timedelta
+        from django.utils import timezone
         from rest_framework.test import APIClient
         from accounts.models import User
         from fleet.models import Device, DeviceCustomerAccessPeriod, Driver, Vehicle
