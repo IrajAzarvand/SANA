@@ -3,6 +3,7 @@ from decimal import Decimal, InvalidOperation
 from django.utils import timezone
 from django.db.models import Sum
 from fleet.lifecycle import record_device_lifecycle_event
+from fleet.models import DeviceCustomerAccessPeriod
 from .models import (
     Organization,
     Branch,
@@ -107,6 +108,21 @@ class BranchSerializer(serializers.ModelSerializer):
         if request and getattr(request.user, 'is_branch_manager', False):
             data['organization'] = None
             data['organization_name'] = None
+            data['vehicles_count'] = instance.vehicles.filter(
+                organization_id=instance.organization_id
+            ).count()
+            data['devices_count'] = DeviceCustomerAccessPeriod.objects.filter(
+                organization_id=instance.organization_id,
+                branch=instance,
+                started_at__lte=timezone.now(),
+                ended_at__isnull=True,
+            ).values('device_id').distinct().count()
+            data['drivers_count'] = instance.drivers.filter(
+                organization_id=instance.organization_id
+            ).count()
+            # Branch managers cannot browse user management; do not expose a
+            # count that could include accounts outside the branch tenant.
+            data['users_count'] = None
         return data
     vehicles_count = serializers.IntegerField(source='vehicles.count', read_only=True)
     devices_count = serializers.IntegerField(source='devices.count', read_only=True)
