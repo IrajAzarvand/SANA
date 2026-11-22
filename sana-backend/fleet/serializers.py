@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.db.models import Q
 from django.utils import timezone
-from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DriverVehicleAssignment, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation
+from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DriverVehicleAssignment, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation, DeviceCustomerAccessPeriod
 
 
 class VehicleTypeSerializer(serializers.ModelSerializer):
@@ -103,7 +103,36 @@ class VehicleListSerializer(serializers.ModelSerializer):
         ]
 
     def get_device_status(self, obj):
-        device = obj.devices.order_by('-updated_at', '-id').first()
+        request = self.context.get('request')
+        user = request.user if request else None
+        devices = obj.devices.all()
+        now = timezone.now()
+
+        if user and user.is_main_user and user.organization_id:
+            devices = devices.filter(
+                customer_access_periods__organization_id=user.organization_id,
+                customer_access_periods__started_at__lte=now,
+                customer_access_periods__ended_at__isnull=True,
+            ).distinct()
+        elif user and user.is_branch_manager and user.branch_id:
+            devices = devices.filter(
+                customer_access_periods__organization_id=user.branch.organization_id,
+                customer_access_periods__branch_id=user.branch_id,
+                customer_access_periods__started_at__lte=now,
+                customer_access_periods__ended_at__isnull=True,
+            ).distinct()
+        elif user and not user.is_site_admin:
+            # Do not infer GPS visibility from the vehicle-device foreign key.
+            # Personal and unsupported roles must use their authorized device list.
+            authorized_ids = DeviceCustomerAccessPeriod.objects.filter(
+                user=user,
+                started_at__lte=now,
+            ).filter(
+                Q(ended_at__isnull=True) | Q(ended_at__gte=now)
+            ).values_list('device_id', flat=True)
+            devices = devices.filter(pk__in=authorized_ids)
+
+        device = devices.order_by('-updated_at', '-id').first()
         if not device:
             return 'none'
         return 'active' if device.is_data_active else 'offline'
