@@ -43,10 +43,12 @@ class OrganizationSerializer(serializers.ModelSerializer):
 class OrganizationSettingsSerializer(serializers.ModelSerializer):
     """Self-service organization profile; lifecycle and identifiers stay read-only."""
 
+
     branches_count = serializers.IntegerField(source='branches.count', read_only=True)
     vehicles_count = serializers.IntegerField(source='vehicles.count', read_only=True)
     devices_count = serializers.IntegerField(source='devices.count', read_only=True)
     users_count = serializers.IntegerField(source='users.count', read_only=True)
+    subscriptions_count = serializers.IntegerField(source='subscriptions.count', read_only=True)
 
     class Meta:
         model = Organization
@@ -69,12 +71,14 @@ class OrganizationListSerializer(serializers.ModelSerializer):
     branches_count = serializers.IntegerField(source='branches.count', read_only=True)
     vehicles_count = serializers.IntegerField(source='vehicles.count', read_only=True)
     devices_count = serializers.IntegerField(source='devices.count', read_only=True)
+    users_count = serializers.IntegerField(source='users.count', read_only=True)
+    subscriptions_count = serializers.IntegerField(source='subscriptions.count', read_only=True)
 
     class Meta:
         model = Organization
         fields = [
             'id', 'name', 'code', 'phone', 'status',
-            'branches_count', 'vehicles_count', 'devices_count',
+            'branches_count', 'vehicles_count', 'devices_count', 'users_count', 'subscriptions_count',
             'created_at',
         ]
 
@@ -88,13 +92,14 @@ class BranchSerializer(serializers.ModelSerializer):
     vehicles_count = serializers.IntegerField(source='vehicles.count', read_only=True)
     devices_count = serializers.IntegerField(source='devices.count', read_only=True)
     drivers_count = serializers.IntegerField(source='drivers.count', read_only=True)
+    users_count = serializers.IntegerField(source='users.count', read_only=True)
 
     class Meta:
         model = Branch
         fields = [
             'id', 'organization', 'organization_name',
             'name', 'code', 'phone', 'address', 'status',
-            'vehicles_count', 'devices_count', 'drivers_count',
+            'vehicles_count', 'devices_count', 'drivers_count', 'users_count',
             'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
