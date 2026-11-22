@@ -186,6 +186,10 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         if customer_type:
             qs = qs.filter(customer_type=customer_type)
 
+        organization_filter = self.request.query_params.get('organization')
+        if organization_filter:
+            qs = qs.filter(organization_id=organization_filter)
+
         expiring = self.request.query_params.get('expiring')
         if expiring == 'true':
             today = timezone.now().date()
