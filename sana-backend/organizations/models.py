@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
@@ -9,6 +10,7 @@ class Organization(models.Model):
         ('active', 'فعال'),
         ('inactive', 'غیرفعال'),
         ('suspended', 'تعلیق‌شده'),
+        ('archived', 'بایگانی‌شده'),
     ]
 
     name = models.CharField(max_length=200, verbose_name='نام سازمان')
@@ -23,6 +25,13 @@ class Organization(models.Model):
     logo = models.ImageField(upload_to='organizations/logos/', null=True, blank=True, verbose_name='لوگو')
 
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='active', verbose_name='وضعیت')
+    archived_at = models.DateTimeField(null=True, blank=True, verbose_name='زمان بایگانی')
+    archived_from_status = models.CharField(max_length=20, blank=True, verbose_name='وضعیت پیش از بایگانی')
+    archived_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='archived_organizations',
+        verbose_name='بایگانی‌کننده',
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

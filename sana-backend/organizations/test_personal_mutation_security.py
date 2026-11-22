@@ -5,6 +5,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from accounts.models import User
+from fleet.models import Device, Vehicle
 from organizations.models import (
     Branch,
     Organization,
@@ -139,3 +140,62 @@ class PersonalMutationSecurityTests(TestCase):
 
         self.assertEqual(response.status_code, 403)
         self.assertFalse(self.payment.allocations.exists())
+
+
+
+class BranchDeletionPermissionTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.organization = Organization.objects.create(
+            name='شرکت آزمون حذف شعبه',
+            code='BR-DELETE-ORG',
+        )
+        self.branch = Branch.objects.create(
+            organization=self.organization,
+            name='شعبه آزمون حذف',
+            code='BR-DELETE-001',
+        )
+        self.main_user = User.objects.create_user(
+            username='branch-delete-main',
+            password='test-password',
+            account_type='organization',
+            role='main_user',
+            organization=self.organization,
+        )
+        self.site_admin = User.objects.create_user(
+            username='branch-delete-admin',
+            password='test-password',
+            account_type='admin',
+            role='site_admin',
+        )
+
+    def test_main_user_cannot_physically_delete_branch(self):
+        self.client.force_authenticate(user=self.main_user)
+
+        response = self.client.delete(f'/api/branches/{self.branch.id}/')
+
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(Branch.objects.filter(pk=self.branch.pk).exists())
+
+    def test_site_admin_can_physically_delete_branch_and_detach_resources(self):
+        vehicle = Vehicle.objects.create(
+            organization=self.organization,
+            branch=self.branch,
+            plate='BRDELTEST01',
+        )
+        device = Device.objects.create(
+            imei='987654321098764',
+            organization=self.organization,
+            branch=self.branch,
+        )
+        self.client.force_authenticate(user=self.site_admin)
+
+        response = self.client.delete(f'/api/branches/{self.branch.id}/')
+
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Branch.objects.filter(pk=self.branch.pk).exists())
+        vehicle.refresh_from_db()
+        device.refresh_from_db()
+        self.assertIsNone(vehicle.branch_id)
+        self.assertIsNone(device.branch_id)

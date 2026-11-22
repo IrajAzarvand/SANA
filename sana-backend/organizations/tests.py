@@ -3,7 +3,7 @@ from rest_framework.test import APIClient
 from unittest.mock import patch
 
 from accounts.models import User
-from fleet.models import Device
+from fleet.models import Device, Vehicle, Driver, VehicleType
 from organizations.models import (
     Organization, Subscription, SubscriptionDevice, SubscriptionPayment, SubscriptionOperation,
     SubscriptionInstallmentPlan, SubscriptionInstallment, SubscriptionPaymentAllocation,
@@ -910,3 +910,225 @@ class PersonalSubscriptionReadOnlyAccessTests(TestCase):
         self.own_subscription.refresh_from_db()
         self.assertEqual(self.own_subscription.status, 'active')
         self.assertEqual(self.own_subscription.notes, '')
+
+
+class OrganizationAndBranchDeletionPermissionTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.organization = Organization.objects.create(
+            name='Deletion Test Organization',
+            code='DELETE-ORG-TEST',
+        )
+        from organizations.models import Branch
+        self.branch = Branch.objects.create(
+            organization=self.organization,
+            name='Deletion Test Branch',
+            code='DELETE-BR-TEST',
+        )
+        self.company_manager = User.objects.create_user(
+            username='delete-test-company-manager',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=self.organization,
+        )
+        self.site_admin = User.objects.create_user(
+            username='delete-test-site-admin',
+            password='test-password',
+            role='site_admin',
+            account_type='admin',
+            is_staff=True,
+            is_superuser=True,
+        )
+
+    def test_organization_and_branch_list_include_relationship_counts(self):
+        self.client.force_authenticate(user=self.site_admin)
+        organization_response = self.client.get(f'/api/organizations/{self.organization.id}/')
+        organization_list_response = self.client.get('/api/organizations/')
+        branch_response = self.client.get('/api/branches/')
+
+        self.assertEqual(organization_response.status_code, 200)
+        self.assertIn('subscriptions_count', organization_response.data)
+        self.assertIn('users_count', organization_response.data)
+        self.assertEqual(organization_list_response.status_code, 200)
+        list_data = organization_list_response.data['results'] if isinstance(organization_list_response.data, dict) else organization_list_response.data
+        self.assertTrue(any(
+            item['id'] == self.organization.id
+            and 'drivers_count' in item
+            and 'vehicle_types_count' in item
+            for item in list_data
+        ))
+        self.assertEqual(branch_response.status_code, 200)
+        branch_data = branch_response.data['results'] if isinstance(branch_response.data, dict) else branch_response.data
+        self.assertTrue(any(
+            item['id'] == self.branch.id and 'users_count' in item
+            for item in branch_data
+        ))
+
+    def test_organization_detail_reports_driver_and_vehicle_type_counts(self):
+        Driver.objects.create(
+            organization=self.organization,
+            branch=self.branch,
+            first_name='Test',
+            last_name='Driver',
+            mobile='09120000001',
+        )
+        VehicleType.objects.create(
+            organization=self.organization,
+            name='Test Vehicle Type',
+        )
+        Vehicle.objects.create(
+            organization=self.organization,
+            branch=self.branch,
+            plate='BRCOUNTTEST01',
+        )
+        Device.objects.create(
+            imei='987654321098761',
+            organization=self.organization,
+            branch=self.branch,
+        )
+        self.client.force_authenticate(user=self.site_admin)
+        response = self.client.get(f'/api/organizations/{self.organization.id}/')
+        branch_response = self.client.get(f'/api/branches/{self.branch.id}/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['drivers_count'], 1)
+        self.assertEqual(response.data['vehicle_types_count'], 1)
+        self.assertEqual(branch_response.status_code, 200)
+        self.assertEqual(branch_response.data['drivers_count'], 1)
+        self.assertEqual(branch_response.data['vehicles_count'], 1)
+        self.assertEqual(branch_response.data['devices_count'], 1)
+
+    def test_subscription_list_can_be_scoped_to_organization(self):
+        today = timezone.localdate()
+        other_organization = Organization.objects.create(
+            name='Other Test Organization',
+            code='DELETE-ORG-OTHER',
+        )
+        own_contract = Subscription.objects.create(
+            contract_number='DELETE-ORG-CONTRACT-001',
+            customer_type='organization',
+            organization=self.organization,
+            start_date=today,
+            end_date=today + timedelta(days=30),
+            price=1000,
+        )
+        other_contract = Subscription.objects.create(
+            contract_number='DELETE-ORG-CONTRACT-002',
+            customer_type='organization',
+            organization=other_organization,
+            start_date=today,
+            end_date=today + timedelta(days=30),
+            price=1000,
+        )
+        self.client.force_authenticate(user=self.site_admin)
+        response = self.client.get(f'/api/subscriptions/?organization={self.organization.id}')
+
+        self.assertEqual(response.status_code, 200)
+        contract_data = response.data['results'] if isinstance(response.data, dict) else response.data
+        contract_ids = {item['id'] for item in contract_data}
+        self.assertIn(own_contract.id, contract_ids)
+        self.assertNotIn(other_contract.id, contract_ids)
+
+    def test_company_manager_cannot_physically_delete_organization(self):
+        self.client.force_authenticate(user=self.company_manager)
+        response = self.client.delete(f'/api/organizations/{self.organization.id}/')
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(Organization.objects.filter(pk=self.organization.pk).exists())
+
+    def test_site_admin_company_delete_archives_and_preserves_all_related_records(self):
+        today = timezone.localdate()
+        vehicle = Vehicle.objects.create(
+            organization=self.organization,
+            branch=self.branch,
+            plate='ORGARCHIVE01',
+        )
+        driver = Driver.objects.create(
+            organization=self.organization,
+            branch=self.branch,
+            first_name='Archive',
+            last_name='Driver',
+            mobile='09120000002',
+        )
+        device = Device.objects.create(
+            imei='987654321098765',
+            organization=self.organization,
+            branch=self.branch,
+        )
+        subscription = Subscription.objects.create(
+            contract_number='DELETE-ORG-ARCHIVE-001',
+            customer_type='organization',
+            organization=self.organization,
+            start_date=today,
+            end_date=today + timedelta(days=30),
+            price=1000,
+        )
+        payment = SubscriptionPayment.objects.create(
+            subscription=subscription,
+            amount=1000,
+            received_at=today,
+            description='Archived company payment history',
+        )
+        plan = create_installment_plan(
+            subscription,
+            {
+                'scheduled_amount': 1000,
+                'installment_count': 1,
+                'interval_months': 1,
+                'calculation_mode': 'equal',
+                'first_due_date': today + timedelta(days=30),
+            },
+            created_by=self.site_admin,
+        )
+        allocate_payment(
+            payment,
+            allocation_type='contract_advance',
+            allocation_amount=1000,
+        )
+        manager = self.company_manager
+
+        self.client.force_authenticate(user=self.site_admin)
+        response = self.client.post(f'/api/organizations/{self.organization.id}/archive/')
+
+        self.assertEqual(response.status_code, 200)
+        self.organization.refresh_from_db()
+        self.assertEqual(self.organization.status, 'archived')
+        self.assertIsNotNone(self.organization.archived_at)
+        self.assertEqual(self.organization.archived_by, self.site_admin)
+        self.assertEqual(self.organization.archived_from_status, 'active')
+        self.assertTrue(self.branch.__class__.objects.filter(pk=self.branch.pk).exists())
+        self.assertTrue(Vehicle.objects.filter(pk=vehicle.pk).exists())
+        self.assertTrue(Device.objects.filter(pk=device.pk).exists())
+        self.assertTrue(Driver.objects.filter(pk=driver.pk).exists())
+        self.assertTrue(Subscription.objects.filter(pk=subscription.pk).exists())
+        self.assertTrue(SubscriptionPayment.objects.filter(pk=payment.pk).exists())
+        self.assertTrue(SubscriptionInstallmentPlan.objects.filter(pk=plan.pk).exists())
+        self.assertTrue(SubscriptionPaymentAllocation.objects.filter(payment=payment).exists())
+        manager.refresh_from_db()
+        self.assertEqual(manager.organization_id, self.organization.pk)
+
+        self.client.force_authenticate(user=self.company_manager)
+        hidden_response = self.client.get(f'/api/organizations/{self.organization.id}/')
+        self.assertEqual(hidden_response.status_code, 404)
+        self.assertEqual(self.client.get('/api/branches/').data['count'], 0)
+        self.assertEqual(self.client.get('/api/vehicles/').data['count'], 0)
+        self.assertEqual(self.client.get('/api/drivers/').data['count'], 0)
+        self.assertEqual(self.client.get('/api/subscriptions/').data['count'], 0)
+        self.assertEqual(self.client.get('/api/users/').data['count'], 0)
+
+    def test_site_admin_can_restore_archived_company_without_losing_history(self):
+        self.organization.status = 'archived'
+        self.organization.archived_from_status = 'suspended'
+        self.organization.archived_at = timezone.now()
+        self.organization.archived_by = self.site_admin
+        self.organization.save(update_fields=['status', 'archived_from_status', 'archived_at', 'archived_by'])
+
+        self.client.force_authenticate(user=self.site_admin)
+        response = self.client.post(f'/api/organizations/{self.organization.id}/restore/')
+
+        self.assertEqual(response.status_code, 200)
+        self.organization.refresh_from_db()
+        self.assertEqual(self.organization.status, 'suspended')
+        self.assertIsNone(self.organization.archived_at)
+        self.assertIsNone(self.organization.archived_by)
+

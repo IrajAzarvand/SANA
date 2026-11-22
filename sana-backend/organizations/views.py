@@ -1,5 +1,6 @@
 from django.utils import timezone
 from django.db import transaction
+from django.db.models import Q
 from datetime import timedelta
 from rest_framework import viewsets, filters, status, serializers
 from rest_framework.decorators import action
@@ -73,15 +74,46 @@ class OrganizationViewSet(viewsets.ModelViewSet):
         if user.is_site_admin:
             return Organization.objects.all()
         if user.organization_id:
-            return Organization.objects.filter(id=user.organization_id)
+            return Organization.objects.filter(id=user.organization_id).exclude(status='archived')
         return Organization.objects.none()
 
     def get_permissions(self):
-        if self.action in ['create', 'destroy']:
+        if self.action in ['create', 'destroy', 'restore', 'archive']:
             return [IsSiteAdmin()]
         if self.action in ['update', 'partial_update']:
             return [CanManageOrganizationSettings()]
         return super().get_permissions()
+
+    def perform_destroy(self, instance):
+        # Organization deletion is archival: financial and operational history must survive.
+        if instance.status == 'archived':
+            return
+        instance.archived_from_status = instance.status
+        instance.status = 'archived'
+        instance.archived_at = timezone.now()
+        instance.archived_by = self.request.user
+        instance.save(update_fields=['status', 'archived_at', 'archived_by', 'archived_from_status', 'updated_at'])
+
+    @action(detail=True, methods=['post'])
+    def archive(self, request, pk=None):
+        organization = self.get_object()
+        self.perform_destroy(organization)
+        return Response(self.get_serializer(organization).data)
+
+    @action(detail=True, methods=['post'])
+    def restore(self, request, pk=None):
+        organization = self.get_object()
+        if organization.status != 'archived':
+            return Response(
+                {'detail': 'این شرکت در وضعیت بایگانی نیست.'},
+                status=status.HTTP_409_CONFLICT,
+            )
+        organization.status = organization.archived_from_status if organization.archived_from_status in {'active', 'inactive', 'suspended'} else 'active'
+        organization.archived_at = None
+        organization.archived_by = None
+        organization.archived_from_status = ''
+        organization.save(update_fields=['status', 'archived_at', 'archived_by', 'archived_from_status', 'updated_at'])
+        return Response(self.get_serializer(organization).data)
 
 
 # ═══════════════════════════════════════════════
@@ -113,6 +145,9 @@ class BranchViewSet(viewsets.ModelViewSet):
         else:
             qs = qs.none()
 
+        if not user.is_site_admin:
+            qs = qs.exclude(organization__status='archived')
+
         org = self.request.query_params.get('organization')
         if org:
             qs = qs.filter(organization_id=org)
@@ -120,12 +155,16 @@ class BranchViewSet(viewsets.ModelViewSet):
         return qs
 
     def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+        if self.action == 'destroy':
+            return [IsSiteAdmin()]
+        if self.action in ['create', 'update', 'partial_update']:
             return [IsMainUserOrSiteAdmin()]
         return super().get_permissions()
 
     def perform_create(self, serializer):
         user = self.request.user
+        if user.is_main_user and user.organization and user.organization.status == 'archived':
+            raise serializers.ValidationError('شرکت بایگانی شده و امکان ایجاد یا تغییر شعبه ندارد.')
         if user.is_main_user:
             if not user.organization_id:
                 raise serializers.ValidationError('حساب مدیر شرکت به سازمان معتبری متصل نیست.')
@@ -175,6 +214,9 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         else:
             qs = qs.none()
 
+        if not user.is_site_admin:
+            qs = qs.exclude(organization__status='archived')
+
         # فیلترها
         status_filter = self.request.query_params.get('status')
         if status_filter:
@@ -183,6 +225,10 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         customer_type = self.request.query_params.get('customer_type')
         if customer_type:
             qs = qs.filter(customer_type=customer_type)
+
+        organization_filter = self.request.query_params.get('organization')
+        if organization_filter:
+            qs = qs.filter(organization_id=organization_filter)
 
         expiring = self.request.query_params.get('expiring')
         if expiring == 'true':
@@ -678,6 +724,9 @@ class SubscriptionDeviceViewSet(viewsets.ModelViewSet):
         else:
             qs = qs.none()
 
+        if not user.is_site_admin:
+            qs = qs.exclude(subscription__organization__status='archived')
+
         subscription = self.request.query_params.get('subscription')
         if subscription:
             qs = qs.filter(subscription_id=subscription)
@@ -763,6 +812,9 @@ class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
             qs = qs.filter(subscription__user=user)
         else:
             qs = qs.none()
+
+        if not user.is_site_admin:
+            qs = qs.exclude(subscription__organization__status='archived')
 
         subscription = self.request.query_params.get('subscription')
         if subscription:

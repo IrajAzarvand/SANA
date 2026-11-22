@@ -1,5 +1,5 @@
-import { useState, useMemo, useCallback } from 'react';
-import { Search, Plus, Building2, Pencil, Trash2, Eye } from 'lucide-react';
+import { useState, useMemo, useCallback, useRef } from 'react';
+import { Search, Plus, Building2, Pencil, Archive, Eye } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
 import Badge from '../components/Badge';
@@ -10,14 +10,65 @@ import ActionMenu from '../components/ActionMenu';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
 import { useAuth } from '../context/AuthContext';
-import { organizationsAPI } from '../api/services/organizations';
+import { organizationsAPI, branchesAPI } from '../api/services/organizations';
+import { subscriptionsAPI } from '../api/services/subscriptions';
+import { usersAPI, vehiclesAPI, devicesAPI } from '../api/services/fleet';
 import { useApi } from '../hooks/useApi';
+
+async function fetchAllPages(listFn, params = {}) {
+  const results = [];
+  let page = Number(params.page) || 1;
+  const visitedPages = new Set();
+
+  for (let pageCount = 0; pageCount < 1000; pageCount += 1) {
+    if (visitedPages.has(page)) {
+      throw new Error('Pagination loop detected while loading organization details');
+    }
+    visitedPages.add(page);
+
+    const response = await listFn({ ...params, page });
+    if (Array.isArray(response)) {
+      results.push(...response);
+      return results;
+    }
+
+    const pageResults = Array.isArray(response?.results) ? response.results : [];
+    results.push(...pageResults);
+    if (!response?.next) return results;
+
+    let nextPage = page + 1;
+    try {
+      const nextUrl = new URL(response.next, window.location.origin);
+      const parsedPage = Number(nextUrl.searchParams.get('page'));
+      if (Number.isInteger(parsedPage) && parsedPage > 0) nextPage = parsedPage;
+    } catch {
+      // Fall back to sequential page numbers for an unparseable next link.
+    }
+    page = nextPage;
+  }
+
+  throw new Error('Organization details pagination exceeded the safety limit');
+}
 
 export default function Companies() {
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingOrganization, setEditingOrganization] = useState(null);
+  const [detailOrganization, setDetailOrganization] = useState(null);
+  const [detailBranches, setDetailBranches] = useState([]);
+  const [detailSubscriptions, setDetailSubscriptions] = useState([]);
+  const [detailUsers, setDetailUsers] = useState([]);
+  const [detailVehicles, setDetailVehicles] = useState([]);
+  const [detailDevices, setDetailDevices] = useState([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailOrganizationError, setDetailOrganizationError] = useState(null);
+  const [detailSectionLoading, setDetailSectionLoading] = useState({});
+  const [detailErrors, setDetailErrors] = useState({});
+  const detailRequestIdRef = useRef(0);
+  const [deleteOrganization, setDeleteOrganization] = useState(null);
+  const [deleteName, setDeleteName] = useState('');
   const [form, setForm] = useState({
-    name: '', code: '', registration_number: '',
+    name: '', code: '', registration_number: '', economy_code: '',
     phone: '', email: '', address: '', status: 'active',
   });
   const [saving, setSaving] = useState(false);
@@ -44,15 +95,26 @@ export default function Companies() {
     );
   }, [organizations, search]);
 
+  const closeCompanyModal = () => {
+    setModalOpen(false);
+    setEditingOrganization(null);
+    setForm({ name: '', code: '', registration_number: '', economy_code: '', phone: '', email: '', address: '', status: 'active' });
+  };
+
   // افزودن سازمان
   const handleAdd = async (e) => {
     e.preventDefault();
     setSaving(true);
     try {
-      await organizationsAPI.create(form);
+      if (editingOrganization) {
+        await organizationsAPI.update(editingOrganization.id, form);
+      } else {
+        await organizationsAPI.create(form);
+      }
       setModalOpen(false);
+      setEditingOrganization(null);
       setForm({
-        name: '', code: '', registration_number: '',
+        name: '', code: '', registration_number: '', economy_code: '',
         phone: '', email: '', address: '', status: 'active',
       });
       refetch();
@@ -64,39 +126,178 @@ export default function Companies() {
     }
   };
 
-  // حذف سازمان
-  const handleDelete = async (id) => {
-    if (!confirm('آیا از حذف این شرکت اطمینان دارید؟')) return;
+  // حذف سازمان با تأیید آگاهانه
+  const handleDelete = async (org) => {
+    setDeleteName('');
     try {
-      await organizationsAPI.delete(id);
+      const details = await organizationsAPI.get(org.id);
+      setDeleteOrganization(details);
+    } catch (err) {
+      console.error('Unable to load organization deletion details:', err);
+      setDeleteOrganization(null);
+      alert('دریافت اطلاعات وابستگی‌های شرکت ناموفق بود. برای جلوگیری از حذف با اطلاعات ناقص، حذف انجام نشد. لطفاً دوباره تلاش کنید.');
+    }
+  };
+
+  const confirmDeleteOrganization = async () => {
+    if (!deleteOrganization || deleteName.trim() !== deleteOrganization.name) return;
+    try {
+      await organizationsAPI.archive(deleteOrganization.id);
+      setDeleteOrganization(null);
+      setDeleteName('');
       refetch();
     } catch (err) {
       console.error('Error deleting organization:', err);
-      alert('خطا در حذف شرکت');
+      alert('آرشیو شرکت ناموفق بود. لطفاً دوباره تلاش کنید.');
     }
+  };
+
+  const organizationSectionLoaders = {
+    branches: (org) => fetchAllPages(branchesAPI.list, { organization: org.id }),
+    subscriptions: (org) => fetchAllPages(subscriptionsAPI.list, { organization: org.id }),
+    users: (org) => fetchAllPages(usersAPI.list, { organization: org.id }),
+    vehicles: (org) => fetchAllPages(vehiclesAPI.list, { organization: org.id }),
+    devices: (org) => fetchAllPages(devicesAPI.list, { organization: org.id }),
+  };
+  const organizationSectionSetters = {
+    branches: setDetailBranches,
+    subscriptions: setDetailSubscriptions,
+    users: setDetailUsers,
+    vehicles: setDetailVehicles,
+    devices: setDetailDevices,
+  };
+
+  const loadOrganizationSection = async (org, section, requestId) => {
+    const loader = organizationSectionLoaders[section];
+    const setter = organizationSectionSetters[section];
+    if (!loader || !setter) return;
+
+    setDetailSectionLoading((current) => ({ ...current, [section]: true }));
+    setDetailErrors((current) => ({ ...current, [section]: null }));
+    try {
+      const result = await loader(org);
+      if (requestId !== detailRequestIdRef.current) return;
+      const data = section === 'branches'
+        ? result.filter((branch) => Number(branch.organization) === Number(org.id))
+        : result;
+      setter(data);
+    } catch (err) {
+      if (requestId !== detailRequestIdRef.current) return;
+      console.error(`Error loading organization ${section}:`, err);
+      setDetailErrors((current) => ({ ...current, [section]: 'دریافت این فهرست ناموفق بود.' }));
+    } finally {
+      if (requestId === detailRequestIdRef.current) {
+        setDetailSectionLoading((current) => ({ ...current, [section]: false }));
+      }
+    }
+  };
+
+  const loadOrganizationCore = async (org, requestId) => {
+    setDetailLoading(true);
+    setDetailOrganizationError(null);
+    try {
+      const details = await organizationsAPI.get(org.id);
+      if (requestId === detailRequestIdRef.current) setDetailOrganization(details);
+    } catch (err) {
+      if (requestId !== detailRequestIdRef.current) return;
+      console.error('Error loading organization core details:', err);
+      setDetailOrganizationError('دریافت اطلاعات اصلی شرکت ناموفق بود.');
+    } finally {
+      if (requestId === detailRequestIdRef.current) setDetailLoading(false);
+    }
+  };
+
+  const handleViewOrganization = (org) => {
+    const requestId = detailRequestIdRef.current + 1;
+    detailRequestIdRef.current = requestId;
+    setDetailOrganization(org);
+    setDetailOrganizationError(null);
+    setDetailSectionLoading(Object.fromEntries(Object.keys(organizationSectionLoaders).map((key) => [key, true])));
+    setDetailErrors({});
+    setDetailBranches([]);
+    setDetailSubscriptions([]);
+    setDetailUsers([]);
+    setDetailVehicles([]);
+    setDetailDevices([]);
+    loadOrganizationCore(org, requestId);
+    Object.keys(organizationSectionLoaders).forEach((section) => {
+      loadOrganizationSection(org, section, requestId);
+    });
+  };
+
+  const closeOrganizationDetails = () => {
+    detailRequestIdRef.current += 1;
+    setDetailOrganization(null);
+    setDetailOrganizationError(null);
+    setDetailLoading(false);
+    setDetailSectionLoading({});
+    setDetailErrors({});
+  };
+
+  const renderSectionFallback = (section) => {
+    if (detailSectionLoading[section]) {
+      return <p className="text-text-muted py-2">در حال دریافت اطلاعات...</p>;
+    }
+    if (detailErrors[section]) {
+      return (
+        <div className="space-y-2 py-2">
+          <p className="text-red-500">{detailErrors[section]}</p>
+          <Button variant="secondary" size="sm" onClick={() => loadOrganizationSection(detailOrganization, section, detailRequestIdRef.current)}>
+            تلاش مجدد
+          </Button>
+        </div>
+      );
+    }
+    return null;
   };
 
   const getMenuItems = (org) => {
     const items = [];
 
     if (isSiteAdmin) {
-      items.push({
-        label: 'ویرایش',
-        icon: Pencil,
-        onClick: () => console.log('Edit organization:', org.id),
-      });
-      items.push({
-        label: 'حذف',
-        icon: Trash2,
-        variant: 'danger',
-        onClick: () => handleDelete(org.id),
-      });
+      if (org.status === 'archived') {
+        items.push({
+          label: 'بازگردانی از بایگانی',
+          icon: Eye,
+          onClick: async () => {
+            try {
+              await organizationsAPI.restore(org.id);
+              refetch();
+            } catch (err) {
+              console.error('Error restoring organization:', err);
+              alert('بازگردانی شرکت ناموفق بود. لطفاً دوباره تلاش کنید.');
+            }
+          },
+        });
+      } else {
+        items.push({
+          label: 'ویرایش',
+          icon: Pencil,
+          onClick: () => {
+            setEditingOrganization(org);
+            setForm({
+              name: org.name || '',
+              code: org.code || '',
+              registration_number: org.registration_number || '',
+              economy_code: org.economy_code || '',
+              phone: org.phone || '',
+              email: org.email || '',
+              address: org.address || '',
+              status: org.status || 'active',
+            });
+            setModalOpen(true);
+          },
+        });
+        items.push({ label: 'جزئیات', icon: Eye, onClick: () => handleViewOrganization(org) });
+        items.push({
+          label: 'آرشیو شرکت',
+          icon: Archive,
+          variant: 'danger',
+          onClick: () => handleDelete(org),
+        });
+      }
     } else {
-      items.push({
-        label: 'مشاهده جزئیات',
-        icon: Eye,
-        onClick: () => console.log('View organization:', org.id),
-      });
+      items.push({ label: 'مشاهده جزئیات', icon: Eye, onClick: () => handleViewOrganization(org) });
     }
 
     return items;
@@ -128,7 +329,11 @@ export default function Companies() {
         subtitle={`مدیریت شرکت‌های مشتری سامانه سانا — ${filtered.length} شرکت`}
         actions={
           isSiteAdmin ? (
-            <Button icon={Plus} onClick={() => setModalOpen(true)}>
+            <Button icon={Plus} onClick={() => {
+                setEditingOrganization(null);
+                setForm({ name: '', code: '', registration_number: '', economy_code: '', phone: '', email: '', address: '', status: 'active' });
+                setModalOpen(true);
+              }}>
               افزودن شرکت
             </Button>
           ) : null
@@ -164,7 +369,7 @@ export default function Companies() {
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-border-base pt-3 text-xs">
                   <div><div className="text-text-muted">تلفن</div><div className="mt-1 font-mono text-text-primary">{c.phone || '—'}</div></div>
-                  <div><div className="text-text-muted">وضعیت</div><div className="mt-1"><Badge variant={c.status === 'active' ? 'success' : 'muted'}>{c.status === 'active' ? 'فعال' : 'غیرفعال'}</Badge></div></div>
+                  <div><div className="text-text-muted">وضعیت</div><div className="mt-1"><Badge variant={c.status === 'active' ? 'success' : 'muted'}>{c.status === 'active' ? 'فعال' : c.status === 'archived' ? 'بایگانی‌شده' : c.status === 'suspended' ? 'تعلیق‌شده' : 'غیرفعال'}</Badge></div></div>
                   <div className="col-span-2"><div className="text-text-muted">منابع</div><div className="mt-1 flex flex-wrap gap-3 text-text-secondary"><span>🏢 {c.branches_count || 0} شعبه</span><span>🚗 {c.vehicles_count || 0} خودرو</span><span>📡 {c.devices_count || 0} دستگاه</span></div></div>
                 </div>
               </article>
@@ -204,7 +409,7 @@ export default function Companies() {
                     </td>
                     <td className="py-3 px-4">
                       <Badge variant={c.status === 'active' ? 'success' : 'muted'}>
-                        {c.status === 'active' ? 'فعال' : 'غیرفعال'}
+                        {c.status === 'active' ? 'فعال' : c.status === 'archived' ? 'بایگانی‌شده' : c.status === 'suspended' ? 'تعلیق‌شده' : 'غیرفعال'}
                       </Badge>
                     </td>
                     <td className="py-3 px-2">
@@ -219,20 +424,97 @@ export default function Companies() {
         )}
       </Card>
 
+      {/* جزئیات شرکت */}
+      <Modal open={Boolean(detailOrganization)} onClose={closeOrganizationDetails} title={detailOrganization ? `جزئیات شرکت: ${detailOrganization.name}` : 'جزئیات شرکت'} size="lg">
+        {detailOrganization && (
+          <div className="space-y-4 text-sm">
+            {(detailLoading || detailOrganizationError) && (
+              <div className="rounded-lg border border-border-base p-3 space-y-2">
+                {detailLoading && <LoadingSpinner />}
+                {detailOrganizationError && (
+                  <>
+                    <p className="text-red-500">{detailOrganizationError}</p>
+                    <Button variant="secondary" size="sm" onClick={() => loadOrganizationCore(detailOrganization, detailRequestIdRef.current)}>تلاش مجدد</Button>
+                  </>
+                )}
+              </div>
+            )}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {[
+                ['کد شرکت', detailOrganization.code],
+                ['شماره ثبت', detailOrganization.registration_number],
+                ['کد اقتصادی', detailOrganization.economy_code],
+                ['تلفن', detailOrganization.phone],
+                ['ایمیل', detailOrganization.email],
+                ['وضعیت', detailOrganization.status === 'active' ? 'فعال' : detailOrganization.status === 'archived' ? 'بایگانی‌شده' : detailOrganization.status === 'suspended' ? 'تعلیق‌شده' : 'غیرفعال'],
+                ['آدرس', detailOrganization.address],
+              ].map(([label, value]) => <div key={label} className="rounded-lg border border-border-base p-3"><div className="text-xs text-text-muted">{label}</div><div className="mt-1 text-text-primary break-words">{value || '—'}</div></div>)}
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+              {[['شعبه', detailOrganization.branches_count], ['کاربر', detailOrganization.users_count], ['قرارداد', detailOrganization.subscriptions_count], ['خودرو', detailOrganization.vehicles_count], ['دستگاه', detailOrganization.devices_count], ['راننده', detailOrganization.drivers_count], ['نوع خودرو', detailOrganization.vehicle_types_count]].map(([label, count]) => <div key={label} className="rounded-lg bg-bg-base border border-border-base p-3 text-center"><div className="text-text-muted text-xs">{label}</div><div className="mt-1 font-semibold text-text-primary">{count ?? 0}</div></div>)}
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="rounded-lg border border-border-base p-3">
+                <h4 className="font-medium mb-2">کاربران شرکت ({detailOrganization.users_count ?? detailUsers.length}) — نمایش {detailUsers.length} مورد</h4>
+                {detailSectionLoading.users || detailErrors.users ? renderSectionFallback('users') : detailUsers.length ? <ul className="space-y-1 max-h-52 overflow-y-auto">{detailUsers.map((user) => <li key={user.id} className="flex flex-wrap justify-between gap-2 border-b last:border-0 border-border-base py-1"><span>{user.full_name || user.username}</span><span className="text-text-muted">{user.branch_name || user.role || '—'}</span></li>)}</ul> : <p className="text-text-muted">کاربری ثبت نشده است.</p>}
+              </div>
+              <div className="rounded-lg border border-border-base p-3">
+                <h4 className="font-medium mb-2">خودروها ({detailOrganization.vehicles_count ?? detailVehicles.length}) — نمایش {detailVehicles.length} مورد</h4>
+                {detailSectionLoading.vehicles || detailErrors.vehicles ? renderSectionFallback('vehicles') : detailVehicles.length ? <ul className="space-y-1 max-h-52 overflow-y-auto">{detailVehicles.map((vehicle) => <li key={vehicle.id} className="flex flex-wrap justify-between gap-2 border-b last:border-0 border-border-base py-1"><span>{vehicle.plate}</span><span className="text-text-muted">{vehicle.vehicle_type_name || vehicle.branch_name || '—'}</span></li>)}</ul> : <p className="text-text-muted">خودرویی ثبت نشده است.</p>}
+              </div>
+              <div className="rounded-lg border border-border-base p-3 md:col-span-2">
+                <h4 className="font-medium mb-2">دستگاه‌ها ({detailOrganization.devices_count ?? detailDevices.length}) — نمایش {detailDevices.length} مورد</h4>
+                {detailSectionLoading.devices || detailErrors.devices ? renderSectionFallback('devices') : detailDevices.length ? <ul className="space-y-1 max-h-52 overflow-y-auto">{detailDevices.map((device) => <li key={device.id} className="flex flex-wrap justify-between gap-2 border-b last:border-0 border-border-base py-1"><span className="font-mono">{device.imei}</span><span className="text-text-muted">{device.device_model_name || device.device_model_manufacturer || device.vehicle_plate || '—'}</span></li>)}</ul> : <p className="text-text-muted">دستگاهی ثبت نشده است.</p>}
+              </div>
+            </div>
+            <div className="rounded-lg border border-border-base p-3">
+              <h4 className="font-medium mb-2">قراردادهای شرکت ({detailOrganization.subscriptions_count ?? detailSubscriptions.length}) — نمایش {detailSubscriptions.length} مورد</h4>
+              {detailSectionLoading.subscriptions || detailErrors.subscriptions ? renderSectionFallback('subscriptions') : detailSubscriptions.length ? <ul className="space-y-1">{detailSubscriptions.map((subscription) => <li key={subscription.id} className="flex flex-wrap justify-between gap-2 border-b last:border-0 border-border-base py-2"><span>{subscription.contract_number}</span><span className="text-text-muted">{subscription.status} · {subscription.end_date || '—'}</span></li>)}</ul> : <p className="text-text-muted">قراردادی ثبت نشده است.</p>}
+            </div>
+            <div className="rounded-lg border border-border-base p-3">
+              <h4 className="font-medium mb-2">شعب شرکت ({detailOrganization.branches_count ?? detailBranches.length}) — نمایش {detailBranches.length} مورد</h4>
+              {detailSectionLoading.branches || detailErrors.branches ? renderSectionFallback('branches') : detailBranches.length ? <ul className="space-y-1">{detailBranches.map((branch) => <li key={branch.id} className="flex justify-between gap-2 border-b last:border-0 border-border-base py-1"><span>{branch.name}</span><span className="text-text-muted">{branch.code}</span></li>)}</ul> : <p className="text-text-muted">شعبه‌ای ثبت نشده است.</p>}
+            </div>
+            <p className="text-xs text-text-muted">آرشیو شرکت هیچ سابقه‌ای را حذف نمی‌کند؛ برای بازگشت شرکت به چرخه فعال، مدیر سایت می‌تواند آن را از بایگانی بازیابی کند.</p>
+          </div>
+        )}
+      </Modal>
+
+      {/* تأیید آرشیو شرکت */}
+      <Modal open={Boolean(deleteOrganization)} onClose={() => { setDeleteOrganization(null); setDeleteName(''); }} title="تأیید آرشیو شرکت" size="lg">
+        {deleteOrganization && (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+              <p className="font-semibold text-amber-500">شرکت از چرخه فعال خارج و به بایگانی منتقل می‌شود.</p>
+              <p className="mt-2">با آرشیو «{deleteOrganization.name}»، هیچ‌یک از شعب، قراردادها، خودروها، دستگاه‌ها، رانندگان، انواع خودرو، کاربران یا سوابق مالی و عملیاتی حذف نمی‌شوند. شرکت از فهرست فعال خارج می‌شود و فقط مدیر سایت می‌تواند آن را بازگردانی کند.</p>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 text-center text-sm">
+              {[['شعبه', deleteOrganization.branches_count], ['قرارداد', deleteOrganization.subscriptions_count], ['خودرو', deleteOrganization.vehicles_count], ['دستگاه', deleteOrganization.devices_count], ['راننده', deleteOrganization.drivers_count], ['نوع خودرو', deleteOrganization.vehicle_types_count], ['کاربر', deleteOrganization.users_count]].map(([label, count]) => <div key={label} className="rounded-lg border border-border-base p-3"><div className="text-xs text-text-muted">{label}</div><div className="mt-1 font-semibold">{count ?? '—'}</div></div>)}
+            </div>
+            <p className="text-sm">برای تأیید، نام شرکت را دقیقاً وارد کنید:</p>
+            <Input value={deleteName} onChange={(e) => setDeleteName(e.target.value)} placeholder={deleteOrganization.name} />
+          </div>
+        )}
+        <div className="flex justify-end gap-2 pt-4">
+          <Button variant="secondary" onClick={() => { setDeleteOrganization(null); setDeleteName(''); }}>انصراف</Button>
+          <Button disabled={!deleteOrganization || deleteName.trim() !== deleteOrganization.name} onClick={confirmDeleteOrganization}>انتقال به بایگانی</Button>
+        </div>
+      </Modal>
+
       {/* مودال افزودن */}
       {isSiteAdmin && (
         <Modal
           open={modalOpen}
-          onClose={() => setModalOpen(false)}
-          title="افزودن شرکت"
+          onClose={closeCompanyModal}
+          title={editingOrganization ? 'ویرایش شرکت' : 'افزودن شرکت'}
           size="lg"
           footer={
             <>
-              <Button variant="secondary" onClick={() => setModalOpen(false)} disabled={saving}>
+              <Button variant="secondary" onClick={closeCompanyModal} disabled={saving}>
                 انصراف
               </Button>
               <Button type="submit" form="add-company-form" disabled={saving}>
-                {saving ? 'در حال ذخیره...' : 'ذخیره'}
+                {saving ? 'در حال ذخیره...' : (editingOrganization ? 'ذخیره تغییرات' : 'ذخیره')}
               </Button>
             </>
           }
