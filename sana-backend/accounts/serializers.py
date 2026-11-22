@@ -14,7 +14,7 @@ from .session_utils import ABSOLUTE_SESSION_LIFETIME, IDLE_TIMEOUT, touch_sessio
 
 class UserSerializer(serializers.ModelSerializer):
     full_name = serializers.CharField(read_only=True)
-    organization_name = serializers.CharField(source='organization.name', read_only=True)
+    organization_name = serializers.SerializerMethodField()
     branch_name = serializers.CharField(source='branch.name', read_only=True)
 
     # اطلاعات کامل سازمان
@@ -32,6 +32,13 @@ class UserSerializer(serializers.ModelSerializer):
             'is_active', 'archived_at', 'archived_by', 'date_joined',
         ]
         read_only_fields = ['id', 'date_joined', 'archived_at', 'archived_by']
+
+    def get_organization_name(self, obj):
+        if obj.organization_id:
+            return obj.organization.name
+        if obj.branch_id and obj.branch.organization_id:
+            return obj.branch.organization.name
+        return None
 
     def get_organization_data(self, obj):
         """اطلاعات کامل سازمان را فقط به نقش‌های مجاز نمایش بده."""
