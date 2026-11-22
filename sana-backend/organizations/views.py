@@ -1,5 +1,6 @@
 from django.utils import timezone
 from django.db import transaction
+from django.db.models import Q
 from datetime import timedelta
 from rest_framework import viewsets, filters, status, serializers
 from rest_framework.decorators import action
@@ -136,6 +137,9 @@ class BranchViewSet(viewsets.ModelViewSet):
         else:
             qs = qs.none()
 
+        if not user.is_site_admin:
+            qs = qs.filter(organization__status='active')
+
         org = self.request.query_params.get('organization')
         if org:
             qs = qs.filter(organization_id=org)
@@ -199,6 +203,9 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             qs = qs.filter(user=user)
         else:
             qs = qs.none()
+
+        if not user.is_site_admin:
+            qs = qs.filter(Q(organization__isnull=True) | Q(organization__status='active'))
 
         # فیلترها
         status_filter = self.request.query_params.get('status')
@@ -707,6 +714,9 @@ class SubscriptionDeviceViewSet(viewsets.ModelViewSet):
         else:
             qs = qs.none()
 
+        if not user.is_site_admin:
+            qs = qs.filter(Q(subscription__organization__isnull=True) | Q(subscription__organization__status='active'))
+
         subscription = self.request.query_params.get('subscription')
         if subscription:
             qs = qs.filter(subscription_id=subscription)
@@ -792,6 +802,9 @@ class SubscriptionPaymentViewSet(viewsets.ModelViewSet):
             qs = qs.filter(subscription__user=user)
         else:
             qs = qs.none()
+
+        if not user.is_site_admin:
+            qs = qs.filter(Q(subscription__organization__isnull=True) | Q(subscription__organization__status='active'))
 
         subscription = self.request.query_params.get('subscription')
         if subscription:
