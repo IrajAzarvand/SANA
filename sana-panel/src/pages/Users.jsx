@@ -125,11 +125,24 @@ export default function Users() {
         icon: Pencil,
         onClick: () => { setEditingUser(user); setForm({ ...emptyForm, ...user, password: '', organization: user.organization || '', branch: user.branch || '' }); setFormError(''); setModalOpen(true); },
       });
-      items.push({
-        label: user.archived_at ? 'بازیابی کاربر' : 'بایگانی کاربر',
-        icon: UserX,
-        onClick: async () => { try { if (user.archived_at) await usersAPI.restore(user.id); else if (window.confirm('این کاربر بایگانی شود؟ دسترسی ورود او قطع می‌شود، اما سوابقش باقی می‌ماند.')) await usersAPI.archive(user.id); await refetchUsers(); } catch (error) { window.alert(error?.response?.data?.detail || 'عملیات انجام نشد.'); } },
-      });
+      if (user.archived_at) {
+        items.push({
+          label: 'بازیابی کاربر',
+          icon: UserX,
+          onClick: async () => { try { await usersAPI.restore(user.id); await refetchUsers(); } catch (error) { window.alert(error?.response?.data?.detail || 'بازیابی انجام نشد.'); } },
+        });
+      } else {
+        items.push({
+          label: user.is_active ? 'غیرفعال‌سازی' : 'فعال‌سازی',
+          icon: UserX,
+          onClick: async () => { try { await usersAPI.update(user.id, { is_active: !user.is_active }); await refetchUsers(); } catch (error) { window.alert(error?.response?.data?.detail || 'تغییر وضعیت انجام نشد.'); } },
+        });
+        items.push({
+          label: 'بایگانی کاربر',
+          icon: UserX,
+          onClick: async () => { if (!window.confirm('این کاربر بایگانی شود؟ دسترسی ورود او قطع می‌شود، اما سوابقش باقی می‌ماند.')) return; try { await usersAPI.archive(user.id); await refetchUsers(); } catch (error) { window.alert(error?.response?.data?.detail || 'بایگانی انجام نشد.'); } },
+        });
+      }
     }
 
     return items;
