@@ -79,7 +79,7 @@ class DashboardStatsView(APIView):
                 'vehicles': Vehicle.objects.filter(organization_id=org).count(),
                 'devices': len(organization_devices),
                 'drivers': Driver.objects.filter(organization_id=org).count(),
-                'users': User.objects.filter(organization_id=org).count(),
+                'users': User.objects.filter(Q(organization_id=org) | Q(branch__organization_id=org)).distinct().count(),
                 'branches': Branch.objects.filter(organization_id=org).count(),
                 'subscriptions_total': subscriptions.count(),
                 'subscriptions_active': subscriptions.filter(status='active').count(),
