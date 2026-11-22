@@ -78,13 +78,6 @@ class VehicleSerializer(serializers.ModelSerializer):
 
         return super().create(validated_data)
 
-class BranchManagerVehicleSerializer(VehicleListSerializer):
-    """Expose only vehicle data assigned to the branch, not owner/account metadata."""
-    class Meta:
-        model = Vehicle
-        fields = ['id', 'plate', 'vehicle_type_name', 'branch_name', 'device_status', 'created_at']
-
-
 class VehicleListSerializer(serializers.ModelSerializer):
     vehicle_type_name = serializers.CharField(source='vehicle_type.name', read_only=True)
     branch_name = serializers.CharField(source='branch.name', read_only=True)
