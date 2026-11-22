@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from decimal import Decimal, InvalidOperation
 from django.utils import timezone
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from fleet.lifecycle import record_device_lifecycle_event
 from fleet.models import DeviceCustomerAccessPeriod
 from .models import (
@@ -105,9 +105,14 @@ class BranchSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         request = self.context.get('request')
-        if request and getattr(request.user, 'is_branch_manager', False):
-            data['organization'] = None
-            data['organization_name'] = None
+        if request and (
+            getattr(request.user, 'is_branch_manager', False)
+            or getattr(request.user, 'is_main_user', False)
+        ):
+            is_branch_manager = getattr(request.user, 'is_branch_manager', False)
+            if is_branch_manager:
+                data['organization'] = None
+                data['organization_name'] = None
             data['vehicles_count'] = instance.vehicles.filter(
                 organization_id=instance.organization_id
             ).count()
@@ -120,9 +125,14 @@ class BranchSerializer(serializers.ModelSerializer):
             data['drivers_count'] = instance.drivers.filter(
                 organization_id=instance.organization_id
             ).count()
-            # Branch managers cannot browse user management; do not expose a
-            # count that could include accounts outside the branch tenant.
-            data['users_count'] = None
+            if is_branch_manager:
+                # Branch managers cannot browse user management.
+                data['users_count'] = None
+            else:
+                data['users_count'] = instance.users.filter(
+                    Q(organization_id=instance.organization_id)
+                    | Q(organization__isnull=True)
+                ).count()
         return data
     vehicles_count = serializers.IntegerField(source='vehicles.count', read_only=True)
     devices_count = serializers.IntegerField(source='devices.count', read_only=True)
@@ -146,9 +156,14 @@ class BranchListSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         request = self.context.get('request')
-        if request and getattr(request.user, 'is_branch_manager', False):
-            data['organization'] = None
-            data['organization_name'] = None
+        if request and (
+            getattr(request.user, 'is_branch_manager', False)
+            or getattr(request.user, 'is_main_user', False)
+        ):
+            is_branch_manager = getattr(request.user, 'is_branch_manager', False)
+            if is_branch_manager:
+                data['organization'] = None
+                data['organization_name'] = None
             data['vehicles_count'] = instance.vehicles.filter(
                 organization_id=instance.organization_id
             ).count()
@@ -161,7 +176,13 @@ class BranchListSerializer(serializers.ModelSerializer):
             data['drivers_count'] = instance.drivers.filter(
                 organization_id=instance.organization_id
             ).count()
-            data['users_count'] = None
+            if is_branch_manager:
+                data['users_count'] = None
+            else:
+                data['users_count'] = instance.users.filter(
+                    Q(organization_id=instance.organization_id)
+                    | Q(organization__isnull=True)
+                ).count()
         return data
     vehicles_count = serializers.IntegerField(source='vehicles.count', read_only=True)
     devices_count = serializers.IntegerField(source='devices.count', read_only=True)
