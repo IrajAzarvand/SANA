@@ -3,7 +3,7 @@ from rest_framework.test import APIClient
 from unittest.mock import patch
 
 from accounts.models import User
-from fleet.models import Device
+from fleet.models import Device, Vehicle
 from organizations.models import (
     Organization, Subscription, SubscriptionDevice, SubscriptionPayment, SubscriptionOperation,
     SubscriptionInstallmentPlan, SubscriptionInstallment, SubscriptionPaymentAllocation,
@@ -993,10 +993,34 @@ class OrganizationAndBranchDeletionPermissionTests(TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertTrue(Organization.objects.filter(pk=self.organization.pk).exists())
 
-    def test_site_admin_company_deletion_cascades_to_branches(self):
+    def test_site_admin_company_deletion_cascades_to_organization_resources(self):
+        today = timezone.localdate()
+        vehicle = Vehicle.objects.create(
+            organization=self.organization,
+            branch=self.branch,
+            plate='TEST-ORG-DELETE-VEHICLE',
+        )
+        device = Device.objects.create(
+            imei='987654321098765',
+            organization=self.organization,
+            branch=self.branch,
+        )
+        subscription = Subscription.objects.create(
+            contract_number='DELETE-ORG-CASCADE-001',
+            customer_type='organization',
+            organization=self.organization,
+            start_date=today,
+            end_date=today + timedelta(days=30),
+            price=1000,
+        )
+
         self.client.force_authenticate(user=self.site_admin)
         response = self.client.delete(f'/api/organizations/{self.organization.id}/')
+
         self.assertEqual(response.status_code, 204)
         self.assertFalse(Organization.objects.filter(pk=self.organization.pk).exists())
         self.assertFalse(self.branch.__class__.objects.filter(pk=self.branch.pk).exists())
+        self.assertFalse(Vehicle.objects.filter(pk=vehicle.pk).exists())
+        self.assertFalse(Device.objects.filter(pk=device.pk).exists())
+        self.assertFalse(Subscription.objects.filter(pk=subscription.pk).exists())
 
