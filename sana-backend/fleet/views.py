@@ -234,6 +234,45 @@ class DeviceViewSet(viewsets.ModelViewSet):
         if not user.is_site_admin and user.organization_id and user.organization.status == 'archived':
             return qs.none()
 
+        # Replacement history can expose the other device's IMEI. For
+        # non-admin users, prefetch only relations whose two devices are
+        # both inside the same currently authorized device scope.
+        if user.is_site_admin:
+            replacement_scope = Q()
+        elif user.is_main_user and user.organization_id:
+            now = timezone.now()
+            authorized_device_ids = DeviceCustomerAccessPeriod.objects.filter(
+                organization=user.organization,
+                started_at__lte=now,
+                ended_at__isnull=True,
+            ).values_list('device_id', flat=True)
+            replacement_scope = Q(
+                source_device_id__in=authorized_device_ids,
+                replacement_device_id__in=authorized_device_ids,
+            )
+        elif user.is_branch_manager and user.branch_id:
+            now = timezone.now()
+            authorized_device_ids = DeviceCustomerAccessPeriod.objects.filter(
+                organization=user.branch.organization,
+                branch=user.branch,
+                started_at__lte=now,
+                ended_at__isnull=True,
+            ).values_list('device_id', flat=True)
+            replacement_scope = Q(
+                source_device_id__in=authorized_device_ids,
+                replacement_device_id__in=authorized_device_ids,
+            )
+        elif user.is_personal_user:
+            authorized_device_ids = Device.objects.filter(
+                owner_user=user
+            ).values_list('id', flat=True)
+            replacement_scope = Q(
+                source_device_id__in=authorized_device_ids,
+                replacement_device_id__in=authorized_device_ids,
+            )
+        else:
+            replacement_scope = Q(pk__in=[])
+
         # The list serializer needs a compact, preloaded snapshot of the
         # subscription and replacement history. Keep these prefetches off
         # detail/actions so unrelated endpoints do not pay for list-only data.
@@ -246,14 +285,18 @@ class DeviceViewSet(viewsets.ModelViewSet):
             qs = qs.prefetch_related(
                 Prefetch(
                     'replacement_relations_as_source',
-                    queryset=DeviceReplacementRelation.objects.select_related(
+                    queryset=DeviceReplacementRelation.objects.filter(
+                        replacement_scope
+                    ).select_related(
                         'replacement_device'
                     ).order_by('-replacement_date', '-id'),
                     to_attr='_replacement_relations_as_source',
                 ),
                 Prefetch(
                     'replacement_relations_as_replacement',
-                    queryset=DeviceReplacementRelation.objects.select_related(
+                    queryset=DeviceReplacementRelation.objects.filter(
+                        replacement_scope
+                    ).select_related(
                         'source_device'
                     ).order_by('-replacement_date', '-id'),
                     to_attr='_replacement_relations_as_replacement',
@@ -1592,16 +1635,23 @@ class DeviceReplacementRelationViewSet(viewsets.ModelViewSet):
                 replacement_device_id__in=authorized_device_ids,
             )
         elif user.is_main_user and user.organization_id:
+            now = timezone.now()
+            authorized_device_ids = DeviceCustomerAccessPeriod.objects.filter(
+                organization=user.organization,
+                started_at__lte=now,
+                ended_at__isnull=True,
+            ).values_list('device_id', flat=True)
             qs = qs.filter(
-                source_device__organization_id=user.organization_id
-            ) | qs.filter(
-                replacement_device__organization_id=user.organization_id
+                source_device_id__in=authorized_device_ids,
+                replacement_device_id__in=authorized_device_ids,
             )
         elif user.is_personal_user:
+            authorized_device_ids = Device.objects.filter(
+                owner_user=user
+            ).values_list('id', flat=True)
             qs = qs.filter(
-                source_device__owner_user_id=user.id
-            ) | qs.filter(
-                replacement_device__owner_user_id=user.id
+                source_device_id__in=authorized_device_ids,
+                replacement_device_id__in=authorized_device_ids,
             )
         else:
             qs = qs.none()
