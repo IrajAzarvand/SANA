@@ -1492,7 +1492,7 @@ class DriverVehicleAssignmentViewSet(viewsets.ModelViewSet):
         elif user.is_main_user and user.organization_id:
             qs = qs.filter(driver__organization_id=user.organization_id).exclude(driver__organization__status='archived')
         elif user.is_branch_manager and user.branch_id:
-            qs = qs.filter(driver__organization_id=user.organization_id, driver__branch_id=user.branch_id).exclude(driver__organization__status='archived')
+            qs = qs.filter(driver__branch__organization_id=user.branch.organization_id, driver__branch_id=user.branch_id).exclude(driver__organization__status='archived')
         else:
             qs = qs.none()
 
