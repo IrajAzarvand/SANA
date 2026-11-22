@@ -52,7 +52,7 @@ export default function Users() {
   }, []);
 
   const { data: users, loading: usersLoading, error: usersError, refetch: refetchUsers } =
-    useApi(fetchUsers, []);
+    useApi(fetchUsers, [showArchived]);
 
   const { data: organizations } = useApi(fetchOrgs, []);
   const fetchBranches = useCallback(async () => {
@@ -135,11 +135,13 @@ export default function Users() {
     const items = [];
 
     if (isSiteAdmin || isMainUser) {
-      items.push({
-        label: 'ویرایش',
-        icon: Pencil,
-        onClick: () => { setEditingUser(user); setForm({ ...emptyForm, ...user, password: '', organization: user.organization || '', branch: user.branch || '' }); setFormError(''); setModalOpen(true); },
-      });
+      if (!user.archived_at) {
+        items.push({
+          label: 'ویرایش',
+          icon: Pencil,
+          onClick: () => { setEditingUser(user); setForm({ ...emptyForm, ...user, password: '', organization: user.organization || '', branch: user.branch || '' }); setFormError(''); setModalOpen(true); },
+        });
+      }
       if (user.id === currentUser?.id) return items;
       if (user.archived_at) {
         items.push({
