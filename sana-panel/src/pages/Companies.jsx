@@ -10,13 +10,19 @@ import ActionMenu from '../components/ActionMenu';
 import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
 import { useAuth } from '../context/AuthContext';
-import { organizationsAPI } from '../api/services/organizations';
+import { organizationsAPI, branchesAPI } from '../api/services/organizations';
+import { subscriptionsAPI } from '../api/services/subscriptions';
 import { useApi } from '../hooks/useApi';
 
 export default function Companies() {
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingOrganization, setEditingOrganization] = useState(null);
+  const [detailOrganization, setDetailOrganization] = useState(null);
+  const [detailBranches, setDetailBranches] = useState([]);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [deleteOrganization, setDeleteOrganization] = useState(null);
+  const [deleteName, setDeleteName] = useState('');
   const [form, setForm] = useState({
     name: '', code: '', registration_number: '', economy_code: '',
     phone: '', email: '', address: '', status: 'active',
@@ -70,15 +76,42 @@ export default function Companies() {
     }
   };
 
-  // حذف سازمان
-  const handleDelete = async (id) => {
-    if (!confirm('آیا از حذف این شرکت اطمینان دارید؟')) return;
+  // حذف سازمان با تأیید آگاهانه
+  const handleDelete = (org) => {
+    setDeleteOrganization(org);
+    setDeleteName('');
+  };
+
+  const confirmDeleteOrganization = async () => {
+    if (!deleteOrganization || deleteName.trim() !== deleteOrganization.name) return;
     try {
-      await organizationsAPI.delete(id);
+      await organizationsAPI.delete(deleteOrganization.id);
+      setDeleteOrganization(null);
+      setDeleteName('');
       refetch();
     } catch (err) {
       console.error('Error deleting organization:', err);
-      alert('خطا در حذف شرکت');
+      alert('خطا در حذف شرکت. ممکن است وابستگی‌ها یا مجوزها مانع حذف شده باشند.');
+    }
+  };
+
+  const handleViewOrganization = async (org) => {
+    setDetailOrganization(org);
+    setDetailLoading(true);
+    setDetailBranches([]);
+    try {
+      const [details, branchResult] = await Promise.all([
+        organizationsAPI.get(org.id),
+        branchesAPI.list({ organization: org.id }),
+      ]);
+      const branchList = Array.isArray(branchResult) ? branchResult : branchResult.results || [];
+      setDetailOrganization(details);
+      setDetailBranches(branchList.filter((branch) => Number(branch.organization) === Number(org.id)));
+    } catch (err) {
+      console.error('Error loading organization details:', err);
+      alert('دریافت جزئیات شرکت ناموفق بود.');
+    } finally {
+      setDetailLoading(false);
     }
   };
 
@@ -105,16 +138,21 @@ export default function Companies() {
         },
       });
       items.push({
+        label: 'جزئیات',
+        icon: Eye,
+        onClick: () => handleViewOrganization(org),
+      });
+      items.push({
         label: 'حذف',
         icon: Trash2,
         variant: 'danger',
-        onClick: () => handleDelete(org.id),
+        onClick: () => handleDelete(org),
       });
     } else {
       items.push({
         label: 'مشاهده جزئیات',
         icon: Eye,
-        onClick: () => console.log('View organization:', org.id),
+        onClick: () => handleViewOrganization(org),
       });
     }
 
@@ -237,6 +275,54 @@ export default function Companies() {
           </>
         )}
       </Card>
+
+      {/* جزئیات شرکت */}
+      <Modal open={Boolean(detailOrganization)} onClose={() => setDetailOrganization(null)} title={detailOrganization ? `جزئیات شرکت: ${detailOrganization.name}` : 'جزئیات شرکت'} size="lg">
+        {detailLoading ? <LoadingSpinner /> : detailOrganization && (
+          <div className="space-y-4 text-sm">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {[
+                ['کد شرکت', detailOrganization.code],
+                ['شماره ثبت', detailOrganization.registration_number],
+                ['کد اقتصادی', detailOrganization.economy_code],
+                ['تلفن', detailOrganization.phone],
+                ['ایمیل', detailOrganization.email],
+                ['وضعیت', detailOrganization.status === 'active' ? 'فعال' : 'غیرفعال'],
+                ['آدرس', detailOrganization.address],
+              ].map(([label, value]) => <div key={label} className="rounded-lg border border-border-base p-3"><div className="text-xs text-text-muted">{label}</div><div className="mt-1 text-text-primary break-words">{value || '—'}</div></div>)}
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {[['شعبه', detailOrganization.branches_count], ['کاربر', detailOrganization.users_count], ['خودرو', detailOrganization.vehicles_count], ['دستگاه', detailOrganization.devices_count]].map(([label, count]) => <div key={label} className="rounded-lg bg-bg-base border border-border-base p-3 text-center"><div className="text-text-muted text-xs">{label}</div><div className="mt-1 font-semibold text-text-primary">{count ?? 0}</div></div>)}
+            </div>
+            <div className="rounded-lg border border-border-base p-3">
+              <h4 className="font-medium mb-2">شعب شرکت ({detailBranches.length})</h4>
+              {detailBranches.length ? <ul className="space-y-1">{detailBranches.map((branch) => <li key={branch.id} className="flex justify-between gap-2 border-b last:border-0 border-border-base py-1"><span>{branch.name}</span><span className="text-text-muted">{branch.code}</span></li>)}</ul> : <p className="text-text-muted">شعبه‌ای ثبت نشده است.</p>}
+            </div>
+            <p className="text-xs text-text-muted">قراردادها و ارتباطات وابسته نیز در صورت حذف شرکت، مطابق روابط دیتابیس تحت تأثیر قرار می‌گیرند.</p>
+          </div>
+        )}
+      </Modal>
+
+      {/* تأیید حذف شرکت */}
+      <Modal open={Boolean(deleteOrganization)} onClose={() => { setDeleteOrganization(null); setDeleteName(''); }} title="تأیید حذف فیزیکی شرکت" size="lg">
+        {deleteOrganization && (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-red-500/40 bg-red-500/5 p-3 text-sm">
+              <p className="font-semibold text-red-500">این عملیات برگشت‌پذیر نیست.</p>
+              <p className="mt-2">شرکت «{deleteOrganization.name}» حذف خواهد شد. شعب و قراردادهای سازمانی وابسته ممکن است حذف شوند؛ ارتباط بعضی سوابق نیز ممکن است قطع شود.</p>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-sm">
+              {[['شعبه', deleteOrganization.branches_count], ['خودرو', deleteOrganization.vehicles_count], ['دستگاه', deleteOrganization.devices_count], ['کاربر', deleteOrganization.users_count]].map(([label, count]) => <div key={label} className="rounded-lg border border-border-base p-3"><div className="text-xs text-text-muted">{label}</div><div className="mt-1 font-semibold">{count ?? '—'}</div></div>)}
+            </div>
+            <p className="text-sm">برای تأیید، نام شرکت را دقیقاً وارد کنید:</p>
+            <Input value={deleteName} onChange={(e) => setDeleteName(e.target.value)} placeholder={deleteOrganization.name} />
+          </div>
+        )}
+        <div className="flex justify-end gap-2 pt-4">
+          <Button variant="secondary" onClick={() => { setDeleteOrganization(null); setDeleteName(''); }}>انصراف</Button>
+          <Button variant="danger" disabled={!deleteOrganization || deleteName.trim() !== deleteOrganization.name} onClick={confirmDeleteOrganization}>حذف فیزیکی شرکت</Button>
+        </div>
+      </Modal>
 
       {/* مودال افزودن */}
       {isSiteAdmin && (
