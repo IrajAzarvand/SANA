@@ -47,3 +47,24 @@ class IsOrganizationMember(permissions.BasePermission):
             request.user.is_authenticated and
             (request.user.is_site_admin or request.user.account_type == 'organization')
         )
+
+class IsSiteAdminOrMainUser(permissions.BasePermission):
+    """Only site administrators and organization owners may manage organization users."""
+
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(
+            user and user.is_authenticated
+            and (user.is_site_admin or user.is_main_user)
+        )
+
+    def has_object_permission(self, request, view, obj):
+        user = request.user
+        if user.is_site_admin:
+            return True
+        if not user.is_main_user or not user.organization_id:
+            return False
+        return (
+            getattr(obj, 'organization_id', None) == user.organization_id
+            or getattr(getattr(obj, 'branch', None), 'organization_id', None) == user.organization_id
+        )
