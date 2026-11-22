@@ -11,7 +11,6 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import ErrorState from '../components/ErrorState';
 import { useAuth } from '../context/AuthContext';
 import { organizationsAPI, branchesAPI } from '../api/services/organizations';
-import { subscriptionsAPI } from '../api/services/subscriptions';
 import { useApi } from '../hooks/useApi';
 
 export default function Companies() {
