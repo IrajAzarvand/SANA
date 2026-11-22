@@ -131,7 +131,7 @@ class VehicleTypeViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsSiteAdmin()]
+            return [IsMainUserOrSiteAdmin()]
         return super().get_permissions()
 
     def get_queryset(self):
