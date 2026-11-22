@@ -19,7 +19,6 @@ from .serializers import (
     VehicleTypeSerializer,
     VehicleSerializer,
     VehicleListSerializer,
-    BranchManagerVehicleSerializer,
     DeviceModelSerializer,
     DeviceSerializer,
     DeviceListSerializer,
@@ -154,7 +153,7 @@ class VehicleViewSet(viewsets.ModelViewSet):
 
     def get_serializer_class(self):
         if self.request.user.is_branch_manager:
-            return BranchManagerVehicleSerializer
+            return VehicleListSerializer
         if self.action == 'list':
             return VehicleListSerializer
         return VehicleSerializer
