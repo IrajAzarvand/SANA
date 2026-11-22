@@ -587,6 +587,14 @@ class DeviceListSerializer(serializers.ModelSerializer):
 
 class DriverSerializer(serializers.ModelSerializer):
     organization_name = serializers.CharField(source='organization.name', read_only=True)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request and getattr(request.user, 'is_branch_manager', False):
+            data['organization'] = None
+            data['organization_name'] = None
+        return data
     branch_name = serializers.CharField(source='branch.name', read_only=True)
     full_name = serializers.SerializerMethodField()
 
