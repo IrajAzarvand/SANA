@@ -108,8 +108,6 @@ class UserCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'organization': 'برای مدیر شرکت، انتخاب شرکت الزامی است.'})
         if role == 'main_user' and branch:
             raise serializers.ValidationError({'branch': 'مدیر شرکت نباید به یک شعبه خاص متصل باشد.'})
-        if role == 'main_user' and branch:
-            raise serializers.ValidationError({'branch': 'مدیر شرکت نباید به یک شعبه خاص متصل باشد.'})
         if role in {'site_admin', 'personal_user'} and (organization or branch):
             raise serializers.ValidationError('ادمین سایت و کاربر شخصی نباید به شرکت یا شعبه سازمانی متصل باشند.')
         if self.instance and self.instance.archived_at and attrs.get('is_active') is True:
