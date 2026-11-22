@@ -390,6 +390,43 @@ class BranchManagerDashboardAccessTests(TestCase):
         self.assertIsNone(response.data['current_subscription'])
 
 
+class MainUserDashboardLegacyUserCountTests(TestCase):
+    def test_dashboard_counts_legacy_branch_manager_through_branch_organization(self):
+        from accounts.models import User
+        from organizations.models import Branch, Organization
+
+        organization = Organization.objects.create(
+            name='Legacy User Count Org',
+            code='LEGACY-USER-COUNT',
+        )
+        manager = User.objects.create_user(
+            username='legacy_count_main_user',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=organization,
+        )
+        branch = Branch.objects.create(
+            organization=organization,
+            name='Legacy Count Branch',
+            code='LEGACY-COUNT-BR',
+        )
+        User.objects.create_user(
+            username='legacy_count_branch_manager',
+            password='test-password',
+            role='branch_manager',
+            account_type='organization',
+            branch=branch,
+        )
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=manager)
+        response = self.client.get('/api/dashboard/stats/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['users'], 2)
+
+
 class MainUserDashboardDeviceAccessTests(TestCase):
     def test_dashboard_counts_only_devices_with_active_organization_access(self):
         from datetime import timedelta
