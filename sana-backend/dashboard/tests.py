@@ -388,3 +388,73 @@ class BranchManagerDashboardAccessTests(TestCase):
         self.assertEqual(response.data['devices'], 1)
         self.assertEqual(response.data['gps_status']['total'], 1)
         self.assertIsNone(response.data['current_subscription'])
+
+
+class BranchManagerDashboardTenantScopeTests(TestCase):
+    def test_dashboard_counts_only_vehicles_and_drivers_from_branch_organization(self):
+        from unittest.mock import patch
+        from accounts.models import User
+        from fleet.models import Driver, Vehicle
+        from organizations.models import Branch, Organization
+
+        organization = Organization.objects.create(
+            name='Dashboard Branch Tenant',
+            code='DASH-BR-OWN',
+        )
+        other_organization = Organization.objects.create(
+            name='Dashboard Foreign Tenant',
+            code='DASH-BR-OTHER',
+        )
+        branch = Branch.objects.create(
+            organization=organization,
+            name='Dashboard Scoped Branch',
+            code='DASH-BR',
+        )
+        manager = User.objects.create_user(
+            username='dashboard_branch_tenant',
+            password='test-password',
+            role='branch_manager',
+            account_type='organization',
+            organization=organization,
+            branch=branch,
+        )
+        Vehicle.objects.create(
+            plate='66ج666',
+            organization=organization,
+            branch=branch,
+        )
+        Vehicle.objects.create(
+            plate='77د777',
+            organization=other_organization,
+            branch=branch,
+        )
+        Driver.objects.create(
+            first_name='Own',
+            last_name='Driver',
+            mobile='09120000003',
+            organization=organization,
+            branch=branch,
+        )
+        Driver.objects.create(
+            first_name='Foreign',
+            last_name='Driver',
+            mobile='09120000004',
+            organization=other_organization,
+            branch=branch,
+        )
+
+        self.client = APIClient()
+        self.client.force_authenticate(user=manager)
+        with patch('dashboard.views.traccar_devices', return_value=[]), patch(
+            'dashboard.views.traccar_current_positions',
+            return_value=[],
+        ):
+            response = self.client.get('/api/dashboard/stats/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['vehicles'], 1)
+        self.assertEqual(response.data['drivers'], 1)
+        self.assertEqual(response.data['vehicles_by_status'], {
+            'with_device': 0,
+            'without_device': 1,
+        })
