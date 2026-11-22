@@ -341,9 +341,14 @@ class UserViewSet(viewsets.ModelViewSet):
             branch_id = user.branch_id
             subscriptions = Subscription.objects.none()
             organizations = Organization.objects.none()
-            branches = Branch.objects.none()
+            branches = Branch.objects.filter(pk=branch_id) if branch_id else Branch.objects.none()
             users = User.objects.none()
-            devices = Device.objects.filter(branch_id=branch_id).distinct() if branch_id else Device.objects.none()
+            devices = Device.objects.filter(
+                customer_access_periods__organization_id=organization_id,
+                customer_access_periods__branch_id=branch_id,
+                customer_access_periods__started_at__lte=now,
+                customer_access_periods__ended_at__isnull=True,
+            ).distinct() if branch_id else Device.objects.none()
             # Subscription access is organization-scoped in SubscriptionViewSet, so keep
             # contract/financial notifications consistent with that read-only API scope.
             subscription_ops = SubscriptionOperation.objects.select_related(
