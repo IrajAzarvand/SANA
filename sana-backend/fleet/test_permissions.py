@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from django.test import SimpleTestCase
 from rest_framework.permissions import IsAuthenticated
 
-from accounts.permissions import IsOrganizationMember, IsSiteAdmin
+from accounts.permissions import IsMainUserOrSiteAdmin, IsOrganizationMember, IsSiteAdmin
 from fleet.views import (
     DeviceLifecycleEventViewSet,
     DeviceOperationViewSet,
@@ -24,11 +24,20 @@ class DeviceManagementPermissionTests(SimpleTestCase):
                 permissions = view.get_permissions()
                 self.assertIsInstance(permissions[0], IsSiteAdmin)
 
-    def test_vehicle_type_mutations_require_site_admin(self):
-        self.assert_mutations_require_site_admin(VehicleTypeViewSet)
+    def assert_mutations_require_company_manager_or_site_admin(self, view_class, actions=None):
+        actions = actions or ("create", "update", "partial_update", "destroy")
+        for action in actions:
+            with self.subTest(view=view_class.__name__, action=action):
+                view = view_class()
+                view.action = action
+                permissions = view.get_permissions()
+                self.assertIsInstance(permissions[0], IsMainUserOrSiteAdmin)
 
-    def test_vehicle_mutations_require_site_admin(self):
-        self.assert_mutations_require_site_admin(VehicleViewSet)
+    def test_vehicle_type_mutations_allow_company_manager_or_site_admin(self):
+        self.assert_mutations_require_company_manager_or_site_admin(VehicleTypeViewSet)
+
+    def test_vehicle_mutations_allow_company_manager_or_site_admin(self):
+        self.assert_mutations_require_company_manager_or_site_admin(VehicleViewSet)
 
     def test_device_mutations_require_site_admin(self):
         self.assert_mutations_require_site_admin(DeviceViewSet)
