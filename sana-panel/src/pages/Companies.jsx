@@ -200,17 +200,17 @@ export default function Companies() {
       const details = await organizationsAPI.get(org.id);
       if (requestId === detailRequestIdRef.current) setDetailOrganization(details);
     } catch (err) {
-      if (requestId !== detailRequestId.current) return;
+      if (requestId !== detailRequestIdRef.current) return;
       console.error('Error loading organization core details:', err);
       setDetailOrganizationError('دریافت اطلاعات اصلی شرکت ناموفق بود.');
     } finally {
-      if (requestId === detailRequestId.current) setDetailLoading(false);
+      if (requestId === detailRequestIdRef.current) setDetailLoading(false);
     }
   };
 
   const handleViewOrganization = (org) => {
     const requestId = detailRequestIdRef.current + 1;
-    detailRequestId.current = requestId;
+    detailRequestIdRef.current = requestId;
     setDetailOrganization(org);
     setDetailOrganizationError(null);
     setDetailSectionLoading(Object.fromEntries(Object.keys(organizationSectionLoaders).map((key) => [key, true])));
@@ -227,7 +227,7 @@ export default function Companies() {
   };
 
   const closeOrganizationDetails = () => {
-    detailRequestId.current += 1;
+    detailRequestIdRef.current += 1;
     setDetailOrganization(null);
     setDetailOrganizationError(null);
     setDetailLoading(false);
@@ -243,7 +243,7 @@ export default function Companies() {
       return (
         <div className="space-y-2 py-2">
           <p className="text-danger-500">{detailErrors[section]}</p>
-          <Button variant="secondary" size="sm" onClick={() => loadOrganizationSection(detailOrganization, section, detailRequestId.current)}>
+          <Button variant="secondary" size="sm" onClick={() => loadOrganizationSection(detailOrganization, section, detailRequestIdRef.current)}>
             تلاش مجدد
           </Button>
         </div>
@@ -427,7 +427,7 @@ export default function Companies() {
                 {detailOrganizationError && (
                   <>
                     <p className="text-danger-500">{detailOrganizationError}</p>
-                    <Button variant="secondary" size="sm" onClick={() => loadOrganizationCore(detailOrganization, detailRequestId.current)}>تلاش مجدد</Button>
+                    <Button variant="secondary" size="sm" onClick={() => loadOrganizationCore(detailOrganization, detailRequestIdRef.current)}>تلاش مجدد</Button>
                   </>
                 )}
               </div>
