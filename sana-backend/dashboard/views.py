@@ -60,7 +60,14 @@ class DashboardStatsView(APIView):
         if user.is_main_user and user.organization_id:
             org = user.organization_id
             subscriptions = Subscription.objects.filter(organization_id=org)
-            organization_devices = list(Device.objects.filter(organization_id=org).only('id', 'imei'))
+            now = timezone.now()
+            organization_devices = list(
+                Device.objects.filter(
+                    customer_access_periods__organization_id=org,
+                    customer_access_periods__started_at__lte=now,
+                    customer_access_periods__ended_at__isnull=True,
+                ).distinct().only('id', 'imei')
+            )
             gps_status = self.get_personal_gps_status(organization_devices)
             active_sub = subscriptions.filter(
                 status='active',
@@ -70,7 +77,7 @@ class DashboardStatsView(APIView):
 
             return Response({
                 'vehicles': Vehicle.objects.filter(organization_id=org).count(),
-                'devices': Device.objects.filter(organization_id=org).count(),
+                'devices': len(organization_devices),
                 'drivers': Driver.objects.filter(organization_id=org).count(),
                 'users': User.objects.filter(organization_id=org).count(),
                 'branches': Branch.objects.filter(organization_id=org).count(),
