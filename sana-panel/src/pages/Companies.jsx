@@ -50,6 +50,12 @@ export default function Companies() {
     );
   }, [organizations, search]);
 
+  const closeCompanyModal = () => {
+    setModalOpen(false);
+    setEditingOrganization(null);
+    setForm({ name: '', code: '', registration_number: '', economy_code: '', phone: '', email: '', address: '', status: 'active' });
+  };
+
   // افزودن سازمان
   const handleAdd = async (e) => {
     e.preventDefault();
@@ -190,7 +196,11 @@ export default function Companies() {
         subtitle={`مدیریت شرکت‌های مشتری سامانه سانا — ${filtered.length} شرکت`}
         actions={
           isSiteAdmin ? (
-            <Button icon={Plus} onClick={() => setModalOpen(true)}>
+            <Button icon={Plus} onClick={() => {
+                setEditingOrganization(null);
+                setForm({ name: '', code: '', registration_number: '', economy_code: '', phone: '', email: '', address: '', status: 'active' });
+                setModalOpen(true);
+              }}>
               افزودن شرکت
             </Button>
           ) : null
@@ -333,12 +343,12 @@ export default function Companies() {
       {isSiteAdmin && (
         <Modal
           open={modalOpen}
-          onClose={() => setModalOpen(false)}
+          onClose={closeCompanyModal}
           title={editingOrganization ? 'ویرایش شرکت' : 'افزودن شرکت'}
           size="lg"
           footer={
             <>
-              <Button variant="secondary" onClick={() => setModalOpen(false)} disabled={saving}>
+              <Button variant="secondary" onClick={closeCompanyModal} disabled={saving}>
                 انصراف
               </Button>
               <Button type="submit" form="add-company-form" disabled={saving}>
