@@ -62,11 +62,7 @@ class DashboardStatsView(APIView):
             subscriptions = Subscription.objects.filter(organization_id=org)
             organization_devices = list(Device.objects.filter(organization_id=org).only('id', 'imei'))
             gps_status = self.get_personal_gps_status(organization_devices)
-            active_sub = subscriptions.filter(
-                status='active',
-                start_date__lte=today,
-                end_date__gte=today,
-            ).order_by('-end_date').first()
+            active_sub = None
 
             return Response({
                 'vehicles': Vehicle.objects.filter(organization_id=org).count(),
@@ -94,8 +90,7 @@ class DashboardStatsView(APIView):
         # مدیر شعبه
         if user.is_branch_manager and user.branch_id:
             branch = user.branch_id
-            org_id = user.organization_id
-            subscriptions = Subscription.objects.filter(organization_id=org_id)
+            subscriptions = Subscription.objects.none()
             branch_devices = list(Device.objects.filter(branch_id=branch).only('id', 'imei'))
             gps_status = self.get_personal_gps_status(branch_devices)
             active_sub = subscriptions.filter(
