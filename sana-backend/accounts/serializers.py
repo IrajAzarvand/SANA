@@ -33,6 +33,16 @@ class UserSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'date_joined', 'archived_at', 'archived_by']
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        if request and getattr(request.user, 'is_branch_manager', False):
+            # A branch manager may see their own branch, but not parent-organization identifiers.
+            data['organization'] = None
+            data['organization_name'] = None
+            data['organization_data'] = None
+        return data
+
     def get_organization_name(self, obj):
         if obj.organization_id:
             return obj.organization.name
@@ -286,7 +296,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         token['role'] = user.role
         token['account_type'] = user.account_type
         token['full_name'] = user.full_name
-        if user.organization_id:
+        if user.organization_id and not user.is_branch_manager:
             token['organization_id'] = user.organization_id
             token['organization_name'] = user.organization.name
         if user.branch_id:
