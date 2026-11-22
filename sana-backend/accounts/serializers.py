@@ -31,7 +31,7 @@ class UserSerializer(serializers.ModelSerializer):
             'branch', 'branch_name',
             'is_active', 'archived_at', 'archived_by', 'date_joined',
         ]
-        read_only_fields = ['id', 'date_joined']
+        read_only_fields = ['id', 'date_joined', 'archived_at', 'archived_by']
 
     def get_organization_data(self, obj):
         """اطلاعات کامل سازمان کاربر"""
