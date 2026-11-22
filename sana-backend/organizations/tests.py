@@ -1062,6 +1062,22 @@ class OrganizationAndBranchDeletionPermissionTests(TestCase):
             received_at=today,
             description='Archived company payment history',
         )
+        plan = create_installment_plan(
+            subscription,
+            {
+                'scheduled_amount': 1000,
+                'installment_count': 1,
+                'interval_months': 1,
+                'calculation_mode': 'equal',
+                'first_due_date': today + timedelta(days=30),
+            },
+            created_by=self.site_admin,
+        )
+        allocate_payment(
+            payment,
+            allocation_type='contract_advance',
+            allocation_amount=1000,
+        )
         manager = self.company_manager
 
         self.client.force_authenticate(user=self.site_admin)
@@ -1077,6 +1093,8 @@ class OrganizationAndBranchDeletionPermissionTests(TestCase):
         self.assertTrue(Device.objects.filter(pk=device.pk).exists())
         self.assertTrue(Subscription.objects.filter(pk=subscription.pk).exists())
         self.assertTrue(SubscriptionPayment.objects.filter(pk=payment.pk).exists())
+        self.assertTrue(SubscriptionInstallmentPlan.objects.filter(pk=plan.pk).exists())
+        self.assertTrue(SubscriptionPaymentAllocation.objects.filter(payment=payment).exists())
         manager.refresh_from_db()
         self.assertEqual(manager.organization_id, self.organization.pk)
 
