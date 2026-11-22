@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useRef } from 'react';
-import { Search, Plus, Building2, Pencil, Trash2, Eye } from 'lucide-react';
+import { Search, Plus, Building2, Pencil, Archive, Eye } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
 import Badge from '../components/Badge';
@@ -142,7 +142,7 @@ export default function Companies() {
   const confirmDeleteOrganization = async () => {
     if (!deleteOrganization || deleteName.trim() !== deleteOrganization.name) return;
     try {
-      await organizationsAPI.delete(deleteOrganization.id);
+      await organizationsAPI.archive(deleteOrganization.id);
       setDeleteOrganization(null);
       setDeleteName('');
       refetch();
@@ -291,7 +291,7 @@ export default function Companies() {
         items.push({ label: 'جزئیات', icon: Eye, onClick: () => handleViewOrganization(org) });
         items.push({
           label: 'آرشیو شرکت',
-          icon: Trash2,
+          icon: Archive,
           variant: 'danger',
           onClick: () => handleDelete(org),
         });
@@ -446,7 +446,7 @@ export default function Companies() {
                 ['کد اقتصادی', detailOrganization.economy_code],
                 ['تلفن', detailOrganization.phone],
                 ['ایمیل', detailOrganization.email],
-                ['وضعیت', detailOrganization.status === 'active' ? 'فعال' : 'غیرفعال'],
+                ['وضعیت', detailOrganization.status === 'active' ? 'فعال' : detailOrganization.status === 'archived' ? 'بایگانی‌شده' : detailOrganization.status === 'suspended' ? 'تعلیق‌شده' : 'غیرفعال'],
                 ['آدرس', detailOrganization.address],
               ].map(([label, value]) => <div key={label} className="rounded-lg border border-border-base p-3"><div className="text-xs text-text-muted">{label}</div><div className="mt-1 text-text-primary break-words">{value || '—'}</div></div>)}
             </div>
@@ -497,7 +497,7 @@ export default function Companies() {
         )}
         <div className="flex justify-end gap-2 pt-4">
           <Button variant="secondary" onClick={() => { setDeleteOrganization(null); setDeleteName(''); }}>انصراف</Button>
-          <Button variant="danger" disabled={!deleteOrganization || deleteName.trim() !== deleteOrganization.name} onClick={confirmDeleteOrganization}>انتقال به بایگانی</Button>
+          <Button disabled={!deleteOrganization || deleteName.trim() !== deleteOrganization.name} onClick={confirmDeleteOrganization}>انتقال به بایگانی</Button>
         </div>
       </Modal>
 
