@@ -56,6 +56,7 @@ class VehicleSerializer(serializers.ModelSerializer):
             organization = attrs.get('organization', getattr(self.instance, 'organization', None))
             branch = attrs.get('branch', getattr(self.instance, 'branch', None))
             owner = attrs.get('owner_user', getattr(self.instance, 'owner_user', None))
+            vehicle_type = attrs.get('vehicle_type', getattr(self.instance, 'vehicle_type', None))
             if organization and organization.pk != user.organization_id:
                 raise serializers.ValidationError({'organization': 'خودرو باید متعلق به سازمان خودتان باشد.'})
             attrs['organization'] = user.organization
@@ -63,6 +64,8 @@ class VehicleSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({'branch': 'شعبه انتخاب‌شده متعلق به سازمان شما نیست.'})
             if owner and owner.organization_id != user.organization_id:
                 raise serializers.ValidationError({'owner_user': 'مالک انتخاب‌شده متعلق به سازمان شما نیست.'})
+            if vehicle_type and vehicle_type.organization_id not in (None, user.organization_id):
+                raise serializers.ValidationError({'vehicle_type': 'نوع خودرو متعلق به سازمان دیگری است.'})
         return attrs
 
     def create(self, validated_data):
