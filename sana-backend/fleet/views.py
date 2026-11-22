@@ -173,9 +173,6 @@ class VehicleViewSet(viewsets.ModelViewSet):
         if not user.is_site_admin:
             qs = qs.filter(Q(organization__isnull=True) | Q(organization__status='active'))
 
-        if not user.is_site_admin:
-            qs = qs.filter(organization__status='active')
-
         # فیلترها
         branch = self.request.query_params.get('branch')
         if branch:
@@ -321,6 +318,9 @@ class DeviceViewSet(viewsets.ModelViewSet):
             )
         else:
             qs = qs.none()
+
+        if not user.is_site_admin:
+            qs = qs.filter(Q(organization__isnull=True) | Q(organization__status='active'))
 
         # ─── فیلترها ───
 
