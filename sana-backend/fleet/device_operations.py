@@ -277,6 +277,7 @@ def _return_temporary_replacements_to_warehouse(
         replacement.current_holder_user = None
         replacement.management_status = 'warehouse'
         replacement.save()
+        _close_branch_history(replacement)
         relation.returned_at = timezone.now()
         relation.save(update_fields=['returned_at'])
         record_device_lifecycle_event(
@@ -460,6 +461,8 @@ def execute_device_operation(
             device.current_holder_user = None
             device.management_status = 'in_repair'
             device.save()
+            if replacement_type == 'permanent_replacement':
+                _close_branch_history(device)
 
             replacement_device.management_status = (
                 'installed'
@@ -475,6 +478,12 @@ def execute_device_operation(
                 replacement_device.organization = device.organization
                 replacement_device.owner_user = device.owner_user
             replacement_device.save()
+            _open_branch_history(
+                replacement_device,
+                old_branch,
+                subscription=subscription,
+                reason='replacement_assignment',
+            )
 
             if replacement_device.organization or replacement_device.owner_user:
                 _open_ownership(
@@ -594,6 +603,12 @@ def execute_device_operation(
             replacement_device.organization = device.organization
             replacement_device.owner_user = device.owner_user
         replacement_device.save()
+        _open_branch_history(
+            replacement_device,
+            device.branch,
+            subscription=subscription,
+            reason='replacement_assignment',
+        )
 
         if replacement_device.organization or replacement_device.owner_user:
             _open_ownership(
@@ -931,6 +946,24 @@ def execute_device_operation(
 
         device.save()
 
+        if outcome_action in {'return_customer_same_vehicle', 'install_other_vehicle'}:
+            current_link = device.active_subscription_link
+            _open_branch_history(
+                device,
+                device.branch,
+                subscription=current_link.subscription if current_link else subscription,
+                reason='disposition_return',
+            )
+        elif outcome_action == 'transfer_customer':
+            _open_branch_history(
+                device,
+                target_branch,
+                subscription=target_subscription,
+                reason='customer_transfer',
+            )
+        else:
+            _close_branch_history(device)
+
         if outcome_action in {
             'return_customer_same_vehicle', 'return_customer_no_vehicle',
             'customer_spare', 'install_other_vehicle',
@@ -1077,6 +1110,7 @@ def execute_device_operation(
             raise ValidationError({'target_branch': 'شعبه مقصد باید متعلق به سازمان مشتری فعلی و قرارداد باشد.'})
         device.branch = target_branch
         device.save(update_fields=['branch', 'updated_at'])
+        _open_branch_history(device, target_branch, subscription=subscription, reason='branch_transfer')
         _open_customer_access(
             device,
             subscription=subscription,
@@ -1133,6 +1167,7 @@ def execute_device_operation(
         device.vehicle = target_vehicle
         device.branch = target_vehicle.branch
         device.save(update_fields=['vehicle', 'branch', 'updated_at'])
+        _open_branch_history(device, target_vehicle.branch, subscription=subscription, reason='vehicle_transfer')
         _open_customer_access(device, subscription=subscription, branch=target_vehicle.branch, organization=customer_organization, user=customer_user)
         record_device_lifecycle_event(
             device_operation=operation,
