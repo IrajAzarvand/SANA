@@ -232,6 +232,18 @@ class Device(models.Model):
             return False
         if self.management_status in {'faulty', 'in_repair', 'ready', 'lost', 'stolen', 'disconnected', 'unusable', 'disposed'}:
             return False
+
+        # Contract state is authoritative for service availability. A suspended,
+        # cancelled, or expired contract must not be reported as data-active even
+        # when its historical device link remains open.
+        subscription = link.subscription
+        today = timezone.localdate()
+        if (
+            subscription.status != 'active'
+            or subscription.start_date > today
+            or subscription.end_date < today
+        ):
+            return False
         return link.is_active
 
 
