@@ -317,3 +317,59 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
             started_at=now,
             ended_at=now - timedelta(seconds=1),
         ))
+
+    def test_temporary_replacement_returns_to_warehouse_when_original_returns(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from fleet.device_operations import execute_device_operation
+        from fleet.models import Branch, Vehicle
+        from organizations.models import Branch as OrgBranch
+
+        today = timezone.localdate()
+        legal_owner = Organization.objects.create(name='Loaner Legal Owner', code='LOANER-OWNER')
+        customer = Organization.objects.create(name='Loaner Customer', code='LOANER-CUSTOMER')
+        branch = OrgBranch.objects.create(organization=customer, name='Loaner Branch', code='LOANER-BRANCH')
+        vehicle = Vehicle.objects.create(plate='99ج999', organization=customer, branch=branch)
+        subscription = Subscription.objects.create(
+            contract_number='LOANER-RETURN-CONTRACT',
+            customer_type='organization', organization=customer,
+            start_date=today, end_date=today + timedelta(days=30), status='active',
+        )
+        source = Device.objects.create(
+            imei='860000000000968', organization=legal_owner,
+            current_holder_organization=customer, branch=branch, vehicle=vehicle,
+            management_status='installed',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription, device=source,
+            start_date=subscription.start_date, end_date=subscription.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=source, organization=customer, branch=branch, subscription=subscription,
+        )
+        loaner = Device.objects.create(
+            imei='860000000000969', organization=legal_owner, management_status='warehouse',
+        )
+
+        execute_device_operation(
+            device=source, operation_type='return_for_repair', performed_by=None,
+            replacement_device=loaner, subscription=subscription,
+            replacement_type='temporary_repair', replacement_method='warranty',
+        )
+        execute_device_operation(device=source, operation_type='repaired', performed_by=None)
+        execute_device_operation(
+            device=source, operation_type='disposition', performed_by=None,
+            outcome_action='return_customer_no_vehicle',
+        )
+
+        loaner.refresh_from_db()
+        source.refresh_from_db()
+        self.assertEqual(loaner.management_status, 'warehouse')
+        self.assertIsNone(loaner.current_holder_organization_id)
+        self.assertIsNone(loaner.active_subscription_link)
+        self.assertFalse(DeviceCustomerAccessPeriod.objects.filter(
+            device=loaner, ended_at__isnull=True,
+        ).exists())
+        self.assertTrue(DeviceCustomerAccessPeriod.objects.filter(
+            device=source, organization=customer, ended_at__isnull=True,
+        ).exists())
