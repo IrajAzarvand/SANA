@@ -1133,10 +1133,14 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     max(link.start_date, link.subscription.start_date),
                     datetime_time.min,
                 ))
-                range_end = timezone.make_aware(datetime.combine(
+                contract_history_end = timezone.make_aware(datetime.combine(
                     min(link.end_date, link.subscription.end_date),
                     datetime_time.max,
                 ))
+                range_end = min(
+                    contract_history_end,
+                    link.unassigned_at or contract_history_end,
+                )
             else:
                 if request.user.is_branch_manager:
                     # Branch identity is authoritative for legacy branch-manager accounts.
@@ -1202,7 +1206,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 first_access = accesses[0]
                 last_access = accesses[-1]
                 range_start = max(contract_start, first_access.started_at)
-                range_end = contract_end
+                range_end = min(contract_end, link.unassigned_at or contract_end)
                 if request.user.is_branch_manager:
                     # Branch managers may see only the time windows when the device
                     # belonged to their branch. Contract-wide bounds alone would leak
