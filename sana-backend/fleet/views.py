@@ -1201,7 +1201,14 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 first_access = accesses[0]
                 last_access = accesses[-1]
                 range_start = max(contract_start, first_access.started_at)
-                range_end = contract_end
+                # A branch manager must not see positions recorded after the
+                # device left their branch. For an open/re-activated period,
+                # the contract end remains the upper history boundary.
+                range_end = (
+                    min(contract_end, last_access.ended_at)
+                    if last_access.ended_at
+                    else contract_end
+                )
 
         if request.query_params.get('metadata') == 'true':
             return Response({
