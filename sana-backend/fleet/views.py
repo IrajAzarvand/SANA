@@ -1076,13 +1076,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
         device = Device.objects.filter(pk=device_id).select_related('vehicle').first()
         if device is None:
             return Response({'detail': 'دستگاه یافت نشد یا مجوز مشاهده آن را ندارید.'}, status=404)
-        if (
-            not request.user.is_site_admin
-            and device.organization_id
-            and device.organization.status == 'archived'
-        ):
-            return Response({'detail': 'دستگاه یافت نشد یا مجوز مشاهده آن را ندارید.'}, status=404)
-
         range_start = range_end = None
         history_access_intervals = None
         if not request.user.is_site_admin:
@@ -1196,6 +1189,11 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 )
                 if link is None:
                     return Response({'detail': 'برای این دستگاه قرارداد و دسترسی معتبر پیدا نشد.'}, status=403)
+                if (
+                    link.subscription.customer_type == 'organization'
+                    and link.subscription.organization.status == 'archived'
+                ):
+                    return Response({'detail': 'دستگاه یافت نشد یا مجوز مشاهده آن را ندارید.'}, status=404)
                 accesses = [
                     item for item in accesses
                     if item.subscription_id == link.subscription_id
