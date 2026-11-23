@@ -36,7 +36,7 @@ from .serializers import (
 from accounts.permissions import IsSiteAdmin, IsMainUserOrSiteAdmin
 from fleet.models import DeviceCustomerAccessPeriod
 from fleet.lifecycle import record_device_lifecycle_event
-from fleet.device_operations import _close_customer_access, _open_customer_access
+from fleet.device_operations import _close_branch_history, _close_customer_access, _open_customer_access
 
 
 # ═══════════════════════════════════════════════
@@ -353,6 +353,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                 link.removed_by_operation = operation
                 link.save(update_fields=['unassigned_at', 'removed_by_operation'])
                 _close_customer_access(link.device, subscription=subscription)
+                _close_branch_history(link.device)
                 record_device_lifecycle_event(
                     device=link.device,
                     event_type='removed_from_contract',
@@ -518,6 +519,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                 link.removed_by_operation = operation
                 link.save(update_fields=['unassigned_at', 'removed_by_operation'])
                 _close_customer_access(link.device, subscription=subscription)
+                _close_branch_history(link.device)
                 record_device_lifecycle_event(
                     device=link.device,
                     event_type='removed_from_contract',
@@ -731,6 +733,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                 link.removed_by_operation = operation
                 link.save(update_fields=['unassigned_at', 'removed_by_operation'])
                 _close_customer_access(link.device, subscription=subscription)
+                _close_branch_history(link.device)
                 record_device_lifecycle_event(
                     device=link.device,
                     event_type='removed_from_contract',
@@ -849,6 +852,7 @@ class SubscriptionDeviceViewSet(viewsets.ModelViewSet):
             instance.removed_by_operation = operation
             instance.save(update_fields=['unassigned_at', 'removed_by_operation'])
             _close_customer_access(instance.device, subscription=subscription)
+            _close_branch_history(instance.device)
 
             record_device_lifecycle_event(
                 device=instance.device,
