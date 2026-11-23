@@ -345,6 +345,7 @@ def execute_device_operation(
             replacement_device.current_holder_organization = old_org
             replacement_device.current_holder_user = old_user
             if replacement_type == 'permanent_replacement':
+                _close_active_link(device, operation)
                 # Permanent replacement inherits the source device's legal owner,
                 # not its contract customer/current holder.
                 replacement_device.organization = device.organization
@@ -462,6 +463,7 @@ def execute_device_operation(
         replacement_device.current_holder_organization = customer_org
         replacement_device.current_holder_user = customer_user
         if replacement_type == 'permanent_replacement':
+            _close_active_link(device, operation)
             # Legal ownership follows the source device; holder remains the customer.
             replacement_device.organization = device.organization
             replacement_device.owner_user = device.owner_user
@@ -591,6 +593,7 @@ def execute_device_operation(
                 'installed'
             )
             if replacement_type == 'permanent_replacement':
+                _close_active_link(device, operation)
                 # Permanent replacement inherits source legal ownership.
                 replacement_device.organization = device.organization
                 replacement_device.owner_user = device.owner_user
