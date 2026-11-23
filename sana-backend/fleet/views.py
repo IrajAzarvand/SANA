@@ -125,6 +125,48 @@ def normalize_traccar_history_positions(positions, range_start, range_end, curso
     return normalized
 
 
+def authorized_live_contract_device_ids(user):
+    """Device IDs whose current contract grants this customer live visibility."""
+    today = timezone.localdate()
+    links = SubscriptionDevice.objects.filter(
+        subscription__status='active',
+        subscription__start_date__lte=today,
+        subscription__end_date__gte=today,
+        unassigned_at__isnull=True,
+        start_date__lte=today,
+        end_date__gte=today,
+    )
+
+    if user.is_main_user and user.organization_id:
+        links = links.filter(
+            subscription__customer_type='organization',
+            subscription__organization_id=user.organization_id,
+            device__customer_access_periods__subscription_id=F('subscription_id'),
+            device__customer_access_periods__organization_id=user.organization_id,
+            device__customer_access_periods__started_at__lte=timezone.now(),
+            device__customer_access_periods__ended_at__isnull=True,
+        )
+    elif user.is_branch_manager and user.branch_id:
+        links = links.filter(
+            subscription__customer_type='organization',
+            subscription__organization_id=user.branch.organization_id,
+            device__customer_access_periods__subscription_id=F('subscription_id'),
+            device__customer_access_periods__organization_id=user.branch.organization_id,
+            device__customer_access_periods__branch_id=user.branch_id,
+            device__customer_access_periods__started_at__lte=timezone.now(),
+            device__customer_access_periods__ended_at__isnull=True,
+        )
+    elif user.is_personal_user:
+        links = links.filter(
+            subscription__customer_type='personal',
+            subscription__user=user,
+        )
+    else:
+        return Device.objects.none().values_list('id', flat=True)
+
+    return links.values_list('device_id', flat=True).distinct()
+
+
 class VehicleTypeViewSet(viewsets.ModelViewSet):
     queryset = VehicleType.objects.all()
     serializer_class = VehicleTypeSerializer
@@ -242,39 +284,12 @@ class DeviceViewSet(viewsets.ModelViewSet):
         # both inside the same currently authorized device scope.
         if user.is_site_admin:
             replacement_scope = Q()
-        elif user.is_main_user and user.organization_id:
-            now = timezone.now()
-            authorized_device_ids = DeviceCustomerAccessPeriod.objects.filter(
-                organization=user.organization,
-                started_at__lte=now,
-                ended_at__isnull=True,
-            ).values_list('device_id', flat=True)
-            replacement_scope = Q(
-                source_device_id__in=authorized_device_ids,
-                replacement_device_id__in=authorized_device_ids,
-            )
-        elif user.is_branch_manager and user.branch_id:
-            now = timezone.now()
-            authorized_device_ids = DeviceCustomerAccessPeriod.objects.filter(
-                organization=user.branch.organization,
-                branch=user.branch,
-                started_at__lte=now,
-                ended_at__isnull=True,
-            ).values_list('device_id', flat=True)
-            replacement_scope = Q(
-                source_device_id__in=authorized_device_ids,
-                replacement_device_id__in=authorized_device_ids,
-            )
-        elif user.is_personal_user:
-            authorized_device_ids = Device.objects.filter(
-                owner_user=user
-            ).values_list('id', flat=True)
-            replacement_scope = Q(
-                source_device_id__in=authorized_device_ids,
-                replacement_device_id__in=authorized_device_ids,
-            )
         else:
-            replacement_scope = Q(pk__in=[])
+            authorized_device_ids = authorized_live_contract_device_ids(user)
+            replacement_scope = Q(
+                source_device_id__in=authorized_device_ids,
+                replacement_device_id__in=authorized_device_ids,
+            )
 
         # Contract details embedded in a device row must belong to the same
         # tenant that authorized the device itself.
@@ -1718,35 +1733,8 @@ class DeviceReplacementRelationViewSet(viewsets.ModelViewSet):
         qs = self.queryset
         if user.is_site_admin:
             pass
-        elif user.is_branch_manager and user.branch_id:
-            now = timezone.now()
-            authorized_device_ids = DeviceCustomerAccessPeriod.objects.filter(
-                organization=user.branch.organization,
-                branch=user.branch,
-                started_at__lte=now,
-                ended_at__isnull=True,
-            ).values_list('device_id', flat=True)
-            # Both sides must be currently accessible; otherwise a relation
-            # could reveal the IMEI of a device no longer assigned to this branch.
-            qs = qs.filter(
-                source_device_id__in=authorized_device_ids,
-                replacement_device_id__in=authorized_device_ids,
-            )
-        elif user.is_main_user and user.organization_id:
-            now = timezone.now()
-            authorized_device_ids = DeviceCustomerAccessPeriod.objects.filter(
-                organization=user.organization,
-                started_at__lte=now,
-                ended_at__isnull=True,
-            ).values_list('device_id', flat=True)
-            qs = qs.filter(
-                source_device_id__in=authorized_device_ids,
-                replacement_device_id__in=authorized_device_ids,
-            )
-        elif user.is_personal_user:
-            authorized_device_ids = Device.objects.filter(
-                owner_user=user
-            ).values_list('id', flat=True)
+        elif user.is_branch_manager or user.is_main_user or user.is_personal_user:
+            authorized_device_ids = authorized_live_contract_device_ids(user)
             qs = qs.filter(
                 source_device_id__in=authorized_device_ids,
                 replacement_device_id__in=authorized_device_ids,
