@@ -503,8 +503,18 @@ def execute_device_operation(
                 'device': 'فقط دستگاهی که در وضعیت خرابی/تعمیر است قابل ثبت به عنوان تعمیرشده است.'
             })
 
-        # پایان تعمیر فقط وضعیت فنی را تغییر می‌دهد.
-        # تصمیم درباره مقصد بعدی در عملیات مستقل «تعیین تکلیف» انجام می‌شود.
+        # Preserve the former contract customer in the lifecycle event while
+        # the device is physically back at SANA awaiting disposition.
+        customer_organization = (
+            subscription.organization
+            if subscription and subscription.customer_type == 'organization'
+            else device.current_holder_organization or device.organization
+        )
+        customer_user = (
+            subscription.user
+            if subscription and subscription.customer_type == 'personal'
+            else device.current_holder_user or device.owner_user
+        )
         device.management_status = 'ready'
         device.vehicle = None
         device.branch = None
@@ -518,8 +528,8 @@ def execute_device_operation(
             event_type='repaired',
             performed_by=performed_by,
             subscription=subscription,
-            organization=device.organization,
-            user=device.owner_user,
+            organization=customer_organization,
+            user=customer_user,
             vehicle=None,
             branch=None,
             reason=reason or 'repair',
@@ -629,11 +639,22 @@ def execute_device_operation(
             })
 
         old_status = device.management_status
+        customer_organization = (
+            subscription.organization
+            if subscription and subscription.customer_type == 'organization'
+            else device.current_holder_organization or device.organization
+        )
+        customer_user = (
+            subscription.user
+            if subscription and subscription.customer_type == 'personal'
+            else device.current_holder_user or device.owner_user
+        )
         device.management_status = 'ready'
         device.vehicle = None
         device.branch = None
-        device.current_holder_organization = device.organization
-        device.current_holder_user = device.owner_user
+        # Recovered hardware is physically at SANA, not with its legal owner.
+        device.current_holder_organization = None
+        device.current_holder_user = None
         device.save()
 
         record_device_lifecycle_event(
@@ -642,8 +663,8 @@ def execute_device_operation(
             event_type='found',
             performed_by=performed_by,
             subscription=subscription,
-            organization=device.organization,
-            user=device.owner_user,
+            organization=customer_organization,
+            user=customer_user,
             reason=reason or 'other',
             description=description or (
                 f'دستگاه پس از وضعیت {old_status} پیدا شد و آماده تعیین تکلیف است.'
@@ -664,8 +685,22 @@ def execute_device_operation(
         ).order_by('-event_date', '-id').first()
         previous_vehicle = previous_event.vehicle if previous_event else None
         previous_branch = previous_event.branch if previous_event else None
-        previous_org = device.organization
-        previous_user = device.owner_user
+        previous_org = (
+            previous_event.organization
+            if previous_event and previous_event.organization_id
+            else device.current_holder_organization or (
+                subscription.organization if subscription and subscription.customer_type == 'organization'
+                else device.organization
+            )
+        )
+        previous_user = (
+            previous_event.user
+            if previous_event and previous_event.user_id
+            else device.current_holder_user or (
+                subscription.user if subscription and subscription.customer_type == 'personal'
+                else device.owner_user
+            )
+        )
 
         if outcome_action == 'return_customer_same_vehicle':
             target = previous_vehicle
