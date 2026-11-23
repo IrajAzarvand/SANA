@@ -687,6 +687,20 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                     else {'organization': None, 'user': subscription.user}
                 )
                 # Never overwrite access owned by another currently active contract.
+                conflicting_links = SubscriptionDevice.objects.select_for_update().filter(
+                    device=link.device,
+                    unassigned_at__isnull=True,
+                    start_date__lte=timezone.localdate(),
+                    end_date__gte=timezone.localdate(),
+                    subscription__status='active',
+                    subscription__start_date__lte=timezone.localdate(),
+                    subscription__end_date__gte=timezone.localdate(),
+                ).exclude(subscription=subscription)
+                if conflicting_links.exists():
+                    raise serializers.ValidationError({
+                        'device': f'دستگاه {link.device.imei} به قرارداد فعال دیگری متصل است.'
+                    })
+
                 other_open_periods = DeviceCustomerAccessPeriod.objects.select_for_update().filter(
                     device=link.device, ended_at__isnull=True,
                 ).exclude(subscription=subscription)

@@ -1639,3 +1639,42 @@ class SuspendedContractHistoryAccessTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         self.assertFalse(response.data['unrestricted'])
         self.assertEqual(parse_datetime(response.data['range_end']).date(), yesterday)
+
+
+class PersonalContractHistoryBindingTests(TestCase):
+    def setUp(self):
+        today = timezone.localdate()
+        self.user = User.objects.create_user(
+            username='personal_history_binding', password='test-password',
+            role='personal_user', account_type='personal',
+        )
+        self.other_user = User.objects.create_user(
+            username='other_personal_history_binding', password='test-password',
+            role='personal_user', account_type='personal',
+        )
+        self.device = Device.objects.create(
+            imei='860000000000908', management_status='installed', owner_user=self.user,
+        )
+        self.subscription = Subscription.objects.create(
+            contract_number='PERSONAL-HISTORY-BIND-1', customer_type='personal',
+            user=self.user, start_date=today-timedelta(days=20),
+            end_date=today+timedelta(days=20), status='suspended',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=self.subscription, device=self.device,
+            start_date=self.subscription.start_date, end_date=self.subscription.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=self.device, user=self.other_user, subscription=self.subscription,
+            started_at=timezone.now()-timedelta(days=10),
+            ended_at=timezone.now()-timedelta(days=1),
+        )
+
+    def test_personal_history_requires_matching_customer_access_period(self):
+        request = APIRequestFactory().get(
+            '/api/devices/report-history/',
+            {'device_id': str(self.device.pk), 'metadata': 'true'},
+        )
+        force_authenticate(request, user=self.user)
+        response = DeviceViewSet.as_view({'get': 'report_history'})(request)
+        self.assertEqual(response.status_code, 403, response.data)

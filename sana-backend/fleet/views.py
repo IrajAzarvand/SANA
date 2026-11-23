@@ -1101,10 +1101,18 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 link = personal_links[0] if personal_links else None
 
                 if link is None:
-                    return Response({'detail': 'گزارش این دستگاه فقط در بازه قرارداد فعال قابل مشاهده است.'}, status=403)
+                    return Response({'detail': 'گزارش این دستگاه فقط در بازه قرارداد قابل مشاهده است.'}, status=403)
 
-                # Contract dates are the sole reporting boundary for personal
-                # users. Operational access periods do not extend or narrow it.
+                # Bind history permission to the exact personal customer and contract.
+                access = access_query.filter(
+                    user=request.user,
+                    subscription_id=link.subscription_id,
+                ).order_by('-started_at').first()
+                if access is None:
+                    return Response({'detail': 'دوره دسترسی معتبر برای این قرارداد پیدا نشد.'}, status=403)
+
+                # Contract dates remain the history boundary; suspension closes
+                # live access but must not erase historical visibility.
                 range_start = timezone.make_aware(datetime.combine(
                     max(link.start_date, link.subscription.start_date),
                     datetime_time.min,
@@ -1150,8 +1158,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     return Response({'detail': 'برای این دستگاه قرارداد و دسترسی معتبر پیدا نشد.'}, status=403)
                 start_date = max(link.start_date, link.subscription.start_date, timezone.localdate(access.started_at))
                 end_date = min(link.end_date, link.subscription.end_date)
-                if access.ended_at:
-                    end_date = min(end_date, timezone.localdate(access.ended_at))
                 contract_start = timezone.make_aware(datetime.combine(start_date, datetime_time.min))
                 contract_end = timezone.make_aware(datetime.combine(end_date, datetime_time.max))
                 range_start = max(contract_start, access.started_at)
