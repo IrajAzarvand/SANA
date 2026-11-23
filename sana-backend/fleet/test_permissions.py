@@ -655,7 +655,7 @@ class BranchManagerReportHistoryPeriodFilterTests(TestCase):
              patch('fleet.views.traccar_device_positions', return_value=positions):
             response = client.get('/api/devices/report-history/', {
                 'device_id': device.id,
-                'from': (now - timedelta(days=11)).isoformat(),
+                'from': (now - timedelta(days=10)).isoformat(),
                 'to': (now - timedelta(days=1)).isoformat(),
             })
 
