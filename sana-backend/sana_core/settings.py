@@ -43,7 +43,6 @@ INSTALLED_APPS = [
     'fleet',
     'dashboard',
     'ops_monitoring.apps.OpsMonitoringConfig',
-    'decoder_discovery.apps.DecoderDiscoveryConfig',
     'django_jalali',
 ]
 
