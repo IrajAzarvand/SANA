@@ -322,7 +322,7 @@ class LegacyBranchManagerReportHistoryScopeTests(TestCase):
         from django.utils import timezone
         from rest_framework.test import APIClient
         from accounts.models import User
-        from fleet.models import Device, DeviceCustomerAccessPeriod
+        from fleet.models import Device, DeviceCustomerAccessPeriod, DeviceBranchHistory
         from organizations.models import Branch, Organization, Subscription, SubscriptionDevice
 
         today = timezone.localdate()
@@ -363,6 +363,13 @@ class LegacyBranchManagerReportHistoryScopeTests(TestCase):
             end_date=today + timedelta(days=10),
         )
         DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            branch=branch,
+            subscription=subscription,
+            started_at=now - timedelta(days=2),
+        )
+        DeviceBranchHistory.objects.create(
             device=device,
             organization=organization,
             branch=branch,
@@ -611,7 +618,7 @@ class BranchManagerReportHistoryPeriodFilterTests(TestCase):
         from django.utils import timezone
         from rest_framework.test import APIClient
         from accounts.models import User
-        from fleet.models import Device, DeviceCustomerAccessPeriod
+        from fleet.models import Device, DeviceCustomerAccessPeriod, DeviceBranchHistory
         from organizations.models import Branch, Organization, Subscription, SubscriptionDevice
 
         now = timezone.now()
@@ -636,7 +643,15 @@ class BranchManagerReportHistoryPeriodFilterTests(TestCase):
             device=device, organization=organization, branch=branch_a, subscription=subscription,
             started_at=now - timedelta(days=10), ended_at=now - timedelta(days=6),
         )
+        DeviceBranchHistory.objects.create(
+            device=device, organization=organization, branch=branch_a, subscription=subscription,
+            started_at=now - timedelta(days=10), ended_at=now - timedelta(days=6),
+        )
         DeviceCustomerAccessPeriod.objects.create(
+            device=device, organization=organization, branch=branch_b, subscription=subscription,
+            started_at=now - timedelta(days=5), ended_at=now - timedelta(days=1),
+        )
+        DeviceBranchHistory.objects.create(
             device=device, organization=organization, branch=branch_b, subscription=subscription,
             started_at=now - timedelta(days=5), ended_at=now - timedelta(days=1),
         )
