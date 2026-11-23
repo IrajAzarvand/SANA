@@ -27,26 +27,74 @@ def _close_customer_access(device, when=None, subscription=None):
 
 def _open_customer_access(device, subscription=None, branch=None, organization=None, user=None, started_at=None, reason=''):
     customer = _customer_kwargs(device, organization, user)
-    if not customer['organization'] and not customer['user']:
+    customer_organization = customer['organization']
+    customer_user = customer['user']
+    if not customer_organization and not customer_user:
         return None
-    current = DeviceCustomerAccessPeriod.objects.filter(device=device, ended_at__isnull=True).first()
+
+    if subscription is not None:
+        if subscription.customer_type == 'organization':
+            if (
+                not subscription.organization_id
+                or subscription.user_id is not None
+                or getattr(customer_organization, 'id', None) != subscription.organization_id
+                or customer_user is not None
+            ):
+                raise ValidationError({
+                    'subscription': 'مشتری دوره دسترسی با مشتری سازمانی قرارداد مطابقت ندارد.'
+                })
+            if branch and branch.organization_id != subscription.organization_id:
+                raise ValidationError({
+                    'branch': 'شعبه انتخاب‌شده متعلق به سازمان قرارداد نیست.'
+                })
+        elif subscription.customer_type == 'personal':
+            if (
+                not subscription.user_id
+                or subscription.organization_id is not None
+                or getattr(customer_user, 'id', None) != subscription.user_id
+                or customer_organization is not None
+                or branch is not None
+            ):
+                raise ValidationError({
+                    'subscription': 'مشتری دوره دسترسی با مشتری شخصی قرارداد مطابقت ندارد.'
+                })
+        else:
+            raise ValidationError({'subscription': 'نوع مشتری قرارداد نامعتبر است.'})
+
+    current = DeviceCustomerAccessPeriod.objects.select_for_update().filter(
+        device=device,
+        ended_at__isnull=True,
+    ).first()
     if current:
-        same_customer = current.organization_id == getattr(customer['organization'], 'id', None) and current.user_id == getattr(customer['user'], 'id', None)
-        branch_id = getattr(branch, 'id', None)
-        if same_customer and current.branch_id != branch_id:
-            _close_customer_access(device, started_at)
-            current = None
-        if current and same_customer:
-            changed = []
-            if subscription and current.subscription_id != subscription.id:
-                current.subscription = subscription; changed.append('subscription')
-            if branch and current.branch_id != branch.id:
-                current.branch = branch; changed.append('branch')
-            if changed: current.save(update_fields=changed)
+        same_customer = (
+            current.organization_id == getattr(customer_organization, 'id', None)
+            and current.user_id == getattr(customer_user, 'id', None)
+        )
+        same_branch = current.branch_id == getattr(branch, 'id', None)
+        requested_subscription_id = subscription.id if subscription else current.subscription_id
+        same_subscription = current.subscription_id == requested_subscription_id
+
+        if same_customer and same_branch and same_subscription:
             return current
-        if current:
-            _close_customer_access(device, started_at)
-    return DeviceCustomerAccessPeriod.objects.create(device=device, subscription=subscription, branch=branch, started_at=started_at or timezone.now(), reason=reason, **customer)
+
+        if not same_customer:
+            raise ValidationError({
+                'device': 'برای دستگاه دوره دسترسی باز متعلق به مشتری دیگری وجود دارد؛ ابتدا انتقال رسمی را انجام دهید.'
+            })
+
+        # Never rewrite an existing period to point at a new contract or branch.
+        # Close it and create a new row so the original history remains immutable.
+        current.ended_at = started_at or timezone.now()
+        current.save(update_fields=['ended_at'])
+
+    return DeviceCustomerAccessPeriod.objects.create(
+        device=device,
+        subscription=subscription,
+        branch=branch,
+        started_at=started_at or timezone.now(),
+        reason=reason,
+        **customer,
+    )
 
 
 def _close_ownership(device, when=None):
