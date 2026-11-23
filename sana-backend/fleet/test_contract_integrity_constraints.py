@@ -159,3 +159,48 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
         access = DeviceCustomerAccessPeriod.objects.get(device=replacement, ended_at__isnull=True)
         self.assertEqual(access.organization_id, customer.id)
         self.assertEqual(access.subscription_id, subscription.id)
+
+    def test_repair_and_return_to_customer_reopen_access_without_erasing_history(self):
+        from datetime import timedelta
+        from fleet.device_operations import execute_device_operation
+        from fleet.models import Branch
+        from django.utils import timezone
+
+        today = timezone.localdate()
+        legal_owner = Organization.objects.create(name='Repair Legal Owner', code='REPAIR-LEGAL-OWNER')
+        customer = Organization.objects.create(name='Repair Customer', code='REPAIR-CUSTOMER')
+        branch = Branch.objects.create(organization=customer, name='Repair Branch', code='REPAIR-BRANCH')
+        subscription = Subscription.objects.create(
+            contract_number='REPAIR-ACCESS-CONTRACT',
+            customer_type='organization', organization=customer,
+            start_date=today, end_date=today + timedelta(days=30), status='active',
+        )
+        device = Device.objects.create(
+            imei='860000000000960', organization=legal_owner,
+            current_holder_organization=customer, branch=branch,
+            management_status='installed',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription, device=device,
+            start_date=subscription.start_date, end_date=subscription.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device, organization=customer, branch=branch, subscription=subscription,
+        )
+
+        execute_device_operation(device=device, operation_type='return_for_repair', performed_by=None)
+        execute_device_operation(device=device, operation_type='repaired', performed_by=None)
+        execute_device_operation(
+            device=device, operation_type='disposition', performed_by=None,
+            outcome_action='return_customer_no_vehicle',
+        )
+
+        device.refresh_from_db()
+        self.assertEqual(device.current_holder_organization_id, customer.id)
+        self.assertIsNone(device.current_holder_user_id)
+        self.assertTrue(DeviceCustomerAccessPeriod.objects.filter(
+            device=device, organization=customer, ended_at__isnull=True,
+        ).exists())
+        self.assertGreaterEqual(DeviceCustomerAccessPeriod.objects.filter(
+            device=device, ended_at__isnull=False,
+        ).count(), 2)
