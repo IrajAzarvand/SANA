@@ -548,8 +548,24 @@ def execute_device_operation(
                 replacement_device.owner_user = old_user
             replacement_device.save()
 
+            if replacement_type == 'permanent_replacement':
+                _open_ownership(
+                    replacement_device,
+                    organization=old_org,
+                    user=old_user,
+                    reason='permanent_replacement',
+                )
+
             if subscription:
                 _add_to_subscription(replacement_device, subscription, operation)
+                _open_customer_access(
+                    replacement_device,
+                    subscription=subscription,
+                    branch=old_branch,
+                    organization=old_org,
+                    user=old_user,
+                    reason='replacement',
+                )
 
             DeviceReplacementRelation.objects.create(
                 source_device=device,
