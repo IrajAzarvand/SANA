@@ -3,7 +3,7 @@ from decimal import Decimal, InvalidOperation
 from django.utils import timezone
 from django.db.models import Q, Sum
 from fleet.lifecycle import record_device_lifecycle_event
-from fleet.device_operations import _open_customer_access
+from fleet.device_operations import _open_customer_access, _open_ownership
 from fleet.models import DeviceCustomerAccessPeriod
 from .models import (
     Organization,
@@ -856,6 +856,10 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                     raise serializers.ValidationError({
                         'organization_name': 'نام سازمان الزامی است'
                     })
+                if selected_organization.status != 'active':
+                    raise serializers.ValidationError({
+                        'organization_id': 'برای ایجاد قرارداد جدید، سازمان باید فعال باشد.'
+                    })
             elif not data.get('organization_name', '').strip():
                 raise serializers.ValidationError({
                     'organization_name': 'برای ساخت سازمان جدید، نام سازمان الزامی است'
@@ -876,6 +880,10 @@ class SubscriptionWizardSerializer(serializers.Serializer):
             if selected_user.account_type != customer_type:
                 raise serializers.ValidationError({
                     'existing_user_id': 'نوع حساب کاربر با نوع مشتری انتخاب‌شده مطابقت ندارد'
+                })
+            if not selected_user.is_active:
+                raise serializers.ValidationError({
+                    'existing_user_id': 'حساب کاربر انتخاب‌شده غیرفعال است.'
                 })
             if customer_type == 'organization' and selected_user.role != 'main_user':
                 raise serializers.ValidationError({
@@ -1051,6 +1059,10 @@ class SubscriptionWizardSerializer(serializers.Serializer):
             if customer_type == 'organization':
                 if organization_id:
                     organization = Organization.objects.select_for_update().get(id=organization_id)
+                    if organization.status != 'active':
+                        raise serializers.ValidationError({
+                            'organization_id': 'برای ایجاد قرارداد جدید، سازمان باید فعال باشد.'
+                        })
                     # Creating a contract for an existing customer must not mutate
                     # the customer's master record. Customer profile edits belong
                     # to the dedicated organization settings workflow.
@@ -1083,6 +1095,15 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                 # contract-creation wizard. Creating a contract only references
                 # the selected account; profile edits use the account workflow.
                 user = User.objects.select_for_update().get(id=existing_user_id)
+                if not user.is_active or user.account_type != customer_type:
+                    raise serializers.ValidationError({
+                        'existing_user_id': 'حساب مشتری انتخاب‌شده دیگر معتبر یا فعال نیست.'
+                    })
+                expected_role = 'main_user' if customer_type == 'organization' else 'personal_user'
+                if user.role != expected_role:
+                    raise serializers.ValidationError({
+                        'existing_user_id': 'نقش حساب مشتری با نوع قرارداد مطابقت ندارد.'
+                    })
 
                 # مدیر موجود فقط در صورت نداشتن سازمان به سازمان انتخاب‌شده وصل می‌شود.
                 # انتقال از یک سازمان به سازمان دیگر عمداً مجاز نیست.
@@ -1163,6 +1184,12 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                 # آپدیت وضعیت مدیریتی دستگاه — از انبار خارج شد
                 device.management_status = 'installed'
                 device.save()
+                _open_ownership(
+                    device,
+                    organization=organization,
+                    user=user if customer_type == 'personal' else None,
+                    reason='contract_assignment',
+                )
                 _open_customer_access(
                     device,
                     subscription=subscription,
