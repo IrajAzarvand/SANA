@@ -957,12 +957,15 @@ def execute_device_operation(
 
         if outcome_action in {'return_customer_same_vehicle', 'install_other_vehicle'}:
             current_link = device.active_subscription_link
-            _open_branch_history(
-                device,
-                device.branch,
-                subscription=current_link.subscription if current_link else subscription,
-                reason='disposition_return',
-            )
+            if current_link and current_link.is_active:
+                _open_branch_history(
+                    device,
+                    device.branch,
+                    subscription=current_link.subscription,
+                    reason='disposition_return',
+                )
+            else:
+                _close_branch_history(device)
         elif outcome_action == 'transfer_customer':
             _open_branch_history(
                 device,
