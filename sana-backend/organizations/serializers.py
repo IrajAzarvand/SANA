@@ -1111,16 +1111,12 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                         'existing_user_id': 'نقش حساب مشتری با نوع قرارداد مطابقت ندارد.'
                     })
 
-                # مدیر موجود فقط در صورت نداشتن سازمان به سازمان انتخاب‌شده وصل می‌شود.
-                # انتقال از یک سازمان به سازمان دیگر عمداً مجاز نیست.
-                if organization:
-                    if user.organization_id and user.organization_id != organization.id:
-                        raise serializers.ValidationError({
-                            'existing_user_id': 'مدیر انتخاب‌شده عضو سازمان دیگری است'
-                        })
-                    if not user.organization_id:
-                        user.organization = organization
-                        user.save(update_fields=['organization'])
+                # Contract creation must not mutate an existing customer profile.
+                # The selected account must already belong to the selected organization.
+                if organization and user.organization_id != organization.id:
+                    raise serializers.ValidationError({
+                        'existing_user_id': 'مدیر انتخاب‌شده باید از قبل عضو سازمان قرارداد باشد؛ اتصال حساب از بخش مدیریت کاربران انجام می‌شود.'
+                    })
             else:
                 # کاربر جدید بساز
                 user = User.objects.create_user(
