@@ -1598,3 +1598,49 @@ class CustomerAccessPeriodIntegrityTests(TestCase):
 
         self.period.refresh_from_db()
         self.assertIsNone(self.period.ended_at)
+
+
+class ContractAssignmentOwnershipSeparationTests(TestCase):
+    def test_contract_assignment_preserves_legal_owner_and_updates_holder(self):
+        from django.utils import timezone
+        from accounts.models import User
+        from fleet.models import Device, DeviceCustomerAccessPeriod, DeviceOwnershipHistory
+        from organizations.models import Organization, Subscription
+        from organizations.serializers import SubscriptionDeviceSerializer
+
+        today = timezone.localdate()
+        legal_owner = Organization.objects.create(name='Legal Owner Org', code='LEGAL-OWNER-TEST')
+        customer = Organization.objects.create(name='Contract Customer Org', code='CONTRACT-CUSTOMER-TEST')
+        device = Device.objects.create(
+            imei='860000000000953',
+            organization=legal_owner,
+            management_status='warehouse',
+        )
+        subscription = Subscription.objects.create(
+            contract_number='OWNERSHIP-SEPARATION-TEST',
+            customer_type='organization',
+            organization=customer,
+            start_date=today,
+            end_date=today + timezone.timedelta(days=30),
+            status='active',
+        )
+
+        serializer = SubscriptionDeviceSerializer()
+        link = serializer.create({
+            'subscription': subscription,
+            'device': device,
+            'start_date': today,
+            'end_date': subscription.end_date,
+        })
+
+        device.refresh_from_db()
+        self.assertEqual(link.device_id, device.id)
+        self.assertEqual(device.organization_id, legal_owner.id)
+        self.assertIsNone(device.owner_user_id)
+        self.assertEqual(device.current_holder_organization_id, customer.id)
+        self.assertIsNone(device.current_holder_user_id)
+        self.assertEqual(device.management_status, 'installed')
+        self.assertFalse(DeviceOwnershipHistory.objects.filter(device=device).exists())
+        access = DeviceCustomerAccessPeriod.objects.get(device=device, ended_at__isnull=True)
+        self.assertEqual(access.organization_id, customer.id)
+        self.assertEqual(access.subscription_id, subscription.id)
