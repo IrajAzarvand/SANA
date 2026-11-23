@@ -361,8 +361,8 @@ def execute_device_operation(
                 description=f'به عنوان جایگزین دستگاه {device.imei} به قرارداد متصل شد.',
             )
         else:
-            old_org = device.organization or device.current_holder_organization
-            old_user = device.owner_user or device.current_holder_user
+            old_org = device.current_holder_organization or (subscription.organization if subscription and subscription.customer_type == 'organization' else None) or device.organization
+            old_user = device.current_holder_user or (subscription.user if subscription and subscription.customer_type == 'personal' else None) or device.owner_user
             old_vehicle = device.vehicle
             old_branch = device.branch
 
@@ -518,8 +518,8 @@ def execute_device_operation(
 
         old_vehicle = device.vehicle
         old_branch = device.branch
-        old_org = device.organization or device.current_holder_organization
-        old_user = device.owner_user or device.current_holder_user
+        old_org = device.current_holder_organization or (subscription.organization if subscription and subscription.customer_type == 'organization' else None) or device.organization
+        old_user = device.current_holder_user or (subscription.user if subscription and subscription.customer_type == 'personal' else None) or device.owner_user
 
         # مفقودی/سرقت مالکیت و قرارداد را لغو نمی‌کند؛ فقط نصب فعلی را جدا می‌کند.
         device.vehicle = None
