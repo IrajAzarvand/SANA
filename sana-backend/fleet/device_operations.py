@@ -282,13 +282,13 @@ def execute_device_operation(
         )
         if active_link:
             _open_customer_access(
-            device,
-            subscription=active_link.subscription,
-            branch=device.branch,
-            organization=active_link.subscription.organization,
-            user=active_link.subscription.user,
-            reason='existing_relationship',
-        )
+                device,
+                subscription=active_link.subscription,
+                branch=device.branch,
+                organization=active_link.subscription.organization,
+                user=active_link.subscription.user,
+                reason='existing_relationship',
+            )
 
     if operation_type in {
         'return_for_repair', 'temporary_replacement', 'permanent_replacement',
