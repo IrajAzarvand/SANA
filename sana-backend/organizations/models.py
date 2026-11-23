@@ -346,6 +346,13 @@ class SubscriptionDevice(models.Model):
         verbose_name = 'دستگاه قرارداد'
         verbose_name_plural = 'دستگاه‌های قرارداد'
         ordering = ['-assigned_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['device'],
+                condition=models.Q(unassigned_at__isnull=True),
+                name='subscription_device_one_active',
+            ),
+        ]
 
     def __str__(self):
         return f'{self.device.imei} → {self.subscription.contract_number}'
