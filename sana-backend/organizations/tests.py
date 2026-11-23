@@ -1516,6 +1516,30 @@ class CustomerAccessPeriodIntegrityTests(TestCase):
             DeviceCustomerAccessPeriod.objects.filter(device=self.device).count(), 2,
         )
 
+    def test_new_contract_link_cannot_implicitly_close_another_contract(self):
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        first = SubscriptionDevice.objects.create(
+            subscription=self.subscription_one,
+            device=self.device,
+            start_date=self.subscription_one.start_date,
+            end_date=self.subscription_one.end_date,
+        )
+        with self.assertRaises(DjangoValidationError):
+            SubscriptionDevice.objects.create(
+                subscription=self.subscription_two,
+                device=self.device,
+                start_date=self.subscription_two.start_date,
+                end_date=self.subscription_two.end_date,
+            )
+
+        first.refresh_from_db()
+        self.assertIsNone(first.unassigned_at)
+        self.assertEqual(
+            SubscriptionDevice.objects.filter(device=self.device, unassigned_at__isnull=True).count(),
+            1,
+        )
+
     def test_access_period_rejects_subscription_owned_by_another_organization(self):
         from fleet.device_operations import _open_customer_access
         from organizations.models import Organization, Subscription
