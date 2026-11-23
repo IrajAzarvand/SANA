@@ -373,7 +373,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 customer_access_periods__subscription__status='active',
                 customer_access_periods__subscription__start_date__lte=today,
                 customer_access_periods__subscription__end_date__gte=today,
-                customer_access_periods__subscription__subscription_devices__branch=user.branch,
                 customer_access_periods__subscription__subscription_devices__unassigned_at__isnull=True,
                 customer_access_periods__subscription__subscription_devices__start_date__lte=today,
                 customer_access_periods__subscription__subscription_devices__end_date__gte=today,
