@@ -3,7 +3,7 @@ from rest_framework.test import APIClient
 from unittest.mock import patch
 
 from accounts.models import User
-from fleet.models import Device, Vehicle, Driver, VehicleType
+from fleet.models import Device, Vehicle, Driver, VehicleType, DeviceCustomerAccessPeriod
 from organizations.models import (
     Organization, Subscription, SubscriptionDevice, SubscriptionPayment, SubscriptionOperation,
     SubscriptionInstallmentPlan, SubscriptionInstallment, SubscriptionPaymentAllocation,
@@ -319,6 +319,10 @@ class SubscriptionWizardDeviceValidationTests(TestCase):
         self.assertIsNone(link.unassigned_at)
         self.device.refresh_from_db()
         self.assertEqual(self.device.management_status, 'installed')
+        access = DeviceCustomerAccessPeriod.objects.get(device=self.device, ended_at__isnull=True)
+        self.assertEqual(access.user_id, self.user.id)
+        self.assertEqual(access.organization_id, None)
+        self.assertEqual(access.subscription_id, subscription.id)
 
 class SubscriptionContractNumberUniquenessTests(TestCase):
     def test_contract_number_cannot_duplicate_any_existing_contract(self):
