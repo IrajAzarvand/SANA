@@ -352,6 +352,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
             now = timezone.now()
             today = timezone.localdate()
             active_contract_access = Q(
+                customer_access_periods__subscription__customer_type='organization',
+                customer_access_periods__subscription__organization_id=user.organization_id,
                 customer_access_periods__subscription__status='active',
                 customer_access_periods__subscription__start_date__lte=today,
                 customer_access_periods__subscription__end_date__gte=today,
@@ -361,16 +363,17 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 customer_access_periods__subscription__subscription_devices__end_date__gte=today,
             )
             qs = qs.filter(
-                customer_access_periods__organization=user.organization,
+                customer_access_periods__organization_id=user.organization_id,
+                customer_access_periods__subscription__isnull=False,
                 customer_access_periods__started_at__lte=now,
                 customer_access_periods__ended_at__isnull=True,
-            ).filter(
-                Q(customer_access_periods__subscription__isnull=True) | active_contract_access
-            ).distinct()
+            ).filter(active_contract_access).distinct()
         elif user.is_branch_manager and user.branch:
             now = timezone.now()
             today = timezone.localdate()
             active_contract_access = Q(
+                customer_access_periods__subscription__customer_type='organization',
+                customer_access_periods__subscription__organization_id=user.branch.organization_id,
                 customer_access_periods__subscription__status='active',
                 customer_access_periods__subscription__start_date__lte=today,
                 customer_access_periods__subscription__end_date__gte=today,
@@ -380,13 +383,12 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 customer_access_periods__subscription__subscription_devices__end_date__gte=today,
             )
             qs = qs.filter(
-                customer_access_periods__organization=user.branch.organization,
+                customer_access_periods__organization_id=user.branch.organization_id,
                 customer_access_periods__branch=user.branch,
+                customer_access_periods__subscription__isnull=False,
                 customer_access_periods__started_at__lte=now,
                 customer_access_periods__ended_at__isnull=True,
-            ).filter(
-                Q(customer_access_periods__subscription__isnull=True) | active_contract_access
-            ).distinct()
+            ).filter(active_contract_access).distinct()
         elif user.is_personal_user:
             now = timezone.now()
             today = timezone.localdate()
@@ -400,15 +402,9 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 start_date__lte=today,
                 end_date__gte=today,
             )
-            active_legacy_access = DeviceCustomerAccessPeriod.objects.filter(
-                device=OuterRef('pk'),
-                user=user,
-                subscription__isnull=True,
-                started_at__lte=now,
-            ).filter(
-                Q(ended_at__isnull=True) | Q(ended_at__gte=now)
-            )
-            qs = qs.filter(Q(Exists(active_contract_link)) | Q(Exists(active_legacy_access)))
+            # Contract links are the only live-access authority; legacy periods without
+            # a subscription remain historical records and never grant live access.
+            qs = qs.filter(Exists(active_contract_link))
         else:
             qs = qs.none()
 
@@ -1123,45 +1119,58 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 ))
             else:
                 if request.user.is_branch_manager:
-                    # Legacy branch-manager accounts may have organization_id=NULL;
-                    # the branch's organization is the authoritative tenant link.
+                    # Branch identity is authoritative for legacy branch-manager accounts.
                     branch_organization_id = request.user.branch.organization_id
                     access_query = access_query.filter(
                         organization_id=branch_organization_id,
                         branch_id=request.user.branch_id,
+                        subscription__customer_type='organization',
+                        subscription__organization_id=branch_organization_id,
                     )
                     links = [
                         link for link in links
-                        if link.subscription.organization_id == branch_organization_id
+                        if link.subscription.customer_type == 'organization'
+                        and link.subscription.organization_id == branch_organization_id
                     ]
                 elif request.user.is_main_user:
-                    access_query = access_query.filter(organization_id=request.user.organization_id)
+                    access_query = access_query.filter(
+                        organization_id=request.user.organization_id,
+                        subscription__customer_type='organization',
+                        subscription__organization_id=request.user.organization_id,
+                    )
                     links = [
                         link for link in links
-                        if link.subscription.organization_id == request.user.organization_id
+                        if link.subscription.customer_type == 'organization'
+                        and link.subscription.organization_id == request.user.organization_id
                     ]
                 else:
                     links = []
 
-                access = access_query.order_by('-started_at').first()
-                if access is None:
-                    return Response({'detail': 'برای این دستگاه قرارداد و دسترسی فعال پیدا نشد.'}, status=403)
+                # All periods for this contract/customer contribute to the
+                # historical window. A reactivation must not hide positions
+                # recorded before the suspension gap.
+                accesses = list(access_query.filter(
+                    subscription__isnull=False,
+                ).order_by('started_at', 'id'))
+                if not accesses:
+                    return Response({'detail': 'برای این دستگاه قرارداد و دسترسی معتبر پیدا نشد.'}, status=403)
 
-                # Bind the history window to the contract recorded on this access period.
+                access_subscription_ids = {item.subscription_id for item in accesses}
                 link = next(
-                    (item for item in links if item.subscription_id == access.subscription_id),
+                    (item for item in links if item.subscription_id in access_subscription_ids),
                     None,
                 )
-                if link is None and access.subscription_id is None:
-                    link = links[0] if links else None
                 if link is None:
                     return Response({'detail': 'برای این دستگاه قرارداد و دسترسی معتبر پیدا نشد.'}, status=403)
-                start_date = max(link.start_date, link.subscription.start_date, timezone.localdate(access.started_at))
-                end_date = min(link.end_date, link.subscription.end_date)
-                contract_start = timezone.make_aware(datetime.combine(start_date, datetime_time.min))
-                contract_end = timezone.make_aware(datetime.combine(end_date, datetime_time.max))
-                range_start = max(contract_start, access.started_at)
-                range_end = min(contract_end, access.ended_at) if access.ended_at else contract_end
+
+                contract_start_date = max(link.start_date, link.subscription.start_date)
+                contract_end_date = min(link.end_date, link.subscription.end_date)
+                contract_start = timezone.make_aware(datetime.combine(contract_start_date, datetime_time.min))
+                contract_end = timezone.make_aware(datetime.combine(contract_end_date, datetime_time.max))
+                first_access = accesses[0]
+                last_access = accesses[-1]
+                range_start = max(contract_start, first_access.started_at)
+                range_end = min(contract_end, last_access.ended_at) if last_access.ended_at else contract_end
 
         if request.query_params.get('metadata') == 'true':
             return Response({
