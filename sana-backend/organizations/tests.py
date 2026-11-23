@@ -1256,3 +1256,95 @@ class SubscriptionDeviceCustomerAccessClosureTests(TestCase):
         self.assertEqual(response.status_code, 204)
         self._assert_access_closed_and_history_preserved()
         self.assertEqual(self.link.removed_by_operation.operation_type, 'remove_device')
+
+
+
+class SubscriptionSuspendActivateAccessPolicyTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin = User.objects.create_user(
+            username='access-policy-admin',
+            password='test-password',
+            role='site_admin',
+            account_type='admin',
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.customer = User.objects.create_user(
+            username='access-policy-customer',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        today = timezone.localdate()
+        self.subscription = Subscription.objects.create(
+            contract_number='ACCESS-POLICY-001',
+            customer_type='personal',
+            user=self.customer,
+            start_date=today - timedelta(days=4),
+            end_date=today + timedelta(days=30),
+            price=1000,
+        )
+        self.device = Device.objects.create(
+            imei='888888888888882',
+            owner_user=self.customer,
+            management_status='installed',
+        )
+        self.link = SubscriptionDevice.objects.create(
+            subscription=self.subscription,
+            device=self.device,
+            start_date=self.subscription.start_date,
+            end_date=self.subscription.end_date,
+        )
+        self.old_access = DeviceCustomerAccessPeriod.objects.create(
+            device=self.device,
+            user=self.customer,
+            subscription=self.subscription,
+            started_at=timezone.now() - timedelta(days=2),
+            reason='contract_assignment',
+        )
+        self.client.force_authenticate(user=self.admin)
+
+    def test_suspend_closes_live_access_without_removing_contract_link_or_history(self):
+        response = self.client.post(f'/api/subscriptions/{self.subscription.pk}/suspend/', {}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+
+        self.subscription.refresh_from_db()
+        self.link.refresh_from_db()
+        self.old_access.refresh_from_db()
+        self.assertEqual(self.subscription.status, 'suspended')
+        self.assertIsNotNone(self.old_access.ended_at)
+        self.assertIsNone(self.link.unassigned_at)
+        self.assertTrue(SubscriptionDevice.objects.filter(pk=self.link.pk).exists())
+        self.assertTrue(DeviceCustomerAccessPeriod.objects.filter(pk=self.old_access.pk).exists())
+
+    def test_activate_starts_new_access_period_and_sets_new_expiry(self):
+        self.subscription.status = 'suspended'
+        self.subscription.save(update_fields=['status'])
+        self.old_access.ended_at = timezone.now() - timedelta(minutes=1)
+        self.old_access.save(update_fields=['ended_at'])
+        new_end_date = timezone.localdate() + timedelta(days=60)
+
+        response = self.client.post(
+            f'/api/subscriptions/{self.subscription.pk}/activate/',
+            {'end_date': new_end_date.isoformat()},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+
+        self.subscription.refresh_from_db()
+        self.link.refresh_from_db()
+        self.old_access.refresh_from_db()
+        new_access = DeviceCustomerAccessPeriod.objects.filter(
+            device=self.device,
+            subscription=self.subscription,
+            ended_at__isnull=True,
+        ).exclude(pk=self.old_access.pk).latest('started_at')
+
+        self.assertEqual(self.subscription.status, 'active')
+        self.assertEqual(self.subscription.end_date, new_end_date)
+        self.assertEqual(self.link.end_date, new_end_date)
+        self.assertIsNotNone(self.old_access.ended_at)
+        self.assertGreaterEqual(new_access.started_at, self.old_access.ended_at)
+        self.assertEqual(new_access.user_id, self.customer.pk)
+        self.assertEqual(new_access.subscription_id, self.subscription.pk)
