@@ -108,3 +108,51 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
             current_holder_organization=self.organization,
             current_holder_user=user,
         ))
+
+    def test_permanent_replacement_inherits_legal_owner_and_customer_holder_separately(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from fleet.device_operations import execute_device_operation
+        from fleet.models import Vehicle
+        from organizations.models import Branch
+
+        today = timezone.localdate()
+        legal_owner = Organization.objects.create(name='Replacement Legal Owner', code='REPL-LEGAL-OWNER')
+        customer = Organization.objects.create(name='Replacement Customer', code='REPL-CUSTOMER')
+        branch = Branch.objects.create(organization=customer, name='Replacement Branch', code='REPL-BRANCH')
+        vehicle = Vehicle.objects.create(plate='66الف666', organization=customer, branch=branch)
+        subscription = Subscription.objects.create(
+            contract_number='REPL-OWNER-HOLDER-CONTRACT',
+            customer_type='organization', organization=customer,
+            start_date=today, end_date=today + timedelta(days=30), status='active',
+        )
+        source = Device.objects.create(
+            imei='860000000000958', organization=legal_owner,
+            current_holder_organization=customer, branch=branch, vehicle=vehicle,
+            management_status='installed',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription, device=source,
+            start_date=subscription.start_date, end_date=subscription.end_date,
+        )
+        replacement = Device.objects.create(
+            imei='860000000000959', management_status='warehouse',
+        )
+
+        execute_device_operation(
+            device=source,
+            operation_type='lost',
+            performed_by=None,
+            replacement_device=replacement,
+            subscription=subscription,
+            replacement_type='permanent_replacement',
+            replacement_method='warranty',
+        )
+
+        replacement.refresh_from_db()
+        self.assertEqual(replacement.organization_id, legal_owner.id)
+        self.assertIsNone(replacement.owner_user_id)
+        self.assertEqual(replacement.current_holder_organization_id, customer.id)
+        access = DeviceCustomerAccessPeriod.objects.get(device=replacement, ended_at__isnull=True)
+        self.assertEqual(access.organization_id, customer.id)
+        self.assertEqual(access.subscription_id, subscription.id)
