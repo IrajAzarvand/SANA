@@ -1100,14 +1100,15 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 link = personal_links[0] if personal_links else None
 
                 if link is None:
-                    return Response({'detail': 'گزارش این دستگاه فقط در بازه قرارداد قابل مشاهده است.'}, status=403)
+                    return Response({'detail': 'گزارش این دستگاه فقط در بازه قرارداد فعال قابل مشاهده است.'}, status=403)
 
-                # Bind history permission to the exact personal customer and contract.
-                access = access_query.filter(
-                    user=request.user,
-                    subscription_id=link.subscription_id,
-                ).order_by('-started_at').first()
-                if access is None:
+                # The contract-device link is the historical entitlement. When
+                # access-period rows exist for this contract, they must belong
+                # to this customer; a row for another customer must never grant
+                # access. Older valid contract links may predate access-period
+                # tracking, so absence of such rows alone does not revoke history.
+                contract_accesses = access_query.filter(subscription_id=link.subscription_id)
+                if contract_accesses.exists() and not contract_accesses.filter(user=request.user).exists():
                     return Response({'detail': 'دوره دسترسی معتبر برای این قرارداد پیدا نشد.'}, status=403)
 
                 # Contract dates remain the history boundary; suspension closes
