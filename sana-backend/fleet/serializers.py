@@ -848,11 +848,11 @@ class DeviceReplacementRelationSerializer(serializers.ModelSerializer):
             'id', 'source_device', 'source_device_imei',
             'replacement_device', 'replacement_device_imei',
             'replacement_type', 'replacement_type_display',
-            'replacement_date', 'description', 'created_at',
+            'replacement_date', 'returned_at', 'description', 'created_at',
         ]
         read_only_fields = [
             'id', 'source_device_imei', 'replacement_device_imei',
-            'replacement_type_display', 'created_at',
+            'replacement_type_display', 'returned_at', 'created_at',
         ]
 
     def validate(self, data):
