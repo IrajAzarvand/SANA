@@ -162,6 +162,7 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
 
     def test_repair_and_return_to_customer_reopen_access_without_erasing_history(self):
         from datetime import timedelta
+        from django.utils import timezone
         from fleet.device_operations import execute_device_operation
         from organizations.models import Branch
 
