@@ -123,6 +123,45 @@ def _open_ownership(device, organization=None, user=None, started_at=None, reaso
     )
 
 
+
+def _validate_transfer_target(*, organization, user, branch=None, vehicle=None, subscription=None):
+    if bool(organization) == bool(user):
+        raise ValidationError({
+            'target_organization': 'باید دقیقاً یک مشتری سازمانی یا شخصی برای انتقال انتخاب شود.'
+        })
+
+    if organization:
+        if branch and branch.organization_id != organization.id:
+            raise ValidationError({'target_branch': 'شعبه مقصد متعلق به سازمان مشتری مقصد نیست.'})
+        if vehicle and (
+            vehicle.organization_id != organization.id
+            or vehicle.owner_user_id is not None
+            or (branch and vehicle.branch_id != branch.id)
+        ):
+            raise ValidationError({'target_vehicle': 'خودروی مقصد متعلق به سازمان یا شعبه انتخاب‌شده نیست.'})
+        if subscription and (
+            subscription.customer_type != 'organization'
+            or subscription.organization_id != organization.id
+            or subscription.user_id is not None
+        ):
+            raise ValidationError({'target_subscription': 'قرارداد مقصد متعلق به سازمان انتخاب‌شده نیست.'})
+    else:
+        if branch:
+            raise ValidationError({'target_branch': 'مشتری شخصی نمی‌تواند شعبه سازمانی داشته باشد.'})
+        if vehicle and (
+            vehicle.owner_user_id != user.id
+            or vehicle.organization_id is not None
+            or vehicle.branch_id is not None
+        ):
+            raise ValidationError({'target_vehicle': 'خودروی مقصد متعلق به کاربر شخصی انتخاب‌شده نیست.'})
+        if subscription and (
+            subscription.customer_type != 'personal'
+            or subscription.user_id != user.id
+            or subscription.organization_id is not None
+        ):
+            raise ValidationError({'target_subscription': 'قرارداد مقصد متعلق به کاربر شخصی انتخاب‌شده نیست.'})
+
+
 def _close_active_link(device, operation):
     link = device.subscription_links.filter(
         unassigned_at__isnull=True
@@ -636,8 +675,13 @@ def execute_device_operation(
             device.management_status = 'installed'
 
         elif outcome_action == 'transfer_customer':
-            if not target_organization and not target_user:
-                raise ValidationError({'target_organization': 'مالک مقصد را مشخص کنید'})
+            _validate_transfer_target(
+                organization=target_organization,
+                user=target_user,
+                branch=target_branch,
+                vehicle=target_vehicle,
+                subscription=target_subscription,
+            )
             device.organization = target_organization
             device.owner_user = target_user
             device.current_holder_organization = target_organization
