@@ -155,6 +155,10 @@ class Subscription(models.Model):
                 ),
                 name='subscription_customer_shape',
             ),
+            models.CheckConstraint(
+                condition=models.Q(end_date__gte=models.F('start_date')),
+                name='subscription_valid_dates',
+            ),
         ]
 
     def __str__(self):
@@ -351,6 +355,10 @@ class SubscriptionDevice(models.Model):
                 fields=['device'],
                 condition=models.Q(unassigned_at__isnull=True),
                 name='subscription_device_one_active',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(end_date__gte=models.F('start_date')),
+                name='subscription_device_valid_dates',
             ),
         ]
 
