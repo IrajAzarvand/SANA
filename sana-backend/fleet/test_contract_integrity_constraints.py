@@ -206,3 +206,42 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
         self.assertGreaterEqual(DeviceCustomerAccessPeriod.objects.filter(
             device=device, ended_at__isnull=False,
         ).count(), 2)
+
+    def test_branch_transfer_uses_contract_customer_not_legal_owner(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from fleet.device_operations import execute_device_operation
+        from organizations.models import Branch
+
+        today = timezone.localdate()
+        legal_owner = Organization.objects.create(name='Branch Transfer Legal Owner', code='BR-TRANSFER-OWNER')
+        customer = Organization.objects.create(name='Branch Transfer Customer', code='BR-TRANSFER-CUSTOMER')
+        source_branch = Branch.objects.create(organization=customer, name='Transfer Source Branch', code='BR-TRANSFER-SRC')
+        target_branch = Branch.objects.create(organization=customer, name='Transfer Target Branch', code='BR-TRANSFER-TGT')
+        subscription = Subscription.objects.create(
+            contract_number='BRANCH-TRANSFER-ACCESS',
+            customer_type='organization', organization=customer,
+            start_date=today, end_date=today + timedelta(days=30), status='active',
+        )
+        device = Device.objects.create(
+            imei='860000000000961', organization=legal_owner,
+            current_holder_organization=customer, branch=source_branch,
+            management_status='installed',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription, device=device,
+            start_date=subscription.start_date, end_date=subscription.end_date,
+        )
+
+        execute_device_operation(
+            device=device, operation_type='transfer_branch', performed_by=None,
+            target_branch=target_branch, subscription=subscription,
+        )
+
+        device.refresh_from_db()
+        self.assertEqual(device.organization_id, legal_owner.id)
+        self.assertEqual(device.current_holder_organization_id, customer.id)
+        self.assertEqual(device.branch_id, target_branch.id)
+        current_access = DeviceCustomerAccessPeriod.objects.get(device=device, ended_at__isnull=True)
+        self.assertEqual(current_access.organization_id, customer.id)
+        self.assertEqual(current_access.branch_id, target_branch.id)
