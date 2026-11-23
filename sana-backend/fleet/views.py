@@ -395,6 +395,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
             active_contract_link = SubscriptionDevice.objects.filter(
                 device=OuterRef('pk'),
                 subscription__user=user,
+                subscription__customer_type='personal',
                 subscription__status='active',
                 subscription__start_date__lte=today,
                 subscription__end_date__gte=today,
@@ -1089,6 +1090,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 personal_links = [
                     link for link in links
                     if link.subscription.user_id == request.user.pk
+                    and link.subscription.customer_type == 'personal'
                     and link.subscription.status in ['active', 'expired', 'suspended']
                     and link.start_date <= link.end_date
                     and link.subscription.start_date <= link.subscription.end_date
@@ -1170,7 +1172,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 first_access = accesses[0]
                 last_access = accesses[-1]
                 range_start = max(contract_start, first_access.started_at)
-                range_end = min(contract_end, last_access.ended_at) if last_access.ended_at else contract_end
+                range_end = contract_end
 
         if request.query_params.get('metadata') == 'true':
             return Response({
