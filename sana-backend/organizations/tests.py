@@ -1316,6 +1316,7 @@ class SubscriptionSuspendActivateAccessPolicyTests(TestCase):
         self.link.refresh_from_db()
         self.old_access.refresh_from_db()
         self.assertEqual(self.subscription.status, 'suspended')
+        self.assertFalse(self.device.is_data_active)
         self.assertIsNotNone(self.old_access.ended_at)
         self.assertIsNone(self.link.unassigned_at)
         self.assertTrue(SubscriptionDevice.objects.filter(pk=self.link.pk).exists())
@@ -1345,6 +1346,7 @@ class SubscriptionSuspendActivateAccessPolicyTests(TestCase):
         ).exclude(pk=self.old_access.pk).latest('started_at')
 
         self.assertEqual(self.subscription.status, 'active')
+        self.assertTrue(self.device.is_data_active)
         self.assertEqual(self.subscription.end_date, new_end_date)
         self.assertEqual(self.link.end_date, new_end_date)
         self.assertIsNotNone(self.old_access.ended_at)
