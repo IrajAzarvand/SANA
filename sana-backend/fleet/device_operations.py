@@ -715,8 +715,25 @@ def execute_device_operation(
 
         if outcome_action == 'transfer_customer':
             _close_active_link(device, operation)
+            _close_customer_access(device)
+            _close_ownership(device)
             if target_subscription:
                 _add_to_subscription(device, target_subscription, operation)
+            _open_ownership(
+                device,
+                organization=target_organization,
+                user=target_user,
+                reason='transfer_customer',
+            )
+            if target_subscription:
+                _open_customer_access(
+                    device,
+                    subscription=target_subscription,
+                    branch=device.branch,
+                    organization=target_organization,
+                    user=target_user,
+                    reason='transfer_customer',
+                )
         elif outcome_action == 'dispose':
             _close_active_link(device, operation)
 
