@@ -163,7 +163,7 @@ class BranchManagerReplacementHistoryScopeTests(TestCase):
         from django.utils import timezone
         from accounts.models import User
         from fleet.models import Device, DeviceCustomerAccessPeriod, DeviceReplacementRelation
-        from organizations.models import Organization
+        from organizations.models import Organization, Subscription, SubscriptionDevice
 
         organization = Organization.objects.create(
             name='Company Replacement Scope',
