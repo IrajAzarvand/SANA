@@ -59,7 +59,7 @@ class Migration(migrations.Migration):
             model_name='subscriptiondevice',
             constraint=models.CheckConstraint(
                 condition=models.Q(end_date__gte=models.F('start_date')),
-                name='subscription_device_valid_dates',
+                name='sub_device_valid_dates',
             ),
         ),
     ]
