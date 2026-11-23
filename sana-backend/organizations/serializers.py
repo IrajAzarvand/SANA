@@ -4,7 +4,7 @@ from django.utils import timezone
 from django.db import transaction
 from django.db.models import Q, Sum
 from fleet.lifecycle import record_device_lifecycle_event
-from fleet.device_operations import _open_customer_access
+from fleet.device_operations import _open_customer_access, _open_ownership
 from fleet.models import DeviceCustomerAccessPeriod
 from .models import (
     Organization,
@@ -367,6 +367,13 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
             device.management_status = 'installed'
 
         device.save()
+        if device.organization_id or device.owner_user_id:
+            _open_ownership(
+                device,
+                organization=device.organization,
+                user=device.owner_user,
+                reason='contract_assignment',
+            )
         _open_customer_access(
             device,
             subscription=subscription,
@@ -1183,6 +1190,13 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                 # Remove from warehouse when the contract installs the device.
                 device.management_status = 'installed'
                 device.save()
+                if device.organization_id or device.owner_user_id:
+                    _open_ownership(
+                        device,
+                        organization=device.organization,
+                        user=device.owner_user,
+                        reason='contract_assignment',
+                    )
                 _open_customer_access(
                     device,
                     subscription=subscription,
