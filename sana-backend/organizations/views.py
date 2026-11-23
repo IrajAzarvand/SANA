@@ -34,8 +34,9 @@ from .serializers import (
     SubscriptionOperationSerializer,
 )
 from accounts.permissions import IsSiteAdmin, IsMainUserOrSiteAdmin
+from fleet.models import DeviceCustomerAccessPeriod
 from fleet.lifecycle import record_device_lifecycle_event
-from fleet.device_operations import _close_customer_access
+from fleet.device_operations import _close_customer_access, _open_customer_access
 
 
 # ═══════════════════════════════════════════════
@@ -635,6 +636,12 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             )
             subscription.status = 'suspended'
             subscription.save(update_fields=['status', 'updated_at'])
+            # Stop live access for this contract only; keep all access-period rows
+            # so customers can still query their authorized historical positions.
+            DeviceCustomerAccessPeriod.objects.filter(
+                subscription=subscription,
+                ended_at__isnull=True,
+            ).update(ended_at=timezone.now())
         return Response(SubscriptionSerializer(subscription).data)
 
     @action(detail=True, methods=['post'])
@@ -646,8 +653,44 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                 subscription=subscription, operation_type='activate',
                 performed_by=request.user, old_status=subscription.status, new_status='active'
             )
+            from datetime import date
+            raw_end_date = request.data.get('end_date')
+            if raw_end_date:
+                try:
+                    new_end_date = date.fromisoformat(raw_end_date)
+                except (TypeError, ValueError):
+                    raise serializers.ValidationError({'end_date': 'تاریخ پایان جدید معتبر نیست.'})
+            else:
+                new_end_date = subscription.end_date
+            if new_end_date < timezone.localdate() or new_end_date < subscription.start_date:
+                raise serializers.ValidationError({'end_date': 'تاریخ پایان باید امروز یا بعد از آن و پس از شروع قرارداد باشد.'})
+
+            operation = SubscriptionOperation.objects.create(
+                subscription=subscription, operation_type='activate',
+                performed_by=request.user, old_status=subscription.status, new_status='active',
+                old_end_date=subscription.end_date, new_end_date=new_end_date,
+            )
             subscription.status = 'active'
-            subscription.save(update_fields=['status', 'updated_at'])
+            subscription.end_date = new_end_date
+            subscription.save(update_fields=['status', 'end_date', 'updated_at'])
+
+            activation_time = timezone.now()
+            for link in subscription.subscription_devices.filter(unassigned_at__isnull=True).select_related('device'):
+                link.end_date = new_end_date
+                link.save(update_fields=['end_date'])
+                customer_kwargs = (
+                    {'organization': subscription.organization, 'user': None}
+                    if subscription.customer_type == 'organization'
+                    else {'organization': None, 'user': subscription.user}
+                )
+                _open_customer_access(
+                    link.device,
+                    subscription=subscription,
+                    branch=link.device.branch if subscription.customer_type == 'organization' else None,
+                    started_at=activation_time,
+                    reason='فعال‌سازی مجدد قرارداد',
+                    **customer_kwargs,
+                )
         return Response(SubscriptionSerializer(subscription).data)
 
     @action(detail=True, methods=['post'])
