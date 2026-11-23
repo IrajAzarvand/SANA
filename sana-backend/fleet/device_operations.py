@@ -660,10 +660,26 @@ def execute_device_operation(
                 raise ValidationError({
                     'target_vehicle': 'برای نصب روی خودروی دیگر، خودروی مقصد را مشخص کنید'
                 })
-            if previous_org and target_vehicle.organization_id != previous_org.id:
-                raise ValidationError({
-                    'target_vehicle': 'خودروی مقصد باید متعلق به همان مشتری دستگاه باشد'
-                })
+            if previous_org:
+                if (
+                    target_vehicle.organization_id != previous_org.id
+                    or target_vehicle.owner_user_id is not None
+                    or (target_vehicle.branch_id and target_vehicle.branch.organization_id != previous_org.id)
+                ):
+                    raise ValidationError({
+                        'target_vehicle': 'خودروی مقصد باید متعلق به همان سازمان مشتری باشد'
+                    })
+            elif previous_user:
+                if (
+                    target_vehicle.owner_user_id != previous_user.id
+                    or target_vehicle.organization_id is not None
+                    or target_vehicle.branch_id is not None
+                ):
+                    raise ValidationError({
+                        'target_vehicle': 'خودروی مقصد باید متعلق به همان کاربر شخصی باشد'
+                    })
+            else:
+                raise ValidationError({'device': 'مشتری قبلی دستگاه مشخص نیست.'})
             if Device.objects.filter(vehicle=target_vehicle).exclude(pk=device.pk).exclude(
                 management_status__in=['faulty', 'in_repair', 'lost', 'stolen', 'unusable', 'disposed']
             ).exists():
