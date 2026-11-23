@@ -1077,6 +1077,7 @@ def execute_device_operation(
         )
         _close_active_link(device, operation)
         _close_customer_access(device)
+        _close_branch_history(device)
         _close_ownership(device)
         device.organization = target_organization
         device.owner_user = target_user
@@ -1086,6 +1087,12 @@ def execute_device_operation(
         device.vehicle = target_vehicle
         device.management_status = 'installed'
         device.save()
+        _open_branch_history(
+            device,
+            device.branch,
+            subscription=target_subscription,
+            reason='customer_transfer',
+        )
         if target_subscription:
             _add_to_subscription(device, target_subscription, operation)
         _open_ownership(device, organization=target_organization, user=target_user, reason='transfer_customer')
