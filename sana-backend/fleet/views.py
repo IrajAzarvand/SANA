@@ -1290,6 +1290,13 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 cursor_fix_time is None
                 or fix_time_key(item) > (cursor_fix_time, cursor_id)
             )
+            and (
+                history_access_intervals is None
+                or any(
+                    start <= fix_time_key(item)[0] <= end
+                    for start, end in history_access_intervals
+                )
+            )
         ]
         positions.sort(key=fix_time_key)
         has_more = len(positions) > limit
@@ -1305,11 +1312,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
         normalized = normalize_traccar_history_positions(
             page_positions, raw_start, raw_end,
         )
-        if history_access_intervals is not None:
-            normalized = [
-                row for row in normalized
-                if any(start <= row[0] <= end for start, end in history_access_intervals)
-            ]
         point_ids = [row[1] for row in normalized]
         matches = {}
         if point_ids:
