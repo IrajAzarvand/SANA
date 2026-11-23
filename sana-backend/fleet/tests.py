@@ -1507,3 +1507,70 @@ class OrganizationAndAdminAlertsAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['results'][0]['device_id'], device.pk)
+
+
+class LiveMapContractAccessPolicyTests(TestCase):
+    def setUp(self):
+        self.today = timezone.localdate()
+        self.organization = Organization.objects.create(
+            name='Live Map Contract Scope', code='LIVE-MAP-SCOPE',
+        )
+        self.branch = Branch.objects.create(
+            organization=self.organization, name='Live Map Branch', code='LIVE-MAP-BR',
+        )
+        self.main_user = User.objects.create_user(
+            username='live_map_contract_main', password='test-password',
+            role='main_user', account_type='organization', organization=self.organization,
+        )
+        self.personal_user = User.objects.create_user(
+            username='live_map_contract_personal', password='test-password',
+            role='personal_user', account_type='personal',
+        )
+
+    def _device_for_contract(self, *, imei, user=None, status='active', end_date=None):
+        device = Device.objects.create(imei=imei, management_status='installed', owner_user=user)
+        subscription = Subscription.objects.create(
+            contract_number=f'LIVE-MAP-{imei[-4:]}',
+            customer_type='personal' if user else 'organization',
+            user=user,
+            organization=None if user else self.organization,
+            start_date=self.today - timedelta(days=5),
+            end_date=end_date or self.today + timedelta(days=15),
+            status=status,
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription, device=device,
+            start_date=subscription.start_date, end_date=subscription.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device, user=user, organization=None if user else self.organization,
+            branch=None if user else self.branch, subscription=subscription,
+            started_at=timezone.now() - timedelta(days=3),
+            ended_at=timezone.now() if status == 'suspended' else None,
+        )
+        return device
+
+    def _query_ids(self, user):
+        request = APIRequestFactory().get('/api/devices/')
+        force_authenticate(request, user=user)
+        view = DeviceViewSet()
+        view.action_map = {'get': 'list'}
+        view.request = view.initialize_request(request)
+        return set(view.get_queryset().values_list('id', flat=True))
+
+    def test_organization_live_map_scope_excludes_suspended_and_expired_contracts(self):
+        active = self._device_for_contract(imei='860000000000901')
+        suspended = self._device_for_contract(imei='860000000000902', status='suspended')
+        expired = self._device_for_contract(
+            imei='860000000000903', end_date=self.today - timedelta(days=1),
+        )
+        self.assertEqual(self._query_ids(self.main_user), {active.pk})
+
+    def test_personal_live_map_scope_excludes_suspended_and_expired_contracts(self):
+        active = self._device_for_contract(imei='860000000000904', user=self.personal_user)
+        self._device_for_contract(imei='860000000000905', user=self.personal_user, status='suspended')
+        self._device_for_contract(
+            imei='860000000000906', user=self.personal_user,
+            end_date=self.today - timedelta(days=1),
+        )
+        self.assertEqual(self._query_ids(self.personal_user), {active.pk})
