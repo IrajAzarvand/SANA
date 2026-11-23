@@ -17,9 +17,12 @@ def _customer_kwargs(device=None, organization=None, user=None):
     return {'organization': None, 'user': None}
 
 
-def _close_customer_access(device, when=None):
+def _close_customer_access(device, when=None, subscription=None):
     when = when or timezone.now()
-    DeviceCustomerAccessPeriod.objects.filter(device=device, ended_at__isnull=True).update(ended_at=when)
+    periods = DeviceCustomerAccessPeriod.objects.filter(device=device, ended_at__isnull=True)
+    if subscription is not None:
+        periods = periods.filter(subscription=subscription)
+    periods.update(ended_at=when)
 
 
 def _open_customer_access(device, subscription=None, branch=None, organization=None, user=None, started_at=None, reason=''):
