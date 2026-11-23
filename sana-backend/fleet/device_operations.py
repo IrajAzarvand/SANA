@@ -815,6 +815,27 @@ def execute_device_operation(
 
         device.save()
 
+        if outcome_action == 'sana_warehouse':
+            _close_active_link(device, operation)
+        elif outcome_action in {
+            'return_customer_same_vehicle', 'return_customer_no_vehicle',
+            'customer_spare', 'install_other_vehicle',
+        }:
+            current_link = device.active_subscription_link
+            if (
+                current_link
+                and current_link.is_active
+                and current_link.subscription.computed_status == 'active'
+            ):
+                _open_customer_access(
+                    device,
+                    subscription=current_link.subscription,
+                    branch=device.branch,
+                    organization=previous_org,
+                    user=previous_user,
+                    reason='disposition_return',
+                )
+
         if outcome_action == 'transfer_customer':
             _close_active_link(device, operation)
             _close_customer_access(device)
