@@ -601,3 +601,63 @@ class DeviceListContractTenantScopeTests(TestCase):
         self.assertEqual(payload[0]['subscription_id'], own_subscription.id)
         self.assertEqual(payload[0]['subscription_number'], own_subscription.contract_number)
         self.assertNotIn('FOREIGN-DEVICE-LIST-CONTRACT', str(payload[0]))
+
+
+class BranchManagerReportHistoryPeriodFilterTests(TestCase):
+    def test_history_points_are_filtered_to_branch_access_periods(self):
+        from datetime import timedelta
+        from unittest.mock import patch
+
+        from django.utils import timezone
+        from rest_framework.test import APIClient
+        from accounts.models import User
+        from fleet.models import Device, DeviceCustomerAccessPeriod
+        from organizations.models import Branch, Organization, Subscription, SubscriptionDevice
+
+        now = timezone.now()
+        today = timezone.localdate()
+        organization = Organization.objects.create(name='History Filter Org', code='HIST-FILTER-ORG')
+        branch_a = Branch.objects.create(organization=organization, name='History Branch A', code='HIST-A')
+        branch_b = Branch.objects.create(organization=organization, name='History Branch B', code='HIST-B')
+        manager = User.objects.create_user(
+            username='history_filter_manager', password='test-password',
+            role='branch_manager', account_type='organization', organization=organization, branch=branch_a,
+        )
+        device = Device.objects.create(imei='860000000000952', organization=organization, branch=branch_a)
+        subscription = Subscription.objects.create(
+            contract_number='HIST-FILTER-CONTRACT', customer_type='organization', organization=organization,
+            start_date=today - timedelta(days=12), end_date=today + timedelta(days=12), status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription, device=device,
+            start_date=today - timedelta(days=12), end_date=today + timedelta(days=12),
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device, organization=organization, branch=branch_a, subscription=subscription,
+            started_at=now - timedelta(days=10), ended_at=now - timedelta(days=6),
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device, organization=organization, branch=branch_b, subscription=subscription,
+            started_at=now - timedelta(days=5), ended_at=now - timedelta(days=1),
+        )
+
+        branch_a_time = (now - timedelta(days=8)).isoformat()
+        branch_b_time = (now - timedelta(days=3)).isoformat()
+        positions = [
+            {'id': 1001, 'serverTime': branch_a_time, 'fixTime': branch_a_time,
+             'latitude': 35.7, 'longitude': 51.4, 'speed': 0, 'course': 0, 'valid': True, 'attributes': {}},
+            {'id': 1002, 'serverTime': branch_b_time, 'fixTime': branch_b_time,
+             'latitude': 35.8, 'longitude': 51.5, 'speed': 0, 'course': 0, 'valid': True, 'attributes': {}},
+        ]
+        client = APIClient()
+        client.force_authenticate(user=manager)
+        with patch('fleet.views.traccar_history_device_id', return_value=77), \
+             patch('fleet.views.traccar_device_positions', return_value=positions):
+            response = client.get('/api/devices/report-history/', {
+                'device_id': device.id,
+                'from': (now - timedelta(days=11)).isoformat(),
+                'to': (now - timedelta(days=1)).isoformat(),
+            })
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual([point['id'] for point in response.data['points']], [1001])
