@@ -136,10 +136,38 @@ def _close_active_link(device, operation):
 def _add_to_subscription(device, subscription, operation, start_date=None, end_date=None):
     if not subscription:
         raise ValidationError({'target_subscription': 'انتخاب قرارداد مقصد الزامی است'})
+
+    if subscription.customer_type == 'organization':
+        if not subscription.organization_id or subscription.user_id is not None:
+            raise ValidationError({'target_subscription': 'مشتری قرارداد سازمانی معتبر نیست.'})
+        if device.branch_id and device.branch.organization_id != subscription.organization_id:
+            raise ValidationError({'target_subscription': 'شعبه فعلی دستگاه متعلق به سازمان قرارداد مقصد نیست.'})
+    elif subscription.customer_type == 'personal':
+        if not subscription.user_id or subscription.organization_id is not None:
+            raise ValidationError({'target_subscription': 'مشتری قرارداد شخصی معتبر نیست.'})
+        if device.branch_id:
+            raise ValidationError({'target_subscription': 'دستگاه شخصی نمی‌تواند به شعبه سازمانی متصل باشد.'})
+    else:
+        raise ValidationError({'target_subscription': 'نوع مشتری قرارداد مقصد نامعتبر است.'})
+
     start_date = start_date or subscription.start_date
     end_date = end_date or subscription.end_date
-    if start_date > end_date:
-        raise ValidationError({'target_subscription': 'بازه قرارداد مقصد نامعتبر است'})
+    if (
+        start_date > end_date
+        or start_date < subscription.start_date
+        or end_date > subscription.end_date
+    ):
+        raise ValidationError({'target_subscription': 'بازه اتصال دستگاه باید کاملاً داخل بازه قرارداد مقصد باشد.'})
+
+    existing_link = SubscriptionDevice.objects.select_for_update().filter(
+        device=device,
+        unassigned_at__isnull=True,
+    ).first()
+    if existing_link:
+        raise ValidationError({
+            'device': 'دستگاه هنوز به قرارداد دیگری متصل است؛ ابتدا اتصال قبلی را به‌صورت رسمی خاتمه دهید.'
+        })
+
     return SubscriptionDevice.objects.create(
         subscription=subscription,
         device=device,
