@@ -245,3 +245,44 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
         current_access = DeviceCustomerAccessPeriod.objects.get(device=device, ended_at__isnull=True)
         self.assertEqual(current_access.organization_id, customer.id)
         self.assertEqual(current_access.branch_id, target_branch.id)
+
+    def test_vehicle_transfer_uses_contract_customer_not_legal_owner(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from fleet.device_operations import execute_device_operation
+        from fleet.models import Vehicle
+        from organizations.models import Branch
+
+        today = timezone.localdate()
+        legal_owner = Organization.objects.create(name='Vehicle Transfer Legal Owner', code='VH-TRANSFER-OWNER')
+        customer = Organization.objects.create(name='Vehicle Transfer Customer', code='VH-TRANSFER-CUSTOMER')
+        branch = Branch.objects.create(organization=customer, name='Vehicle Transfer Branch', code='VH-TRANSFER-BRANCH')
+        old_vehicle = Vehicle.objects.create(plate='77الف777', organization=customer, branch=branch)
+        target_vehicle = Vehicle.objects.create(plate='88ب888', organization=customer, branch=branch)
+        subscription = Subscription.objects.create(
+            contract_number='VEHICLE-TRANSFER-ACCESS',
+            customer_type='organization', organization=customer,
+            start_date=today, end_date=today + timedelta(days=30), status='active',
+        )
+        device = Device.objects.create(
+            imei='860000000000962', organization=legal_owner,
+            current_holder_organization=customer, branch=branch, vehicle=old_vehicle,
+            management_status='installed',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription, device=device,
+            start_date=subscription.start_date, end_date=subscription.end_date,
+        )
+
+        execute_device_operation(
+            device=device, operation_type='transfer_vehicle', performed_by=None,
+            target_vehicle=target_vehicle, subscription=subscription,
+        )
+
+        device.refresh_from_db()
+        self.assertEqual(device.organization_id, legal_owner.id)
+        self.assertEqual(device.current_holder_organization_id, customer.id)
+        self.assertEqual(device.vehicle_id, target_vehicle.id)
+        current_access = DeviceCustomerAccessPeriod.objects.get(device=device, ended_at__isnull=True)
+        self.assertEqual(current_access.organization_id, customer.id)
+        self.assertEqual(current_access.branch_id, branch.id)
