@@ -1023,17 +1023,9 @@ class SubscriptionWizardSerializer(serializers.Serializer):
             if customer_type == 'organization':
                 if organization_id:
                     organization = Organization.objects.select_for_update().get(id=organization_id)
-                    organization_fields = {
-                        'name': validated_data.get('organization_name', organization.name),
-                        'registration_number': validated_data.get('registration_number', organization.registration_number),
-                        'economy_code': validated_data.get('economy_code', organization.economy_code),
-                        'phone': validated_data.get('organization_phone', organization.phone),
-                        'email': validated_data.get('organization_email', organization.email),
-                        'address': validated_data.get('organization_address', organization.address),
-                    }
-                    for field, value in organization_fields.items():
-                        setattr(organization, field, value)
-                    organization.save(update_fields=list(organization_fields.keys()) + ['updated_at'])
+                    # Creating a contract for an existing customer must not mutate
+                    # the customer's master record. Customer profile edits belong
+                    # to the dedicated organization settings workflow.
                 else:
                     org_code = validated_data.get('organization_code', '').strip()
                     if not org_code:
@@ -1059,21 +1051,10 @@ class SubscriptionWizardSerializer(serializers.Serializer):
             existing_user_id = validated_data.pop('existing_user_id', None)
 
             if existing_user_id:
-                # حساب موجود حفظ می‌شود؛ فقط اطلاعات مجاز فرم به‌روزرسانی می‌شوند.
-                # رمز عبور عمداً دست‌نخورده باقی می‌ماند.
+                # Existing customer identity/profile data is immutable in the
+                # contract-creation wizard. Creating a contract only references
+                # the selected account; profile edits use the account workflow.
                 user = User.objects.select_for_update().get(id=existing_user_id)
-                editable_fields = (
-                    'first_name', 'last_name', 'mobile', 'national_id', 'address',
-                )
-                changed_fields = []
-                for field in editable_fields:
-                    if field in validated_data:
-                        value = validated_data[field]
-                        if getattr(user, field) != value:
-                            setattr(user, field, value)
-                            changed_fields.append(field)
-                if changed_fields:
-                    user.save(update_fields=changed_fields)
 
                 # مدیر موجود فقط در صورت نداشتن سازمان به سازمان انتخاب‌شده وصل می‌شود.
                 # انتقال از یک سازمان به سازمان دیگر عمداً مجاز نیست.
