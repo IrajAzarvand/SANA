@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
 
@@ -361,12 +362,16 @@ class SubscriptionDevice(models.Model):
         return (self.end_date - today).days
 
     def save(self, *args, **kwargs):
-        # اگه رکورد جدید، رکوردهای فعال قبلی همین دستگاه رو ببند
-        if self.pk is None:
-            SubscriptionDevice.objects.filter(
-                device=self.device,
-                unassigned_at__isnull=True,
-            ).update(unassigned_at=timezone.now())
+        # A new contract link must never silently terminate another contract's
+        # assignment. Callers must close the previous link through an audited
+        # lifecycle operation before creating a replacement link.
+        if self.pk is None and SubscriptionDevice.objects.filter(
+            device=self.device,
+            unassigned_at__isnull=True,
+        ).exists():
+            raise ValidationError(
+                'دستگاه هنوز به یک قرارداد متصل است؛ ابتدا اتصال قبلی را به‌صورت رسمی خاتمه دهید.'
+            )
 
         super().save(*args, **kwargs)
 
