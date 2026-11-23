@@ -1164,6 +1164,12 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 )
                 if link is None:
                     return Response({'detail': 'برای این دستگاه قرارداد و دسترسی معتبر پیدا نشد.'}, status=403)
+                accesses = [
+                    item for item in accesses
+                    if item.subscription_id == link.subscription_id
+                ]
+                if not accesses:
+                    return Response({'detail': 'دوره دسترسی معتبر برای این قرارداد پیدا نشد.'}, status=403)
 
                 contract_start_date = max(link.start_date, link.subscription.start_date)
                 contract_end_date = min(link.end_date, link.subscription.end_date)
