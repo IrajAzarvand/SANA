@@ -1602,8 +1602,8 @@ class CustomerAccessPeriodIntegrityTests(TestCase):
 
 class ContractAssignmentOwnershipSeparationTests(TestCase):
     def test_contract_assignment_preserves_legal_owner_and_updates_holder(self):
+        from datetime import timedelta
         from django.utils import timezone
-        from accounts.models import User
         from fleet.models import Device, DeviceCustomerAccessPeriod, DeviceOwnershipHistory
         from organizations.models import Organization, Subscription
         from organizations.serializers import SubscriptionDeviceSerializer
@@ -1621,7 +1621,7 @@ class ContractAssignmentOwnershipSeparationTests(TestCase):
             customer_type='organization',
             organization=customer,
             start_date=today,
-            end_date=today + timezone.timedelta(days=30),
+            end_date=today + timedelta(days=30),
             status='active',
         )
 
