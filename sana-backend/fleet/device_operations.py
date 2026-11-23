@@ -462,15 +462,13 @@ def execute_device_operation(
             replacement_device.owner_user = device.owner_user
         replacement_device.save()
 
-        if replacement_type == 'permanent_replacement':
-            if device.organization or device.owner_user:
-                if device.organization or device.owner_user:
-                    _open_ownership(
-                        replacement_device,
-                        organization=device.organization,
-                        user=device.owner_user,
-                        reason='permanent_replacement',
-                    )
+        if replacement_type == 'permanent_replacement' and (device.organization or device.owner_user):
+            _open_ownership(
+                replacement_device,
+                organization=device.organization,
+                user=device.owner_user,
+                reason='permanent_replacement',
+            )
 
         if subscription:
             _add_to_subscription(replacement_device, subscription, operation)
