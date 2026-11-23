@@ -1574,3 +1574,48 @@ class LiveMapContractAccessPolicyTests(TestCase):
             end_date=self.today - timedelta(days=1),
         )
         self.assertEqual(self._query_ids(self.personal_user), {active.pk})
+
+
+class SuspendedContractHistoryAccessTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='suspended_history_personal', password='test-password',
+            role='personal_user', account_type='personal',
+        )
+        today = timezone.localdate()
+        self.device = Device.objects.create(
+            imei='860000000000907', management_status='installed', owner_user=self.user,
+        )
+        self.subscription = Subscription.objects.create(
+            contract_number='SUSPENDED-HISTORY-001', customer_type='personal',
+            user=self.user, start_date=today - timedelta(days=20),
+            end_date=today + timedelta(days=10), status='suspended',
+        )
+        self.link = SubscriptionDevice.objects.create(
+            subscription=self.subscription, device=self.device,
+            start_date=self.subscription.start_date, end_date=self.subscription.end_date,
+        )
+        self.access = DeviceCustomerAccessPeriod.objects.create(
+            device=self.device, user=self.user, subscription=self.subscription,
+            started_at=timezone.now() - timedelta(days=20),
+            ended_at=timezone.now() - timedelta(hours=1),
+        )
+
+    def test_personal_customer_can_request_contract_history_after_suspension(self):
+        request = APIRequestFactory().get(
+            '/api/devices/report-history/',
+            {'device_id': str(self.device.pk), 'metadata': 'true'},
+        )
+        force_authenticate(request, user=self.user)
+        response = DeviceViewSet.as_view({'get': 'report_history'})(request)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(response.data['unrestricted'])
+        self.assertEqual(
+            parse_datetime(response.data['range_start']).date(),
+            self.subscription.start_date,
+        )
+        self.assertEqual(
+            parse_datetime(response.data['range_end']).date(),
+            self.subscription.end_date,
+        )
