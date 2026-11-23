@@ -66,7 +66,7 @@ class SubscriptionWizardExistingUserTests(TestCase):
         self.assertEqual(self.user.first_name, 'نام قبلی')
         self.assertEqual(self.user.last_name, 'نام خانوادگی قبلی')
         self.assertEqual(self.user.mobile, '09120000000')
-        self.assertEqual(self.user.national_id, '')
+        self.assertIsNone(self.user.national_id)
         self.assertEqual(self.user.address, '')
         self.assertTrue(self.user.check_password('Original-Password-123'))
 
