@@ -188,6 +188,59 @@ def _validate_transfer_target(*, organization, user, branch=None, vehicle=None, 
             raise ValidationError({'target_subscription': 'قرارداد مقصد متعلق به کاربر شخصی انتخاب‌شده نیست.'})
 
 
+@transaction.atomic
+def _return_temporary_replacements_to_warehouse(
+    source_device,
+    *,
+    subscription=None,
+    customer_organization=None,
+    customer_user=None,
+    performed_by=None,
+    operation=None,
+):
+    """Return temporary loaners when the original device is returned to the customer."""
+    relations = DeviceReplacementRelation.objects.filter(
+        source_device=source_device,
+        replacement_type='temporary_repair',
+    ).select_related('replacement_device').order_by('-id')
+    returned = []
+    for relation in relations:
+        replacement = Device.objects.select_for_update().get(pk=relation.replacement_device_id)
+        active_link = replacement.active_subscription_link
+        if active_link:
+            if not subscription or active_link.subscription_id != subscription.id:
+                continue
+        elif (
+            replacement.management_status != 'installed'
+            or replacement.current_holder_organization_id != getattr(customer_organization, 'id', None)
+            or replacement.current_holder_user_id != getattr(customer_user, 'id', None)
+        ):
+            continue
+
+        if active_link:
+            _close_active_link(replacement, operation)
+        _close_customer_access(replacement)
+        replacement.vehicle = None
+        replacement.branch = None
+        replacement.current_holder_organization = None
+        replacement.current_holder_user = None
+        replacement.management_status = 'warehouse'
+        replacement.save()
+        record_device_lifecycle_event(
+            device_operation=operation,
+            device=replacement,
+            event_type='returned',
+            performed_by=performed_by,
+            subscription=subscription,
+            organization=customer_organization,
+            user=customer_user,
+            reason='replacement',
+            description=f'دستگاه جایگزین موقت {source_device.imei} پس از بازگشت دستگاه اصلی به انبار برگشت.',
+        )
+        returned.append(replacement)
+    return returned
+
+
 def _close_active_link(device, operation):
     link = device.subscription_links.filter(
         unassigned_at__isnull=True
@@ -822,6 +875,19 @@ def execute_device_operation(
             device.management_status = 'ready'
 
         device.save()
+
+        if outcome_action in {
+            'return_customer_same_vehicle', 'return_customer_no_vehicle',
+            'customer_spare', 'install_other_vehicle',
+        }:
+            _return_temporary_replacements_to_warehouse(
+                device,
+                subscription=subscription,
+                customer_organization=previous_org,
+                customer_user=previous_user,
+                performed_by=performed_by,
+                operation=operation,
+            )
 
         if outcome_action in {'sana_warehouse', 'retire'}:
             _close_active_link(device, operation)
