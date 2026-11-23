@@ -256,7 +256,14 @@ def execute_device_operation(
     if device.organization_id or device.owner_user_id:
         _open_ownership(device, reason='customer_assignment')
         if active_link:
-            _open_customer_access(device, subscription=active_link.subscription, branch=device.branch, reason='existing_relationship')
+            _open_customer_access(
+            device,
+            subscription=active_link.subscription,
+            branch=device.branch,
+            organization=active_link.subscription.organization,
+            user=active_link.subscription.user,
+            reason='existing_relationship',
+        )
 
     operation = DeviceOperation.objects.create(
         operation_type=operation_type,
