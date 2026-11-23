@@ -1069,7 +1069,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 personal_links = [
                     link for link in links
                     if link.subscription.user_id == request.user.pk
-                    and link.subscription.status == 'active'
+                    and link.subscription.status in ['active', 'expired', 'suspended']
                     and link.start_date <= today <= link.end_date
                     and link.subscription.start_date <= today <= link.subscription.end_date
                 ]
