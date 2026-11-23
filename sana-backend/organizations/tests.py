@@ -1176,11 +1176,12 @@ class SubscriptionDeviceCustomerAccessClosureTests(TestCase):
             start_date=self.subscription.start_date,
             end_date=self.subscription.end_date,
         )
+        self.access_started_at = timezone.now() - timedelta(days=2)
         self.access = DeviceCustomerAccessPeriod.objects.create(
             device=self.device,
             user=self.customer,
             subscription=self.subscription,
-            started_at=timezone.now() - timedelta(days=2),
+            started_at=self.access_started_at,
             reason='contract_assignment',
         )
         self.client.force_authenticate(user=self.admin)
@@ -1200,7 +1201,7 @@ class SubscriptionDeviceCustomerAccessClosureTests(TestCase):
         self.assertEqual(self.access.user_id, self.customer.pk)
         self.assertIsNone(self.access.organization_id)
         self.assertEqual(self.access.subscription_id, self.subscription.pk)
-        self.assertEqual(self.access.started_at, self.access.started_at)
+        self.assertEqual(self.access.started_at, self.access_started_at)
 
         # Ending access is not an ownership transfer or a device lifecycle/status change.
         self.assertEqual(self.device.owner_user_id, self.customer.pk)
