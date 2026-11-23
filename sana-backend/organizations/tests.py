@@ -69,6 +69,10 @@ class SubscriptionWizardExistingUserTests(TestCase):
         self.assertIsNone(self.user.national_id)
         self.assertEqual(self.user.address, '')
         self.assertTrue(self.user.check_password('Original-Password-123'))
+        from fleet.models import DeviceOwnershipHistory
+        ownership = DeviceOwnershipHistory.objects.get(device=self.device, ended_at__isnull=True)
+        self.assertEqual(ownership.owner_user_id, self.user.id)
+        self.assertIsNone(ownership.organization_id)
 
     def test_existing_user_username_must_match_selected_account(self):
         serializer = SubscriptionWizardSerializer(
@@ -198,6 +202,10 @@ class SubscriptionWizardOrganizationSelectionTests(TestCase):
         self.assertEqual(self.manager.last_name, 'شرکت')
         self.assertEqual(self.manager.mobile, '09120000001')
         self.assertTrue(self.manager.check_password('Original-Password-123'))
+        from fleet.models import DeviceOwnershipHistory
+        ownership = DeviceOwnershipHistory.objects.get(device=self.device, ended_at__isnull=True)
+        self.assertEqual(ownership.organization_id, self.organization.id)
+        self.assertIsNone(ownership.owner_user_id)
 
     def test_existing_organization_requires_a_non_empty_name(self):
         serializer = SubscriptionWizardSerializer(
