@@ -1302,6 +1302,12 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 position_id = 0
             return value, position_id
 
+        def within_history_end(item):
+            point_time = fix_time_key(item)[0]
+            if range_end is None:
+                return True
+            return point_time < range_end if history_end_exclusive else point_time <= range_end
+
         positions = [
             item for item in positions
             if fix_time_key(item) is not None
@@ -1309,9 +1315,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 cursor_fix_time is None
                 or fix_time_key(item) > (cursor_fix_time, cursor_id)
             )
-            and (
-                (fix_time_key(item)[0] < range_end if history_end_exclusive and range_end else fix_time_key(item)[0] <= range_end if range_end else True)
-            )
+            and within_history_end(item)
             and (
                 history_access_intervals is None
                 or any(
