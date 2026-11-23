@@ -1136,3 +1136,122 @@ class OrganizationAndBranchDeletionPermissionTests(TestCase):
         self.assertIsNone(self.organization.archived_at)
         self.assertIsNone(self.organization.archived_by)
 
+
+class SubscriptionDeviceCustomerAccessClosureTests(TestCase):
+    """Removing a device from a contract must close access without rewriting history or ownership."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.admin = User.objects.create_user(
+            username='access-close-admin',
+            password='test-password',
+            role='site_admin',
+            account_type='admin',
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.customer = User.objects.create_user(
+            username='access-close-customer',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        today = timezone.localdate()
+        self.subscription = Subscription.objects.create(
+            contract_number='ACCESS-CLOSE-001',
+            customer_type='personal',
+            user=self.customer,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=90),
+            price=1000,
+        )
+        self.device = Device.objects.create(
+            imei='888888888888881',
+            owner_user=self.customer,
+            management_status='installed',
+        )
+        self.link = SubscriptionDevice.objects.create(
+            subscription=self.subscription,
+            device=self.device,
+            start_date=self.subscription.start_date,
+            end_date=self.subscription.end_date,
+        )
+        self.access = DeviceCustomerAccessPeriod.objects.create(
+            device=self.device,
+            user=self.customer,
+            subscription=self.subscription,
+            started_at=timezone.now() - timedelta(days=2),
+            reason='contract_assignment',
+        )
+        self.client.force_authenticate(user=self.admin)
+
+    def _assert_access_closed_and_history_preserved(self):
+        self.link.refresh_from_db()
+        self.access.refresh_from_db()
+        self.device.refresh_from_db()
+
+        self.assertIsNotNone(self.link.unassigned_at)
+        self.assertIsNotNone(self.link.removed_by_operation_id)
+        self.assertTrue(SubscriptionDevice.objects.filter(pk=self.link.pk).exists())
+
+        self.assertIsNotNone(self.access.ended_at)
+        self.assertTrue(DeviceCustomerAccessPeriod.objects.filter(pk=self.access.pk).exists())
+        self.assertEqual(self.access.device_id, self.device.pk)
+        self.assertEqual(self.access.user_id, self.customer.pk)
+        self.assertIsNone(self.access.organization_id)
+        self.assertEqual(self.access.subscription_id, self.subscription.pk)
+        self.assertEqual(self.access.started_at, self.access.started_at)
+
+        # Ending access is not an ownership transfer or a device lifecycle/status change.
+        self.assertEqual(self.device.owner_user_id, self.customer.pk)
+        self.assertIsNone(self.device.organization_id)
+        self.assertEqual(self.device.management_status, 'installed')
+
+    def test_renew_closes_access_when_device_is_removed(self):
+        new_end_date = timezone.localdate() + timedelta(days=180)
+        with patch('organizations.views.record_device_lifecycle_event'):
+            response = self.client.post(
+                f'/api/subscriptions/{self.subscription.pk}/renew/',
+                {'new_end_date': new_end_date.isoformat(), 'remove_device_ids': [self.link.pk]},
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self._assert_access_closed_and_history_preserved()
+        self.assertEqual(self.link.removed_by_operation.operation_type, 'renew')
+
+    def test_modify_closes_access_when_device_is_removed(self):
+        with patch('organizations.views.record_device_lifecycle_event'):
+            response = self.client.post(
+                f'/api/subscriptions/{self.subscription.pk}/modify/',
+                {'contract_changes': {}, 'remove_device_ids': [self.link.pk]},
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self._assert_access_closed_and_history_preserved()
+        self.assertEqual(self.link.removed_by_operation.operation_type, 'modify')
+
+    def test_cancel_closes_access_for_each_active_device(self):
+        with patch('organizations.views.record_device_lifecycle_event'):
+            response = self.client.post(
+                f'/api/subscriptions/{self.subscription.pk}/cancel/',
+                {},
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self._assert_access_closed_and_history_preserved()
+        self.subscription.refresh_from_db()
+        self.assertEqual(self.subscription.status, 'cancelled')
+        self.assertEqual(self.link.removed_by_operation.operation_type, 'cancel')
+
+    def test_direct_device_link_delete_closes_access_and_preserves_records(self):
+        with patch('organizations.views.record_device_lifecycle_event'):
+            response = self.client.delete(
+                f'/api/subscription-devices/{self.link.pk}/',
+            )
+
+        self.assertEqual(response.status_code, 204)
+        self._assert_access_closed_and_history_preserved()
+        self.assertEqual(self.link.removed_by_operation.operation_type, 'remove_device')
