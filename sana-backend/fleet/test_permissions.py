@@ -78,6 +78,7 @@ class BranchManagerReplacementHistoryScopeTests(TestCase):
         from django.utils import timezone
         from organizations.models import Organization, Branch
         from fleet.models import Device, DeviceCustomerAccessPeriod, DeviceReplacementRelation
+        from organizations.models import Subscription, SubscriptionDevice
         from accounts.models import User
 
         organization = Organization.objects.create(
@@ -105,11 +106,27 @@ class BranchManagerReplacementHistoryScopeTests(TestCase):
             branch=branch,
         )
         now = timezone.now()
+        today = timezone.localdate()
+        subscription = Subscription.objects.create(
+            contract_number='REPL-SCOPE-CONTRACT',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=5),
+            status='active',
+        )
         for device in (first, second):
+            SubscriptionDevice.objects.create(
+                subscription=subscription,
+                device=device,
+                start_date=subscription.start_date,
+                end_date=subscription.end_date,
+            )
             DeviceCustomerAccessPeriod.objects.create(
                 device=device,
                 organization=organization,
                 branch=branch,
+                subscription=subscription,
                 started_at=now - timedelta(days=1),
             )
         visible = DeviceReplacementRelation.objects.create(
@@ -315,12 +332,6 @@ class LegacyBranchManagerReportHistoryScopeTests(TestCase):
             organization=organization,
             branch=branch,
         )
-        DeviceCustomerAccessPeriod.objects.create(
-            device=device,
-            organization=organization,
-            branch=branch,
-            started_at=now - timedelta(days=2),
-        )
         subscription = Subscription.objects.create(
             contract_number='LEGACY-REPORT-CONTRACT',
             customer_type='organization',
@@ -334,6 +345,13 @@ class LegacyBranchManagerReportHistoryScopeTests(TestCase):
             device=device,
             start_date=today - timedelta(days=10),
             end_date=today + timedelta(days=10),
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            branch=branch,
+            subscription=subscription,
+            started_at=now - timedelta(days=2),
         )
 
         client = APIClient()
@@ -515,11 +533,6 @@ class DeviceListContractTenantScopeTests(TestCase):
             imei='860000000000981',
             organization=organization,
         )
-        DeviceCustomerAccessPeriod.objects.create(
-            device=device,
-            organization=organization,
-            started_at=now - timedelta(days=1),
-        )
         foreign_subscription = Subscription.objects.create(
             contract_number='FOREIGN-DEVICE-LIST-CONTRACT',
             customer_type='organization',
@@ -534,6 +547,26 @@ class DeviceListContractTenantScopeTests(TestCase):
             start_date=today - timedelta(days=5),
             end_date=today + timedelta(days=5),
         )
+        own_subscription = Subscription.objects.create(
+            contract_number='OWN-DEVICE-LIST-CONTRACT',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=5),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=own_subscription,
+            device=device,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=5),
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            subscription=own_subscription,
+            started_at=now - timedelta(days=1),
+        )
 
         client = APIClient()
         client.force_authenticate(user=manager)
@@ -546,6 +579,6 @@ class DeviceListContractTenantScopeTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.data['results'] if isinstance(response.data, dict) else response.data
         self.assertEqual(len(payload), 1)
-        self.assertIsNone(payload[0]['subscription_id'])
-        self.assertIsNone(payload[0]['subscription_number'])
+        self.assertEqual(payload[0]['subscription_id'], own_subscription.id)
+        self.assertEqual(payload[0]['subscription_number'], own_subscription.contract_number)
         self.assertNotIn('FOREIGN-DEVICE-LIST-CONTRACT', str(payload[0]))
