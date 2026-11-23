@@ -1660,7 +1660,7 @@ class PersonalContractHistoryBindingTests(TestCase):
             user=self.user, start_date=today-timedelta(days=20),
             end_date=today+timedelta(days=20), status='suspended',
         )
-        SubscriptionDevice.objects.create(
+        self.link = SubscriptionDevice.objects.create(
             subscription=self.subscription, device=self.device,
             start_date=self.subscription.start_date, end_date=self.subscription.end_date,
         )
