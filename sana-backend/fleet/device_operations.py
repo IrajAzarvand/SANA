@@ -2,7 +2,7 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from .models import Device, DeviceOperation, DeviceReplacementRelation, DeviceLifecycleEvent, DeviceOwnershipHistory, DeviceCustomerAccessPeriod
+from .models import Device, DeviceOperation, DeviceReplacementRelation, DeviceLifecycleEvent, DeviceOwnershipHistory, DeviceCustomerAccessPeriod, DeviceBranchHistory
 from .lifecycle import record_device_lifecycle_event
 from organizations.models import SubscriptionDevice
 
@@ -116,6 +116,56 @@ def _open_customer_access(device, subscription=None, branch=None, organization=_
         started_at=started_at or timezone.now(),
         reason=reason,
         **customer,
+    )
+
+
+@transaction.atomic
+def _close_branch_history(device, when=None):
+    device = Device.objects.select_for_update().get(pk=device.pk)
+    when = when or timezone.now()
+    current = DeviceBranchHistory.objects.select_for_update().filter(
+        device=device,
+        ended_at__isnull=True,
+    ).order_by('-started_at', '-id').first()
+    if current:
+        current.ended_at = when
+        current.save(update_fields=['ended_at'])
+    return current
+
+
+@transaction.atomic
+def _open_branch_history(device, branch, subscription=None, started_at=None, reason=''):
+    device = Device.objects.select_for_update().get(pk=device.pk)
+    started_at = started_at or timezone.now()
+    if branch is None:
+        _close_branch_history(device, started_at)
+        return None
+    organization = branch.organization
+    if subscription and (
+        subscription.customer_type != 'organization'
+        or subscription.organization_id != organization.id
+    ):
+        raise ValidationError({'branch': 'شعبه با مشتری سازمانی قرارداد مطابقت ندارد.'})
+    current = DeviceBranchHistory.objects.select_for_update().filter(
+        device=device,
+        ended_at__isnull=True,
+    ).order_by('-started_at', '-id').first()
+    if current and (
+        current.branch_id == branch.id
+        and current.organization_id == organization.id
+        and current.subscription_id == (subscription.id if subscription else None)
+    ):
+        return current
+    if current:
+        current.ended_at = started_at
+        current.save(update_fields=['ended_at'])
+    return DeviceBranchHistory.objects.create(
+        device=device,
+        organization=organization,
+        branch=branch,
+        subscription=subscription,
+        started_at=started_at,
+        reason=reason,
     )
 
 
