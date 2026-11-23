@@ -1733,6 +1733,10 @@ class SuspendedContractHistoryAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 200, response.data)
         self.assertFalse(response.data['unrestricted'])
+        self.assertLessEqual(
+            parse_datetime(response.data['range_end']),
+            self.link.unassigned_at,
+        )
         self.assertEqual(
             parse_datetime(response.data['range_start']).date(),
             self.subscription.start_date,
