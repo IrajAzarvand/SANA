@@ -1305,7 +1305,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
             and (
                 history_access_intervals is None
                 or any(
-                    start <= fix_time_key(item)[0] <= end
+                    start <= fix_time_key(item)[0] < end
                     for start, end in history_access_intervals
                 )
             )
