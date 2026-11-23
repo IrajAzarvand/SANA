@@ -363,6 +363,12 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
             device.management_status = 'installed'
 
         device.save()
+        _open_ownership(
+            device,
+            organization=subscription.organization,
+            user=subscription.user,
+            reason='contract_assignment',
+        )
         _open_customer_access(
             device,
             subscription=subscription,
