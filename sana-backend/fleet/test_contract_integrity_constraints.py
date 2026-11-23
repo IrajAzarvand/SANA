@@ -286,3 +286,34 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
         current_access = DeviceCustomerAccessPeriod.objects.get(device=device, ended_at__isnull=True)
         self.assertEqual(current_access.organization_id, customer.id)
         self.assertEqual(current_access.branch_id, branch.id)
+
+    def test_contract_and_device_link_dates_cannot_be_reversed(self):
+        today = timezone.localdate()
+        self.assert_database_rejects(lambda: Subscription.objects.create(
+            contract_number='INTEGRITY-REVERSED-CONTRACT',
+            customer_type='organization',
+            organization=self.organization,
+            start_date=today + timedelta(days=1),
+            end_date=today,
+        ))
+        self.assert_database_rejects(lambda: SubscriptionDevice.objects.create(
+            subscription=self.subscription,
+            device=Device.objects.create(imei='860000000000965'),
+            start_date=today + timedelta(days=1),
+            end_date=today,
+        ))
+
+    def test_access_and_ownership_period_dates_cannot_be_reversed(self):
+        now = timezone.now()
+        self.assert_database_rejects(lambda: DeviceCustomerAccessPeriod.objects.create(
+            device=Device.objects.create(imei='860000000000966'),
+            organization=self.organization,
+            started_at=now,
+            ended_at=now - timedelta(seconds=1),
+        ))
+        self.assert_database_rejects(lambda: DeviceOwnershipHistory.objects.create(
+            device=Device.objects.create(imei='860000000000967'),
+            organization=self.organization,
+            started_at=now,
+            ended_at=now - timedelta(seconds=1),
+        ))
