@@ -1094,6 +1094,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     and link.subscription.status in ['active', 'expired', 'suspended']
                     and link.start_date <= link.end_date
                     and link.subscription.start_date <= link.subscription.end_date
+                    and max(link.start_date, link.subscription.start_date)
+                    <= min(link.end_date, link.subscription.end_date)
                 ]
                 link = personal_links[0] if personal_links else None
 
@@ -1122,6 +1124,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
             else:
                 if request.user.is_branch_manager:
                     # Branch identity is authoritative for legacy branch-manager accounts.
+                    if not request.user.branch_id:
+                        return Response({'detail': 'حساب مدیر شعبه به شعبه معتبری متصل نیست.'}, status=403)
                     branch_organization_id = request.user.branch.organization_id
                     access_query = access_query.filter(
                         organization_id=branch_organization_id,
@@ -1133,6 +1137,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
                         link for link in links
                         if link.subscription.customer_type == 'organization'
                         and link.subscription.organization_id == branch_organization_id
+                        and max(link.start_date, link.subscription.start_date)
+                        <= min(link.end_date, link.subscription.end_date)
                     ]
                 elif request.user.is_main_user:
                     access_query = access_query.filter(
@@ -1144,6 +1150,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
                         link for link in links
                         if link.subscription.customer_type == 'organization'
                         and link.subscription.organization_id == request.user.organization_id
+                        and max(link.start_date, link.subscription.start_date)
+                        <= min(link.end_date, link.subscription.end_date)
                     ]
                 else:
                     links = []
