@@ -296,6 +296,30 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     'device': f'دستگاه {device.imei} در قرارداد فعال دیگری است'
                 })
+        if subscription:
+            if subscription.customer_type == 'organization':
+                if not subscription.organization_id or subscription.user_id is not None:
+                    raise serializers.ValidationError({
+                        'subscription': 'مشتری قرارداد سازمانی معتبر نیست.'
+                    })
+                if device and device.branch_id and device.branch.organization_id != subscription.organization_id:
+                    raise serializers.ValidationError({
+                        'device': 'شعبه دستگاه متعلق به سازمان قرارداد انتخاب‌شده نیست.'
+                    })
+            elif subscription.customer_type == 'personal':
+                if not subscription.user_id or subscription.organization_id is not None:
+                    raise serializers.ValidationError({
+                        'subscription': 'مشتری قرارداد شخصی معتبر نیست.'
+                    })
+                if device and device.branch_id:
+                    raise serializers.ValidationError({
+                        'device': 'دستگاه شخصی نمی‌تواند به شعبه سازمانی متصل باشد.'
+                    })
+            else:
+                raise serializers.ValidationError({
+                    'subscription': 'نوع مشتری قرارداد نامعتبر است.'
+                })
+
         # چک ترتیب تاریخ‌ها
         if data.get('start_date') and data.get('end_date'):
             if data['start_date'] > data['end_date']:
