@@ -60,12 +60,14 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
             start_date=self.subscription.start_date,
             end_date=self.subscription.end_date,
         )
-        self.assert_database_rejects(lambda: SubscriptionDevice.objects.create(
-            subscription=self.other_subscription,
-            device=self.device,
-            start_date=self.other_subscription.start_date,
-            end_date=self.other_subscription.end_date,
-        ))
+        self.assert_database_rejects(lambda: SubscriptionDevice.objects.bulk_create([
+            SubscriptionDevice(
+                subscription=self.other_subscription,
+                device=self.device,
+                start_date=self.other_subscription.start_date,
+                end_date=self.other_subscription.end_date,
+            )
+        ]))
 
     def test_device_cannot_have_two_open_customer_access_periods(self):
         DeviceCustomerAccessPeriod.objects.create(
