@@ -650,6 +650,12 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         subscription = self.get_object()
         with transaction.atomic():
             from datetime import date
+            today = timezone.localdate()
+            if subscription.status == 'cancelled':
+                raise serializers.ValidationError({'status': 'قرارداد لغوشده قابل فعال‌سازی مجدد نیست.'})
+            if subscription.status == 'active' and subscription.end_date >= today:
+                raise serializers.ValidationError({'status': 'قرارداد در حال حاضر فعال است.'})
+
             raw_end_date = request.data.get('end_date')
             if raw_end_date:
                 try:
@@ -672,6 +678,17 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
 
             activation_time = timezone.now()
             for link in subscription.subscription_devices.filter(unassigned_at__isnull=True).select_related('device'):
+                # Never terminate another customer's live period as a side effect
+                # of reactivating this contract. Conflicting ownership requires
+                # an explicit transfer workflow instead.
+                conflicting_period = DeviceCustomerAccessPeriod.objects.filter(
+                    device=link.device,
+                    ended_at__isnull=True,
+                ).exclude(subscription=subscription).first()
+                if conflicting_period:
+                    raise serializers.ValidationError({
+                        'device': 'برای یکی از دستگاه‌های قرارداد، دوره دسترسی باز متعلق به قرارداد دیگری وجود دارد.'
+                    })
                 link.end_date = new_end_date
                 link.save(update_fields=['end_date'])
                 customer_kwargs = (
@@ -681,7 +698,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                 )
                 # Guarantee a fresh period on every reactivation rather than
                 # reusing a legacy/current period that may not belong to this contract.
-                _close_customer_access(link.device, activation_time)
+                _close_customer_access(link.device, activation_time, subscription=subscription)
                 _open_customer_access(
                     link.device,
                     subscription=subscription,
