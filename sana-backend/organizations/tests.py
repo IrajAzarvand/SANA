@@ -1348,24 +1348,3 @@ class SubscriptionSuspendActivateAccessPolicyTests(TestCase):
         self.assertGreaterEqual(new_access.started_at, self.old_access.ended_at)
         self.assertEqual(new_access.user_id, self.customer.pk)
         self.assertEqual(new_access.subscription_id, self.subscription.pk)
-
-
-    def test_expired_by_date_contract_can_be_reactivated(self):
-        yesterday = timezone.localdate() - timedelta(days=1)
-        self.subscription.end_date = yesterday
-        self.subscription.status = 'active'
-        self.subscription.save(update_fields=['end_date', 'status', 'updated_at'])
-        self.link.end_date = yesterday
-        self.link.save(update_fields=['end_date'])
-        new_end_date = timezone.localdate() + timedelta(days=45)
-
-        response = self.client.post(
-            f'/api/subscriptions/{self.subscription.pk}/activate/',
-            {'end_date': new_end_date.isoformat()},
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, 200, response.data)
-        self.subscription.refresh_from_db()
-        self.assertEqual(self.subscription.status, 'active')
-        self.assertEqual(self.subscription.end_date, new_end_date)

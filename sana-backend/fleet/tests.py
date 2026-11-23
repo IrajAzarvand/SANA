@@ -1678,3 +1678,18 @@ class PersonalContractHistoryBindingTests(TestCase):
         force_authenticate(request, user=self.user)
         response = DeviceViewSet.as_view({'get': 'report_history'})(request)
         self.assertEqual(response.status_code, 403, response.data)
+
+
+    def test_personal_history_remains_available_after_device_unassignment(self):
+        self.link.unassigned_at = timezone.now()
+        self.link.save(update_fields=['unassigned_at'])
+
+        request = APIRequestFactory().get(
+            '/api/devices/report-history/',
+            {'device_id': str(self.device.pk), 'metadata': 'true'},
+        )
+        force_authenticate(request, user=self.user)
+        response = DeviceViewSet.as_view({'get': 'report_history'})(request)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(response.data['unrestricted'])

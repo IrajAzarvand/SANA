@@ -1078,7 +1078,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
             links = list(
                 SubscriptionDevice.objects.filter(
                     device=device,
-                    unassigned_at__isnull=True,
                     subscription__status__in=['active', 'expired', 'suspended'],
                 ).select_related('subscription').order_by('-start_date', '-id')
             )

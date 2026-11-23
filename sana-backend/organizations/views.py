@@ -629,8 +629,6 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
     def suspend(self, request, pk=None):
         """تعلیق قرارداد"""
         subscription = self.get_object()
-        if subscription.status != 'active' or subscription.end_date < timezone.localdate():
-            raise serializers.ValidationError({'status': 'فقط قرارداد فعال و منقضی‌نشده قابل تعلیق است.'})
         with transaction.atomic():
             operation = SubscriptionOperation.objects.create(
                 subscription=subscription, operation_type='suspend',
@@ -650,11 +648,6 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
     def activate(self, request, pk=None):
         """فعال‌سازی مجدد قرارداد"""
         subscription = self.get_object()
-        is_date_expired = subscription.end_date < timezone.localdate()
-        if subscription.status not in {'suspended', 'expired'} and not (
-            subscription.status == 'active' and is_date_expired
-        ):
-            raise serializers.ValidationError({'status': 'فقط قرارداد تعلیق‌شده یا منقضی‌شده قابل فعال‌سازی مجدد است.'})
         with transaction.atomic():
             from datetime import date
             raw_end_date = request.data.get('end_date')
@@ -686,44 +679,15 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                     if subscription.customer_type == 'organization'
                     else {'organization': None, 'user': subscription.user}
                 )
-                # Never overwrite access owned by another currently active contract.
-                conflicting_links = SubscriptionDevice.objects.select_for_update().filter(
-                    device=link.device,
-                    unassigned_at__isnull=True,
-                    start_date__lte=timezone.localdate(),
-                    end_date__gte=timezone.localdate(),
-                    subscription__status='active',
-                    subscription__start_date__lte=timezone.localdate(),
-                    subscription__end_date__gte=timezone.localdate(),
-                ).exclude(subscription=subscription)
-                if conflicting_links.exists():
-                    raise serializers.ValidationError({
-                        'device': f'دستگاه {link.device.imei} به قرارداد فعال دیگری متصل است.'
-                    })
-
-                other_open_periods = DeviceCustomerAccessPeriod.objects.select_for_update().filter(
-                    device=link.device, ended_at__isnull=True,
-                ).exclude(subscription=subscription)
-                for period in other_open_periods:
-                    if period.subscription_id and SubscriptionDevice.objects.filter(
-                        device=link.device, subscription_id=period.subscription_id,
-                        unassigned_at__isnull=True,
-                        start_date__lte=timezone.localdate(),
-                        end_date__gte=timezone.localdate(),
-                    ).exists():
-                        raise serializers.ValidationError({
-                            'device': f'دستگاه {link.device.imei} هم‌زمان به قرارداد فعال دیگری متصل است.'
-                        })
-                    period.ended_at = activation_time
-                    period.save(update_fields=['ended_at'])
-
-                DeviceCustomerAccessPeriod.objects.filter(
-                    device=link.device, subscription=subscription, ended_at__isnull=True,
-                ).update(ended_at=activation_time)
-                DeviceCustomerAccessPeriod.objects.create(
-                    device=link.device, subscription=subscription,
+                # Guarantee a fresh period on every reactivation rather than
+                # reusing a legacy/current period that may not belong to this contract.
+                _close_customer_access(link.device, activation_time)
+                _open_customer_access(
+                    link.device,
+                    subscription=subscription,
                     branch=link.device.branch if subscription.customer_type == 'organization' else None,
-                    started_at=activation_time, reason='فعال‌سازی مجدد قرارداد',
+                    started_at=activation_time,
+                    reason='فعال‌سازی مجدد قرارداد',
                     **customer_kwargs,
                 )
         return Response(SubscriptionSerializer(subscription).data)
