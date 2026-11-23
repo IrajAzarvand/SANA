@@ -1348,3 +1348,61 @@ class SubscriptionSuspendActivateAccessPolicyTests(TestCase):
         self.assertGreaterEqual(new_access.started_at, self.old_access.ended_at)
         self.assertEqual(new_access.user_id, self.customer.pk)
         self.assertEqual(new_access.subscription_id, self.subscription.pk)
+
+    def test_activate_does_not_close_another_contracts_open_access_period(self):
+        other_customer = User.objects.create_user(
+            username='access-policy-other-customer',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        other_subscription = Subscription.objects.create(
+            contract_number='ACCESS-POLICY-OTHER-001',
+            customer_type='personal',
+            user=other_customer,
+            start_date=timezone.localdate() - timedelta(days=5),
+            end_date=timezone.localdate() + timedelta(days=20),
+            status='active',
+        )
+        conflicting_period = DeviceCustomerAccessPeriod.objects.create(
+            device=self.device,
+            user=other_customer,
+            subscription=other_subscription,
+            started_at=timezone.now() - timedelta(days=1),
+        )
+        self.subscription.status = 'suspended'
+        self.subscription.save(update_fields=['status'])
+        self.old_access.ended_at = timezone.now() - timedelta(minutes=1)
+        self.old_access.save(update_fields=['ended_at'])
+
+        response = self.client.post(
+            f'/api/subscriptions/{self.subscription.pk}/activate/',
+            {'end_date': (timezone.localdate() + timedelta(days=45)).isoformat()},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        conflicting_period.refresh_from_db()
+        self.subscription.refresh_from_db()
+        self.assertIsNone(conflicting_period.ended_at)
+        self.assertEqual(self.subscription.status, 'suspended')
+
+    def test_cancelled_contract_cannot_be_reactivated(self):
+        self.subscription.status = 'cancelled'
+        self.subscription.save(update_fields=['status'])
+
+        response = self.client.post(
+            f'/api/subscriptions/{self.subscription.pk}/activate/',
+            {'end_date': (timezone.localdate() + timedelta(days=45)).isoformat()},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.subscription.refresh_from_db()
+        self.assertEqual(self.subscription.status, 'cancelled')
+        self.assertEqual(
+            DeviceCustomerAccessPeriod.objects.filter(
+                device=self.device, subscription=self.subscription, ended_at__isnull=True,
+            ).count(),
+            1,
+        )
