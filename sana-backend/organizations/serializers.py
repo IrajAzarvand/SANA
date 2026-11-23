@@ -1191,6 +1191,8 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                     device,
                     subscription=subscription,
                     branch=device.branch,
+                    organization=organization,
+                    user=user if customer_type == 'personal' else None,
                     reason='contract_assignment',
                 )
                 record_device_lifecycle_event(
