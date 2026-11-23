@@ -387,15 +387,21 @@ def execute_device_operation(
             user=device.owner_user,
             reason='legal_owner_relationship',
         )
-        if active_link:
-            _open_customer_access(
-                device,
-                subscription=active_link.subscription,
-                branch=device.branch,
-                organization=active_link.subscription.organization,
-                user=active_link.subscription.user,
-                reason='existing_relationship',
-            )
+    if active_link:
+        _open_customer_access(
+            device,
+            subscription=active_link.subscription,
+            branch=device.branch,
+            organization=active_link.subscription.organization,
+            user=active_link.subscription.user,
+            reason='existing_relationship',
+        )
+        _open_branch_history(
+            device,
+            device.branch,
+            subscription=active_link.subscription,
+            reason='existing_relationship',
+        )
 
     if operation_type in {
         'return_for_repair', 'temporary_replacement', 'permanent_replacement',
