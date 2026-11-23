@@ -57,7 +57,7 @@ def backfill_branch_history(apps, schema_editor):
             group.append(period)
         flush_group()
 
-        if not periods.exists():
+        if not BranchHistory.objects.filter(device_id=device.pk).exists():
             link = SubscriptionDevice.objects.filter(
                 device_id=device.pk,
                 unassigned_at__isnull=True,
