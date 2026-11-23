@@ -3,6 +3,7 @@ from decimal import Decimal, InvalidOperation
 from django.utils import timezone
 from django.db.models import Q, Sum
 from fleet.lifecycle import record_device_lifecycle_event
+from fleet.device_operations import _open_customer_access
 from fleet.models import DeviceCustomerAccessPeriod
 from .models import (
     Organization,
@@ -338,6 +339,12 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
             device.management_status = 'installed'
 
         device.save()
+        _open_customer_access(
+            device,
+            subscription=subscription,
+            branch=device.branch,
+            reason='contract_assignment',
+        )
         request = self.context.get('request')
         record_device_lifecycle_event(
             device=device,
@@ -1147,6 +1154,12 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                 # آپدیت وضعیت مدیریتی دستگاه — از انبار خارج شد
                 device.management_status = 'installed'
                 device.save()
+                _open_customer_access(
+                    device,
+                    subscription=subscription,
+                    branch=device.branch,
+                    reason='contract_assignment',
+                )
                 record_device_lifecycle_event(
                     device=device,
                     event_type='assigned_to_contract',
