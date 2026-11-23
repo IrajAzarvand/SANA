@@ -88,3 +88,23 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
             device=self.device,
             organization=self.other_organization,
         ))
+
+    def test_device_cannot_have_both_legal_owner_types(self):
+        from accounts.models import User
+
+        user = User.objects.create_user(username='integrity_owner_user', password='test-password')
+        self.assert_database_rejects(lambda: Device.objects.create(
+            imei='860000000000956',
+            organization=self.organization,
+            owner_user=user,
+        ))
+
+    def test_device_cannot_have_both_current_holder_types(self):
+        from accounts.models import User
+
+        user = User.objects.create_user(username='integrity_holder_user', password='test-password')
+        self.assert_database_rejects(lambda: Device.objects.create(
+            imei='860000000000957',
+            current_holder_organization=self.organization,
+            current_holder_user=user,
+        ))
