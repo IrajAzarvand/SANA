@@ -35,6 +35,7 @@ def _current_customer(device, subscription=None):
             return {'organization': None, 'user': subscription.user}
     return _customer_kwargs(device)
 
+@transaction.atomic
 def _close_customer_access(device, when=None, subscription=None):
     device = Device.objects.select_for_update().get(pk=device.pk)
     when = when or timezone.now()
@@ -44,6 +45,7 @@ def _close_customer_access(device, when=None, subscription=None):
     periods.update(ended_at=when)
 
 
+@transaction.atomic
 def _open_customer_access(device, subscription=None, branch=None, organization=_CUSTOMER_UNSET, user=_CUSTOMER_UNSET, started_at=None, reason=''):
     device = Device.objects.select_for_update().get(pk=device.pk)
     customer = _customer_kwargs(device, organization, user)
@@ -117,12 +119,14 @@ def _open_customer_access(device, subscription=None, branch=None, organization=_
     )
 
 
+@transaction.atomic
 def _close_ownership(device, when=None):
     device = Device.objects.select_for_update().get(pk=device.pk)
     when = when or timezone.now()
     DeviceOwnershipHistory.objects.filter(device=device, ended_at__isnull=True).update(ended_at=when)
 
 
+@transaction.atomic
 def _open_ownership(device, organization=_CUSTOMER_UNSET, user=_CUSTOMER_UNSET, started_at=None, reason=''):
     device = Device.objects.select_for_update().get(pk=device.pk)
     customer = _customer_kwargs(device, organization, user)
