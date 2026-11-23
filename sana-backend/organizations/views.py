@@ -679,6 +679,9 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                     if subscription.customer_type == 'organization'
                     else {'organization': None, 'user': subscription.user}
                 )
+                # Guarantee a fresh period on every reactivation rather than
+                # reusing a legacy/current period that may not belong to this contract.
+                _close_customer_access(link.device, activation_time)
                 _open_customer_access(
                     link.device,
                     subscription=subscription,
