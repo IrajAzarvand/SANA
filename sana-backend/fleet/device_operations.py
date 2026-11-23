@@ -273,6 +273,14 @@ def execute_device_operation(
             reason='existing_relationship',
         )
 
+    if operation_type in {
+        'return_for_repair', 'temporary_replacement', 'permanent_replacement',
+        'repaired', 'lost', 'stolen', 'found', 'disposition', 'retire', 'dispose',
+    }:
+        # Stop live customer access when a device leaves normal service.
+        # Closed access periods remain available for historical reporting.
+        _close_customer_access(device)
+
     operation = DeviceOperation.objects.create(
         operation_type=operation_type,
         device=device,
