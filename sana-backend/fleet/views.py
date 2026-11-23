@@ -1084,6 +1084,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'دستگاه یافت نشد یا مجوز مشاهده آن را ندارید.'}, status=404)
 
         range_start = range_end = None
+        history_access_intervals = None
         if not request.user.is_site_admin:
             now = timezone.now()
             today = timezone.localdate()
@@ -1202,6 +1203,17 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 last_access = accesses[-1]
                 range_start = max(contract_start, first_access.started_at)
                 range_end = contract_end
+                if request.user.is_branch_manager:
+                    # Branch managers may see only the time windows when the device
+                    # belonged to their branch. Contract-wide bounds alone would leak
+                    # GPS points from periods spent in other branches.
+                    history_access_intervals = [
+                        (max(contract_start, access.started_at),
+                         min(contract_end, access.ended_at or contract_end))
+                        for access in accesses
+                        if max(contract_start, access.started_at)
+                        <= min(contract_end, access.ended_at or contract_end)
+                    ]
 
         if request.query_params.get('metadata') == 'true':
             return Response({
@@ -1293,6 +1305,11 @@ class DeviceViewSet(viewsets.ModelViewSet):
         normalized = normalize_traccar_history_positions(
             page_positions, raw_start, raw_end,
         )
+        if history_access_intervals is not None:
+            normalized = [
+                row for row in normalized
+                if any(start <= row[0] <= end for start, end in history_access_intervals)
+            ]
         point_ids = [row[1] for row in normalized]
         matches = {}
         if point_ids:
