@@ -508,16 +508,28 @@ export default function SubscriptionDetail() {
 
   // ═══ تغییر وضعیت ═══
   const handleStatusChange = async (action) => {
+    let activationPayload;
+    if (action === 'activate') {
+      const proposedEndDate = prompt(
+        'تاریخ انقضای جدید قرارداد را وارد کنید (YYYY-MM-DD):',
+        subscription?.end_date || ''
+      );
+      if (!proposedEndDate) return;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(proposedEndDate)) {
+        alert('فرمت تاریخ معتبر نیست. از YYYY-MM-DD استفاده کنید.');
+        return;
+      }
+      activationPayload = { end_date: proposedEndDate };
+    }
     if (!confirm('آیا از تغییر وضعیت قرارداد اطمینان دارید؟')) return;
     try {
-      await subscriptionsAPI[action](id);
+      await subscriptionsAPI[action](id, activationPayload);
       refetch();
     } catch (err) {
       console.error('Error:', err);
-      alert('خطا در انجام عملیات');
+      alert(err.response?.data?.end_date || 'خطا در انجام عملیات');
     }
   };
-
   // ═══ لغو قرارداد ═══
   const handleCancel = async () => {
     setSaving(true);
