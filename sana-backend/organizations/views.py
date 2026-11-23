@@ -352,7 +352,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                 link.unassigned_at = timezone.now()
                 link.removed_by_operation = operation
                 link.save(update_fields=['unassigned_at', 'removed_by_operation'])
-                _close_customer_access(link.device)
+                _close_customer_access(link.device, subscription=subscription)
                 record_device_lifecycle_event(
                     device=link.device,
                     event_type='removed_from_contract',
@@ -517,7 +517,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                 link.unassigned_at = timezone.now()
                 link.removed_by_operation = operation
                 link.save(update_fields=['unassigned_at', 'removed_by_operation'])
-                _close_customer_access(link.device)
+                _close_customer_access(link.device, subscription=subscription)
                 record_device_lifecycle_event(
                     device=link.device,
                     event_type='removed_from_contract',
@@ -730,7 +730,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                 link.unassigned_at = unassigned_at
                 link.removed_by_operation = operation
                 link.save(update_fields=['unassigned_at', 'removed_by_operation'])
-                _close_customer_access(link.device)
+                _close_customer_access(link.device, subscription=subscription)
                 record_device_lifecycle_event(
                     device=link.device,
                     event_type='removed_from_contract',
@@ -848,7 +848,7 @@ class SubscriptionDeviceViewSet(viewsets.ModelViewSet):
             instance.unassigned_at = timezone.now()
             instance.removed_by_operation = operation
             instance.save(update_fields=['unassigned_at', 'removed_by_operation'])
-            _close_customer_access(instance.device)
+            _close_customer_access(instance.device, subscription=subscription)
 
             record_device_lifecycle_event(
                 device=instance.device,
