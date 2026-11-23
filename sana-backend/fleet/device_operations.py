@@ -254,7 +254,12 @@ def execute_device_operation(
 
     old_status = device.management_status
     if device.organization_id or device.owner_user_id:
-        _open_ownership(device, reason='customer_assignment')
+        _open_ownership(
+            device,
+            organization=device.organization,
+            user=device.owner_user,
+            reason='legal_owner_relationship',
+        )
         if active_link:
             _open_customer_access(
             device,
