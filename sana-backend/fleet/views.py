@@ -6,7 +6,7 @@ from django.utils.dateparse import parse_datetime
 from datetime import datetime, timedelta, time as datetime_time
 import math
 from django.db import connection, transaction
-from django.db.models import Exists, OuterRef, Prefetch, Q, Value
+from django.db.models import Exists, OuterRef, Prefetch, Q, Value, F
 from django.db.models.functions import Concat, Lower
 from rest_framework import viewsets, filters
 from rest_framework.decorators import action
@@ -355,6 +355,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 customer_access_periods__subscription__status='active',
                 customer_access_periods__subscription__start_date__lte=today,
                 customer_access_periods__subscription__end_date__gte=today,
+                customer_access_periods__subscription__subscription_devices__device_id=F('pk'),
                 customer_access_periods__subscription__subscription_devices__unassigned_at__isnull=True,
                 customer_access_periods__subscription__subscription_devices__start_date__lte=today,
                 customer_access_periods__subscription__subscription_devices__end_date__gte=today,
@@ -373,6 +374,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 customer_access_periods__subscription__status='active',
                 customer_access_periods__subscription__start_date__lte=today,
                 customer_access_periods__subscription__end_date__gte=today,
+                customer_access_periods__subscription__subscription_devices__device_id=F('pk'),
                 customer_access_periods__subscription__subscription_devices__unassigned_at__isnull=True,
                 customer_access_periods__subscription__subscription_devices__start_date__lte=today,
                 customer_access_periods__subscription__subscription_devices__end_date__gte=today,
@@ -1093,8 +1095,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     link for link in links
                     if link.subscription.user_id == request.user.pk
                     and link.subscription.status in ['active', 'expired', 'suspended']
-                    and link.start_date <= today <= link.end_date
-                    and link.subscription.start_date <= today <= link.subscription.end_date
+                    and link.start_date <= link.end_date
+                    and link.subscription.start_date <= link.subscription.end_date
                 ]
                 link = personal_links[0] if personal_links else None
 
@@ -1134,10 +1136,18 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     links = []
 
                 access = access_query.order_by('-started_at').first()
-                if not links or access is None:
+                if access is None:
                     return Response({'detail': 'برای این دستگاه قرارداد و دسترسی فعال پیدا نشد.'}, status=403)
 
-                link = links[0]
+                # Bind the history window to the contract recorded on this access period.
+                link = next(
+                    (item for item in links if item.subscription_id == access.subscription_id),
+                    None,
+                )
+                if link is None and access.subscription_id is None:
+                    link = links[0] if links else None
+                if link is None:
+                    return Response({'detail': 'برای این دستگاه قرارداد و دسترسی معتبر پیدا نشد.'}, status=403)
                 start_date = max(link.start_date, link.subscription.start_date, timezone.localdate(access.started_at))
                 end_date = min(link.end_date, link.subscription.end_date)
                 if access.ended_at:

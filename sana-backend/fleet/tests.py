@@ -1619,3 +1619,23 @@ class SuspendedContractHistoryAccessTests(TestCase):
             parse_datetime(response.data['range_end']).date(),
             self.subscription.end_date,
         )
+
+
+    def test_personal_customer_can_request_history_after_contract_expiry(self):
+        yesterday = timezone.localdate() - timedelta(days=1)
+        self.subscription.status = 'expired'
+        self.subscription.end_date = yesterday
+        self.subscription.save(update_fields=['status', 'end_date', 'updated_at'])
+        self.link.end_date = yesterday
+        self.link.save(update_fields=['end_date'])
+
+        request = APIRequestFactory().get(
+            '/api/devices/report-history/',
+            {'device_id': str(self.device.pk), 'metadata': 'true'},
+        )
+        force_authenticate(request, user=self.user)
+        response = DeviceViewSet.as_view({'get': 'report_history'})(request)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(response.data['unrestricted'])
+        self.assertEqual(parse_datetime(response.data['range_end']).date(), yesterday)
