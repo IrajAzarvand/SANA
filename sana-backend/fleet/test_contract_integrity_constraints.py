@@ -150,9 +150,12 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
         )
 
         replacement.refresh_from_db()
+        source.refresh_from_db()
         self.assertEqual(replacement.organization_id, legal_owner.id)
         self.assertIsNone(replacement.owner_user_id)
         self.assertEqual(replacement.current_holder_organization_id, customer.id)
+        self.assertIsNone(source.active_subscription_link)
+        self.assertFalse(DeviceCustomerAccessPeriod.objects.filter(device=source, ended_at__isnull=True).exists())
         access = DeviceCustomerAccessPeriod.objects.get(device=replacement, ended_at__isnull=True)
         self.assertEqual(access.organization_id, customer.id)
         self.assertEqual(access.subscription_id, subscription.id)
