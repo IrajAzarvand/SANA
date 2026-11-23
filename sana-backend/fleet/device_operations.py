@@ -296,8 +296,8 @@ def execute_device_operation(
 
             old_vehicle = device.vehicle
             old_branch = device.branch
-            old_org = device.organization or device.current_holder_organization
-            old_user = device.owner_user or device.current_holder_user
+            old_org = device.current_holder_organization or (subscription.organization if subscription and subscription.customer_type == 'organization' else None) or device.organization
+            old_user = device.current_holder_user or (subscription.user if subscription and subscription.customer_type == 'personal' else None) or device.owner_user
 
             DeviceReplacementRelation.objects.create(
                 source_device=device,
@@ -322,12 +322,14 @@ def execute_device_operation(
             replacement_device.current_holder_organization = old_org
             replacement_device.current_holder_user = old_user
             if replacement_type == 'permanent_replacement':
-                replacement_device.organization = old_org
-                replacement_device.owner_user = old_user
+                # Permanent replacement inherits the source device's legal owner,
+                # not its contract customer/current holder.
+                replacement_device.organization = device.organization
+                replacement_device.owner_user = device.owner_user
             replacement_device.save()
 
             if replacement_type == 'permanent_replacement':
-                _open_ownership(replacement_device, organization=old_org, user=old_user, reason='permanent_replacement')
+                _open_ownership(replacement_device, organization=device.organization, user=device.owner_user, reason='permanent_replacement')
             if subscription:
                 _add_to_subscription(replacement_device, subscription, operation)
                 _open_customer_access(replacement_device, subscription=subscription, branch=old_branch, organization=old_org, user=old_user, reason='replacement')
@@ -414,8 +416,8 @@ def execute_device_operation(
         ).order_by('-event_date', '-id').first()
         previous_vehicle = previous_event.vehicle if previous_event else None
         previous_branch = previous_event.branch if previous_event else None
-        customer_org = device.organization or device.current_holder_organization
-        customer_user = device.owner_user or device.current_holder_user
+        customer_org = device.current_holder_organization or (subscription.organization if subscription and subscription.customer_type == 'organization' else None) or device.organization
+        customer_user = device.current_holder_user or (subscription.user if subscription and subscription.customer_type == 'personal' else None) or device.owner_user
 
         DeviceReplacementRelation.objects.create(
             source_device=device,
@@ -432,15 +434,16 @@ def execute_device_operation(
         replacement_device.current_holder_organization = customer_org
         replacement_device.current_holder_user = customer_user
         if replacement_type == 'permanent_replacement':
-            replacement_device.organization = customer_org
-            replacement_device.owner_user = customer_user
+            # Legal ownership follows the source device; holder remains the customer.
+            replacement_device.organization = device.organization
+            replacement_device.owner_user = device.owner_user
         replacement_device.save()
 
         if replacement_type == 'permanent_replacement':
             _open_ownership(
                 replacement_device,
-                organization=customer_org,
-                user=customer_user,
+                organization=device.organization,
+                user=device.owner_user,
                 reason='permanent_replacement',
             )
 
@@ -550,15 +553,16 @@ def execute_device_operation(
                 'installed'
             )
             if replacement_type == 'permanent_replacement':
-                replacement_device.organization = old_org
-                replacement_device.owner_user = old_user
+                # Permanent replacement inherits source legal ownership.
+                replacement_device.organization = device.organization
+                replacement_device.owner_user = device.owner_user
             replacement_device.save()
 
             if replacement_type == 'permanent_replacement':
                 _open_ownership(
                     replacement_device,
-                    organization=old_org,
-                    user=old_user,
+                    organization=device.organization,
+                    user=device.owner_user,
                     reason='permanent_replacement',
                 )
 
