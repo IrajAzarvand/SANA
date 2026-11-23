@@ -1681,6 +1681,15 @@ class PersonalContractHistoryBindingTests(TestCase):
 
 
     def test_personal_history_remains_available_after_device_unassignment(self):
+        # This scenario must have a historical access period belonging to the
+        # contract customer; the preceding test covers mismatched ownership.
+        DeviceCustomerAccessPeriod.objects.create(
+            device=self.device,
+            user=self.user,
+            subscription=self.subscription,
+            started_at=timezone.now()-timedelta(days=10),
+            ended_at=timezone.now()-timedelta(days=1),
+        )
         self.link.unassigned_at = timezone.now()
         self.link.save(update_fields=['unassigned_at'])
 
