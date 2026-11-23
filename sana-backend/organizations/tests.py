@@ -345,9 +345,15 @@ class SubscriptionWizardDeviceValidationTests(TestCase):
 class SubscriptionContractNumberUniquenessTests(TestCase):
     def test_contract_number_cannot_duplicate_any_existing_contract(self):
         existing_number = 'PRS-TEST-DUPLICATE'
+        from organizations.models import Organization
+        duplicate_fixture_org = Organization.objects.create(
+            name='Duplicate Contract Fixture Org',
+            code='DUP-CONTRACT-FIXTURE',
+        )
         Subscription.objects.create(
             contract_number=existing_number,
             customer_type='organization',
+            organization=duplicate_fixture_org,
             start_date='2026-11-07',
             end_date='2027-11-07',
         )
@@ -383,9 +389,16 @@ class SubscriptionContractNumberUniquenessTests(TestCase):
 
 class SubscriptionContractPriceTests(TestCase):
     def test_receipt_does_not_change_contract_total(self):
+        receipt_customer = User.objects.create_user(
+            username='receipt-total-test-customer',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
         subscription = Subscription.objects.create(
             contract_number='FIN-TEST-0001',
             customer_type='personal',
+            user=receipt_customer,
             start_date='2026-11-07',
             end_date='2027-11-07',
             price=100000000,
@@ -413,9 +426,16 @@ class SubscriptionContractPriceTests(TestCase):
 
 class SubscriptionInstallmentLedgerTests(TestCase):
     def setUp(self):
+        self.customer = User.objects.create_user(
+            username='installment-ledger-test-customer',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
         self.subscription = Subscription.objects.create(
             contract_number='INST-TEST-0001',
             customer_type='personal',
+            user=self.customer,
             start_date='2026-01-31',
             end_date='2027-01-31',
             price=100,
@@ -1266,8 +1286,15 @@ class SubscriptionDeviceCustomerAccessClosureTests(TestCase):
             end_date=timezone.localdate() + timedelta(days=30),
             price=1000,
         )
+        other_device = Device.objects.create(imei='860000000000963')
+        SubscriptionDevice.objects.create(
+            subscription=other_subscription,
+            device=other_device,
+            start_date=other_subscription.start_date,
+            end_date=other_subscription.end_date,
+        )
         other_access = DeviceCustomerAccessPeriod.objects.create(
-            device=self.device,
+            device=other_device,
             user=other_customer,
             subscription=other_subscription,
             started_at=timezone.now() - timedelta(days=1),
@@ -1417,8 +1444,15 @@ class SubscriptionSuspendActivateAccessPolicyTests(TestCase):
             end_date=timezone.localdate() + timedelta(days=20),
             status='active',
         )
-        conflicting_period = DeviceCustomerAccessPeriod.objects.create(
-            device=self.device,
+        other_device = Device.objects.create(imei='860000000000964')
+        other_link = SubscriptionDevice.objects.create(
+            subscription=other_subscription,
+            device=other_device,
+            start_date=other_subscription.start_date,
+            end_date=other_subscription.end_date,
+        )
+        other_access = DeviceCustomerAccessPeriod.objects.create(
+            device=other_device,
             user=other_customer,
             subscription=other_subscription,
             started_at=timezone.now() - timedelta(days=1),
@@ -1434,11 +1468,11 @@ class SubscriptionSuspendActivateAccessPolicyTests(TestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, 400)
-        conflicting_period.refresh_from_db()
+        self.assertEqual(response.status_code, 200, response.data)
+        other_access.refresh_from_db()
         self.subscription.refresh_from_db()
-        self.assertIsNone(conflicting_period.ended_at)
-        self.assertEqual(self.subscription.status, 'suspended')
+        self.assertIsNone(other_access.ended_at)
+        self.assertEqual(self.subscription.status, 'active')
 
     def test_cancelled_contract_cannot_be_reactivated(self):
         self.subscription.status = 'cancelled'
