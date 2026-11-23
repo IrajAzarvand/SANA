@@ -192,6 +192,8 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
 
         execute_device_operation(device=device, operation_type='return_for_repair', performed_by=None)
         execute_device_operation(device=device, operation_type='repaired', performed_by=None)
+        device.refresh_from_db()
+        self.assertEqual(device.management_status, 'ready')
         execute_device_operation(
             device=device, operation_type='disposition', performed_by=None,
             outcome_action='return_customer_no_vehicle',
