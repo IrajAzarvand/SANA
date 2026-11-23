@@ -812,6 +812,74 @@ class OrganizationDeviceAccessQueryTests(TestCase):
         self.assertNotIn(device.id, set(branch_view.get_queryset().values_list('id', flat=True)))
 
 
+class OrganizationContractHistoryAccessTests(TestCase):
+    def test_history_window_includes_periods_before_and_after_reactivation(self):
+        organization = Organization.objects.create(name='History Org', code='HISTORY-ORG')
+        branch = Branch.objects.create(organization=organization, name='History Branch', code='H1')
+        user = User.objects.create_user(
+            username='history_org_user',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=organization,
+        )
+        today = timezone.localdate()
+        subscription = Subscription.objects.create(
+            contract_number='HISTORY-REACTIVATION-001',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=12),
+            end_date=today + timedelta(days=12),
+            status='active',
+        )
+        device = Device.objects.create(
+            imei='860000000000206',
+            organization=organization,
+            branch=branch,
+            management_status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
+        )
+        first_start = timezone.now() - timedelta(days=9)
+        first_period = DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            branch=branch,
+            subscription=subscription,
+            started_at=first_start,
+            ended_at=timezone.now() - timedelta(days=5),
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            branch=branch,
+            subscription=subscription,
+            started_at=timezone.now() - timedelta(days=2),
+        )
+
+        request = APIRequestFactory().get(
+            '/api/devices/report-history/',
+            {'device_id': device.pk, 'metadata': 'true'},
+        )
+        force_authenticate(request, user=user)
+        response = DeviceViewSet.as_view({'get': 'report_history'})(request)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        expected_start = max(
+            timezone.make_aware(datetime.combine(subscription.start_date, datetime.min.time())),
+            first_period.started_at,
+        )
+        self.assertEqual(response.data['range_start'], expected_start.isoformat())
+        self.assertEqual(
+            response.data['range_end'],
+            timezone.make_aware(datetime.combine(subscription.end_date, datetime.max.time())).isoformat(),
+        )
+
+
 class PersonalDeviceAccessQueryTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(
