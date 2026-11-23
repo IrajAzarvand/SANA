@@ -823,7 +823,7 @@ def execute_device_operation(
 
         device.save()
 
-        if outcome_action == 'sana_warehouse':
+        if outcome_action in {'sana_warehouse', 'retire'}:
             _close_active_link(device, operation)
         elif outcome_action in {
             'return_customer_same_vehicle', 'return_customer_no_vehicle',
