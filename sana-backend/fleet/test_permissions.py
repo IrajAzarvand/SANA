@@ -678,3 +678,73 @@ class BranchManagerReportHistoryPeriodFilterTests(TestCase):
 
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual([point['id'] for point in response.data['points']], [1001])
+
+
+class BranchManagerSuspensionHistoryTests(TestCase):
+    def test_branch_history_remains_visible_during_suspension_gap(self):
+        from datetime import timedelta
+        from unittest.mock import patch
+        from django.utils import timezone
+        from rest_framework.test import APIClient
+        from accounts.models import User
+        from fleet.models import Device, DeviceCustomerAccessPeriod, DeviceBranchHistory
+        from organizations.models import Branch, Organization, Subscription, SubscriptionDevice
+
+        now = timezone.now()
+        today = timezone.localdate()
+        legal_owner = Organization.objects.create(name='Suspension History Legal Owner', code='SUSP-HIST-OWNER')
+        customer = Organization.objects.create(name='Suspension History Customer', code='SUSP-HIST-CUSTOMER')
+        branch = Branch.objects.create(organization=customer, name='Suspension History Branch', code='SUSP-HIST-BRANCH')
+        manager = User.objects.create_user(
+            username='suspension_history_branch_manager', password='test-password',
+            role='branch_manager', account_type='organization', organization=customer, branch=branch,
+        )
+        device = Device.objects.create(
+            imei='860000000000970', organization=legal_owner,
+            current_holder_organization=customer, branch=branch,
+        )
+        subscription = Subscription.objects.create(
+            contract_number='SUSPENSION-HISTORY-CONTRACT',
+            customer_type='organization', organization=customer,
+            start_date=today - timedelta(days=12), end_date=today + timedelta(days=12), status='suspended',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription, device=device,
+            start_date=today - timedelta(days=12), end_date=today + timedelta(days=12),
+        )
+        # Access periods close during suspension and reopen after it; branch assignment stays continuous.
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device, organization=customer, branch=branch, subscription=subscription,
+            started_at=now - timedelta(days=10), ended_at=now - timedelta(days=7),
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device, organization=customer, branch=branch, subscription=subscription,
+            started_at=now - timedelta(days=4), ended_at=now - timedelta(days=1),
+        )
+        DeviceBranchHistory.objects.create(
+            device=device, organization=customer, branch=branch, subscription=subscription,
+            started_at=now - timedelta(days=10),
+        )
+
+        def point(point_id, days_ago):
+            stamp = (now - timedelta(days=days_ago)).isoformat()
+            return {
+                'id': point_id, 'serverTime': stamp, 'fixTime': stamp,
+                'latitude': 35.7 + point_id / 10000, 'longitude': 51.4,
+                'speed': 0, 'course': 0, 'valid': True, 'attributes': {},
+            }
+        positions = [point(2001, 8), point(2002, 5), point(2003, 3)]
+        client = APIClient()
+        client.force_authenticate(user=manager)
+        with patch('fleet.views.traccar_history_device_id', return_value=77), \
+             patch('fleet.views.traccar_device_positions', return_value=positions), \
+             patch('fleet.views.connection.cursor') as map_matched_cursor:
+            map_matched_cursor.return_value.__enter__.return_value.fetchall.return_value = []
+            response = client.get('/api/devices/report-history/', {
+                'device_id': device.id,
+                'from': (now - timedelta(days=10)).isoformat(),
+                'to': (now - timedelta(days=1)).isoformat(),
+            })
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual([point['id'] for point in response.data['points']], [2001, 2002, 2003])
