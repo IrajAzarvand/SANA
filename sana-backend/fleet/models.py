@@ -305,6 +305,10 @@ class DeviceOwnershipHistory(models.Model):
                 condition=models.Q(ended_at__isnull=True),
                 name='device_ownership_one_open_period',
             ),
+            models.CheckConstraint(
+                condition=models.Q(ended_at__isnull=True) | models.Q(ended_at__gte=models.F('started_at')),
+                name='device_ownership_valid_dates',
+            ),
         ]
 
     def clean(self):
@@ -368,6 +372,10 @@ class DeviceCustomerAccessPeriod(models.Model):
                 fields=['device'],
                 condition=models.Q(ended_at__isnull=True),
                 name='device_access_one_open_period',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(ended_at__isnull=True) | models.Q(ended_at__gte=models.F('started_at')),
+                name='device_access_valid_dates',
             ),
         ]
 
