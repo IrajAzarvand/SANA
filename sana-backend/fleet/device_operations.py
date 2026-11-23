@@ -874,14 +874,22 @@ def execute_device_operation(
             'dispose': 'امحاء شد',
             'other': 'طبق توضیحات تکمیلی تعیین شد',
         }
+        disposition_event_org = (
+            target_organization if outcome_action == 'transfer_customer'
+            else device.current_holder_organization or previous_org
+        )
+        disposition_event_user = (
+            target_user if outcome_action == 'transfer_customer'
+            else device.current_holder_user or previous_user
+        )
         record_device_lifecycle_event(
             device_operation=operation,
             device=device,
             event_type='disposition',
             performed_by=performed_by,
             subscription=target_subscription or subscription,
-            organization=device.organization,
-            user=device.owner_user,
+            organization=disposition_event_org,
+            user=disposition_event_user,
             vehicle=device.vehicle,
             branch=device.branch,
             reason=reason or 'other',
@@ -959,8 +967,8 @@ def execute_device_operation(
             event_type='transferred',
             performed_by=performed_by,
             subscription=subscription,
-            organization=device.organization,
-            user=device.owner_user,
+            organization=customer_organization,
+            user=None,
             vehicle=device.vehicle,
             branch=target_branch,
             reason=reason,
@@ -1017,8 +1025,8 @@ def execute_device_operation(
             event_type='transferred',
             performed_by=performed_by,
             subscription=subscription,
-            organization=device.organization,
-            user=device.owner_user,
+            organization=customer_organization,
+            user=customer_user,
             vehicle=target_vehicle,
             branch=target_vehicle.branch,
             reason=reason,
@@ -1038,8 +1046,8 @@ def execute_device_operation(
             event_type='retired',
             performed_by=performed_by,
             subscription=subscription,
-            organization=device.organization,
-            user=device.owner_user,
+            organization=device.current_holder_organization or (subscription.organization if subscription and subscription.customer_type == 'organization' else None) or device.organization,
+            user=device.current_holder_user or (subscription.user if subscription and subscription.customer_type == 'personal' else None) or device.owner_user,
             reason=reason,
             description=description,
         )
