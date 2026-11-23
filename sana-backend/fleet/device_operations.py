@@ -763,8 +763,13 @@ def execute_device_operation(
         )
 
     elif operation_type == 'transfer_customer':
-        if not target_organization and not target_user:
-            raise ValidationError({'target_organization': 'مالک مقصد را مشخص کنید'})
+        _validate_transfer_target(
+            organization=target_organization,
+            user=target_user,
+            branch=target_branch,
+            vehicle=target_vehicle,
+            subscription=target_subscription,
+        )
         _close_active_link(device, operation)
         _close_customer_access(device)
         _close_ownership(device)
@@ -772,14 +777,22 @@ def execute_device_operation(
         device.owner_user = target_user
         device.current_holder_organization = target_organization
         device.current_holder_user = target_user
-        device.branch = None
-        device.vehicle = None
+        device.branch = target_vehicle.branch if target_vehicle else target_branch
+        device.vehicle = target_vehicle
         device.management_status = 'installed'
         device.save()
         if target_subscription:
             _add_to_subscription(device, target_subscription, operation)
         _open_ownership(device, organization=target_organization, user=target_user, reason='transfer_customer')
-        _open_customer_access(device, subscription=target_subscription, branch=target_branch, organization=target_organization, user=target_user, reason='transfer_customer')
+        if target_subscription:
+            _open_customer_access(
+                device,
+                subscription=target_subscription,
+                branch=device.branch,
+                organization=target_organization,
+                user=target_user,
+                reason='transfer_customer',
+            )
         record_device_lifecycle_event(
             device_operation=operation,
             device=device,
