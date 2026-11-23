@@ -371,6 +371,8 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
             device,
             subscription=subscription,
             branch=device.branch,
+            organization=subscription.organization,
+            user=subscription.user,
             reason='contract_assignment',
         )
         request = self.context.get('request')
