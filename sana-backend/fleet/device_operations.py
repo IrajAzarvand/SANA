@@ -202,6 +202,7 @@ def _return_temporary_replacements_to_warehouse(
     relations = DeviceReplacementRelation.objects.filter(
         source_device=source_device,
         replacement_type='temporary_repair',
+        returned_at__isnull=True,
     ).select_related('replacement_device').order_by('-id')
     returned = []
     for relation in relations:
@@ -226,6 +227,8 @@ def _return_temporary_replacements_to_warehouse(
         replacement.current_holder_user = None
         replacement.management_status = 'warehouse'
         replacement.save()
+        relation.returned_at = timezone.now()
+        relation.save(update_fields=['returned_at'])
         record_device_lifecycle_event(
             device_operation=operation,
             device=replacement,
