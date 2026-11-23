@@ -808,6 +808,17 @@ def execute_device_operation(
     elif operation_type == 'transfer_branch':
         if not target_branch:
             raise ValidationError({'target_branch': 'شعبه مقصد را مشخص کنید'})
+        if (
+            not device.organization_id
+            or device.owner_user_id is not None
+            or target_branch.organization_id != device.organization_id
+        ):
+            raise ValidationError({'target_branch': 'شعبه مقصد باید متعلق به سازمان مالک دستگاه باشد.'})
+        if subscription and (
+            subscription.customer_type != 'organization'
+            or subscription.organization_id != target_branch.organization_id
+        ):
+            raise ValidationError({'target_branch': 'شعبه مقصد با مشتری قرارداد فعلی مطابقت ندارد.'})
         device.branch = target_branch
         device.save(update_fields=['branch', 'updated_at'])
         _open_customer_access(device, subscription=subscription, branch=target_branch)
@@ -828,10 +839,26 @@ def execute_device_operation(
     elif operation_type == 'transfer_vehicle':
         if not target_vehicle:
             raise ValidationError({'target_vehicle': 'خودرو مقصد را مشخص کنید'})
-        if target_vehicle.organization_id != device.organization_id and device.organization_id:
-            raise ValidationError({
-                'target_vehicle': 'خودرو مقصد باید متعلق به همان مشتری دستگاه باشد'
-            })
+        if device.organization_id:
+            if (
+                target_vehicle.organization_id != device.organization_id
+                or target_vehicle.owner_user_id is not None
+                or (target_vehicle.branch_id and target_vehicle.branch.organization_id != device.organization_id)
+            ):
+                raise ValidationError({
+                    'target_vehicle': 'خودرو مقصد باید متعلق به همان سازمان و شعبه معتبر آن باشد'
+                })
+        elif device.owner_user_id:
+            if (
+                target_vehicle.owner_user_id != device.owner_user_id
+                or target_vehicle.organization_id is not None
+                or target_vehicle.branch_id is not None
+            ):
+                raise ValidationError({
+                    'target_vehicle': 'خودرو مقصد باید متعلق به همان کاربر شخصی باشد'
+                })
+        else:
+            raise ValidationError({'device': 'دستگاه مالک معتبر ندارد و قابل انتقال به خودرو نیست.'})
         if Device.objects.filter(vehicle=target_vehicle).exclude(pk=device.pk).exclude(
             management_status__in=['faulty', 'in_repair', 'lost', 'stolen', 'unusable', 'disposed']
         ).exists():
