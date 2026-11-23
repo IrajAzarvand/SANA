@@ -239,7 +239,7 @@ class Device(models.Model):
         subscription = link.subscription
         today = timezone.localdate()
         if (
-            subscription.status != 'active'
+            subscription.computed_status != 'active'
             or subscription.start_date > today
             or subscription.end_date < today
         ):
