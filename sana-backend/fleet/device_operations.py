@@ -351,8 +351,13 @@ def execute_device_operation(
                 replacement_device.owner_user = device.owner_user
             replacement_device.save()
 
-            if replacement_type == 'permanent_replacement' and (device.organization or device.owner_user):
-                _open_ownership(replacement_device, organization=device.organization, user=device.owner_user, reason='permanent_replacement')
+            if replacement_device.organization or replacement_device.owner_user:
+                _open_ownership(
+                    replacement_device,
+                    organization=replacement_device.organization,
+                    user=replacement_device.owner_user,
+                    reason='replacement_assignment',
+                )
             if subscription:
                 _add_to_subscription(replacement_device, subscription, operation)
                 _open_customer_access(replacement_device, subscription=subscription, branch=old_branch, organization=old_org, user=old_user, reason='replacement')
@@ -376,8 +381,8 @@ def execute_device_operation(
                 event_type='assigned_to_contract',
                 performed_by=performed_by,
                 subscription=subscription,
-                organization=replacement_device.organization,
-                user=replacement_device.owner_user,
+                organization=old_org,
+                user=old_user,
                 vehicle=replacement_device.vehicle,
                 branch=replacement_device.branch,
                 reason='replacement',
@@ -462,12 +467,12 @@ def execute_device_operation(
             replacement_device.owner_user = device.owner_user
         replacement_device.save()
 
-        if replacement_type == 'permanent_replacement' and (device.organization or device.owner_user):
+        if replacement_device.organization or replacement_device.owner_user:
             _open_ownership(
                 replacement_device,
-                organization=device.organization,
-                user=device.owner_user,
-                reason='permanent_replacement',
+                organization=replacement_device.organization,
+                user=replacement_device.owner_user,
+                reason='replacement_assignment',
             )
 
         if subscription:
@@ -591,12 +596,12 @@ def execute_device_operation(
                 replacement_device.owner_user = device.owner_user
             replacement_device.save()
 
-            if replacement_type == 'permanent_replacement':
+            if replacement_device.organization or replacement_device.owner_user:
                 _open_ownership(
                     replacement_device,
-                    organization=device.organization,
-                    user=device.owner_user,
-                    reason='permanent_replacement',
+                    organization=replacement_device.organization,
+                    user=replacement_device.owner_user,
+                    reason='replacement_assignment',
                 )
 
             if subscription:
