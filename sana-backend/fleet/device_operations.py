@@ -690,21 +690,16 @@ def execute_device_operation(
         ).order_by('-event_date', '-id').first()
         previous_vehicle = previous_event.vehicle if previous_event else None
         previous_branch = previous_event.branch if previous_event else None
+        previous_customer = _current_customer(device, subscription)
         previous_org = (
             previous_event.organization
             if previous_event and previous_event.organization_id
-            else device.current_holder_organization or (
-                subscription.organization if subscription and subscription.customer_type == 'organization'
-                else device.organization
-            )
+            else previous_customer['organization']
         )
         previous_user = (
             previous_event.user
             if previous_event and previous_event.user_id
-            else device.current_holder_user or (
-                subscription.user if subscription and subscription.customer_type == 'personal'
-                else device.owner_user
-            )
+            else previous_customer['user']
         )
 
         if outcome_action == 'return_customer_same_vehicle':
