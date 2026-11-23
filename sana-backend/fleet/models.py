@@ -303,7 +303,7 @@ class DeviceOwnershipHistory(models.Model):
             models.UniqueConstraint(
                 fields=['device'],
                 condition=models.Q(ended_at__isnull=True),
-                name='device_ownership_one_open_period',
+                name='ownership_one_open_period',
             ),
             models.CheckConstraint(
                 condition=models.Q(ended_at__isnull=True) | models.Q(ended_at__gte=models.F('started_at')),
