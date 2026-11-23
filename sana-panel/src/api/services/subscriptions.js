@@ -40,8 +40,8 @@ export const subscriptionsAPI = {
     return response.data;
   },
 
-  activate: async (id) => {
-    const response = await apiClient.post(`/subscriptions/${id}/activate/`);
+  activate: async (id, data = {}) => {
+    const response = await apiClient.post(`/subscriptions/${id}/activate/`, data);
     return response.data;
   },
 
