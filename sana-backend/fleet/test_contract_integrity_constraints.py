@@ -364,6 +364,9 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
 
         loaner.refresh_from_db()
         source.refresh_from_db()
+        from fleet.models import DeviceReplacementRelation
+        relation = DeviceReplacementRelation.objects.get(source_device=source, replacement_device=loaner)
+        self.assertIsNotNone(relation.returned_at)
         self.assertEqual(loaner.management_status, 'warehouse')
         self.assertIsNone(loaner.current_holder_organization_id)
         self.assertIsNone(loaner.active_subscription_link)
