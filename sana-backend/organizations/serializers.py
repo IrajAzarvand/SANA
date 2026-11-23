@@ -3,7 +3,7 @@ from decimal import Decimal, InvalidOperation
 from django.utils import timezone
 from django.db.models import Q, Sum
 from fleet.lifecycle import record_device_lifecycle_event
-from fleet.device_operations import _open_customer_access, _open_ownership
+from fleet.device_operations import _open_customer_access
 from fleet.models import DeviceCustomerAccessPeriod
 from .models import (
     Organization,
@@ -341,34 +341,24 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
-        # بعد از ساخت، مالکیت دستگاه رو هم به قرارداد اختصاص بده
+        # Contract assignment changes the current holder/access only. Legal ownership
+        # is preserved and must be changed through an explicit ownership operation.
         instance = super().create(validated_data)
         device = instance.device
         subscription = instance.subscription
 
-        # اختصاص مالکیت
         if subscription.organization:
-            device.organization = subscription.organization
-            device.owner_user = None
             device.current_holder_organization = subscription.organization
             device.current_holder_user = None
         elif subscription.user:
-            device.owner_user = subscription.user
-            device.organization = None
             device.current_holder_organization = None
             device.current_holder_user = subscription.user
 
-        # آپدیت وضعیت
+        # Contract assignment moves a warehouse device into installation state.
         if device.management_status == 'warehouse':
             device.management_status = 'installed'
 
         device.save()
-        _open_ownership(
-            device,
-            organization=subscription.organization,
-            user=subscription.user,
-            reason='contract_assignment',
-        )
         _open_customer_access(
             device,
             subscription=subscription,
@@ -1175,27 +1165,18 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                     added_by_operation=operation,
                 )
 
-                # تخصیص مالکیت و مشتری فعلی دستگاه
+                # Contract assignment updates current holder, not legal ownership.
+                # Ownership changes require a dedicated audited operation.
                 if organization:
-                    device.organization = organization
-                    device.owner_user = None
                     device.current_holder_organization = organization
                     device.current_holder_user = None
                 else:
-                    device.owner_user = user
-                    device.organization = None
                     device.current_holder_organization = None
                     device.current_holder_user = user
 
-                # آپدیت وضعیت مدیریتی دستگاه — از انبار خارج شد
+                # Remove from warehouse when the contract installs the device.
                 device.management_status = 'installed'
                 device.save()
-                _open_ownership(
-                    device,
-                    organization=organization,
-                    user=user if customer_type == 'personal' else None,
-                    reason='contract_assignment',
-                )
                 _open_customer_access(
                     device,
                     subscription=subscription,
