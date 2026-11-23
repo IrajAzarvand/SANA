@@ -322,13 +322,13 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
         from datetime import timedelta
         from django.utils import timezone
         from fleet.device_operations import execute_device_operation
-        from fleet.models import Branch, Vehicle
-        from organizations.models import Branch as OrgBranch
+        from fleet.models import Vehicle
+        from organizations.models import Branch
 
         today = timezone.localdate()
         legal_owner = Organization.objects.create(name='Loaner Legal Owner', code='LOANER-OWNER')
         customer = Organization.objects.create(name='Loaner Customer', code='LOANER-CUSTOMER')
-        branch = OrgBranch.objects.create(organization=customer, name='Loaner Branch', code='LOANER-BRANCH')
+        branch = Branch.objects.create(organization=customer, name='Loaner Branch', code='LOANER-BRANCH')
         vehicle = Vehicle.objects.create(plate='99ج999', organization=customer, branch=branch)
         subscription = Subscription.objects.create(
             contract_number='LOANER-RETURN-CONTRACT',
