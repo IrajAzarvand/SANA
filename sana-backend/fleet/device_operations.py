@@ -875,6 +875,8 @@ def execute_device_operation(
         elif outcome_action == 'other':
             device.vehicle = None
             device.branch = None
+            device.current_holder_organization = None
+            device.current_holder_user = None
             device.management_status = 'ready'
 
         device.save()
@@ -892,7 +894,7 @@ def execute_device_operation(
                 operation=operation,
             )
 
-        if outcome_action in {'sana_warehouse', 'retire'}:
+        if outcome_action in {'sana_warehouse', 'retire', 'other'}:
             _close_active_link(device, operation)
         elif outcome_action in {
             'return_customer_same_vehicle', 'return_customer_no_vehicle',
