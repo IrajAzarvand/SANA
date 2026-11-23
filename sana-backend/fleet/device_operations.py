@@ -36,6 +36,7 @@ def _current_customer(device, subscription=None):
     return _customer_kwargs(device)
 
 def _close_customer_access(device, when=None, subscription=None):
+    device = Device.objects.select_for_update().get(pk=device.pk)
     when = when or timezone.now()
     periods = DeviceCustomerAccessPeriod.objects.filter(device=device, ended_at__isnull=True)
     if subscription is not None:
@@ -44,6 +45,7 @@ def _close_customer_access(device, when=None, subscription=None):
 
 
 def _open_customer_access(device, subscription=None, branch=None, organization=_CUSTOMER_UNSET, user=_CUSTOMER_UNSET, started_at=None, reason=''):
+    device = Device.objects.select_for_update().get(pk=device.pk)
     customer = _customer_kwargs(device, organization, user)
     customer_organization = customer['organization']
     customer_user = customer['user']
@@ -116,11 +118,13 @@ def _open_customer_access(device, subscription=None, branch=None, organization=_
 
 
 def _close_ownership(device, when=None):
+    device = Device.objects.select_for_update().get(pk=device.pk)
     when = when or timezone.now()
     DeviceOwnershipHistory.objects.filter(device=device, ended_at__isnull=True).update(ended_at=when)
 
 
 def _open_ownership(device, organization=_CUSTOMER_UNSET, user=_CUSTOMER_UNSET, started_at=None, reason=''):
+    device = Device.objects.select_for_update().get(pk=device.pk)
     customer = _customer_kwargs(device, organization, user)
     if not customer['organization'] and not customer['user']:
         return None
