@@ -717,9 +717,24 @@ class OrganizationDeviceAccessQueryTests(TestCase):
 
     def make_device_access(self, imei, branch, started_at):
         device = Device.objects.create(imei=imei, management_status='active')
+        today = timezone.localdate()
+        subscription = Subscription.objects.create(
+            contract_number=f'ACCESS-{imei}',
+            customer_type='organization',
+            organization=self.organization,
+            start_date=today - timedelta(days=2),
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=today - timedelta(days=2),
+            end_date=today + timedelta(days=30),
+        )
         DeviceCustomerAccessPeriod.objects.create(
             device=device, organization=self.organization, branch=branch,
-            started_at=started_at,
+            subscription=subscription, started_at=started_at,
         )
         return device
 
@@ -757,6 +772,45 @@ class OrganizationDeviceAccessQueryTests(TestCase):
         branch_visible = set(branch_view.get_queryset().values_list('id', flat=True))
         self.assertEqual(branch_visible, {current_org_device.id})
 
+    def test_organization_and_branch_lists_reject_access_period_linked_to_foreign_contract(self):
+        foreign_org = Organization.objects.create(name='Foreign Org', code='ACCESS-FOREIGN')
+        foreign_contract = Subscription.objects.create(
+            contract_number='ACCESS-FOREIGN-001',
+            customer_type='organization',
+            organization=foreign_org,
+            start_date=timezone.localdate() - timedelta(days=2),
+            end_date=timezone.localdate() + timedelta(days=30),
+            status='active',
+        )
+        device = Device.objects.create(imei='860000000000205', management_status='active')
+        SubscriptionDevice.objects.create(
+            subscription=foreign_contract,
+            device=device,
+            start_date=foreign_contract.start_date,
+            end_date=foreign_contract.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=self.organization,
+            branch=self.branch,
+            subscription=foreign_contract,
+            started_at=self.now - timedelta(days=1),
+        )
+
+        main_request = APIRequestFactory().get('/api/devices/')
+        force_authenticate(main_request, user=self.main_user)
+        main_view = DeviceViewSet()
+        main_view.action_map = {'get': 'list'}
+        main_view.request = main_view.initialize_request(main_request)
+        self.assertNotIn(device.id, set(main_view.get_queryset().values_list('id', flat=True)))
+
+        branch_request = APIRequestFactory().get('/api/devices/')
+        force_authenticate(branch_request, user=self.branch_user)
+        branch_view = DeviceViewSet()
+        branch_view.action_map = {'get': 'list'}
+        branch_view.request = branch_view.initialize_request(branch_request)
+        self.assertNotIn(device.id, set(branch_view.get_queryset().values_list('id', flat=True)))
+
 
 class PersonalDeviceAccessQueryTests(TestCase):
     def setUp(self):
@@ -787,7 +841,7 @@ class PersonalDeviceAccessQueryTests(TestCase):
         )
         return device
 
-    def test_personal_device_list_contains_only_current_access_periods(self):
+    def test_personal_device_list_does_not_grant_live_access_from_legacy_periods(self):
         active = self.make_device(
             '860000000000101',
             self.user,
@@ -824,7 +878,7 @@ class PersonalDeviceAccessQueryTests(TestCase):
 
         visible_ids = set(view.get_queryset().values_list('id', flat=True))
 
-        self.assertEqual(visible_ids, {active.id, ending_later.id})
+        self.assertEqual(visible_ids, set())
 
     def test_personal_device_list_includes_current_active_contract_links_without_access_period(self):
         today = timezone.localdate()
