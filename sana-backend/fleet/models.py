@@ -491,6 +491,59 @@ class DeviceOperation(models.Model):
         return f'{self.device.imei} — {self.get_operation_type_display()}'
     
 
+class DeviceBranchHistory(models.Model):
+    """Historical customer branch assignment, independent from live access periods."""
+
+    device = models.ForeignKey(
+        Device, on_delete=models.CASCADE, related_name='branch_history',
+        verbose_name='دستگاه',
+    )
+    organization = models.ForeignKey(
+        'organizations.Organization', on_delete=models.PROTECT,
+        related_name='device_branch_history', verbose_name='سازمان مشتری',
+    )
+    branch = models.ForeignKey(
+        'organizations.Branch', on_delete=models.PROTECT,
+        related_name='device_branch_history', verbose_name='شعبه',
+    )
+    subscription = models.ForeignKey(
+        'organizations.Subscription', on_delete=models.SET_NULL,
+        null=True, blank=True, related_name='device_branch_history',
+        verbose_name='قرارداد',
+    )
+    started_at = models.DateTimeField(default=timezone.now, verbose_name='شروع تخصیص شعبه')
+    ended_at = models.DateTimeField(null=True, blank=True, verbose_name='پایان تخصیص شعبه')
+    reason = models.CharField(max_length=100, blank=True, verbose_name='علت')
+
+    class Meta:
+        verbose_name = 'تاریخچه شعبه دستگاه'
+        verbose_name_plural = 'تاریخچه شعبه دستگاه‌ها'
+        ordering = ['-started_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['device'],
+                condition=models.Q(ended_at__isnull=True),
+                name='device_one_open_branch',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(ended_at__isnull=True) | models.Q(ended_at__gte=models.F('started_at')),
+                name='device_branch_valid_dates',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['device', 'started_at'], name='dev_branch_hist_idx'),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.branch_id and self.organization_id != self.branch.organization_id:
+            raise ValidationError({'branch': 'شعبه باید متعلق به سازمان ثبت‌شده در تاریخچه باشد.'})
+        if self.ended_at and self.ended_at < self.started_at:
+            raise ValidationError({'ended_at': 'پایان تخصیص شعبه نمی‌تواند قبل از شروع باشد.'})
+
+    def __str__(self):
+        return f'{self.device.imei} — {self.branch.name}'
+
 class DeviceReplacementRelation(models.Model):
     """رابطه جایگزینی بین دو دستگاه؛ تاریخچه رابطه مستقل از وضعیت فعلی دستگاه است."""
 
