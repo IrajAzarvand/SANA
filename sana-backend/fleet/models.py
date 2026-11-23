@@ -201,6 +201,24 @@ class Device(models.Model):
         verbose_name = 'دستگاه'
         verbose_name_plural = 'دستگاه‌ها'
         ordering = ['-created_at']
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    (models.Q(organization__isnull=True) & models.Q(owner_user__isnull=True))
+                    | (models.Q(organization__isnull=False) & models.Q(owner_user__isnull=True))
+                    | (models.Q(organization__isnull=True) & models.Q(owner_user__isnull=False))
+                ),
+                name='device_legal_owner_shape',
+            ),
+            models.CheckConstraint(
+                condition=(
+                    (models.Q(current_holder_organization__isnull=True) & models.Q(current_holder_user__isnull=True))
+                    | (models.Q(current_holder_organization__isnull=False) & models.Q(current_holder_user__isnull=True))
+                    | (models.Q(current_holder_organization__isnull=True) & models.Q(current_holder_user__isnull=False))
+                ),
+                name='device_holder_shape',
+            ),
+        ]
 
     def __str__(self):
         return self.imei
