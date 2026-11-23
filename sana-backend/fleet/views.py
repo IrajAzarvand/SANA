@@ -14,7 +14,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.throttling import ScopedRateThrottle
 
-from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation, DeviceCustomerAccessPeriod, DeviceAlertState, PersonalAlertPreference, DriverVehicleAssignment
+from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation, DeviceCustomerAccessPeriod, DeviceBranchHistory, DeviceAlertState, PersonalAlertPreference, DriverVehicleAssignment
 from .serializers import (
     VehicleTypeSerializer,
     VehicleSerializer,
@@ -1147,11 +1147,13 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     if not request.user.branch_id:
                         return Response({'detail': 'حساب مدیر شعبه به شعبه معتبری متصل نیست.'}, status=403)
                     branch_organization_id = request.user.branch.organization_id
-                    access_query = access_query.filter(
+                    branch_history_query = DeviceBranchHistory.objects.filter(
+                        device=device,
                         organization_id=branch_organization_id,
                         branch_id=request.user.branch_id,
                         subscription__customer_type='organization',
                         subscription__organization_id=branch_organization_id,
+                        started_at__lte=now,
                     )
                     links = [
                         link for link in links
@@ -1179,9 +1181,11 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 # All periods for this contract/customer contribute to the
                 # historical window. A reactivation must not hide positions
                 # recorded before the suspension gap.
-                accesses = list(access_query.filter(
-                    subscription__isnull=False,
-                ).order_by('started_at', 'id'))
+                accesses = list(
+                    branch_history_query.order_by('started_at', 'id')
+                    if request.user.is_branch_manager
+                    else access_query.filter(subscription__isnull=False).order_by('started_at', 'id')
+                )
                 if not accesses:
                     return Response({'detail': 'برای این دستگاه قرارداد و دسترسی معتبر پیدا نشد.'}, status=403)
 
@@ -1204,9 +1208,15 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 contract_start = timezone.make_aware(datetime.combine(contract_start_date, datetime_time.min))
                 contract_end = timezone.make_aware(datetime.combine(contract_end_date, datetime_time.max))
                 first_access = accesses[0]
-                last_access = accesses[-1]
                 range_start = max(contract_start, first_access.started_at)
                 range_end = min(contract_end, link.unassigned_at or contract_end)
+                if request.user.is_branch_manager:
+                    # Branch history remains open through contract suspension,
+                    # while branch-transfer periods remain separate and scoped.
+                    history_access_intervals = [
+                        (item.started_at, min(item.ended_at or range_end, range_end))
+                        for item in accesses
+                    ]
                 if request.user.is_branch_manager:
                     # Branch managers may see only the time windows when the device
                     # belonged to their branch. Contract-wide bounds alone would leak
