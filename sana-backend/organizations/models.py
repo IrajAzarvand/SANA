@@ -147,6 +147,15 @@ class Subscription(models.Model):
         verbose_name = 'قرارداد'
         verbose_name_plural = 'قراردادها'
         ordering = ['-created_at']
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(customer_type='organization', organization__isnull=False, user__isnull=True)
+                    | models.Q(customer_type='personal', organization__isnull=True, user__isnull=False)
+                ),
+                name='subscription_customer_shape',
+            ),
+        ]
 
     def __str__(self):
         return f'{self.contract_number} — {self.get_customer_name()}'
