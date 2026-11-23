@@ -599,13 +599,14 @@ def execute_device_operation(
         replacement_device.current_holder_user = customer_user
         if replacement_type == 'permanent_replacement':
             _close_active_link(device, operation)
+            _close_branch_history(device)
             # Legal ownership follows the source device; holder remains the customer.
             replacement_device.organization = device.organization
             replacement_device.owner_user = device.owner_user
         replacement_device.save()
         _open_branch_history(
             replacement_device,
-            device.branch,
+            previous_branch,
             subscription=subscription,
             reason='replacement_assignment',
         )
@@ -702,6 +703,8 @@ def execute_device_operation(
         device.current_holder_user = old_user
         device.management_status = operation_type
         device.save()
+        if replacement_device and replacement_type == 'permanent_replacement':
+            _close_branch_history(device)
 
         record_device_lifecycle_event(
             device_operation=operation,
@@ -733,6 +736,12 @@ def execute_device_operation(
                 replacement_device.organization = device.organization
                 replacement_device.owner_user = device.owner_user
             replacement_device.save()
+            _open_branch_history(
+                replacement_device,
+                old_branch,
+                subscription=subscription,
+                reason='replacement_assignment',
+            )
 
             if replacement_device.organization or replacement_device.owner_user:
                 _open_ownership(
