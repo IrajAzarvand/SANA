@@ -77,6 +77,13 @@ class SubscriptionWizardExistingUserTests(TestCase):
         self.assertFalse(serializer.is_valid())
         self.assertIn('username', serializer.errors)
 
+    def test_personal_contract_rejects_existing_user_with_non_personal_role(self):
+        self.user.role = 'main_user'
+        self.user.save(update_fields=['role'])
+        serializer = SubscriptionWizardSerializer(data=self._payload())
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('existing_user_id', serializer.errors)
+
     def test_new_user_requires_password(self):
         payload = self._payload()
         payload.pop('existing_user_id')
