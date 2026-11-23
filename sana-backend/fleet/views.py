@@ -1041,8 +1041,16 @@ class DeviceViewSet(viewsets.ModelViewSet):
         except (TypeError, ValueError):
             return Response({'detail': 'شناسه دستگاه نامعتبر است.'}, status=400)
 
-        device = self.get_queryset().filter(pk=device_id).select_related('vehicle').first()
+        # History has its own contract-bounded authorization below. Do not use
+        # the live-map queryset here, because suspended customers retain history access.
+        device = Device.objects.filter(pk=device_id).select_related('vehicle').first()
         if device is None:
+            return Response({'detail': 'دستگاه یافت نشد یا مجوز مشاهده آن را ندارید.'}, status=404)
+        if (
+            not request.user.is_site_admin
+            and device.organization_id
+            and device.organization.status == 'archived'
+        ):
             return Response({'detail': 'دستگاه یافت نشد یا مجوز مشاهده آن را ندارید.'}, status=404)
 
         range_start = range_end = None
