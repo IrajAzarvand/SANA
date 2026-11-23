@@ -1601,6 +1601,52 @@ class CustomerAccessPeriodIntegrityTests(TestCase):
 
 
 class ContractAssignmentOwnershipSeparationTests(TestCase):
+
+    def test_contract_wizard_preserves_device_legal_owner(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from accounts.models import User
+        from fleet.models import Device, DeviceCustomerAccessPeriod, DeviceOwnershipHistory
+        from organizations.models import Organization
+        from organizations.serializers import SubscriptionWizardSerializer
+
+        today = timezone.localdate()
+        legal_owner = Organization.objects.create(name='Wizard Legal Owner', code='WIZ-LEGAL-OWNER')
+        customer = Organization.objects.create(name='Wizard Contract Customer', code='WIZ-CONTRACT-CUSTOMER')
+        manager = User.objects.create_user(
+            username='wizard_existing_manager', password='test-password',
+            role='main_user', account_type='organization', organization=customer,
+        )
+        device = Device.objects.create(
+            imei='860000000000954', organization=legal_owner, management_status='warehouse',
+        )
+        SubscriptionWizardSerializer().create({
+            'customer_type': 'organization',
+            'organization_id': customer.id,
+            'existing_user_id': manager.id,
+            'username': manager.username,
+            'first_name': manager.first_name or 'Existing',
+            'last_name': manager.last_name or 'Manager',
+            'mobile': manager.mobile or '09120000010',
+            'contract_number': 'WIZ-OWNERSHIP-SEPARATION',
+            'start_date': today,
+            'end_date': today + timedelta(days=30),
+            'price': 0,
+            'devices': [{
+                'device_id': device.id,
+                'start_date': today,
+                'end_date': today + timedelta(days=30),
+            }],
+            'payments': [],
+        })
+
+        device.refresh_from_db()
+        self.assertEqual(device.organization_id, legal_owner.id)
+        self.assertEqual(device.current_holder_organization_id, customer.id)
+        self.assertFalse(DeviceOwnershipHistory.objects.filter(device=device).exists())
+        access = DeviceCustomerAccessPeriod.objects.get(device=device, ended_at__isnull=True)
+        self.assertEqual(access.organization_id, customer.id)
+
     def test_contract_assignment_preserves_legal_owner_and_updates_holder(self):
         from datetime import timedelta
         from django.utils import timezone
