@@ -650,7 +650,10 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
     def activate(self, request, pk=None):
         """فعال‌سازی مجدد قرارداد"""
         subscription = self.get_object()
-        if subscription.status not in {'suspended', 'expired'}:
+        is_date_expired = subscription.end_date < timezone.localdate()
+        if subscription.status not in {'suspended', 'expired'} and not (
+            subscription.status == 'active' and is_date_expired
+        ):
             raise serializers.ValidationError({'status': 'فقط قرارداد تعلیق‌شده یا منقضی‌شده قابل فعال‌سازی مجدد است.'})
         with transaction.atomic():
             from datetime import date
