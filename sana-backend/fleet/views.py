@@ -1078,6 +1078,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'دستگاه یافت نشد یا مجوز مشاهده آن را ندارید.'}, status=404)
         range_start = range_end = None
         history_access_intervals = None
+        history_end_exclusive = False
         if not request.user.is_site_admin:
             now = timezone.now()
             today = timezone.localdate()
@@ -1133,6 +1134,9 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 range_end = min(
                     contract_history_end,
                     link.unassigned_at or contract_history_end,
+                )
+                history_end_exclusive = bool(
+                    link.unassigned_at and link.unassigned_at <= contract_history_end
                 )
             else:
                 if request.user.is_branch_manager:
@@ -1208,6 +1212,9 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 first_access = accesses[0]
                 range_start = max(contract_start, first_access.started_at)
                 range_end = min(contract_end, link.unassigned_at or contract_end)
+                history_end_exclusive = bool(
+                    link.unassigned_at and link.unassigned_at <= contract_end
+                )
                 if request.user.is_branch_manager:
                     # Branch history remains open through contract suspension,
                     # while branch-transfer periods remain separate and scoped.
@@ -1301,6 +1308,9 @@ class DeviceViewSet(viewsets.ModelViewSet):
             and (
                 cursor_fix_time is None
                 or fix_time_key(item) > (cursor_fix_time, cursor_id)
+            )
+            and (
+                (fix_time_key(item)[0] < range_end if history_end_exclusive and range_end else fix_time_key(item)[0] <= range_end if range_end else True)
             )
             and (
                 history_access_intervals is None
