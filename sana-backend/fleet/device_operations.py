@@ -7,15 +7,18 @@ from .lifecycle import record_device_lifecycle_event
 from organizations.models import SubscriptionDevice
 
 
-def _customer_kwargs(device=None, organization=None, user=None):
-    # Prefer the current holder/customer relationship over legal ownership.
-    # Owner fields are only a legacy fallback for devices without holder data.
-    organization = organization if organization is not None else (
-        (device.current_holder_organization or device.organization) if device else None
-    )
-    user = user if user is not None else (
-        (device.current_holder_user or device.owner_user) if device else None
-    )
+_CUSTOMER_UNSET = object()
+
+
+def _customer_kwargs(device=None, organization=_CUSTOMER_UNSET, user=_CUSTOMER_UNSET):
+    # If a caller explicitly supplies customer identity, respect both fields
+    # (including explicit None) rather than falling back to legal ownership.
+    if organization is _CUSTOMER_UNSET and user is _CUSTOMER_UNSET:
+        organization = (device.current_holder_organization or device.organization) if device else None
+        user = (device.current_holder_user or device.owner_user) if device else None
+    else:
+        organization = None if organization is _CUSTOMER_UNSET else organization
+        user = None if user is _CUSTOMER_UNSET else user
     if organization:
         return {'organization': organization, 'user': None}
     if user:
@@ -31,7 +34,7 @@ def _close_customer_access(device, when=None, subscription=None):
     periods.update(ended_at=when)
 
 
-def _open_customer_access(device, subscription=None, branch=None, organization=None, user=None, started_at=None, reason=''):
+def _open_customer_access(device, subscription=None, branch=None, organization=_CUSTOMER_UNSET, user=_CUSTOMER_UNSET, started_at=None, reason=''):
     customer = _customer_kwargs(device, organization, user)
     customer_organization = customer['organization']
     customer_user = customer['user']
@@ -108,7 +111,7 @@ def _close_ownership(device, when=None):
     DeviceOwnershipHistory.objects.filter(device=device, ended_at__isnull=True).update(ended_at=when)
 
 
-def _open_ownership(device, organization=None, user=None, started_at=None, reason=''):
+def _open_ownership(device, organization=_CUSTOMER_UNSET, user=_CUSTOMER_UNSET, started_at=None, reason=''):
     customer = _customer_kwargs(device, organization, user)
     if not customer['organization'] and not customer['user']:
         return None
