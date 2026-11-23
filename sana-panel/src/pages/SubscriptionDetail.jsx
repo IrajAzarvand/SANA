@@ -160,6 +160,8 @@ export default function SubscriptionDetail() {
   });
 
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [activationModalOpen, setActivationModalOpen] = useState(false);
+  const [activationEndDate, setActivationEndDate] = useState('');
 
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState('');
@@ -508,26 +510,41 @@ export default function SubscriptionDetail() {
 
   // ═══ تغییر وضعیت ═══
   const handleStatusChange = async (action) => {
-    let activationPayload;
     if (action === 'activate') {
-      const proposedEndDate = prompt(
-        'تاریخ انقضای جدید قرارداد را وارد کنید (YYYY-MM-DD):',
-        subscription?.end_date || ''
-      );
-      if (!proposedEndDate) return;
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(proposedEndDate)) {
-        alert('فرمت تاریخ معتبر نیست. از YYYY-MM-DD استفاده کنید.');
-        return;
-      }
-      activationPayload = { end_date: proposedEndDate };
+      setActivationEndDate(subscription?.end_date || todayGregorian());
+      setActivationModalOpen(true);
+      return;
     }
     if (!confirm('آیا از تغییر وضعیت قرارداد اطمینان دارید؟')) return;
     try {
-      await subscriptionsAPI[action](id, activationPayload);
+      await subscriptionsAPI[action](id);
       refetch();
     } catch (err) {
       console.error('Error:', err);
       alert(err.response?.data?.end_date || 'خطا در انجام عملیات');
+    }
+  };
+
+  const handleActivationSubmit = async () => {
+    if (!activationEndDate || !/^\d{4}-\d{2}-\d{2}$/.test(activationEndDate)) {
+      setActionError('انتخاب تاریخ انقضای معتبر الزامی است.');
+      return;
+    }
+    if (!confirm('آیا از فعال‌سازی قرارداد با تاریخ انقضای انتخاب‌شده اطمینان دارید؟')) return;
+    setSaving(true);
+    setActionError('');
+    try {
+      await subscriptionsAPI.activate(id, { end_date: activationEndDate });
+      setActivationModalOpen(false);
+      refetch();
+    } catch (err) {
+      console.error('Error activating:', err);
+      const message = err.response?.data
+        ? Object.entries(err.response.data).map(([key, value]) => `${key}: ${Array.isArray(value) ? value[0] : value}`).join('\n')
+        : 'خطا در فعال‌سازی قرارداد';
+      setActionError(message);
+    } finally {
+      setSaving(false);
     }
   };
   // ═══ لغو قرارداد ═══
@@ -2170,6 +2187,29 @@ export default function SubscriptionDetail() {
             </span>
             اطمینان دارید؟
           </p>
+        </div>
+      </Modal>
+
+      <Modal
+        open={activationModalOpen}
+        onClose={() => setActivationModalOpen(false)}
+        title="فعال‌سازی قرارداد"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setActivationModalOpen(false)} disabled={saving}>انصراف</Button>
+            <Button onClick={handleActivationSubmit} disabled={saving}>{saving ? 'در حال فعال‌سازی...' : 'فعال‌سازی'}</Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          {actionError && <div className="bg-danger/10 border border-danger/30 rounded-field p-3"><p className="text-xs text-danger whitespace-pre-line">{actionError}</p></div>}
+          <p className="text-sm text-text-secondary">تاریخ انقضای جدید قرارداد را انتخاب کنید. پس از فعال‌سازی، دوره دسترسی جدید ایجاد می‌شود.</p>
+          <JalaliDatePicker
+            label="تاریخ انقضای جدید"
+            value={activationEndDate}
+            onChange={(value) => { setActivationEndDate(value); setActionError(''); }}
+            required
+          />
         </div>
       </Modal>
 
