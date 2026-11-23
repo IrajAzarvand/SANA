@@ -857,6 +857,10 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                 raise serializers.ValidationError({
                     'existing_user_id': 'کاربر انتخاب‌شده مدیر اصلی یک سازمان نیست'
                 })
+            if customer_type == 'personal' and selected_user.role != 'personal_user':
+                raise serializers.ValidationError({
+                    'existing_user_id': 'کاربر انتخاب‌شده حساب شخصی معتبر ندارد'
+                })
             if selected_user.username != data.get('username'):
                 raise serializers.ValidationError({
                     'username': 'نام کاربری با حساب انتخاب‌شده مطابقت ندارد'
