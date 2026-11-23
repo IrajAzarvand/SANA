@@ -1444,3 +1444,118 @@ class SubscriptionSuspendActivateAccessPolicyTests(TestCase):
             ).count(),
             1,
         )
+
+
+
+class CustomerAccessPeriodIntegrityTests(TestCase):
+    def setUp(self):
+        from accounts.models import User
+        from fleet.models import Device, DeviceCustomerAccessPeriod
+        from organizations.models import Organization, Branch, Subscription
+
+        self.organization = Organization.objects.create(name='Access Owner', code='ACCESS-OWNER')
+        self.branch = Branch.objects.create(
+            organization=self.organization, name='Access Branch', code='ACCESS-BRANCH',
+        )
+        self.device = Device.objects.create(
+            imei='860000000009801',
+            organization=self.organization,
+            branch=self.branch,
+            management_status='installed',
+        )
+        today = timezone.localdate()
+        self.subscription_one = Subscription.objects.create(
+            contract_number='ACCESS-PERIOD-ONE',
+            customer_type='organization',
+            organization=self.organization,
+            start_date=today - timedelta(days=10),
+            end_date=today + timedelta(days=10),
+            status='active',
+        )
+        self.subscription_two = Subscription.objects.create(
+            contract_number='ACCESS-PERIOD-TWO',
+            customer_type='organization',
+            organization=self.organization,
+            start_date=today - timedelta(days=2),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        self.period = DeviceCustomerAccessPeriod.objects.create(
+            device=self.device,
+            organization=self.organization,
+            branch=self.branch,
+            subscription=self.subscription_one,
+            started_at=timezone.now() - timedelta(days=5),
+        )
+
+    def test_new_contract_creates_new_period_without_rewriting_old_contract_history(self):
+        from fleet.device_operations import _open_customer_access
+
+        started_at = timezone.now()
+        new_period = _open_customer_access(
+            self.device,
+            subscription=self.subscription_two,
+            branch=self.branch,
+            started_at=started_at,
+            reason='new_contract',
+        )
+
+        self.period.refresh_from_db()
+        self.assertEqual(self.period.subscription_id, self.subscription_one.id)
+        self.assertEqual(self.period.ended_at, started_at)
+        self.assertNotEqual(new_period.id, self.period.id)
+        self.assertEqual(new_period.subscription_id, self.subscription_two.id)
+        self.assertEqual(
+            DeviceCustomerAccessPeriod.objects.filter(device=self.device).count(), 2,
+        )
+
+    def test_access_period_rejects_subscription_owned_by_another_organization(self):
+        from fleet.device_operations import _open_customer_access
+        from organizations.models import Organization, Subscription
+        from rest_framework.exceptions import ValidationError
+
+        foreign = Organization.objects.create(name='Foreign Access Owner', code='ACCESS-FOREIGN-OWNER')
+        today = timezone.localdate()
+        foreign_subscription = Subscription.objects.create(
+            contract_number='ACCESS-PERIOD-FOREIGN',
+            customer_type='organization',
+            organization=foreign,
+            start_date=today - timedelta(days=1),
+            end_date=today + timedelta(days=10),
+            status='active',
+        )
+
+        with self.assertRaises(ValidationError):
+            _open_customer_access(
+                self.device,
+                subscription=foreign_subscription,
+                branch=self.branch,
+                started_at=timezone.now(),
+            )
+
+        self.period.refresh_from_db()
+        self.assertIsNone(self.period.ended_at)
+        self.assertEqual(
+            DeviceCustomerAccessPeriod.objects.filter(device=self.device).count(), 1,
+        )
+
+    def test_access_period_rejects_branch_from_another_organization(self):
+        from fleet.device_operations import _open_customer_access
+        from organizations.models import Organization, Branch
+        from rest_framework.exceptions import ValidationError
+
+        foreign = Organization.objects.create(name='Foreign Branch Owner', code='ACCESS-FOREIGN-BR')
+        foreign_branch = Branch.objects.create(
+            organization=foreign, name='Foreign Branch', code='ACCESS-FOREIGN-BRANCH',
+        )
+
+        with self.assertRaises(ValidationError):
+            _open_customer_access(
+                self.device,
+                subscription=self.subscription_two,
+                branch=foreign_branch,
+                started_at=timezone.now(),
+            )
+
+        self.period.refresh_from_db()
+        self.assertIsNone(self.period.ended_at)
