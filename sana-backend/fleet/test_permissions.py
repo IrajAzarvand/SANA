@@ -193,10 +193,26 @@ class BranchManagerReplacementHistoryScopeTests(TestCase):
             organization=other,
         )
         now = timezone.now()
+        today = timezone.localdate()
+        subscription = Subscription.objects.create(
+            contract_number='COMP-REPL-SCOPE-CONTRACT',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=2),
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
         for device in (own_device, second_own_device):
+            SubscriptionDevice.objects.create(
+                subscription=subscription,
+                device=device,
+                start_date=subscription.start_date,
+                end_date=subscription.end_date,
+            )
             DeviceCustomerAccessPeriod.objects.create(
                 device=device,
                 organization=organization,
+                subscription=subscription,
                 started_at=now - timedelta(days=1),
             )
         visible = DeviceReplacementRelation.objects.create(
@@ -541,12 +557,15 @@ class DeviceListContractTenantScopeTests(TestCase):
             end_date=today + timedelta(days=5),
             status='active',
         )
-        SubscriptionDevice.objects.create(
+        foreign_link = SubscriptionDevice.objects.create(
             subscription=foreign_subscription,
             device=device,
             start_date=today - timedelta(days=5),
             end_date=today + timedelta(days=5),
         )
+        # Keep the foreign link as history; only the own contract is active.
+        foreign_link.unassigned_at = now - timedelta(hours=1)
+        foreign_link.save(update_fields=['unassigned_at'])
         own_subscription = Subscription.objects.create(
             contract_number='OWN-DEVICE-LIST-CONTRACT',
             customer_type='organization',
