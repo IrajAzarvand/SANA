@@ -26,6 +26,15 @@ def _customer_kwargs(device=None, organization=_CUSTOMER_UNSET, user=_CUSTOMER_U
     return {'organization': None, 'user': None}
 
 
+def _current_customer(device, subscription=None):
+    """Resolve customer identity from the contract when available, never from legal ownership."""
+    if subscription:
+        if subscription.customer_type == 'organization':
+            return {'organization': subscription.organization, 'user': None}
+        if subscription.customer_type == 'personal':
+            return {'organization': None, 'user': subscription.user}
+    return _customer_kwargs(device)
+
 def _close_customer_access(device, when=None, subscription=None):
     when = when or timezone.now()
     periods = DeviceCustomerAccessPeriod.objects.filter(device=device, ended_at__isnull=True)
@@ -319,8 +328,9 @@ def execute_device_operation(
 
             old_vehicle = device.vehicle
             old_branch = device.branch
-            old_org = device.current_holder_organization or (subscription.organization if subscription and subscription.customer_type == 'organization' else None) or device.organization
-            old_user = device.current_holder_user or (subscription.user if subscription and subscription.customer_type == 'personal' else None) or device.owner_user
+            customer = _current_customer(device, subscription)
+            old_org = customer['organization']
+            old_user = customer['user']
 
             DeviceReplacementRelation.objects.create(
                 source_device=device,
@@ -390,8 +400,9 @@ def execute_device_operation(
                 description=f'به عنوان جایگزین دستگاه {device.imei} به قرارداد متصل شد.',
             )
         else:
-            old_org = device.current_holder_organization or (subscription.organization if subscription and subscription.customer_type == 'organization' else None) or device.organization
-            old_user = device.current_holder_user or (subscription.user if subscription and subscription.customer_type == 'personal' else None) or device.owner_user
+            customer = _current_customer(device, subscription)
+            old_org = customer['organization']
+            old_user = customer['user']
             old_vehicle = device.vehicle
             old_branch = device.branch
 
@@ -445,8 +456,9 @@ def execute_device_operation(
         ).order_by('-event_date', '-id').first()
         previous_vehicle = previous_event.vehicle if previous_event else None
         previous_branch = previous_event.branch if previous_event else None
-        customer_org = device.current_holder_organization or (subscription.organization if subscription and subscription.customer_type == 'organization' else None) or device.organization
-        customer_user = device.current_holder_user or (subscription.user if subscription and subscription.customer_type == 'personal' else None) or device.owner_user
+        customer = _current_customer(device, subscription)
+        customer_org = customer['organization']
+        customer_user = customer['user']
 
         DeviceReplacementRelation.objects.create(
             source_device=device,
@@ -510,16 +522,9 @@ def execute_device_operation(
 
         # Preserve the former contract customer in the lifecycle event while
         # the device is physically back at SANA awaiting disposition.
-        customer_organization = (
-            subscription.organization
-            if subscription and subscription.customer_type == 'organization'
-            else device.current_holder_organization or device.organization
-        )
-        customer_user = (
-            subscription.user
-            if subscription and subscription.customer_type == 'personal'
-            else device.current_holder_user or device.owner_user
-        )
+        customer = _current_customer(device, subscription)
+        customer_organization = customer['organization']
+        customer_user = customer['user']
         device.management_status = 'ready'
         device.vehicle = None
         device.branch = None
@@ -558,8 +563,9 @@ def execute_device_operation(
 
         old_vehicle = device.vehicle
         old_branch = device.branch
-        old_org = device.current_holder_organization or (subscription.organization if subscription and subscription.customer_type == 'organization' else None) or device.organization
-        old_user = device.current_holder_user or (subscription.user if subscription and subscription.customer_type == 'personal' else None) or device.owner_user
+        customer = _current_customer(device, subscription)
+        old_org = customer['organization']
+        old_user = customer['user']
 
         # مفقودی/سرقت مالکیت و قرارداد را لغو نمی‌کند؛ فقط نصب فعلی را جدا می‌کند.
         device.vehicle = None
@@ -645,16 +651,9 @@ def execute_device_operation(
             })
 
         old_status = device.management_status
-        customer_organization = (
-            subscription.organization
-            if subscription and subscription.customer_type == 'organization'
-            else device.current_holder_organization or device.organization
-        )
-        customer_user = (
-            subscription.user
-            if subscription and subscription.customer_type == 'personal'
-            else device.current_holder_user or device.owner_user
-        )
+        customer = _current_customer(device, subscription)
+        customer_organization = customer['organization']
+        customer_user = customer['user']
         device.management_status = 'ready'
         device.vehicle = None
         device.branch = None
@@ -945,11 +944,7 @@ def execute_device_operation(
     elif operation_type == 'transfer_branch':
         if not target_branch:
             raise ValidationError({'target_branch': 'شعبه مقصد را مشخص کنید'})
-        customer_organization = (
-            subscription.organization
-            if subscription and subscription.customer_type == 'organization'
-            else device.current_holder_organization or device.organization
-        )
+        customer_organization = _current_customer(device, subscription)['organization']
         if (
             not customer_organization
             or target_branch.organization_id != customer_organization.id
@@ -981,16 +976,9 @@ def execute_device_operation(
     elif operation_type == 'transfer_vehicle':
         if not target_vehicle:
             raise ValidationError({'target_vehicle': 'خودرو مقصد را مشخص کنید'})
-        customer_organization = (
-            subscription.organization
-            if subscription and subscription.customer_type == 'organization'
-            else device.current_holder_organization or device.organization
-        )
-        customer_user = (
-            subscription.user
-            if subscription and subscription.customer_type == 'personal'
-            else device.current_holder_user or device.owner_user
-        )
+        customer = _current_customer(device, subscription)
+        customer_organization = customer['organization']
+        customer_user = customer['user']
         if customer_organization:
             if (
                 target_vehicle.organization_id != customer_organization.id
