@@ -649,10 +649,6 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         """فعال‌سازی مجدد قرارداد"""
         subscription = self.get_object()
         with transaction.atomic():
-            operation = SubscriptionOperation.objects.create(
-                subscription=subscription, operation_type='activate',
-                performed_by=request.user, old_status=subscription.status, new_status='active'
-            )
             from datetime import date
             raw_end_date = request.data.get('end_date')
             if raw_end_date:
