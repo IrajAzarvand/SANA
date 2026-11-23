@@ -1236,6 +1236,39 @@ class SubscriptionDeviceCustomerAccessClosureTests(TestCase):
         self._assert_access_closed_and_history_preserved()
         self.assertEqual(self.link.removed_by_operation.operation_type, 'modify')
 
+    def test_cancel_does_not_close_another_contracts_access_period(self):
+        other_customer = User.objects.create_user(
+            username='access-close-other-customer',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        other_subscription = Subscription.objects.create(
+            contract_number='ACCESS-CLOSE-OTHER-001',
+            customer_type='personal',
+            user=other_customer,
+            start_date=timezone.localdate() - timedelta(days=5),
+            end_date=timezone.localdate() + timedelta(days=30),
+            price=1000,
+        )
+        other_access = DeviceCustomerAccessPeriod.objects.create(
+            device=self.device,
+            user=other_customer,
+            subscription=other_subscription,
+            started_at=timezone.now() - timedelta(days=1),
+        )
+
+        with patch('organizations.views.record_device_lifecycle_event'):
+            response = self.client.post(
+                f'/api/subscriptions/{self.subscription.pk}/cancel/',
+                {},
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        other_access.refresh_from_db()
+        self.assertIsNone(other_access.ended_at)
+
     def test_cancel_closes_access_for_each_active_device(self):
         with patch('organizations.views.record_device_lifecycle_event'):
             response = self.client.post(
