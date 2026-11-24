@@ -319,7 +319,7 @@ class UserViewSet(viewsets.ModelViewSet):
             ).distinct()
             subscription_ops = SubscriptionOperation.objects.select_related(
                 'subscription', 'subscription__user', 'performed_by'
-            ).filter(subscription__user=user, performed_at__gte=cutoff)
+            ).filter(subscription__in=subscriptions, performed_at__gte=cutoff)
         elif is_main:
             organization_id = user.organization_id
             subscriptions = Subscription.objects.filter(
