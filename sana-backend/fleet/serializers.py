@@ -137,6 +137,8 @@ class VehicleSerializer(serializers.ModelSerializer):
                 device_id=OuterRef('pk'),
                 subscription__customer_type='personal',
                 subscription__user=user,
+                subscription__user__is_active=True,
+                subscription__user__role='personal_user',
                 subscription__status='active',
                 subscription__start_date__lte=today,
                 subscription__end_date__gte=today,
@@ -297,6 +299,8 @@ class VehicleListSerializer(serializers.ModelSerializer):
             active_contract_link = SubscriptionDevice.objects.filter(
                 device=OuterRef('pk'),
                 subscription__user=user,
+                subscription__user__is_active=True,
+                subscription__user__role='personal_user',
                 subscription__customer_type='personal',
                 subscription__status='active',
                 subscription__start_date__lte=today,
@@ -562,6 +566,12 @@ class DeviceListSerializer(serializers.ModelSerializer):
                 user__isnull=True,
             )
         else:
+            if (
+                not subscription.user_id
+                or not subscription.user.is_active
+                or not subscription.user.is_personal_user
+            ):
+                return False
             access = access.filter(
                 user_id=subscription.user_id,
                 organization__isnull=True,
