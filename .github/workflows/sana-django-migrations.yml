@@ -69,5 +69,7 @@ jobs:
         run: python manage.py migrate --noinput
       - name: Check model and migration consistency
         run: python manage.py makemigrations --check --dry-run
+      - name: Run contract lifecycle regression tests
+        run: python manage.py test fleet.test_contract_integrity_constraints --verbosity 2
       - name: Run Django tests
         run: python manage.py test --verbosity 2
