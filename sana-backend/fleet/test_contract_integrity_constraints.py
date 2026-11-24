@@ -900,6 +900,28 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
         self.assertEqual(ownership.organization_id, self.organization.id)
         self.assertIsNone(ownership.owner_user_id)
 
+
+    def test_disconnected_device_never_reports_live_data_active(self):
+        device = Device.objects.create(
+            imei='860000000000982',
+            current_holder_organization=self.organization,
+            management_status='disconnected',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=self.subscription,
+            device=device,
+            start_date=self.subscription.start_date,
+            end_date=self.subscription.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=self.organization,
+            subscription=self.subscription,
+            started_at=timezone.now() - timedelta(minutes=1),
+        )
+
+        self.assertFalse(device.is_data_active)
+
     def test_future_contract_creates_scheduled_access_without_early_live_visibility(self):
         from datetime import datetime, time, timedelta
         from fleet.device_operations import _close_customer_access, _open_customer_access
