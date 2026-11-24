@@ -663,6 +663,108 @@ class ContractBackedDeviceAccessTests(TestCase):
 
 
 
+class DeviceActiveAssignmentSelectionTests(TestCase):
+    def test_future_assignment_does_not_displace_current_started_assignment(self):
+        organization = Organization.objects.create(
+            name='Future Device Assignment Organization',
+            code='FUTURE-DEVICE-ASSIGNMENT',
+        )
+        device = Device.objects.create(
+            imei='860000000001214',
+            organization=organization,
+            management_status='installed',
+        )
+        today = timezone.localdate()
+        now = timezone.now()
+        current_subscription = Subscription.objects.create(
+            contract_number='DEVICE-CURRENT-ASSIGNMENT',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        future_subscription = Subscription.objects.create(
+            contract_number='DEVICE-FUTURE-ASSIGNMENT',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        current_link = SubscriptionDevice.objects.create(
+            subscription=current_subscription,
+            device=device,
+            start_date=current_subscription.start_date,
+            end_date=current_subscription.end_date,
+        )
+        future_link = SubscriptionDevice.objects.create(
+            subscription=future_subscription,
+            device=device,
+            start_date=future_subscription.start_date,
+            end_date=future_subscription.end_date,
+        )
+        SubscriptionDevice.objects.filter(
+            pk__in=[current_link.pk, future_link.pk]
+        ).update(unassigned_at=None)
+        SubscriptionDevice.objects.filter(pk=current_link.pk).update(
+            assigned_at=now - timedelta(days=2)
+        )
+        SubscriptionDevice.objects.filter(pk=future_link.pk).update(
+            assigned_at=now + timedelta(minutes=10)
+        )
+
+        self.assertEqual(device.active_subscription_link.pk, current_link.pk)
+        self.assertTrue(device.is_data_active)
+
+    def test_newer_ended_assignment_blocks_older_legacy_open_link(self):
+        organization = Organization.objects.create(
+            name='Ended Device Assignment Organization',
+            code='ENDED-DEVICE-ASSIGNMENT',
+        )
+        device = Device.objects.create(
+            imei='860000000001215',
+            organization=organization,
+            management_status='installed',
+        )
+        today = timezone.localdate()
+        now = timezone.now()
+        subscriptions = [
+            Subscription.objects.create(
+                contract_number=f'DEVICE-ENDED-ASSIGNMENT-{index}',
+                customer_type='organization',
+                organization=organization,
+                start_date=today - timedelta(days=5),
+                end_date=today + timedelta(days=20),
+                status='active',
+            )
+            for index in (1, 2)
+        ]
+        older_link = SubscriptionDevice.objects.create(
+            subscription=subscriptions[0],
+            device=device,
+            start_date=subscriptions[0].start_date,
+            end_date=subscriptions[0].end_date,
+        )
+        newer_link = SubscriptionDevice.objects.create(
+            subscription=subscriptions[1],
+            device=device,
+            start_date=subscriptions[1].start_date,
+            end_date=subscriptions[1].end_date,
+        )
+        SubscriptionDevice.objects.filter(pk=older_link.pk).update(
+            unassigned_at=None,
+            assigned_at=now - timedelta(days=3),
+        )
+        SubscriptionDevice.objects.filter(pk=newer_link.pk).update(
+            unassigned_at=now - timedelta(seconds=1),
+            assigned_at=now - timedelta(days=1),
+        )
+
+        self.assertIsNone(device.active_subscription_link)
+        self.assertFalse(device.is_data_active)
+
+
 class CustomerAccessTimelineAndContractTests(TestCase):
     def test_closing_device_assignment_closes_all_legacy_open_contract_links(self):
         organization = Organization.objects.create(
