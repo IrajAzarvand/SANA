@@ -70,9 +70,15 @@ class SubscriptionWizardExistingUserTests(TestCase):
         self.assertEqual(self.user.address, '')
         self.assertTrue(self.user.check_password('Original-Password-123'))
         from fleet.models import DeviceOwnershipHistory
-        ownership = DeviceOwnershipHistory.objects.get(device=self.device, ended_at__isnull=True)
-        self.assertEqual(ownership.owner_user_id, self.user.id)
-        self.assertIsNone(ownership.organization_id)
+        self.device.refresh_from_db()
+        self.assertIsNone(self.device.organization_id)
+        self.assertIsNone(self.device.owner_user_id)
+        self.assertIsNone(self.device.current_holder_organization_id)
+        self.assertEqual(self.device.current_holder_user_id, self.user.id)
+        self.assertFalse(DeviceOwnershipHistory.objects.filter(
+            device=self.device,
+            ended_at__isnull=True,
+        ).exists())
 
     def test_existing_user_username_must_match_selected_account(self):
         serializer = SubscriptionWizardSerializer(
@@ -203,9 +209,15 @@ class SubscriptionWizardOrganizationSelectionTests(TestCase):
         self.assertEqual(self.manager.mobile, '09120000001')
         self.assertTrue(self.manager.check_password('Original-Password-123'))
         from fleet.models import DeviceOwnershipHistory
-        ownership = DeviceOwnershipHistory.objects.get(device=self.device, ended_at__isnull=True)
-        self.assertEqual(ownership.organization_id, self.organization.id)
-        self.assertIsNone(ownership.owner_user_id)
+        self.device.refresh_from_db()
+        self.assertIsNone(self.device.organization_id)
+        self.assertIsNone(self.device.owner_user_id)
+        self.assertEqual(self.device.current_holder_organization_id, self.organization.id)
+        self.assertIsNone(self.device.current_holder_user_id)
+        self.assertFalse(DeviceOwnershipHistory.objects.filter(
+            device=self.device,
+            ended_at__isnull=True,
+        ).exists())
 
     def test_existing_organization_requires_a_non_empty_name(self):
         serializer = SubscriptionWizardSerializer(
