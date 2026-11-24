@@ -241,6 +241,74 @@ class ContractBackedDeviceAccessTests(TestCase):
             customer_type='personal',
             imei='860000000001103',
         )
+    def test_personal_device_list_ignores_newer_future_assignment_when_selecting_contract(self):
+        user = User.objects.create_user(
+            username='personal_future_link_selection',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        today = timezone.localdate()
+        now = timezone.now()
+        device = Device.objects.create(
+            imei='860000000001105',
+            owner_user=user,
+            management_status='installed',
+        )
+        valid_subscription = Subscription.objects.create(
+            contract_number='PERSONAL-VALID-LINK-SELECTION',
+            customer_type='personal',
+            user=user,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        future_subscription = Subscription.objects.create(
+            contract_number='PERSONAL-FUTURE-LINK-SELECTION',
+            customer_type='personal',
+            user=user,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        valid_link = SubscriptionDevice.objects.create(
+            subscription=valid_subscription,
+            device=device,
+            start_date=valid_subscription.start_date,
+            end_date=valid_subscription.end_date,
+        )
+        future_link = SubscriptionDevice.objects.create(
+            subscription=future_subscription,
+            device=device,
+            start_date=future_subscription.start_date,
+            end_date=future_subscription.end_date,
+        )
+        # Model.save() normally closes the previous assignment. Re-open both
+        # rows to reproduce legacy overlapping data with a future-dated link.
+        SubscriptionDevice.objects.filter(
+            pk__in=[valid_link.pk, future_link.pk]
+        ).update(unassigned_at=None)
+        SubscriptionDevice.objects.filter(pk=valid_link.pk).update(
+            assigned_at=now - timedelta(days=2)
+        )
+        SubscriptionDevice.objects.filter(pk=future_link.pk).update(
+            assigned_at=now + timedelta(minutes=10)
+        )
+
+        self.client.force_authenticate(user=user)
+        with patch('fleet.views.traccar_devices', return_value=[]), patch(
+            'fleet.views.traccar_current_positions', return_value=[]
+        ):
+            response = self.client.get('/api/devices/')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = response.data['results'] if isinstance(response.data, dict) else response.data
+        self.assertEqual(len(payload), 1)
+        self.assertEqual(payload[0]['id'], device.pk)
+        self.assertTrue(payload[0]['data_active'])
+        self.assertEqual(payload[0]['subscription_id'], valid_subscription.pk)
+        self.assertNotEqual(payload[0]['subscription_id'], future_subscription.pk)
+
     def test_expired_contract_does_not_authorize_personal_device(self):
         user = User.objects.create_user(
             username='contract_access_expired_personal',
