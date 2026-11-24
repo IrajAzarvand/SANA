@@ -29,38 +29,60 @@ def _device_data_active_for_request(device, request):
             unassigned_at__isnull=True,
         ).select_related('subscription').order_by('-assigned_at', '-id').first()
     elif getattr(user, 'is_main_user', False) and user.organization_id:
-        access = active_customer_access_periods(
-            organization_id=user.organization_id,
-            now=now,
-        ).filter(device=device).order_by('-started_at', '-id').first()
-        link = (
-            SubscriptionDevice.objects.filter(
-                device=device,
-                subscription_id=access.subscription_id,
-                assigned_at__lte=now,
-                unassigned_at__isnull=True,
-                start_date__lte=today,
-                end_date__gte=today,
-            ).select_related('subscription').first()
-            if access else None
-        )
+        access_periods = getattr(device, '_active_customer_access_periods', None)
+        if access_periods is None:
+            access_periods = active_customer_access_periods(
+                organization_id=user.organization_id,
+                now=now,
+            ).filter(device=device).order_by('-started_at', '-id')
+        access = access_periods[0] if access_periods else None
+        prefetched_links = getattr(device, '_prefetched_subscription_links', None)
+        if access and prefetched_links is not None:
+            link = next((
+                item for item in prefetched_links
+                if item.subscription_id == access.subscription_id
+                and item.unassigned_at is None
+            ), None)
+        else:
+            link = (
+                SubscriptionDevice.objects.filter(
+                    device=device,
+                    subscription_id=access.subscription_id,
+                    assigned_at__lte=now,
+                    unassigned_at__isnull=True,
+                    start_date__lte=today,
+                    end_date__gte=today,
+                ).select_related('subscription').first()
+                if access else None
+            )
     elif getattr(user, 'is_branch_manager', False) and user.branch_id:
-        access = active_customer_access_periods(
-            organization_id=user.branch.organization_id,
-            branch_id=user.branch_id,
-            now=now,
-        ).filter(device=device).order_by('-started_at', '-id').first()
-        link = (
-            SubscriptionDevice.objects.filter(
-                device=device,
-                subscription_id=access.subscription_id,
-                assigned_at__lte=now,
-                unassigned_at__isnull=True,
-                start_date__lte=today,
-                end_date__gte=today,
-            ).select_related('subscription').first()
-            if access else None
-        )
+        access_periods = getattr(device, '_active_customer_access_periods', None)
+        if access_periods is None:
+            access_periods = active_customer_access_periods(
+                organization_id=user.branch.organization_id,
+                branch_id=user.branch_id,
+                now=now,
+            ).filter(device=device).order_by('-started_at', '-id')
+        access = access_periods[0] if access_periods else None
+        prefetched_links = getattr(device, '_prefetched_subscription_links', None)
+        if access and prefetched_links is not None:
+            link = next((
+                item for item in prefetched_links
+                if item.subscription_id == access.subscription_id
+                and item.unassigned_at is None
+            ), None)
+        else:
+            link = (
+                SubscriptionDevice.objects.filter(
+                    device=device,
+                    subscription_id=access.subscription_id,
+                    assigned_at__lte=now,
+                    unassigned_at__isnull=True,
+                    start_date__lte=today,
+                    end_date__gte=today,
+                ).select_related('subscription').first()
+                if access else None
+            )
     else:
         return False
 
