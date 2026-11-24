@@ -26,6 +26,35 @@ def _open_customer_access(device, subscription=None, branch=None, organization=N
     customer = _customer_kwargs(device, organization, user)
     if not customer['organization'] and not customer['user']:
         return None
+
+    close_time = started_at or timezone.now()
+    if subscription is None:
+        # A customer relationship without a contract must never open an access
+        # period. Close any previous period so stale rows cannot linger.
+        _close_customer_access(device, close_time)
+        return None
+
+    if customer['organization']:
+        if (
+            subscription.customer_type != 'organization'
+            or subscription.organization_id != customer['organization'].pk
+        ):
+            raise ValidationError({
+                'target_subscription': 'قرارداد باید متعلق به همان سازمان مقصد باشد.'
+            })
+        if branch and branch.organization_id != customer['organization'].pk:
+            raise ValidationError({
+                'target_branch': 'شعبه انتخاب‌شده متعلق به سازمان قرارداد نیست.'
+            })
+    elif customer['user']:
+        if (
+            subscription.customer_type != 'personal'
+            or subscription.user_id != customer['user'].pk
+        ):
+            raise ValidationError({
+                'target_subscription': 'قرارداد باید متعلق به همان مشتری شخصی باشد.'
+            })
+
     open_periods = list(
         DeviceCustomerAccessPeriod.objects.filter(
             device=device, ended_at__isnull=True
@@ -37,14 +66,11 @@ def _open_customer_access(device, subscription=None, branch=None, organization=N
             current.organization_id == getattr(customer['organization'], 'id', None)
             and current.user_id == getattr(customer['user'], 'id', None)
         )
-        same_subscription = (
-            subscription is None or current.subscription_id == subscription.pk
-        )
-        same_branch = branch is None or current.branch_id == branch.pk
+        same_subscription = current.subscription_id == subscription.pk
+        same_branch = current.branch_id == getattr(branch, 'pk', None)
 
         # A new contract or branch starts a new access period, even when the
         # legal customer remains unchanged. Never rewrite the old period.
-        close_time = started_at or timezone.now()
         if same_customer and same_subscription and same_branch:
             # Collapse duplicate open rows from legacy data while retaining
             # the newest valid period for the same customer/contract/branch.
@@ -62,7 +88,7 @@ def _open_customer_access(device, subscription=None, branch=None, organization=N
         device=device,
         subscription=subscription,
         branch=branch,
-        started_at=started_at or timezone.now(),
+        started_at=close_time,
         reason=reason,
         **customer,
     )
