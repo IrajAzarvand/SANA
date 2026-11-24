@@ -430,3 +430,13 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
         with self.assertRaises(ValidationError):
             _add_to_subscription(another_device, self.subscription, operation=None)
 
+    def test_device_cannot_be_assigned_to_a_different_holder_without_transfer(self):
+        from rest_framework.exceptions import ValidationError
+        from fleet.device_operations import _validate_device_customer_assignment
+
+        self.device.current_holder_organization = self.other_organization
+        self.device.save(update_fields=['current_holder_organization', 'updated_at'])
+
+        with self.assertRaises(ValidationError):
+            _validate_device_customer_assignment(self.device, self.subscription)
+
