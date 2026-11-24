@@ -322,6 +322,8 @@ def _close_active_link(device, operation):
 def _add_to_subscription(device, subscription, operation, start_date=None, end_date=None):
     if not subscription:
         raise ValidationError({'target_subscription': 'انتخاب قرارداد مقصد الزامی است'})
+    if subscription.computed_status in {'suspended', 'cancelled', 'expired'}:
+        raise ValidationError({'target_subscription': 'افزودن دستگاه به قرارداد تعلیق‌شده، لغوشده یا منقضی مجاز نیست.'})
 
     if subscription.customer_type == 'organization':
         if not subscription.organization_id or subscription.user_id is not None:
