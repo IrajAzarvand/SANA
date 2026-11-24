@@ -152,3 +152,43 @@ class PersonalDeviceContractBoundsTests(TestCase):
 
         self.assertNotIn(expired.id, visible_ids)
         self.assertNotIn(not_started.id, visible_ids)
+
+    def test_inactive_personal_customer_account_loses_live_device_visibility(self):
+        device = Device.objects.create(
+            imei='860000000000405',
+            management_status='installed',
+        )
+        subscription = Subscription.objects.create(
+            contract_number='CONTRACT-BOUNDS-0405',
+            customer_type='personal',
+            user=self.user,
+            start_date=self.today - timedelta(days=5),
+            end_date=self.today + timedelta(days=30),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            user=self.user,
+            subscription=subscription,
+            started_at=timezone.now() - timedelta(minutes=1),
+        )
+
+        self.assertTrue(device.is_data_active)
+        self.user.is_active = False
+        self.user.save(update_fields=['is_active'])
+
+        request = APIRequestFactory().get('/api/devices/')
+        force_authenticate(request, user=self.user)
+        view = DeviceViewSet()
+        view.action_map = {'get': 'list'}
+        view.request = view.initialize_request(request)
+
+        self.assertFalse(view.get_queryset().filter(pk=device.pk).exists())
+        device.refresh_from_db()
+        self.assertFalse(device.is_data_active)
