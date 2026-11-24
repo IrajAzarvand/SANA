@@ -370,6 +370,8 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
         relation = DeviceReplacementRelation.objects.get(source_device=source, replacement_device=loaner)
         self.assertIsNotNone(relation.returned_at)
         self.assertEqual(loaner.management_status, 'warehouse')
+        # Returning a temporary loaner must not erase its separate legal owner.
+        self.assertEqual(loaner.organization_id, legal_owner.id)
         self.assertIsNone(loaner.current_holder_organization_id)
         self.assertIsNone(loaner.active_subscription_link)
         self.assertFalse(DeviceCustomerAccessPeriod.objects.filter(
