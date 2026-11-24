@@ -137,23 +137,15 @@ class VehicleSerializer(serializers.ModelSerializer):
                 start_date__lte=today,
                 end_date__gte=today,
                 unassigned_at__isnull=True,
-            )
-            active_access = DeviceCustomerAccessPeriod.objects.filter(
-                device_id=OuterRef('pk'),
-                subscription__customer_type='personal',
-                subscription__user=user,
-                user=user,
-                organization__isnull=True,
-                started_at__lte=now,
-                ended_at__isnull=True,
+                device__customer_access_periods__subscription_id=F('subscription_id'),
+                device__customer_access_periods__user=user,
+                device__customer_access_periods__organization__isnull=True,
+                device__customer_access_periods__started_at__lte=now,
+                device__customer_access_periods__ended_at__isnull=True,
             )
             devices = devices.annotate(
                 has_personal_contract=Exists(active_link),
-                has_personal_access=Exists(active_access),
-            ).filter(
-                has_personal_contract=True,
-                has_personal_access=True,
-            )
+            ).filter(has_personal_contract=True)
         else:
             return None
 
@@ -291,29 +283,25 @@ class VehicleListSerializer(serializers.ModelSerializer):
             from organizations.models import SubscriptionDevice
 
             today = timezone.localdate()
-            active_access = DeviceCustomerAccessPeriod.objects.filter(
-                device=OuterRef('pk'),
-                user=user,
-                started_at__lte=now,
-                ended_at__isnull=True,
-            )
             active_contract_link = SubscriptionDevice.objects.filter(
                 device=OuterRef('pk'),
                 subscription__user=user,
+                subscription__customer_type='personal',
                 subscription__status='active',
                 subscription__start_date__lte=today,
                 subscription__end_date__gte=today,
                 unassigned_at__isnull=True,
                 start_date__lte=today,
                 end_date__gte=today,
+                device__customer_access_periods__subscription_id=F('subscription_id'),
+                device__customer_access_periods__user=user,
+                device__customer_access_periods__organization__isnull=True,
+                device__customer_access_periods__started_at__lte=now,
+                device__customer_access_periods__ended_at__isnull=True,
             )
             devices = devices.annotate(
-                has_personal_access=Exists(active_access),
                 has_personal_contract=Exists(active_contract_link),
-            ).filter(
-                has_personal_access=True,
-                has_personal_contract=True,
-            )
+            ).filter(has_personal_contract=True)
         elif user and not user.is_site_admin:
             devices = devices.none()
 
