@@ -278,31 +278,34 @@ class DeviceSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
-        request = self.context.get('request')
-        if request:
-            user = request.user
-            if user.account_type == 'organization' and user.organization_id:
-                validated_data.setdefault('organization_id', user.organization_id)
-            elif user.account_type == 'personal':
-                validated_data['owner_user'] = user
-
-        instance = super().create(validated_data)
+        from django.db import transaction
         from .device_operations import _open_ownership
         from .lifecycle import record_device_lifecycle_event
-        if instance.organization_id or instance.owner_user_id:
-            _open_ownership(
-                instance,
-                organization=instance.organization,
-                user=instance.owner_user,
-                reason='device_received',
+
+        with transaction.atomic():
+            request = self.context.get('request')
+            if request:
+                user = request.user
+                if user.account_type == 'organization' and user.organization_id:
+                    validated_data.setdefault('organization_id', user.organization_id)
+                elif user.account_type == 'personal':
+                    validated_data['owner_user'] = user
+
+            instance = super().create(validated_data)
+            if instance.organization_id or instance.owner_user_id:
+                _open_ownership(
+                    instance,
+                    organization=instance.organization,
+                    user=instance.owner_user,
+                    reason='device_received',
+                )
+            record_device_lifecycle_event(
+                device=instance,
+                event_type='received',
+                performed_by=request.user if request else None,
+                description='دستگاه به موجودی سانا اضافه شد.',
             )
-        record_device_lifecycle_event(
-            device=instance,
-            event_type='received',
-            performed_by=self.context.get('request').user if self.context.get('request') else None,
-            description='دستگاه به موجودی سانا اضافه شد.',
-        )
-        return instance
+            return instance
 
 class BranchManagerDeviceSerializer(serializers.ModelSerializer):
     device_model_name = serializers.CharField(source='device_model.name', read_only=True, allow_null=True)
