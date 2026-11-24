@@ -53,6 +53,25 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
             end_date=today + timedelta(days=1),
         ))
 
+    def test_device_link_dates_never_rewrite_parent_contract_dates(self):
+        original_start = self.subscription.start_date
+        original_end = self.subscription.end_date
+        link = SubscriptionDevice.objects.create(
+            subscription=self.subscription,
+            device=self.device,
+            start_date=original_start,
+            end_date=original_end - timedelta(days=10),
+        )
+        self.subscription.refresh_from_db()
+        self.assertEqual(self.subscription.start_date, original_start)
+        self.assertEqual(self.subscription.end_date, original_end)
+
+        link.end_date = original_end + timedelta(days=30)
+        link.save(update_fields=['end_date'])
+        self.subscription.refresh_from_db()
+        self.assertEqual(self.subscription.start_date, original_start)
+        self.assertEqual(self.subscription.end_date, original_end)
+
     def test_device_cannot_have_two_active_contract_links(self):
         SubscriptionDevice.objects.create(
             subscription=self.subscription,
