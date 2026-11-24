@@ -19,3 +19,28 @@ class DeviceManagementStatusSemanticsTests(SimpleTestCase):
         self.assertIn('sold', replacement_methods)
         self.assertIn('sold', lifecycle_events)
         self.assertNotIn('sold', dict(Device.MANAGEMENT_STATUS_CHOICES))
+
+
+    def test_admin_operation_choices_exclude_removed_actions(self):
+        choices = dict(DeviceOperation.OPERATION_TYPE_CHOICES)
+
+        for removed in (
+            'repaired',
+            'retire',
+            'transfer_vehicle',
+            'transfer_branch',
+            'stolen',
+            'found',
+            'disposition',
+        ):
+            self.assertNotIn(removed, choices)
+
+        for retained in (
+            'return_for_repair',
+            'temporary_replacement',
+            'permanent_replacement',
+            'lost',
+            'transfer_customer',
+            'dispose',
+        ):
+            self.assertIn(retained, choices)
