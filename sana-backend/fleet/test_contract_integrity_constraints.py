@@ -593,3 +593,19 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
         with self.assertRaises(ValidationError):
             _validate_device_customer_assignment(self.device, self.subscription)
 
+    def test_customer_holder_without_a_contract_cannot_open_live_access(self):
+        from fleet.device_operations import _open_customer_access
+
+        self.device.current_holder_organization = self.organization
+        self.device.save(update_fields=['current_holder_organization', 'updated_at'])
+
+        self.assertIsNone(_open_customer_access(
+            self.device,
+            organization=self.organization,
+            user=None,
+        ))
+        self.assertFalse(DeviceCustomerAccessPeriod.objects.filter(
+            device=self.device,
+            ended_at__isnull=True,
+        ).exists())
+
