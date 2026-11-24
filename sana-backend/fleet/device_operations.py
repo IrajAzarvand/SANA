@@ -2,7 +2,7 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from .models import Device, DeviceOperation, DeviceReplacementRelation, DeviceLifecycleEvent, DeviceOwnershipHistory, DeviceCustomerAccessPeriod, DeviceBranchHistory
+from .models import Device, Vehicle, DeviceOperation, DeviceReplacementRelation, DeviceLifecycleEvent, DeviceOwnershipHistory, DeviceCustomerAccessPeriod, DeviceBranchHistory
 from .lifecycle import record_device_lifecycle_event
 from organizations.models import Subscription, SubscriptionDevice
 
@@ -1008,7 +1008,9 @@ def execute_device_operation(
                     'outcome_action': 'خودروی قبلی هنوز دستگاه دیگری دارد؛ ابتدا تکلیف آن دستگاه را مشخص کنید.'
                 })
             device.vehicle = target
-            device.branch = previous_branch or target.branch
+            # The vehicle's current branch is authoritative; it may have
+            # moved while the device was in repair.
+            device.branch = target.branch
             device.current_holder_organization = previous_org
             device.current_holder_user = previous_user
             device.management_status = 'installed'
@@ -1287,6 +1289,14 @@ def execute_device_operation(
             or (subscription and subscription.customer_type != 'organization')
         ):
             raise ValidationError({'target_branch': 'شعبه مقصد باید متعلق به سازمان مشتری فعلی و قرارداد باشد.'})
+        if device.vehicle_id:
+            vehicle = Vehicle.objects.select_for_update().get(pk=device.vehicle_id)
+            if vehicle.organization_id != customer_organization.id:
+                raise ValidationError({
+                    'vehicle': 'خودروی متصل به دستگاه متعلق به سازمان مشتری فعلی نیست.'
+                })
+            vehicle.branch = target_branch
+            vehicle.save(update_fields=['branch', 'updated_at'])
         device.branch = target_branch
         device.save(update_fields=['branch', 'updated_at'])
         _open_branch_history(device, target_branch, subscription=subscription, reason='branch_transfer')
