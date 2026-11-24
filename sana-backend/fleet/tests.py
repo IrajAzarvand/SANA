@@ -796,6 +796,8 @@ class PersonalDeviceAccessQueryTests(TestCase):
             management_status='active',
         )
         today = timezone.localdate()
+        link_start = timezone.localdate(started_at)
+        link_end = timezone.localdate(ended_at) if ended_at else today + timedelta(days=30)
         subscription = Subscription.objects.create(
             contract_number=f'PERSONAL-{imei}',
             customer_type='personal',
@@ -807,8 +809,9 @@ class PersonalDeviceAccessQueryTests(TestCase):
         SubscriptionDevice.objects.create(
             subscription=subscription,
             device=device,
-            start_date=subscription.start_date,
-            end_date=subscription.end_date,
+            start_date=link_start,
+            end_date=link_end,
+            unassigned_at=ended_at if ended_at and ended_at < timezone.now() else None,
         )
         DeviceCustomerAccessPeriod.objects.create(
             device=device,
