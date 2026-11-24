@@ -747,6 +747,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
             links = SubscriptionDevice.objects.filter(
                 device__in=devices,
                 subscription__user=request.user,
+                subscription__customer_type='personal',
                 subscription__status='active',
                 subscription__start_date__lte=timezone.localdate(),
                 subscription__end_date__gte=timezone.localdate(),
