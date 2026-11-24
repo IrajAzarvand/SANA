@@ -83,12 +83,18 @@ def _open_ownership(device, organization=None, user=None, started_at=None, reaso
 
 
 def _close_active_link(device, operation):
-    link = device.subscription_links.filter(
+    links = device.subscription_links.filter(
         unassigned_at__isnull=True
-    ).select_related('subscription').first()
+    ).select_related('subscription').order_by('-assigned_at', '-id')
+    link = links.first()
     if link:
-        link.unassigned_at = timezone.now()
-        link.save(update_fields=['unassigned_at'])
+        # Legacy data may contain more than one open contract link for the
+        # same device. A customer transfer/removal must close every one of
+        # them, otherwise an old customer could retain device access.
+        SubscriptionDevice.objects.filter(
+            device=device,
+            unassigned_at__isnull=True,
+        ).update(unassigned_at=timezone.now())
     return link
 
 
