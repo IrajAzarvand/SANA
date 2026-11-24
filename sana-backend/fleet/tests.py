@@ -265,7 +265,7 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
         self.assertIsNone(self.serializer._display_subscription_link(device))
 
     def test_ended_or_unassigned_contract_is_not_displayed(self):
-        subscription = SimpleNamespace(computed_status='active')
+        subscription = SimpleNamespace(status='active', computed_status='active')
         ended_link = SimpleNamespace(
             unassigned_at=object(),
             is_active=False,
@@ -279,7 +279,7 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
         self.assertIsNone(self.serializer._display_subscription_link(device))
 
     def test_expired_contract_is_not_displayed_even_if_assignment_is_open(self):
-        subscription = SimpleNamespace(computed_status='expired')
+        subscription = SimpleNamespace(status='expired', computed_status='expired')
         link = SimpleNamespace(
             unassigned_at=None,
             is_active=False,
@@ -296,6 +296,7 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
         subscription = SimpleNamespace(
             id=12,
             contract_number='ORG-1405-0012',
+            status='active',
             computed_status='active',
         )
         link = SimpleNamespace(
@@ -363,7 +364,7 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
     def test_data_service_is_inactive_when_contract_is_suspended_or_expired(self):
         for contract_status in ('suspended', 'cancelled', 'expired', 'pending'):
             with self.subTest(contract_status=contract_status):
-                subscription = SimpleNamespace(computed_status=contract_status)
+                subscription = SimpleNamespace(status=contract_status, computed_status=contract_status)
                 active_link = SimpleNamespace(
                     unassigned_at=None, is_active=True, subscription=subscription
                 )
@@ -391,7 +392,7 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
             is_active=False,
             start_date=date(2026, 11, 7),
             end_date=date(2026, 12, 1),
-            subscription=SimpleNamespace(computed_status='suspended'),
+            subscription=SimpleNamespace(status='suspended', computed_status='suspended'),
         )
         device = SimpleNamespace(
             management_status='active',
