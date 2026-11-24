@@ -7,6 +7,8 @@ from rest_framework.test import APIClient
 
 from accounts.models import User
 from fleet.models import Device, DeviceCustomerAccessPeriod
+from fleet.customer_access import active_customer_access_periods
+from fleet.device_operations import _open_customer_access
 from organizations.models import Branch, Organization, Subscription, SubscriptionDevice
 
 
@@ -165,3 +167,134 @@ class ContractBackedDeviceAccessTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         payload = response.data['results'] if isinstance(response.data, dict) else response.data
         self.assertNotIn(device.pk, [item['id'] for item in payload])
+
+
+
+class CustomerAccessTimelineAndContractTests(TestCase):
+    def test_changing_contract_creates_a_new_access_period(self):
+        organization = Organization.objects.create(
+            name='Access Timeline Organization',
+            code='ACCESS-TIMELINE-ORG',
+        )
+        device = Device.objects.create(
+            imei='860000000001201',
+            organization=organization,
+        )
+        today = timezone.localdate()
+        first = Subscription.objects.create(
+            contract_number='ACCESS-TIMELINE-001',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=20),
+            end_date=today + timedelta(days=10),
+            status='active',
+        )
+        second = Subscription.objects.create(
+            contract_number='ACCESS-TIMELINE-002',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=2),
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        started_at = timezone.now() - timedelta(days=5)
+        old_period = DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            subscription=first,
+            started_at=started_at,
+        )
+
+        changed_at = timezone.now()
+        new_period = _open_customer_access(
+            device,
+            subscription=second,
+            organization=organization,
+            started_at=changed_at,
+            reason='new_contract',
+        )
+
+        old_period.refresh_from_db()
+        self.assertEqual(old_period.ended_at, changed_at)
+        self.assertNotEqual(new_period.pk, old_period.pk)
+        self.assertEqual(new_period.subscription_id, second.pk)
+        self.assertEqual(new_period.started_at, changed_at)
+
+    def test_future_contract_device_assignment_does_not_authorize_access_period(self):
+        user = User.objects.create_user(
+            username='future_assignment_access',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        today = timezone.localdate()
+        now = timezone.now()
+        device = Device.objects.create(
+            imei='860000000001202',
+            owner_user=user,
+        )
+        subscription = Subscription.objects.create(
+            contract_number='ACCESS-FUTURE-ASSIGNMENT',
+            customer_type='personal',
+            user=user,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        link = SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+        )
+        SubscriptionDevice.objects.filter(pk=link.pk).update(
+            assigned_at=now + timedelta(minutes=10)
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            user=user,
+            subscription=subscription,
+            started_at=now - timedelta(minutes=1),
+        )
+
+        self.assertFalse(
+            active_customer_access_periods(user_id=user.pk, now=now)
+            .filter(device=device)
+            .exists()
+        )
+
+    def test_device_data_activity_requires_an_active_contract(self):
+        user = User.objects.create_user(
+            username='device_data_contract_status',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        today = timezone.localdate()
+        device = Device.objects.create(
+            imei='860000000001203',
+            owner_user=user,
+            management_status='active',
+        )
+        subscription = Subscription.objects.create(
+            contract_number='ACCESS-DATA-ACTIVE',
+            customer_type='personal',
+            user=user,
+            start_date=today - timedelta(days=2),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=today - timedelta(days=2),
+            end_date=today + timedelta(days=20),
+        )
+
+        device.refresh_from_db()
+        self.assertTrue(device.is_data_active)
+
+        subscription.status = 'suspended'
+        subscription.save(update_fields=['status'])
+        device.refresh_from_db()
+        self.assertFalse(device.is_data_active)
