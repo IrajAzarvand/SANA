@@ -2,6 +2,7 @@ import django.db.models.deletion
 import django.utils.timezone
 from django.db import migrations, models
 
+
 def backfill_branch_history(apps, schema_editor):
     Device = apps.get_model('fleet', 'Device')
     AccessPeriod = apps.get_model('fleet', 'DeviceCustomerAccessPeriod')
@@ -9,6 +10,13 @@ def backfill_branch_history(apps, schema_editor):
     BranchHistory = apps.get_model('fleet', 'DeviceBranchHistory')
 
     for device in Device.objects.iterator():
+        links_by_subscription = {}
+        links = SubscriptionDevice.objects.filter(
+            device_id=device.pk,
+        ).select_related('subscription').order_by('assigned_at', 'id')
+        for link in links:
+            links_by_subscription.setdefault(link.subscription_id, []).append(link)
+
         periods = AccessPeriod.objects.filter(
             device_id=device.pk,
         ).select_related('branch', 'organization', 'subscription').order_by('started_at', 'id')
@@ -20,9 +28,9 @@ def backfill_branch_history(apps, schema_editor):
             if not group:
                 return
             first, last = group[0], group[-1]
-            branch = first.branch
-            organization = first.organization
-            subscription = first.subscription
+            branch = first['period'].branch
+            organization = first['period'].organization
+            subscription = first['period'].subscription
             if (
                 branch
                 and organization
@@ -36,8 +44,8 @@ def backfill_branch_history(apps, schema_editor):
                     organization_id=organization.id,
                     branch_id=branch.id,
                     subscription_id=subscription.id,
-                    started_at=first.started_at,
-                    ended_at=last.ended_at,
+                    started_at=first['started_at'],
+                    ended_at=last['ended_at'],
                     reason='migration_backfill',
                 )
             group, identity = [], None
@@ -50,11 +58,49 @@ def backfill_branch_history(apps, schema_editor):
             ):
                 flush_group()
                 continue
-            key = (period.organization_id, period.branch_id, period.subscription_id)
+
+            # A branch history segment belongs to a specific historical
+            # contract-device link. Suspension may split access periods while
+            # the link remains assigned, so those gaps are merged. Unassigning
+            # and later reassigning the device creates a different link and
+            # must produce a separate branch-history segment.
+            candidates = []
+            for link in links_by_subscription.get(period.subscription_id, []):
+                overlap_start = max(period.started_at, link.assigned_at)
+                possible_ends = [
+                    value for value in (period.ended_at, link.unassigned_at)
+                    if value is not None
+                ]
+                overlap_end = min(possible_ends) if possible_ends else None
+                if overlap_end is not None and overlap_end <= overlap_start:
+                    continue
+                candidates.append((link, overlap_start, overlap_end))
+
+            if len(candidates) > 1:
+                raise RuntimeError(
+                    'Cannot safely backfill branch history: overlapping contract-device '
+                    f'links for device {device.pk}, subscription {period.subscription_id}.'
+                )
+            if not candidates:
+                flush_group()
+                continue
+
+            link, overlap_start, overlap_end = candidates[0]
+            key = (
+                period.organization_id,
+                period.branch_id,
+                period.subscription_id,
+                link.pk,
+            )
             if identity != key:
                 flush_group()
                 identity = key
-            group.append(period)
+            group.append({
+                'period': period,
+                'started_at': overlap_start,
+                'ended_at': overlap_end,
+            })
+
         flush_group()
 
         if not BranchHistory.objects.filter(device_id=device.pk).exists():
