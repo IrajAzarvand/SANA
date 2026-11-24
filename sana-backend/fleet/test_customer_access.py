@@ -665,6 +665,8 @@ class CustomerAccessTimelineAndContractTests(TestCase):
             branch=branch,
             reason='initial_branch',
         )
+        device.branch = None
+        device.save(update_fields=['branch', 'updated_at'])
         new_period = _open_customer_access(
             device,
             subscription=subscription,
