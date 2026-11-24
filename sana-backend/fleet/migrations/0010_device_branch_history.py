@@ -23,7 +23,7 @@ def backfill_branch_history(apps, schema_editor):
         group = []
         identity = None
 
-        def flush_group():
+        def flush_group(keep_open=False):
             nonlocal group, identity
             if not group:
                 return
@@ -31,6 +31,17 @@ def backfill_branch_history(apps, schema_editor):
             branch = first['period'].branch
             organization = first['period'].organization
             subscription = first['period'].subscription
+            link = first['link']
+            history_end = last['ended_at']
+            if link.unassigned_at is not None and (
+                history_end is None or link.unassigned_at < history_end
+            ):
+                history_end = link.unassigned_at
+            elif keep_open and link.unassigned_at is None:
+                # A closed access period may only represent suspension/repair.
+                # The branch assignment remains current while the contract link
+                # itself remains assigned.
+                history_end = None
             if (
                 branch
                 and organization
@@ -45,7 +56,7 @@ def backfill_branch_history(apps, schema_editor):
                     branch_id=branch.id,
                     subscription_id=subscription.id,
                     started_at=first['started_at'],
-                    ended_at=last['ended_at'],
+                    ended_at=history_end,
                     reason='migration_backfill',
                 )
             group, identity = [], None
@@ -97,30 +108,44 @@ def backfill_branch_history(apps, schema_editor):
                 identity = key
             group.append({
                 'period': period,
+                'link': link,
                 'started_at': overlap_start,
                 'ended_at': overlap_end,
             })
 
-        flush_group()
+        flush_group(keep_open=True)
 
-        if not BranchHistory.objects.filter(device_id=device.pk).exists():
-            link = SubscriptionDevice.objects.filter(
+        active_link = SubscriptionDevice.objects.filter(
+            device_id=device.pk,
+            unassigned_at__isnull=True,
+        ).select_related('subscription').order_by('-assigned_at', '-id').first()
+        if (
+            active_link
+            and active_link.subscription.customer_type == 'organization'
+            and active_link.subscription.organization_id
+            and device.branch_id
+            and device.branch.organization_id == active_link.subscription.organization_id
+        ):
+            current_history = BranchHistory.objects.filter(
                 device_id=device.pk,
-                unassigned_at__isnull=True,
-            ).select_related('subscription').order_by('-assigned_at', '-id').first()
-            if (
-                link
-                and link.subscription.customer_type == 'organization'
-                and link.subscription.organization_id
-                and device.branch_id
-                and device.branch.organization_id == link.subscription.organization_id
+                ended_at__isnull=True,
+            ).first()
+            if current_history and (
+                current_history.subscription_id != active_link.subscription_id
+                or current_history.branch_id != device.branch_id
+                or current_history.organization_id != active_link.subscription.organization_id
             ):
+                raise RuntimeError(
+                    'Cannot safely backfill current branch history: the open history '
+                    f'does not match the active contract/branch for device {device.pk}.'
+                )
+            if not current_history:
                 BranchHistory.objects.create(
                     device_id=device.pk,
-                    organization_id=link.subscription.organization_id,
+                    organization_id=active_link.subscription.organization_id,
                     branch_id=device.branch_id,
-                    subscription_id=link.subscription_id,
-                    started_at=link.assigned_at,
+                    subscription_id=active_link.subscription_id,
+                    started_at=active_link.assigned_at,
                     reason='migration_active_link_backfill',
                 )
 
