@@ -254,8 +254,7 @@ class VehicleListSerializer(serializers.ModelSerializer):
                 device=OuterRef('pk'),
                 user=user,
                 started_at__lte=now,
-            ).filter(
-                Q(ended_at__isnull=True) | Q(ended_at__gte=now)
+                ended_at__isnull=True,
             )
             active_contract_link = SubscriptionDevice.objects.filter(
                 device=OuterRef('pk'),
