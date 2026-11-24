@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from django.db.models import Q
+from django.db.models import F, Q
 from django.utils import timezone
 from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DriverVehicleAssignment, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation, DeviceCustomerAccessPeriod
 
