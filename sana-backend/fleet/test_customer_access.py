@@ -422,10 +422,26 @@ class CustomerAccessTimelineAndContractTests(TestCase):
             branch=second_branch,
             reason='branch_transfer',
         )
+        # Simulate a stale duplicate period left by older inconsistent data.
+        stale_period = DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            branch=first_branch,
+            subscription=subscription,
+            started_at=second_period.started_at - timedelta(days=1),
+        )
+        retained_period = _open_customer_access(
+            device,
+            subscription=subscription,
+            branch=second_branch,
+            reason='branch_transfer',
+        )
 
         first_period.refresh_from_db()
+        stale_period.refresh_from_db()
         self.assertIsNotNone(first_period.ended_at)
-        self.assertNotEqual(first_period.pk, second_period.pk)
+        self.assertIsNotNone(stale_period.ended_at)
+        self.assertEqual(retained_period.pk, second_period.pk)
         self.assertEqual(second_period.branch_id, second_branch.pk)
         self.assertFalse(
             active_customer_access_periods(
