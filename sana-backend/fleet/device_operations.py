@@ -76,6 +76,36 @@ def _validate_device_customer_assignment(device, subscription):
     else:
         raise ValidationError({'subscription': 'نوع مشتری قرارداد نامعتبر است.'})
 
+    if target_organization_id is not None:
+        if device.branch_id and (
+            device.branch.organization_id != target_organization_id
+            or device.branch.status != 'active'
+        ):
+            raise ValidationError({
+                'device': 'شعبه فعلی دستگاه باید فعال و متعلق به سازمان قرارداد باشد.'
+            })
+        if device.vehicle_id and (
+            device.vehicle.organization_id != target_organization_id
+            or device.vehicle.owner_user_id is not None
+            or device.vehicle.branch_id != device.branch_id
+        ):
+            raise ValidationError({
+                'device': 'خودروی متصل به دستگاه باید متعلق به سازمان قرارداد و در همان شعبه باشد.'
+            })
+    else:
+        if device.branch_id:
+            raise ValidationError({
+                'device': 'دستگاه مشتری شخصی نمی‌تواند به شعبه سازمانی متصل باشد.'
+            })
+        if device.vehicle_id and (
+            device.vehicle.owner_user_id != target_user_id
+            or device.vehicle.organization_id is not None
+            or device.vehicle.branch_id is not None
+        ):
+            raise ValidationError({
+                'device': 'خودروی متصل به دستگاه باید متعلق به همان مشتری شخصی باشد.'
+            })
+
     current_organization_id = device.current_holder_organization_id
     current_user_id = device.current_holder_user_id
     if (
