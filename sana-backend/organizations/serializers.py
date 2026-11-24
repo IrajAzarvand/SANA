@@ -349,10 +349,19 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def create(self, validated_data):
-        # Lock and re-check the device so concurrent assignments cannot race.
+        # Lock the contract before the device so assignment serializes with
+        # suspend, cancel, renew and activation operations.
         from fleet.models import Device
+        subscription = Subscription.objects.select_for_update().get(
+            pk=validated_data['subscription'].pk
+        )
+        if subscription.computed_status in {'suspended', 'cancelled', 'expired'}:
+            raise serializers.ValidationError({
+                'subscription': 'افزودن دستگاه به قرارداد تعلیق‌شده، لغوشده یا منقضی مجاز نیست.'
+            })
         device = Device.objects.select_for_update().get(pk=validated_data['device'].pk)
-        _validate_device_customer_assignment(device, validated_data['subscription'])
+        validated_data['subscription'] = subscription
+        _validate_device_customer_assignment(device, subscription)
         if device.subscription_links.filter(unassigned_at__isnull=True).exists():
             raise serializers.ValidationError({'device': 'دستگاه به قرارداد فعال دیگری متصل است.'})
         validated_data['device'] = device
