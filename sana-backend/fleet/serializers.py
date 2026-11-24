@@ -96,6 +96,8 @@ class VehicleSerializer(serializers.ModelSerializer):
         if user and user.is_site_admin:
             pass
         elif user and (user.is_main_user or user.is_branch_manager):
+            if user.is_branch_manager and not user.branch_id:
+                return None
             organization_id = (
                 user.branch.organization_id
                 if user.is_branch_manager and user.branch_id
