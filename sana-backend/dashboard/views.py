@@ -270,26 +270,10 @@ class DashboardStatsView(APIView):
         if access_user:
             now = timezone.now()
             today = timezone.localdate()
-            active_access = DeviceCustomerAccessPeriod.objects.filter(
-                device=OuterRef('pk'),
-                user=access_user,
-                started_at__lte=now,
-            ).filter(
-                Q(ended_at__isnull=True) | Q(ended_at__gte=now)
-            )
-            active_contract_link = SubscriptionDevice.objects.filter(
-                device=OuterRef('pk'),
-                subscription__user=access_user,
-                subscription__status='active',
-                subscription__start_date__lte=today,
-                subscription__end_date__gte=today,
-                unassigned_at__isnull=True,
-                start_date__lte=today,
-                end_date__gte=today,
-            )
-            qs = qs.filter(
-                Q(Exists(active_access)) | Q(Exists(active_contract_link))
-            )
+            active_access = active_customer_access_periods(
+                user_id=access_user.pk, now=now
+            ).filter(device=OuterRef('pk'))
+            qs = qs.filter(Exists(active_access))
 
         result = qs.values('management_status').annotate(count=Count('id'))
         return {item['management_status']: item['count'] for item in result}
@@ -306,16 +290,11 @@ class DashboardStatsView(APIView):
         if org or branch:
             organization_id = org or branch.organization_id
             now = timezone.now()
-            authorized_vehicle_devices = Device.objects.filter(
-                vehicle_id=OuterRef('pk'),
-                customer_access_periods__organization_id=organization_id,
-                customer_access_periods__started_at__lte=now,
-                customer_access_periods__ended_at__isnull=True,
-            )
-            if branch:
-                authorized_vehicle_devices = authorized_vehicle_devices.filter(
-                    customer_access_periods__branch=branch
-                )
+            authorized_vehicle_devices = active_customer_access_periods(
+                organization_id=organization_id,
+                branch_id=branch.pk if branch else None,
+                now=now,
+            ).filter(device__vehicle_id=OuterRef('pk'))
             qs = qs.annotate(
                 has_authorized_device=Exists(authorized_vehicle_devices)
             )
