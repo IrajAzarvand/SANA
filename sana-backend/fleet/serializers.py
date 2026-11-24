@@ -83,8 +83,68 @@ class VehicleSerializer(serializers.ModelSerializer):
         }
 
     def get_device_imei(self, obj):
-        device = obj.devices.filter(management_status='active').first()
-        return device.imei if device else None
+        request = self.context.get('request')
+        user = request.user if request else None
+        today = timezone.localdate()
+        now = timezone.now()
+        devices = obj.devices.filter(management_status__in=['installed', 'active'])
+
+        if user and user.is_site_admin:
+            pass
+        elif user and user.is_main_user and user.organization_id:
+            devices = devices.filter(
+                customer_access_periods__organization_id=user.organization_id,
+                customer_access_periods__subscription__customer_type='organization',
+                customer_access_periods__subscription__organization_id=user.organization_id,
+                customer_access_periods__subscription__status='active',
+                customer_access_periods__subscription__start_date__lte=today,
+                customer_access_periods__subscription__end_date__gte=today,
+                customer_access_periods__started_at__lte=now,
+                customer_access_periods__ended_at__isnull=True,
+                customer_access_periods__subscription__subscription_devices__device_id=OuterRef('pk'),
+                customer_access_periods__subscription__subscription_devices__unassigned_at__isnull=True,
+                customer_access_periods__subscription__subscription_devices__start_date__lte=today,
+                customer_access_periods__subscription__subscription_devices__end_date__gte=today,
+            ).distinct()
+        elif user and user.is_branch_manager and user.branch_id:
+            devices = devices.filter(
+                customer_access_periods__organization_id=user.branch.organization_id,
+                customer_access_periods__branch_id=user.branch_id,
+                customer_access_periods__subscription__customer_type='organization',
+                customer_access_periods__subscription__organization_id=user.branch.organization_id,
+                customer_access_periods__subscription__status='active',
+                customer_access_periods__subscription__start_date__lte=today,
+                customer_access_periods__subscription__end_date__gte=today,
+                customer_access_periods__started_at__lte=now,
+                customer_access_periods__ended_at__isnull=True,
+                customer_access_periods__subscription__subscription_devices__device_id=OuterRef('pk'),
+                customer_access_periods__subscription__subscription_devices__unassigned_at__isnull=True,
+                customer_access_periods__subscription__subscription_devices__start_date__lte=today,
+                customer_access_periods__subscription__subscription_devices__end_date__gte=today,
+            ).distinct()
+        elif user and user.is_personal_user:
+            from django.db.models import Exists, OuterRef
+            from organizations.models import SubscriptionDevice
+
+            active_link = SubscriptionDevice.objects.filter(
+                device_id=OuterRef('pk'),
+                subscription__customer_type='personal',
+                subscription__user=user,
+                subscription__status='active',
+                subscription__start_date__lte=today,
+                subscription__end_date__gte=today,
+                start_date__lte=today,
+                end_date__gte=today,
+                unassigned_at__isnull=True,
+            )
+            devices = devices.annotate(has_personal_contract=Exists(active_link)).filter(
+                has_personal_contract=True
+            )
+        else:
+            return None
+
+        device = devices.order_by('-updated_at', '-id').first()
+        return device.imei if device and device.is_data_active else None
 
     def validate(self, attrs):
         request = self.context.get('request')
