@@ -756,7 +756,11 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         """فعال‌سازی مجدد قرارداد"""
         subscription = self.get_object()
         with transaction.atomic():
-            from datetime import date
+            from datetime import date, datetime, time, timedelta
+            from fleet.models import Device, DeviceCustomerAccessPeriod
+            from fleet.device_operations import _open_branch_history
+
+            subscription = Subscription.objects.select_for_update().get(pk=subscription.pk)
             today = timezone.localdate()
             if subscription.status == 'cancelled':
                 raise serializers.ValidationError({'status': 'قرارداد لغوشده قابل فعال‌سازی مجدد نیست.'})
@@ -771,49 +775,106 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                     raise serializers.ValidationError({'end_date': 'تاریخ پایان جدید معتبر نیست.'})
             else:
                 new_end_date = subscription.end_date
-            if new_end_date < timezone.localdate() or new_end_date < subscription.start_date:
+            if new_end_date < today or new_end_date < subscription.start_date:
                 raise serializers.ValidationError({'end_date': 'تاریخ پایان باید امروز یا بعد از آن و پس از شروع قرارداد باشد.'})
 
+            old_status = subscription.status
+            old_end_date = subscription.end_date
+            split_device_links = old_end_date < today or old_status == 'expired'
+            activation_time = timezone.now()
+            if old_end_date < today:
+                expiration_cutoff = timezone.make_aware(
+                    datetime.combine(old_end_date + timedelta(days=1), time.min),
+                    timezone.get_current_timezone(),
+                )
+            else:
+                expiration_cutoff = activation_time
+
             operation = SubscriptionOperation.objects.create(
-                subscription=subscription, operation_type='activate',
-                performed_by=request.user, old_status=subscription.status, new_status='active',
-                old_end_date=subscription.end_date, new_end_date=new_end_date,
+                subscription=subscription,
+                operation_type='activate',
+                performed_by=request.user,
+                old_status=old_status,
+                new_status='active',
+                old_end_date=old_end_date,
+                new_end_date=new_end_date,
             )
             subscription.status = 'active'
             subscription.end_date = new_end_date
             subscription.save(update_fields=['status', 'end_date', 'updated_at'])
 
-            activation_time = timezone.now()
-            for link in subscription.subscription_devices.filter(unassigned_at__isnull=True).select_related('device'):
-                # Never terminate another customer's live period as a side effect
-                # of reactivating this contract. Conflicting ownership requires
-                # an explicit transfer workflow instead.
+            active_links = list(
+                subscription.subscription_devices.filter(
+                    unassigned_at__isnull=True
+                ).select_related('device').order_by('device_id', 'id')
+            )
+            for old_link in active_links:
+                device = Device.objects.select_for_update().get(pk=old_link.device_id)
                 conflicting_period = DeviceCustomerAccessPeriod.objects.filter(
-                    device=link.device,
+                    device=device,
                     ended_at__isnull=True,
                 ).exclude(subscription=subscription).first()
                 if conflicting_period:
                     raise serializers.ValidationError({
                         'device': 'برای یکی از دستگاه‌های قرارداد، دوره دسترسی باز متعلق به قرارداد دیگری وجود دارد.'
                     })
-                link.end_date = new_end_date
-                link.save(update_fields=['end_date'])
+
+                if split_device_links:
+                    # Preserve the expired gap in both organization and personal
+                    # history scopes: end the old link at expiry, then start a
+                    # new assignment at this activation.
+                    unassigned_at = max(expiration_cutoff, old_link.assigned_at)
+                    SubscriptionDevice.objects.filter(pk=old_link.pk).update(
+                        unassigned_at=unassigned_at,
+                        removed_by_operation=operation,
+                    )
+                    open_periods = DeviceCustomerAccessPeriod.objects.filter(
+                        device=device,
+                        subscription=subscription,
+                        ended_at__isnull=True,
+                    )
+                    for period in open_periods:
+                        period.ended_at = max(expiration_cutoff, period.started_at)
+                        period.reason = 'contract_expired'
+                        period.save(update_fields=['ended_at', 'reason'])
+
+                    new_link = SubscriptionDevice.objects.create(
+                        subscription=subscription,
+                        device=device,
+                        start_date=max(old_link.start_date, today),
+                        end_date=new_end_date,
+                        added_by_operation=operation,
+                    )
+                else:
+                    old_link.end_date = new_end_date
+                    old_link.save(update_fields=['end_date'])
+                    _close_customer_access(device, activation_time, subscription=subscription)
+
+                if device.management_status in {'installed', 'active', 'disconnected'}:
+                    _open_branch_history(
+                        device,
+                        device.branch,
+                        subscription=subscription,
+                        reason='contract_reactivation',
+                    )
+                else:
+                    _close_branch_history(device)
+
                 customer_kwargs = (
                     {'organization': subscription.organization, 'user': None}
                     if subscription.customer_type == 'organization'
                     else {'organization': None, 'user': subscription.user}
                 )
-                # Guarantee a fresh period on every reactivation rather than
-                # reusing a legacy/current period that may not belong to this contract.
-                _close_customer_access(link.device, activation_time, subscription=subscription)
                 _open_customer_access(
-                    link.device,
+                    device,
                     subscription=subscription,
-                    branch=link.device.branch if subscription.customer_type == 'organization' else None,
+                    branch=device.branch if subscription.customer_type == 'organization' else None,
                     started_at=activation_time,
                     reason='فعال‌سازی مجدد قرارداد',
                     **customer_kwargs,
                 )
+
+        subscription.refresh_from_db()
         return Response(SubscriptionSerializer(subscription).data)
 
     @action(detail=True, methods=['post'])
