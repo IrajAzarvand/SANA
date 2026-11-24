@@ -127,9 +127,12 @@ def _open_customer_access(device, subscription=None, branch=None, organization=_
                 raise ValidationError({
                     'subscription': 'مشتری دوره دسترسی با مشتری سازمانی قرارداد مطابقت ندارد.'
                 })
-            if branch and branch.organization_id != subscription.organization_id:
+            if branch and (
+                branch.organization_id != subscription.organization_id
+                or branch.status != 'active'
+            ):
                 raise ValidationError({
-                    'branch': 'شعبه انتخاب‌شده متعلق به سازمان قرارداد نیست.'
+                    'branch': 'شعبه انتخاب‌شده باید فعال و متعلق به سازمان قرارداد باشد.'
                 })
         elif subscription.customer_type == 'personal':
             if (
@@ -237,6 +240,8 @@ def _open_branch_history(device, branch, subscription=None, started_at=None, rea
         _close_branch_history(device, started_at)
         return None
     organization = branch.organization
+    if branch.status != 'active':
+        raise ValidationError({'branch': 'تخصیص دستگاه به شعبه غیرفعال مجاز نیست.'})
     if subscription and (
         subscription.customer_type != 'organization'
         or subscription.organization_id != organization.id
@@ -325,11 +330,15 @@ def _validate_transfer_target(*, organization, user, branch=None, vehicle=None, 
     if organization:
         if organization.status != 'active':
             raise ValidationError({'target_organization': 'سازمان مقصد باید فعال باشد.'})
-        if branch and branch.organization_id != organization.id:
-            raise ValidationError({'target_branch': 'شعبه مقصد متعلق به سازمان مشتری مقصد نیست.'})
+        if branch and (
+            branch.organization_id != organization.id
+            or branch.status != 'active'
+        ):
+            raise ValidationError({'target_branch': 'شعبه مقصد باید فعال و متعلق به سازمان مشتری مقصد باشد.'})
         if vehicle and (
             vehicle.organization_id != organization.id
             or vehicle.owner_user_id is not None
+            or (vehicle.branch_id and vehicle.branch.status != 'active')
             or (branch and vehicle.branch_id != branch.id)
         ):
             raise ValidationError({'target_vehicle': 'خودروی مقصد متعلق به سازمان یا شعبه انتخاب‌شده نیست.'})
@@ -437,8 +446,11 @@ def _add_to_subscription(device, subscription, operation, start_date=None, end_d
     if subscription.customer_type == 'organization':
         if not subscription.organization_id or subscription.user_id is not None:
             raise ValidationError({'target_subscription': 'مشتری قرارداد سازمانی معتبر نیست.'})
-        if device.branch_id and device.branch.organization_id != subscription.organization_id:
-            raise ValidationError({'target_subscription': 'شعبه فعلی دستگاه متعلق به سازمان قرارداد مقصد نیست.'})
+        if device.branch_id and (
+            device.branch.organization_id != subscription.organization_id
+            or device.branch.status != 'active'
+        ):
+            raise ValidationError({'target_subscription': 'شعبه فعلی دستگاه باید فعال و متعلق به سازمان قرارداد مقصد باشد.'})
     elif subscription.customer_type == 'personal':
         if not subscription.user_id or subscription.organization_id is not None:
             raise ValidationError({'target_subscription': 'مشتری قرارداد شخصی معتبر نیست.'})
