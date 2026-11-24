@@ -4,6 +4,36 @@ from django.utils import timezone
 from .models import DeviceCustomerAccessPeriod
 
 
+def active_personal_contract_links(*, user_id, now=None):
+    """Return only the latest started assignment when it is valid for this user.
+
+    A newer started assignment supersedes older rows even when its contract
+    is suspended, expired, or belongs to another customer. Future assignments
+    do not supersede the current assignment before assigned_at.
+    """
+    from organizations.models import SubscriptionDevice
+
+    now = now or timezone.now()
+    today = timezone.localdate(now)
+    latest_link_id = SubscriptionDevice.objects.filter(
+        device_id=OuterRef('device_id'),
+        assigned_at__lte=now,
+    ).order_by('-assigned_at', '-id').values('pk')[:1]
+
+    return SubscriptionDevice.objects.filter(
+        pk=Subquery(latest_link_id),
+        subscription__user_id=user_id,
+        subscription__customer_type='personal',
+        subscription__status='active',
+        subscription__start_date__lte=today,
+        subscription__end_date__gte=today,
+        assigned_at__lte=now,
+        unassigned_at__isnull=True,
+        start_date__lte=today,
+        end_date__gte=today,
+    ).select_related('subscription')
+
+
 def active_customer_access_periods(*, organization_id=None, user_id=None, branch_id=None, now=None):
     """Return access periods backed by a currently valid contract-device assignment.
 
@@ -56,5 +86,19 @@ def active_customer_access_periods(*, organization_id=None, user_id=None, branch
 
     if branch_id is not None:
         periods = periods.filter(branch_id=branch_id)
+
+    if user_id:
+        # A personal access period is valid only while its contract-device
+        # link is the latest assignment that has actually started. A newer
+        # invalid/ended assignment must not revive an older personal link.
+        from organizations.models import SubscriptionDevice
+
+        latest_link_id = SubscriptionDevice.objects.filter(
+            device_id=OuterRef('device_id'),
+            assigned_at__lte=now,
+        ).order_by('-assigned_at', '-id').values('pk')[:1]
+        periods = periods.filter(
+            subscription__subscription_devices__pk=Subquery(latest_link_id)
+        )
 
     return periods
