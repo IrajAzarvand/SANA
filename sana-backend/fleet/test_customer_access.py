@@ -153,6 +153,8 @@ class ContractBackedDeviceAccessTests(TestCase):
         SubscriptionDevice.objects.filter(pk=future_link.pk).update(
             assigned_at=now + timedelta(minutes=10)
         )
+        valid_link.refresh_from_db()
+        future_link.refresh_from_db()
         period = DeviceCustomerAccessPeriod.objects.create(
             device=device,
             organization=organization,
