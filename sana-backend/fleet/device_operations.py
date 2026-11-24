@@ -123,6 +123,11 @@ def _open_customer_access(device, subscription=None, branch=None, organization=_
         if not active_link.is_active:
             return None
 
+    # A valid contract cannot make hardware that is physically in the
+    # warehouse, repair, or disposition workflow live-accessible.
+    if device.management_status not in {'installed', 'active'}:
+        return None
+
     current = DeviceCustomerAccessPeriod.objects.select_for_update().filter(
         device=device,
         ended_at__isnull=True,
