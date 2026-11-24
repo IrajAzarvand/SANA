@@ -25,6 +25,7 @@ def _close_customer_access(device, when=None):
 def _open_customer_access(device, subscription=None, branch=None, organization=None, user=None, started_at=None, reason=''):
     customer = _customer_kwargs(device, organization, user)
     if not customer['organization'] and not customer['user']:
+        _close_customer_access(device, started_at or timezone.now())
         return None
 
     close_time = started_at or timezone.now()
