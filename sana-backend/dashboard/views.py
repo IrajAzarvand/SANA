@@ -313,6 +313,19 @@ class DashboardStatsView(APIView):
                 'without_device': qs.filter(has_authorized_device=False).count(),
             }
 
+        if owner:
+            now = timezone.now()
+            authorized_vehicle_devices = active_personal_contract_links(
+                user_id=owner.pk, now=now
+            ).filter(device__vehicle_id=OuterRef('pk'))
+            qs = qs.annotate(
+                has_authorized_device=Exists(authorized_vehicle_devices)
+            )
+            return {
+                'with_device': qs.filter(has_authorized_device=True).count(),
+                'without_device': qs.filter(has_authorized_device=False).count(),
+            }
+
         result = {
             'with_device': qs.filter(devices__isnull=False).distinct().count(),
             'without_device': qs.filter(devices__isnull=True).count(),
