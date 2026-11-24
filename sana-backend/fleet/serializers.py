@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.db.models import Q
 from django.utils import timezone
-from .customer_access import active_customer_access_periods
+from .customer_access import active_customer_access_periods, active_personal_contract_links
 from organizations.models import SubscriptionDevice
 from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DriverVehicleAssignment, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation, DeviceCustomerAccessPeriod
 
@@ -16,18 +16,9 @@ def _device_data_active_for_request(device, request):
     today = timezone.localdate(now)
 
     if getattr(user, 'is_personal_user', False):
-        link = SubscriptionDevice.objects.filter(
-            device=device,
-            subscription__user=user,
-            subscription__customer_type='personal',
-            subscription__status='active',
-            subscription__start_date__lte=today,
-            subscription__end_date__gte=today,
-            start_date__lte=today,
-            end_date__gte=today,
-            assigned_at__lte=now,
-            unassigned_at__isnull=True,
-        ).select_related('subscription').order_by('-assigned_at', '-id').first()
+        link = active_personal_contract_links(
+            user_id=user.pk, now=now
+        ).filter(device=device).first()
     elif getattr(user, 'is_main_user', False) and user.organization_id:
         access_periods = getattr(device, '_active_customer_access_periods', None)
         if access_periods is None:
@@ -228,18 +219,9 @@ class VehicleListSerializer(serializers.ModelSerializer):
             active_access = active_customer_access_periods(
                 user_id=user.pk, now=now
             ).filter(device=OuterRef('pk'))
-            active_contract_link = SubscriptionDevice.objects.filter(
-                device=OuterRef('pk'),
-                subscription__user=user,
-                subscription__customer_type='personal',
-                subscription__status='active',
-                subscription__start_date__lte=today,
-                subscription__end_date__gte=today,
-                assigned_at__lte=now,
-                unassigned_at__isnull=True,
-                start_date__lte=today,
-                end_date__gte=today,
-            )
+            active_contract_link = active_personal_contract_links(
+                user_id=user.pk, now=now
+            ).filter(device=OuterRef('pk'))
             devices = devices.annotate(
                 has_personal_access=Exists(active_access) | Exists(active_contract_link)
             ).filter(has_personal_access=True)
