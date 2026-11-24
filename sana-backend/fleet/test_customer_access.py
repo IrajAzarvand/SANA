@@ -473,6 +473,13 @@ class CustomerAccessTimelineAndContractTests(TestCase):
         DeviceCustomerAccessPeriod.objects.filter(
             pk=second_period.pk
         ).update(ended_at=timezone.now() - timedelta(seconds=1))
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            branch=first_branch,
+            subscription=subscription,
+            started_at=second_period.started_at - timedelta(days=1),
+        )
         self.assertFalse(
             active_customer_access_periods(
                 organization_id=organization.pk,
