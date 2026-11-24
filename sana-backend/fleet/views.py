@@ -149,6 +149,7 @@ def authorized_live_contract_device_ids(user):
             subscription__organization__status='active',
             device__customer_access_periods__subscription_id=F('subscription_id'),
             device__customer_access_periods__organization_id=user.organization_id,
+            device__customer_access_periods__branch_id=F('device__branch_id'),
             device__customer_access_periods__started_at__lte=timezone.now(),
             device__customer_access_periods__ended_at__isnull=True,
         )
@@ -165,6 +166,7 @@ def authorized_live_contract_device_ids(user):
             device__customer_access_periods__subscription_id=F('subscription_id'),
             device__customer_access_periods__organization_id=user.branch.organization_id,
             device__customer_access_periods__branch_id=user.branch_id,
+            device__customer_access_periods__branch_id=F('device__branch_id'),
             device__customer_access_periods__started_at__lte=timezone.now(),
             device__customer_access_periods__ended_at__isnull=True,
         )
@@ -404,6 +406,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
             qs = qs.filter(
                 management_status__in=['installed', 'active'],
                 customer_access_periods__organization_id=user.organization_id,
+                customer_access_periods__branch_id=F('branch_id'),
                 customer_access_periods__subscription__isnull=False,
                 customer_access_periods__started_at__lte=now,
                 customer_access_periods__ended_at__isnull=True,
@@ -427,6 +430,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 management_status__in=['installed', 'active'],
                 customer_access_periods__organization_id=user.branch.organization_id,
                 customer_access_periods__branch=user.branch,
+                customer_access_periods__branch_id=F('branch_id'),
                 customer_access_periods__subscription__isnull=False,
                 customer_access_periods__started_at__lte=now,
                 customer_access_periods__ended_at__isnull=True,
