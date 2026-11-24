@@ -1033,6 +1033,12 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     subscription__status__in=['active', 'expired'],
                 ).select_related('subscription').order_by('-start_date', '-id')
             )
+            links = [
+                link for link in links
+                if link.subscription.status == 'active'
+                and link.start_date <= today <= link.end_date
+                and link.subscription.start_date <= today <= link.subscription.end_date
+            ]
             access_query = DeviceCustomerAccessPeriod.objects.filter(
                 device=device,
                 started_at__lte=now,
