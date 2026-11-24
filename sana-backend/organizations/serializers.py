@@ -4,6 +4,7 @@ from django.utils import timezone
 from django.db.models import Q, Sum
 from fleet.lifecycle import record_device_lifecycle_event
 from fleet.device_operations import _open_customer_access
+from fleet.customer_access import active_customer_access_periods
 from fleet.models import DeviceCustomerAccessPeriod
 from .models import (
     Organization,
@@ -117,11 +118,9 @@ class BranchSerializer(serializers.ModelSerializer):
             data['vehicles_count'] = instance.vehicles.filter(
                 organization_id=instance.organization_id
             ).count()
-            data['devices_count'] = DeviceCustomerAccessPeriod.objects.filter(
+            data['devices_count'] = active_customer_access_periods(
                 organization_id=instance.organization_id,
-                branch=instance,
-                started_at__lte=timezone.now(),
-                ended_at__isnull=True,
+                branch_id=instance.pk,
             ).values('device_id').distinct().count()
             data['drivers_count'] = instance.drivers.filter(
                 organization_id=instance.organization_id
