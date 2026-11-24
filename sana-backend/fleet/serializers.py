@@ -138,9 +138,22 @@ class VehicleSerializer(serializers.ModelSerializer):
                 end_date__gte=today,
                 unassigned_at__isnull=True,
             )
+            active_access = DeviceCustomerAccessPeriod.objects.filter(
+                device_id=OuterRef('pk'),
+                subscription__customer_type='personal',
+                subscription__user=user,
+                user=user,
+                organization__isnull=True,
+                started_at__lte=now,
+                ended_at__isnull=True,
+            )
             devices = devices.annotate(
-                has_personal_contract=Exists(active_link)
-            ).filter(has_personal_contract=True)
+                has_personal_contract=Exists(active_link),
+                has_personal_access=Exists(active_access),
+            ).filter(
+                has_personal_contract=True,
+                has_personal_access=True,
+            )
         else:
             return None
 
@@ -255,8 +268,12 @@ class VehicleListSerializer(serializers.ModelSerializer):
                 end_date__gte=today,
             )
             devices = devices.annotate(
-                has_personal_access=Exists(active_access) | Exists(active_contract_link)
-            ).filter(has_personal_access=True)
+                has_personal_access=Exists(active_access),
+                has_personal_contract=Exists(active_contract_link),
+            ).filter(
+                has_personal_access=True,
+                has_personal_contract=True,
+            )
         elif user and not user.is_site_admin:
             devices = devices.none()
 
@@ -455,7 +472,23 @@ class DeviceListSerializer(serializers.ModelSerializer):
             'disconnected', 'unusable', 'disposed',
         }:
             return False
-        return True
+
+        access = obj.customer_access_periods.filter(
+            subscription_id=subscription.pk,
+            started_at__lte=timezone.now(),
+            ended_at__isnull=True,
+        )
+        if subscription.customer_type == 'organization':
+            access = access.filter(
+                organization_id=subscription.organization_id,
+                user__isnull=True,
+            )
+        else:
+            access = access.filter(
+                user_id=subscription.user_id,
+                organization__isnull=True,
+            )
+        return access.exists()
 
     def get_data_inactive_reason(self, obj):
         """Return internal diagnostics to admins and a simple service message to customers."""
