@@ -1012,7 +1012,15 @@ class SubscriptionDeviceViewSet(viewsets.ModelViewSet):
 
         active_only = self.request.query_params.get('active')
         if active_only == 'true':
-            qs = qs.filter(unassigned_at__isnull=True)
+            today = timezone.localdate()
+            qs = qs.filter(
+                unassigned_at__isnull=True,
+                start_date__lte=today,
+                end_date__gte=today,
+                subscription__status='active',
+                subscription__start_date__lte=today,
+                subscription__end_date__gte=today,
+            )
 
         return qs
 
