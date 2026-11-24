@@ -1070,3 +1070,52 @@ class InactiveOrganizationDeviceAccessTests(TestCase):
                 view.get_queryset().filter(pk=device.pk).exists(),
                 expected,
             )
+
+
+class PersonalVehicleContractVisibilityTests(TestCase):
+    def test_personal_vehicle_device_imei_does_not_require_access_period(self):
+        from datetime import timedelta
+        from types import SimpleNamespace
+        from django.utils import timezone
+        from accounts.models import User
+        from fleet.models import Device, Vehicle
+        from fleet.serializers import VehicleSerializer
+        from organizations.models import Subscription, SubscriptionDevice
+
+        today = timezone.localdate()
+        user = User.objects.create_user(
+            username='personal_vehicle_contract_customer',
+            password='test-password',
+            account_type='personal',
+            role='personal_user',
+        )
+        vehicle = Vehicle.objects.create(
+            plate='33الف333',
+            owner_user=user,
+        )
+        device = Device.objects.create(
+            imei='860000000000985',
+            owner_user=user,
+            vehicle=vehicle,
+            management_status='installed',
+        )
+        subscription = Subscription.objects.create(
+            contract_number='PERSONAL-VEHICLE-CONTRACT-985',
+            customer_type='personal',
+            user=user,
+            start_date=today - timedelta(days=2),
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
+        )
+
+        serializer = VehicleSerializer(
+            vehicle,
+            context={'request': SimpleNamespace(user=user)},
+        )
+        self.assertEqual(serializer.data['device_imei'], device.imei)
