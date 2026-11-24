@@ -385,39 +385,108 @@ class DeviceListSerializer(serializers.ModelSerializer):
     is_in_warehouse = serializers.SerializerMethodField()
 
     def _active_subscription_link(self, obj):
-        """Reuse the list-prefetched active link instead of querying per field."""
+        """Return the exact currently valid contract link for this request."""
         if hasattr(obj, '_list_active_subscription_link'):
             return obj._list_active_subscription_link
 
+        request = self.context.get('request')
+        user = request.user if request else None
+        now = timezone.now()
+        today = timezone.localdate(now)
         links = getattr(obj, '_prefetched_subscription_links', None)
-        access_periods = getattr(obj, '_active_customer_access_periods', None)
-        if access_periods is not None:
-            # Organization/branch visibility is granted by a specific access
-            # period, so the displayed contract must be that exact contract.
+
+        def is_current(link):
+            subscription = getattr(link, 'subscription', None)
+            return bool(
+                link.unassigned_at is None
+                and link.assigned_at <= now
+                and link.start_date <= today <= link.end_date
+                and subscription
+                and subscription.status == 'active'
+                and subscription.start_date <= today <= subscription.end_date
+                and subscription.computed_status == 'active'
+            )
+
+        if user and getattr(user, 'is_site_admin', False):
+            if links is None:
+                link = obj.subscription_links.filter(
+                    unassigned_at__isnull=True
+                ).select_related('subscription').order_by('-assigned_at', '-id').first()
+            else:
+                link = next((item for item in links if item.unassigned_at is None), None)
+        elif user and getattr(user, 'is_personal_user', False):
+            def belongs_to_user(link):
+                subscription = getattr(link, 'subscription', None)
+                return bool(
+                    subscription
+                    and subscription.user_id == user.pk
+                    and subscription.customer_type == 'personal'
+                    and is_current(link)
+                )
+
+            if links is None:
+                link = SubscriptionDevice.objects.filter(
+                    device=obj,
+                    subscription__user=user,
+                    subscription__customer_type='personal',
+                    subscription__status='active',
+                    subscription__start_date__lte=today,
+                    subscription__end_date__gte=today,
+                    assigned_at__lte=now,
+                    unassigned_at__isnull=True,
+                    start_date__lte=today,
+                    end_date__gte=today,
+                ).select_related('subscription').order_by('-assigned_at', '-id').first()
+            else:
+                link = next((item for item in links if belongs_to_user(item)), None)
+        elif user and (
+            getattr(user, 'is_main_user', False)
+            or getattr(user, 'is_branch_manager', False)
+        ):
+            access_periods = getattr(obj, '_active_customer_access_periods', None)
+            if access_periods is None:
+                if getattr(user, 'is_main_user', False) and user.organization_id:
+                    periods = active_customer_access_periods(
+                        organization_id=user.organization_id, now=now
+                    )
+                elif getattr(user, 'is_branch_manager', False) and user.branch_id:
+                    periods = active_customer_access_periods(
+                        organization_id=user.branch.organization_id,
+                        branch_id=user.branch_id,
+                        now=now,
+                    )
+                else:
+                    periods = DeviceCustomerAccessPeriod.objects.none()
+                access_periods = periods.filter(device=obj).order_by('-started_at', '-id')
+
             access_period = access_periods[0] if access_periods else None
             if access_period is None:
                 link = None
             elif links is None:
-                link = obj.subscription_links.filter(
+                link = SubscriptionDevice.objects.filter(
+                    device=obj,
                     subscription_id=access_period.subscription_id,
+                    subscription__status='active',
+                    subscription__start_date__lte=today,
+                    subscription__end_date__gte=today,
+                    assigned_at__lte=now,
                     unassigned_at__isnull=True,
+                    start_date__lte=today,
+                    end_date__gte=today,
                 ).select_related('subscription').order_by('-assigned_at', '-id').first()
             else:
-                link = next(
-                    (
-                        item for item in links
-                        if item.unassigned_at is None
-                        and item.subscription_id == access_period.subscription_id
-                    ),
-                    None,
-                )
-        elif links is None:
-            link = obj.active_subscription_link
+                link = next((
+                    item for item in links
+                    if item.subscription_id == access_period.subscription_id
+                    and is_current(item)
+                ), None)
         else:
-            link = next(
-                (item for item in links if item.unassigned_at is None),
-                None,
-            )
+            if links is None:
+                link = obj.subscription_links.filter(
+                    unassigned_at__isnull=True
+                ).select_related('subscription').order_by('-assigned_at', '-id').first()
+            else:
+                link = next((item for item in links if item.unassigned_at is None), None)
 
         obj._list_active_subscription_link = link
         return link
