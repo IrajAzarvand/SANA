@@ -1065,6 +1065,8 @@ class PersonalDeviceAccessQueryTests(TestCase):
             self.user,
             self.now - timedelta(days=3),
         )
+        # An open access row without a current contract-device link grants nothing.
+        device.subscription_links.all().delete()
 
         request = APIRequestFactory().get(
             '/api/devices/report-history/',
