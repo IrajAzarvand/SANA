@@ -455,12 +455,16 @@ class DeviceViewSet(viewsets.ModelViewSet):
         # فیلتر «فقط فعال» — دستگاه‌هایی که یه اتصال فعال به قرارداد دارن
         active = self.request.query_params.get('active')
         if active == 'true':
-            today = timezone.now().date()
+            now = timezone.now()
+            today = timezone.localdate(now)
             qs = qs.filter(
                 subscription_links__unassigned_at__isnull=True,
+                subscription_links__assigned_at__lte=now,
                 subscription_links__start_date__lte=today,
                 subscription_links__end_date__gte=today,
                 subscription_links__subscription__status='active',
+                subscription_links__subscription__start_date__lte=today,
+                subscription_links__subscription__end_date__gte=today,
             ).distinct()
 
         if not user.is_site_admin:
