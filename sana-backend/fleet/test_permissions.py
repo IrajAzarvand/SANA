@@ -1039,8 +1039,8 @@ class InactiveOrganizationDeviceAccessTests(TestCase):
         )
 
         self.assertFalse(device.is_data_active)
-        self.assertFalse(authorized_live_contract_device_ids(manager).filter(pk=device.pk).exists())
-        self.assertFalse(authorized_live_contract_device_ids(branch_manager).filter(pk=device.pk).exists())
+        self.assertNotIn(device.pk, set(authorized_live_contract_device_ids(manager)))
+        self.assertNotIn(device.pk, set(authorized_live_contract_device_ids(branch_manager)))
 
         for user in (manager, branch_manager):
             request = APIRequestFactory().get('/api/devices/')
@@ -1052,11 +1052,13 @@ class InactiveOrganizationDeviceAccessTests(TestCase):
 
         organization.status = 'active'
         organization.save(update_fields=['status'])
+        manager.refresh_from_db()
+        branch_manager.refresh_from_db()
         branch.status = 'inactive'
         branch.save(update_fields=['status'])
 
-        self.assertTrue(authorized_live_contract_device_ids(manager).filter(pk=device.pk).exists())
-        self.assertFalse(authorized_live_contract_device_ids(branch_manager).filter(pk=device.pk).exists())
+        self.assertIn(device.pk, set(authorized_live_contract_device_ids(manager)))
+        self.assertNotIn(device.pk, set(authorized_live_contract_device_ids(branch_manager)))
 
         for user, expected in ((manager, True), (branch_manager, False)):
             request = APIRequestFactory().get('/api/devices/')
