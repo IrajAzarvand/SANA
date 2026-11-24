@@ -764,8 +764,9 @@ def execute_device_operation(
         device.current_holder_user = old_user
         device.management_status = operation_type
         device.save()
-        if replacement_device and replacement_type == 'permanent_replacement':
-            _close_branch_history(device)
+        # A lost/stolen device is no longer assigned to its former branch,
+        # regardless of whether the replacement is temporary or permanent.
+        _close_branch_history(device)
 
         record_device_lifecycle_event(
             device_operation=operation,
