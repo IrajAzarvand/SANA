@@ -597,3 +597,67 @@ class DeviceListContractTenantScopeTests(TestCase):
         payload = response.data['results'] if isinstance(response.data, dict) else response.data
         self.assertEqual(payload, [])
         self.assertNotIn('FOREIGN-DEVICE-LIST-CONTRACT', str(payload))
+
+
+class PersonalReplacementHistoryFutureAssignmentTests(TestCase):
+    def test_future_assigned_device_does_not_authorize_replacement_history(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+        from organizations.models import Subscription, SubscriptionDevice
+        from fleet.models import Device, DeviceReplacementRelation
+
+        user = User.objects.create_user(
+            username='personal_future_replacement_history',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        today = timezone.localdate()
+        now = timezone.now()
+        future_device = Device.objects.create(imei='860000000001401')
+        current_device = Device.objects.create(imei='860000000001402')
+        future_subscription = Subscription.objects.create(
+            contract_number='PERSONAL-FUTURE-REPL-001',
+            customer_type='personal',
+            user=user,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        current_subscription = Subscription.objects.create(
+            contract_number='PERSONAL-CURRENT-REPL-001',
+            customer_type='personal',
+            user=user,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        future_link = SubscriptionDevice.objects.create(
+            subscription=future_subscription,
+            device=future_device,
+            start_date=future_subscription.start_date,
+            end_date=future_subscription.end_date,
+        )
+        SubscriptionDevice.objects.filter(pk=future_link.pk).update(
+            assigned_at=now + timedelta(minutes=10)
+        )
+        SubscriptionDevice.objects.create(
+            subscription=current_subscription,
+            device=current_device,
+            start_date=current_subscription.start_date,
+            end_date=current_subscription.end_date,
+        )
+        relation = DeviceReplacementRelation.objects.create(
+            source_device=future_device,
+            replacement_device=current_device,
+            replacement_type='temporary_repair',
+        )
+
+        view = DeviceReplacementRelationViewSet()
+        view.request = SimpleNamespace(user=user, query_params={})
+
+        self.assertNotIn(
+            relation.pk,
+            set(view.get_queryset().values_list('id', flat=True)),
+        )
