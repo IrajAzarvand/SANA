@@ -187,10 +187,12 @@ class VehicleSerializer(serializers.ModelSerializer):
                 'owner_user': 'خودروی سازمانی نمی‌تواند هم‌زمان مالک شخصی داشته باشد.'
             })
         if branch and (
-            not organization or branch.organization_id != organization.pk
+            not organization
+            or branch.organization_id != organization.pk
+            or branch.status != 'active'
         ):
             raise serializers.ValidationError({
-                'branch': 'شعبه خودرو باید متعلق به همان سازمان مالک خودرو باشد.'
+                'branch': 'شعبه خودرو باید فعال و متعلق به همان سازمان مالک خودرو باشد.'
             })
         if vehicle_type and vehicle_type.organization_id not in (
             None, getattr(organization, 'pk', None)
@@ -198,7 +200,7 @@ class VehicleSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 'vehicle_type': 'نوع خودرو متعلق به سازمان مالک خودرو نیست.'
             })
-        if owner and not owner.is_personal_user:
+        if owner and (not owner.is_active or not owner.is_personal_user):
             raise serializers.ValidationError({
                 'owner_user': 'مالک شخصی خودرو باید حساب دارای نقش مشتری شخصی باشد.'
             })
