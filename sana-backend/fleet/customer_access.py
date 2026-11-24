@@ -25,6 +25,7 @@ def active_customer_access_periods(*, organization_id=None, user_id=None, branch
         subscription__start_date__lte=today,
         subscription__end_date__gte=today,
         subscription__subscription_devices__device_id=F('device_id'),
+        subscription__subscription_devices__assigned_at__lte=now,
         subscription__subscription_devices__unassigned_at__isnull=True,
         subscription__subscription_devices__start_date__lte=today,
         subscription__subscription_devices__end_date__gte=today,
