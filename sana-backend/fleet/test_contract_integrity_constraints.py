@@ -726,3 +726,49 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
         self.assertEqual(ownership.organization_id, self.organization.id)
         self.assertIsNone(ownership.owner_user_id)
 
+    def test_future_contract_creates_scheduled_access_without_early_live_visibility(self):
+        from datetime import datetime, time, timedelta
+        from fleet.device_operations import _close_customer_access, _open_customer_access
+
+        today = timezone.localdate()
+        future_start = today + timedelta(days=5)
+        future_end = future_start + timedelta(days=30)
+        Subscription.objects.filter(pk=self.subscription.pk).update(
+            start_date=future_start,
+            end_date=future_end,
+        )
+        self.subscription.refresh_from_db()
+        device = Device.objects.create(
+            imei='860000000000978',
+            current_holder_organization=self.organization,
+            management_status='installed',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=self.subscription,
+            device=device,
+            start_date=future_start,
+            end_date=future_end,
+        )
+
+        period = _open_customer_access(
+            device,
+            subscription=self.subscription,
+            organization=self.organization,
+            user=None,
+        )
+        expected_start = timezone.make_aware(
+            datetime.combine(future_start, time.min),
+            timezone.get_current_timezone(),
+        )
+        self.assertIsNotNone(period)
+        self.assertEqual(period.started_at, expected_start)
+        self.assertFalse(device.is_data_active)
+
+        _close_customer_access(
+            device,
+            when=timezone.now(),
+            subscription=self.subscription,
+        )
+        period.refresh_from_db()
+        self.assertEqual(period.ended_at, period.started_at)
+
