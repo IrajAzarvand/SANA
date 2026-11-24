@@ -425,18 +425,9 @@ class DeviceListSerializer(serializers.ModelSerializer):
                 )
 
             if links is None:
-                link = SubscriptionDevice.objects.filter(
-                    device=obj,
-                    subscription__user=user,
-                    subscription__customer_type='personal',
-                    subscription__status='active',
-                    subscription__start_date__lte=today,
-                    subscription__end_date__gte=today,
-                    assigned_at__lte=now,
-                    unassigned_at__isnull=True,
-                    start_date__lte=today,
-                    end_date__gte=today,
-                ).select_related('subscription').order_by('-assigned_at', '-id').first()
+                link = active_personal_contract_links(
+                    user_id=user.pk, now=now
+                ).filter(device=obj).first()
             else:
                 link = next((item for item in links if belongs_to_user(item)), None)
         elif user and (
