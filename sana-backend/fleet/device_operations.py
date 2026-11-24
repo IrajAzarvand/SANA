@@ -35,6 +35,32 @@ def _current_customer(device, subscription=None):
             return {'organization': None, 'user': subscription.user}
     return _customer_kwargs(device)
 
+
+def _validate_device_customer_assignment(device, subscription):
+    """Prevent a new contract from silently replacing a different current holder."""
+    if subscription.customer_type == 'organization':
+        target_organization_id = subscription.organization_id
+        target_user_id = None
+    elif subscription.customer_type == 'personal':
+        target_organization_id = None
+        target_user_id = subscription.user_id
+    else:
+        raise ValidationError({'subscription': 'نوع مشتری قرارداد نامعتبر است.'})
+
+    current_organization_id = device.current_holder_organization_id
+    current_user_id = device.current_holder_user_id
+    if (
+        (current_organization_id is not None or current_user_id is not None)
+        and (
+            current_organization_id != target_organization_id
+            or current_user_id != target_user_id
+        )
+    ):
+        raise ValidationError({
+            'device': 'دستگاه در حال حاضر به مشتری دیگری تحویل شده است؛ ابتدا انتقال رسمی مشتری را انجام دهید.'
+        })
+
+
 @transaction.atomic
 def _close_customer_access(device, when=None, subscription=None):
     device = Device.objects.select_for_update().get(pk=device.pk)
@@ -324,6 +350,7 @@ def _add_to_subscription(device, subscription, operation, start_date=None, end_d
         raise ValidationError({'target_subscription': 'انتخاب قرارداد مقصد الزامی است'})
     if subscription.computed_status in {'suspended', 'cancelled', 'expired'}:
         raise ValidationError({'target_subscription': 'افزودن دستگاه به قرارداد تعلیق‌شده، لغوشده یا منقضی مجاز نیست.'})
+    _validate_device_customer_assignment(device, subscription)
 
     if subscription.customer_type == 'organization':
         if not subscription.organization_id or subscription.user_id is not None:
