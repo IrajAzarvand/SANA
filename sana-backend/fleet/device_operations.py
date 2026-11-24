@@ -157,14 +157,6 @@ def execute_device_operation(
         if replacement_device:
             if replacement_type not in {'temporary_repair', 'permanent_replacement'}:
                 raise ValidationError({'replacement_type': 'نوع جایگزینی را مشخص کنید'})
-            if not replacement_method:
-                raise ValidationError({'replacement_method': 'نحوه جایگزینی را مشخص کنید'})
-            if replacement_type == 'temporary_repair' and replacement_method not in {
-                'loaner', 'warranty', 'free_exchange', 'other'
-            }:
-                raise ValidationError({'replacement_method': 'برای جایگزینی موقت، نحوه انتخاب‌شده نامعتبر است'})
-            if replacement_type == 'permanent_replacement' and replacement_method == 'loaner':
-                raise ValidationError({'replacement_method': 'دستگاه دائمی نمی‌تواند امانی باشد'})
             if replacement_device.active_subscription_link:
                 raise ValidationError({'replacement_device': 'دستگاه جایگزین در قرارداد دیگری فعال است.'})
             if replacement_device.management_status != 'warehouse' or not replacement_device.is_in_warehouse:
@@ -270,17 +262,9 @@ def execute_device_operation(
             raise ValidationError({'replacement_device': 'دستگاه جایگزین را انتخاب کنید.'})
         if replacement_type not in {'temporary_repair', 'permanent_replacement'}:
             raise ValidationError({'replacement_type': 'نوع جایگزینی را مشخص کنید.'})
-        if not replacement_method:
-            raise ValidationError({'replacement_method': 'نحوه جایگزینی را مشخص کنید.'})
         expected_type = 'temporary_repair' if operation_type == 'temporary_replacement' else 'permanent_replacement'
         if replacement_type != expected_type:
             raise ValidationError({'replacement_type': 'نوع جایگزینی با عملیات انتخاب‌شده هماهنگ نیست.'})
-        if replacement_type == 'temporary_repair' and replacement_method not in {
-            'loaner', 'warranty', 'free_exchange', 'other'
-        }:
-            raise ValidationError({'replacement_method': 'برای جایگزینی موقت، نحوه انتخاب‌شده نامعتبر است'})
-        if replacement_type == 'permanent_replacement' and replacement_method == 'loaner':
-            raise ValidationError({'replacement_method': 'دستگاه دائمی نمی‌تواند امانی باشد'})
         if replacement_device.active_subscription_link or not replacement_device.is_in_warehouse:
             raise ValidationError({'replacement_device': 'دستگاه جایگزین باید در انبار آزاد سانا باشد.'})
 
@@ -378,14 +362,6 @@ def execute_device_operation(
         if replacement_device:
             if replacement_type not in {'temporary_repair', 'permanent_replacement'}:
                 raise ValidationError({'replacement_type': 'نوع جایگزینی را مشخص کنید'})
-            if not replacement_method:
-                raise ValidationError({'replacement_method': 'نحوه جایگزینی را مشخص کنید'})
-            if replacement_type == 'temporary_repair' and replacement_method not in {
-                'loaner', 'warranty', 'free_exchange', 'other'
-            }:
-                raise ValidationError({'replacement_method': 'برای جایگزینی موقت، نحوه انتخاب‌شده نامعتبر است'})
-            if replacement_type == 'permanent_replacement' and replacement_method == 'loaner':
-                raise ValidationError({'replacement_method': 'دستگاه دائمی نمی‌تواند امانی باشد'})
             if replacement_device.active_subscription_link or not replacement_device.is_in_warehouse:
                 raise ValidationError({'replacement_device': 'دستگاه جایگزین باید در انبار آزاد سانا باشد.'})
 
