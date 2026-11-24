@@ -299,28 +299,130 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             )
 
         with transaction.atomic():
+            from datetime import datetime, time, timedelta
+            from fleet.models import Device, DeviceCustomerAccessPeriod
+            from fleet.device_operations import _open_branch_history
+
+            subscription = Subscription.objects.select_for_update().get(pk=subscription.pk)
+            today = timezone.localdate()
+            if subscription.status == 'cancelled':
+                raise serializers.ValidationError({'detail': 'قرارداد لغوشده قابل تمدید نیست.'})
+            if new_end_date <= today or new_end_date <= subscription.end_date:
+                raise serializers.ValidationError({
+                    'new_end_date': 'تاریخ پایان جدید باید بعد از تاریخ پایان فعلی و در آینده باشد'
+                })
+
+            old_status = subscription.status
+            old_end_date = subscription.end_date
+            expired_by_date = old_end_date < today
+            explicitly_expired = old_status == 'expired'
+            split_device_links = expired_by_date or explicitly_expired
+            renewal_time = timezone.now()
+            if expired_by_date:
+                expiration_cutoff = timezone.make_aware(
+                    datetime.combine(old_end_date + timedelta(days=1), time.min),
+                    timezone.get_current_timezone(),
+                )
+            else:
+                expiration_cutoff = renewal_time
+
+            new_status = 'active' if explicitly_expired else old_status
             operation = SubscriptionOperation.objects.create(
                 subscription=subscription,
                 operation_type='renew',
                 performed_by=request.user,
                 old_start_date=subscription.start_date,
                 new_start_date=subscription.start_date,
-                old_end_date=subscription.end_date,
+                old_end_date=old_end_date,
                 new_end_date=new_end_date,
-                old_status=subscription.status,
-                new_status=subscription.status,
+                old_status=old_status,
+                new_status=new_status,
                 notes=notes,
             )
 
-            # تمدید قرارداد باید وضعیت فعلی دستگاه‌های متصل را هم به پایان جدید منتقل کند.
-            # چون end_date قرارداد از آخرین دستگاه فعال نیز محاسبه می‌شود،
-            # اگر این کار انجام نشود، با ذخیره/تغییر بعدی ممکن است تاریخ تمدیدشده دوباره به تاریخ قبلی برگردد.
-            subscription.subscription_devices.filter(
-                unassigned_at__isnull=True
-            ).update(end_date=new_end_date)
+            if split_device_links:
+                # An expired interval is a real access gap. Preserve the old
+                # link for historical scope and create a fresh link at renewal
+                # time so personal-customer history cannot include the gap.
+                remove_link_ids = {str(value) for value in request.data.get('remove_device_ids', [])}
+                processed_remove_ids = set()
+                active_links = list(
+                    subscription.subscription_devices.filter(
+                        unassigned_at__isnull=True
+                    ).select_related('device').order_by('device_id', 'id')
+                )
 
-            subscription.end_date = new_end_date
-            subscription.save(update_fields=['end_date', 'updated_at'])
+                subscription.end_date = new_end_date
+                subscription.status = new_status
+                subscription.save(update_fields=['end_date', 'status', 'updated_at'])
+
+                for old_link in active_links:
+                    device = Device.objects.select_for_update().get(pk=old_link.device_id)
+                    unassigned_at = max(expiration_cutoff, old_link.assigned_at)
+                    SubscriptionDevice.objects.filter(pk=old_link.pk).update(
+                        unassigned_at=unassigned_at,
+                        removed_by_operation=operation,
+                    )
+                    old_link.unassigned_at = unassigned_at
+                    old_link.removed_by_operation = operation
+
+                    open_periods = DeviceCustomerAccessPeriod.objects.filter(
+                        device=device,
+                        subscription=subscription,
+                        ended_at__isnull=True,
+                    )
+                    for period in open_periods:
+                        period.ended_at = max(expiration_cutoff, period.started_at)
+                        period.reason = 'contract_expired'
+                        period.save(update_fields=['ended_at', 'reason'])
+
+                    if str(old_link.id) in remove_link_ids:
+                        _close_branch_history(device, when=renewal_time)
+                        record_device_lifecycle_event(
+                            device=device,
+                            event_type='removed_from_contract',
+                            performed_by=request.user,
+                            subscription=subscription,
+                            description=f'دستگاه از قرارداد {subscription.contract_number} خارج شد؛ مالکیت دستگاه حفظ شد.',
+                        )
+                        processed_remove_ids.add(str(old_link.id))
+                        continue
+
+                    new_start_date = max(old_link.start_date, today)
+                    new_link = SubscriptionDevice.objects.create(
+                        subscription=subscription,
+                        device=device,
+                        start_date=new_start_date,
+                        end_date=new_end_date,
+                        added_by_operation=operation,
+                    )
+                    if device.management_status in {'installed', 'active', 'disconnected'}:
+                        _open_branch_history(
+                            device,
+                            device.branch,
+                            subscription=subscription,
+                            reason='contract_renewal_after_expiration',
+                        )
+                    else:
+                        _close_branch_history(device)
+                    _open_customer_access(
+                        device,
+                        subscription=subscription,
+                        branch=device.branch,
+                        organization=subscription.organization,
+                        user=subscription.user,
+                        started_at=renewal_time,
+                        reason='contract_renewal_after_expiration',
+                    )
+            else:
+                # Continuous renewal keeps the existing assignment/access period.
+                subscription.subscription_devices.filter(
+                    unassigned_at__isnull=True
+                ).update(end_date=new_end_date)
+                subscription.end_date = new_end_date
+                subscription.status = new_status
+                subscription.save(update_fields=['end_date', 'status', 'updated_at'])
+                processed_remove_ids = set()
 
             # دستگاه‌های جدید
             for item in request.data.get('add_devices', []):
@@ -342,6 +444,8 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
 
             # دستگاه‌های حذف‌شده
             for link_id in request.data.get('remove_device_ids', []):
+                if str(link_id) in processed_remove_ids:
+                    continue
                 link = subscription.subscription_devices.filter(
                     id=link_id, unassigned_at__isnull=True
                 ).first()
@@ -401,6 +505,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                     setattr(target, field, new_value)
                 target.save()
 
+        subscription.refresh_from_db()
         return Response(SubscriptionSerializer(subscription).data)
 
     @action(detail=True, methods=['post'])
