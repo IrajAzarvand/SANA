@@ -583,3 +583,13 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
             ended_at__isnull=True,
         ).exists())
 
+    def test_unserviceable_device_cannot_be_assigned_to_a_new_contract(self):
+        from rest_framework.exceptions import ValidationError
+        from fleet.device_operations import _validate_device_customer_assignment
+
+        self.device.management_status = 'in_repair'
+        self.device.save(update_fields=['management_status', 'updated_at'])
+
+        with self.assertRaises(ValidationError):
+            _validate_device_customer_assignment(self.device, self.subscription)
+
