@@ -298,7 +298,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
             )
         elif user.is_personal_user:
             subscription_link_queryset = subscription_link_queryset.filter(
-                subscription__user=user
+                subscription__user=user,
+                subscription__customer_type='personal',
             )
 
         # The list serializer needs a compact, preloaded snapshot of the
