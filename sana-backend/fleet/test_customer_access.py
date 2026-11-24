@@ -496,6 +496,68 @@ class ContractBackedDeviceAccessTests(TestCase):
         payload = response.data['results'] if isinstance(response.data, dict) else response.data
         self.assertNotIn(device.pk, [item['id'] for item in payload])
 
+    def test_newer_started_suspended_personal_assignment_blocks_older_valid_link(self):
+        user = User.objects.create_user(
+            username='personal_newer_suspended_assignment',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        today = timezone.localdate()
+        now = timezone.now()
+        device = Device.objects.create(
+            imei='860000000001109',
+            owner_user=user,
+        )
+        older_subscription = Subscription.objects.create(
+            contract_number='PERSONAL-OLDER-VALID-ASSIGNMENT',
+            customer_type='personal',
+            user=user,
+            start_date=today - timedelta(days=10),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        newer_subscription = Subscription.objects.create(
+            contract_number='PERSONAL-NEWER-SUSPENDED-ASSIGNMENT',
+            customer_type='personal',
+            user=user,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+            status='suspended',
+        )
+        older_link = SubscriptionDevice.objects.create(
+            subscription=older_subscription,
+            device=device,
+            start_date=older_subscription.start_date,
+            end_date=older_subscription.end_date,
+        )
+        newer_link = SubscriptionDevice.objects.create(
+            subscription=newer_subscription,
+            device=device,
+            start_date=newer_subscription.start_date,
+            end_date=newer_subscription.end_date,
+        )
+        # Reproduce inconsistent legacy rows: both assignments remain open.
+        SubscriptionDevice.objects.filter(
+            pk__in=[older_link.pk, newer_link.pk]
+        ).update(unassigned_at=None)
+        SubscriptionDevice.objects.filter(pk=older_link.pk).update(
+            assigned_at=now - timedelta(days=3)
+        )
+        SubscriptionDevice.objects.filter(pk=newer_link.pk).update(
+            assigned_at=now - timedelta(days=1)
+        )
+
+        self.client.force_authenticate(user=user)
+        with patch('fleet.views.traccar_devices', return_value=[]), patch(
+            'fleet.views.traccar_current_positions', return_value=[]
+        ):
+            response = self.client.get('/api/devices/')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = response.data['results'] if isinstance(response.data, dict) else response.data
+        self.assertNotIn(device.pk, [item['id'] for item in payload])
+
     def test_expired_contract_does_not_authorize_personal_device(self):
         user = User.objects.create_user(
             username='contract_access_expired_personal',
