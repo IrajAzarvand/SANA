@@ -177,6 +177,43 @@ class VehicleSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({'owner_user': 'مالک انتخاب‌شده متعلق به سازمان شما نیست.'})
             if vehicle_type and vehicle_type.organization_id not in (None, user.organization_id):
                 raise serializers.ValidationError({'vehicle_type': 'نوع خودرو متعلق به سازمان دیگری است.'})
+
+        organization = attrs.get('organization', getattr(self.instance, 'organization', None))
+        owner = attrs.get('owner_user', getattr(self.instance, 'owner_user', None))
+        branch = attrs.get('branch', getattr(self.instance, 'branch', None))
+        vehicle_type = attrs.get('vehicle_type', getattr(self.instance, 'vehicle_type', None))
+        if organization and owner:
+            raise serializers.ValidationError({
+                'owner_user': 'خودروی سازمانی نمی‌تواند هم‌زمان مالک شخصی داشته باشد.'
+            })
+        if branch and (
+            not organization or branch.organization_id != organization.pk
+        ):
+            raise serializers.ValidationError({
+                'branch': 'شعبه خودرو باید متعلق به همان سازمان مالک خودرو باشد.'
+            })
+        if vehicle_type and vehicle_type.organization_id not in (
+            None, getattr(organization, 'pk', None)
+        ):
+            raise serializers.ValidationError({
+                'vehicle_type': 'نوع خودرو متعلق به سازمان مالک خودرو نیست.'
+            })
+
+        if self.instance is not None:
+            protected_fields = ('organization', 'owner_user', 'branch')
+            changed_fields = [
+                field_name for field_name in protected_fields
+                if field_name in attrs
+                and getattr(self.instance, f'{field_name}_id')
+                != getattr(attrs[field_name], 'pk', None)
+            ]
+            if changed_fields and self.instance.devices.filter(
+                management_status__in=['installed', 'active', 'disconnected']
+            ).exists():
+                raise serializers.ValidationError({
+                    field_name: 'ابتدا دستگاه نصب‌شده را از طریق عملیات رسمی به خودرو یا شعبه مقصد منتقل کنید.'
+                    for field_name in changed_fields
+                })
         return attrs
 
     def create(self, validated_data):
