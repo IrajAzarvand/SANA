@@ -4,13 +4,8 @@ from django.utils import timezone
 from .models import DeviceCustomerAccessPeriod
 
 
-def active_personal_contract_links(*, user_id, now=None):
-    """Return only the latest started assignment when it is valid for this user.
-
-    A newer started assignment supersedes older rows even when its contract
-    is suspended, expired, or belongs to another customer. Future assignments
-    do not supersede the current assignment before assigned_at.
-    """
+def active_subscription_links(*, now=None):
+    """Return each device's latest started assignment when its contract is valid."""
     from organizations.models import SubscriptionDevice
 
     now = now or timezone.now()
@@ -22,8 +17,6 @@ def active_personal_contract_links(*, user_id, now=None):
 
     return SubscriptionDevice.objects.filter(
         pk=Subquery(latest_link_id),
-        subscription__user_id=user_id,
-        subscription__customer_type='personal',
         subscription__status='active',
         subscription__start_date__lte=today,
         subscription__end_date__gte=today,
@@ -32,6 +25,19 @@ def active_personal_contract_links(*, user_id, now=None):
         start_date__lte=today,
         end_date__gte=today,
     ).select_related('subscription')
+
+
+def active_personal_contract_links(*, user_id, now=None):
+    """Return the latest started assignment when it is valid for this user.
+
+    A newer started assignment supersedes older rows even when its contract
+    is suspended, expired, or belongs to another customer. Future assignments
+    do not supersede the current assignment before assigned_at.
+    """
+    return active_subscription_links(now=now).filter(
+        subscription__user_id=user_id,
+        subscription__customer_type='personal',
+    )
 
 
 def active_customer_access_periods(*, organization_id=None, user_id=None, branch_id=None, now=None):
