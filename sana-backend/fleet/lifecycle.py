@@ -41,8 +41,8 @@ def record_device_lifecycle_event(
     target_status = new_status if new_status is not None else status_map.get(event_type)
 
     if event_type == 'returned':
-        device.organization = None
-        device.owner_user = None
+        # Returning hardware to the warehouse changes its physical location,
+        # not its legal ownership. Ownership changes require an explicit transfer.
         device.branch = None
         device.vehicle = None
 
