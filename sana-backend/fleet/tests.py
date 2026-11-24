@@ -253,6 +253,48 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
         self.assertIs(self.serializer._active_subscription_link(device), active_link)
         self.assertIs(self.serializer._active_subscription_link(device), active_link)
 
+    def test_organization_device_uses_contract_from_its_active_access_period(self):
+        authorized_subscription = SimpleNamespace(
+            id=8,
+            status='active',
+            computed_status='active',
+            contract_number='ORG-OLDER-AUTHORIZED',
+        )
+        newer_subscription = SimpleNamespace(
+            id=12,
+            status='active',
+            computed_status='active',
+            contract_number='ORG-NEWER-UNAUTHORIZED',
+        )
+        authorized_link = SimpleNamespace(
+            unassigned_at=None,
+            subscription_id=8,
+            is_active=True,
+            subscription=authorized_subscription,
+        )
+        newer_link = SimpleNamespace(
+            unassigned_at=None,
+            subscription_id=12,
+            is_active=True,
+            subscription=newer_subscription,
+        )
+        device = SimpleNamespace(
+            management_status='active',
+            _prefetched_subscription_links=[newer_link, authorized_link],
+            _active_customer_access_periods=[
+                SimpleNamespace(subscription_id=8),
+            ],
+        )
+
+        self.assertIs(
+            self.serializer._display_subscription_link(device),
+            authorized_link,
+        )
+        self.assertEqual(
+            self.serializer.get_subscription_number(device),
+            'ORG-OLDER-AUTHORIZED',
+        )
+
     def test_historical_subscription_links_are_not_displayed_as_current_contract(self):
         latest = SimpleNamespace(unassigned_at=object(), subscription_id=12)
         older = SimpleNamespace(unassigned_at=object(), subscription_id=8)
@@ -1033,12 +1075,13 @@ class PersonalDeviceAccessQueryTests(TestCase):
             end_date=contract_end,
             status='active',
         )
-        SubscriptionDevice.objects.create(
+        link = SubscriptionDevice.objects.create(
             subscription=subscription,
             device=device,
             start_date=device_start,
             end_date=device_end,
         )
+        link.refresh_from_db()
         DeviceCustomerAccessPeriod.objects.create(
             device=device,
             user=self.user,
@@ -1055,9 +1098,15 @@ class PersonalDeviceAccessQueryTests(TestCase):
         response = DeviceViewSet.as_view({'get': 'report_history'})(request)
 
         self.assertEqual(response.status_code, 200)
+        expected_start = max(
+            timezone.make_aware(
+                datetime.combine(device_start, datetime.min.time())
+            ),
+            link.assigned_at,
+        )
         self.assertEqual(
-            parse_datetime(response.data['range_start']).date(),
-            device_start,
+            parse_datetime(response.data['range_start']),
+            expected_start,
         )
         self.assertEqual(
             parse_datetime(response.data['range_end']).date(),
