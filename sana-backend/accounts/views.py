@@ -27,6 +27,7 @@ from organizations.models import (
     Organization, Branch, Subscription, SubscriptionOperation,
     SubscriptionPayment, SubscriptionInstallment,
 )
+from fleet.customer_access import active_customer_access_periods
 from fleet.models import Device, DeviceOperation, DeviceLifecycleEvent, DeviceAlertState
 
 
@@ -330,10 +331,10 @@ class UserViewSet(viewsets.ModelViewSet):
                 Q(organization_id=organization_id) | Q(branch__organization_id=organization_id)
             ).exclude(pk=user.pk)
             devices = Device.objects.filter(
-                customer_access_periods__organization_id=organization_id,
-                customer_access_periods__started_at__lte=now,
-                customer_access_periods__ended_at__isnull=True,
-            ).distinct()
+                pk__in=active_customer_access_periods(
+                    organization_id=organization_id, now=now
+                ).values('device_id')
+            )
             subscription_ops = SubscriptionOperation.objects.select_related(
                 'subscription', 'subscription__organization', 'performed_by'
             ).filter(subscription__organization_id=organization_id, performed_at__gte=cutoff)
@@ -345,11 +346,12 @@ class UserViewSet(viewsets.ModelViewSet):
             branches = Branch.objects.filter(pk=branch_id) if branch_id else Branch.objects.none()
             users = User.objects.none()
             devices = Device.objects.filter(
-                customer_access_periods__organization_id=organization_id,
-                customer_access_periods__branch_id=branch_id,
-                customer_access_periods__started_at__lte=now,
-                customer_access_periods__ended_at__isnull=True,
-            ).distinct() if branch_id else Device.objects.none()
+                pk__in=active_customer_access_periods(
+                    organization_id=organization_id,
+                    branch_id=branch_id,
+                    now=now,
+                ).values('device_id')
+            ) if branch_id else Device.objects.none()
             # Branch managers must not receive contract lifecycle or financial events.
             subscription_ops = SubscriptionOperation.objects.none()
         else:
