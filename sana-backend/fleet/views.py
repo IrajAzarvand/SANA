@@ -759,13 +759,13 @@ class DeviceViewSet(viewsets.ModelViewSet):
             if request.user.is_main_user:
                 access_periods = active_customer_access_periods(
                     organization_id=request.user.organization_id, now=now
-                ).filter(device__in=devices)
+                ).filter(device__in=devices).select_related('subscription')
             else:
                 access_periods = active_customer_access_periods(
                     organization_id=request.user.branch.organization_id,
                     branch_id=request.user.branch_id,
                     now=now,
-                ).filter(device__in=devices)
+                ).filter(device__in=devices).select_related('subscription')
             for period in access_periods.order_by('started_at', 'id'):
                 access_by_device.setdefault(period.device_id, []).append(period)
 
@@ -806,8 +806,34 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     # This blocks events before assignment and after access ended,
                     # while preserving events from a previous valid assignment.
                     for access_period in access_by_device.get(device.pk, []):
-                        event_start = max(raw_start, access_period.started_at)
-                        event_end = min(raw_end, access_period.ended_at or now, now)
+                        subscription = access_period.subscription
+                        link = subscription.subscription_devices.filter(
+                            device=device,
+                            unassigned_at__isnull=True,
+                        ).order_by('-assigned_at', '-id').first()
+                        if link is None:
+                            continue
+                        contract_start = timezone.make_aware(datetime.combine(
+                            max(link.start_date, subscription.start_date),
+                            datetime_time.min,
+                        ))
+                        contract_end = timezone.make_aware(datetime.combine(
+                            min(link.end_date, subscription.end_date),
+                            datetime_time.max,
+                        ))
+                        event_start = max(
+                            raw_start,
+                            access_period.started_at,
+                            link.assigned_at,
+                            contract_start,
+                        )
+                        event_end = min(
+                            raw_end,
+                            access_period.ended_at or now,
+                            link.unassigned_at or now,
+                            contract_end,
+                            now,
+                        )
                         if event_start <= event_end:
                             periods.append({'start': event_start, 'end': event_end})
 
