@@ -55,6 +55,10 @@ def _validate_device_customer_assignment(device, subscription):
         target_organization_id = subscription.organization_id
         target_user_id = None
     elif subscription.customer_type == 'personal':
+        if not subscription.user_id or not subscription.user.is_personal_user:
+            raise ValidationError({
+                'subscription': 'مشتری قرارداد شخصی باید حساب فعال با نقش مشتری شخصی باشد.'
+            })
         target_organization_id = None
         target_user_id = subscription.user_id
     else:
@@ -121,6 +125,7 @@ def _open_customer_access(device, subscription=None, branch=None, organization=_
         elif subscription.customer_type == 'personal':
             if (
                 not subscription.user_id
+                or not subscription.user.is_personal_user
                 or subscription.organization_id is not None
                 or getattr(customer_user, 'id', None) != subscription.user_id
                 or customer_organization is not None
@@ -324,6 +329,10 @@ def _validate_transfer_target(*, organization, user, branch=None, vehicle=None, 
         ):
             raise ValidationError({'target_subscription': 'قرارداد مقصد متعلق به سازمان انتخاب‌شده نیست.'})
     else:
+        if not user.is_personal_user:
+            raise ValidationError({
+                'target_user': 'انتقال شخصی فقط به حساب دارای نقش مشتری شخصی مجاز است.'
+            })
         if branch:
             raise ValidationError({'target_branch': 'مشتری شخصی نمی‌تواند شعبه سازمانی داشته باشد.'})
         if vehicle and (
