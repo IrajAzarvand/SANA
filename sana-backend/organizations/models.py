@@ -183,8 +183,8 @@ class Subscription(models.Model):
         """
         today = timezone.localdate()
         
-        # وضعیت‌های دستی که تاریخ مهم نیست
-        if self.status in ['cancelled', 'suspended']:
+        # وضعیت‌های صریحی که نباید با تغییر تاریخ به‌طور ضمنی فعال شوند.
+        if self.status in ['cancelled', 'suspended', 'expired']:
             return self.status
         
         # اگه منقضی شده (فردا به بعد)
