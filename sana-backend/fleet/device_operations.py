@@ -131,10 +131,7 @@ def _open_customer_access(device, subscription=None, branch=None, organization=_
                 raise ValidationError({
                     'subscription': 'مشتری دوره دسترسی با مشتری سازمانی قرارداد مطابقت ندارد.'
                 })
-            if branch and (
-                branch.organization_id != subscription.organization_id
-                or branch.status != 'active'
-            ):
+            if branch and branch.organization_id != subscription.organization_id:
                 raise ValidationError({
                     'branch': 'شعبه انتخاب‌شده باید فعال و متعلق به سازمان قرارداد باشد.'
                 })
@@ -245,8 +242,6 @@ def _open_branch_history(device, branch, subscription=None, started_at=None, rea
         _close_branch_history(device, started_at)
         return None
     organization = branch.organization
-    if branch.status != 'active':
-        raise ValidationError({'branch': 'تخصیص دستگاه به شعبه غیرفعال مجاز نیست.'})
     if subscription and (
         subscription.customer_type != 'organization'
         or subscription.organization_id != organization.id
@@ -1345,6 +1340,7 @@ def execute_device_operation(
         if (
             not customer_organization
             or target_branch.organization_id != customer_organization.id
+            or target_branch.status != 'active'
             or (subscription and subscription.customer_type != 'organization')
         ):
             raise ValidationError({'target_branch': 'شعبه مقصد باید متعلق به سازمان مشتری فعلی و قرارداد باشد.'})
@@ -1390,10 +1386,11 @@ def execute_device_operation(
                 target_vehicle.organization_id != customer_organization.id
                 or target_vehicle.owner_user_id is not None
                 or (target_vehicle.branch_id and target_vehicle.branch.organization_id != customer_organization.id)
+                or (target_vehicle.branch_id and target_vehicle.branch.status != 'active')
                 or (subscription and subscription.customer_type != 'organization')
             ):
                 raise ValidationError({
-                    'target_vehicle': 'خودرو مقصد باید متعلق به همان سازمان مشتری و شعبه معتبر آن باشد'
+                    'target_vehicle': 'خودرو مقصد باید متعلق به همان سازمان مشتری و شعبه فعال آن باشد'
                 })
         elif customer_user:
             if (
