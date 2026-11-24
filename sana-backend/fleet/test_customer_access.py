@@ -9,7 +9,7 @@ from rest_framework.test import APIClient
 from accounts.models import User
 from fleet.models import Device, DeviceCustomerAccessPeriod
 from fleet.customer_access import active_customer_access_periods
-from fleet.device_operations import _close_active_link, _open_customer_access
+from fleet.device_operations import _close_active_link, _open_customer_access, execute_device_operation
 from fleet.serializers import BranchManagerDeviceSerializer, DeviceSerializer
 from organizations.models import Branch, Organization, Subscription, SubscriptionDevice
 
@@ -768,6 +768,102 @@ class DeviceActiveAssignmentSelectionTests(TestCase):
         self.assertEqual(device.active_subscription_link.pk, older_link.pk)
         self.assertFalse(device.is_data_active)
 
+
+class DispositionCustomerAccessTests(TestCase):
+    def test_disposition_transfer_moves_access_to_target_customer_and_branch(self):
+        old_organization = Organization.objects.create(
+            name='Disposition Old Organization',
+            code='DISPOSITION-OLD-ORG',
+        )
+        new_organization = Organization.objects.create(
+            name='Disposition New Organization',
+            code='DISPOSITION-NEW-ORG',
+        )
+        old_branch = Branch.objects.create(
+            organization=old_organization,
+            name='Disposition Old Branch',
+            code='DISPOSITION-OLD-BR',
+        )
+        new_branch = Branch.objects.create(
+            organization=new_organization,
+            name='Disposition New Branch',
+            code='DISPOSITION-NEW-BR',
+        )
+        admin = User.objects.create_user(
+            username='disposition_transfer_admin',
+            password='test-password',
+            role='site_admin',
+            account_type='admin',
+        )
+        device = Device.objects.create(
+            imei='860000000001216',
+            organization=old_organization,
+            branch=old_branch,
+            management_status='ready',
+        )
+        today = timezone.localdate()
+        old_subscription = Subscription.objects.create(
+            contract_number='DISPOSITION-OLD-CONTRACT',
+            customer_type='organization',
+            organization=old_organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        new_subscription = Subscription.objects.create(
+            contract_number='DISPOSITION-NEW-CONTRACT',
+            customer_type='organization',
+            organization=new_organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        old_link = SubscriptionDevice.objects.create(
+            subscription=old_subscription,
+            device=device,
+            start_date=old_subscription.start_date,
+            end_date=old_subscription.end_date,
+        )
+        old_period = DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=old_organization,
+            branch=old_branch,
+            subscription=old_subscription,
+            started_at=old_link.assigned_at + timedelta(seconds=1),
+        )
+
+        execute_device_operation(
+            device=device,
+            operation_type='disposition',
+            performed_by=admin,
+            target_subscription=new_subscription,
+            target_organization=new_organization,
+            target_branch=new_branch,
+            outcome_action='transfer_customer',
+            reason='customer_transfer',
+        )
+
+        old_period.refresh_from_db()
+        self.assertIsNotNone(old_period.ended_at)
+        self.assertFalse(
+            active_customer_access_periods(
+                organization_id=old_organization.pk,
+                branch_id=old_branch.pk,
+            ).filter(device=device).exists()
+        )
+        self.assertTrue(
+            active_customer_access_periods(
+                organization_id=new_organization.pk,
+                branch_id=new_branch.pk,
+            ).filter(device=device).exists()
+        )
+        self.assertEqual(
+            SubscriptionDevice.objects.filter(
+                device=device,
+                unassigned_at__isnull=True,
+            ).values_list('subscription_id', flat=True).get(),
+            new_subscription.pk,
+        )
 
 class CustomerAccessTimelineAndContractTests(TestCase):
     def test_closing_device_assignment_closes_all_legacy_open_contract_links(self):
