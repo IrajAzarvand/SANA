@@ -186,8 +186,8 @@ class Subscription(models.Model):
 
     @property
     def is_active(self):
-        """آیا قرارداد در حال حاضر فعاله؟"""
-        return self.computed_status == 'active'
+        """آیا وضعیت ثبت‌شده و تاریخ‌های قرارداد هر دو فعال هستند؟"""
+        return self.status == 'active' and self.computed_status == 'active'
 
     @property
     def days_until_expiry(self):
