@@ -1061,7 +1061,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
             access_query = DeviceCustomerAccessPeriod.objects.filter(
                 device=device,
                 started_at__lte=now,
-                ended_at__isnull=True,
+            ).filter(
+                Q(ended_at__isnull=True) | Q(ended_at__gte=now)
             )
 
             if request.user.is_personal_user:
