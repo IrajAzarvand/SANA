@@ -186,8 +186,10 @@ def _open_customer_access(device, subscription=None, branch=None, organization=_
 
         # Never rewrite an existing period to point at a new contract or branch.
         # Close it and create a new row so the original history remains immutable.
-        current.ended_at = max(started_at or timezone.now(), current.started_at)
+        period_boundary = max(started_at or timezone.now(), current.started_at)
+        current.ended_at = period_boundary
         current.save(update_fields=['ended_at'])
+        started_at = period_boundary
 
     return DeviceCustomerAccessPeriod.objects.create(
         device=device,
@@ -237,8 +239,10 @@ def _open_branch_history(device, branch, subscription=None, started_at=None, rea
     ):
         return current
     if current:
-        current.ended_at = max(started_at, current.started_at)
+        period_boundary = max(started_at, current.started_at)
+        current.ended_at = period_boundary
         current.save(update_fields=['ended_at'])
+        started_at = period_boundary
     return DeviceBranchHistory.objects.create(
         device=device,
         organization=organization,
@@ -281,7 +285,10 @@ def _open_ownership(device, organization=_CUSTOMER_UNSET, user=_CUSTOMER_UNSET, 
     same_customer = current and current.organization_id == getattr(customer['organization'], 'id', None) and current.owner_user_id == getattr(customer['user'], 'id', None)
     if same_customer:
         return current
-    if current: _close_ownership(device, started_at)
+    if current:
+        period_boundary = max(started_at or timezone.now(), current.started_at)
+        _close_ownership(device, period_boundary)
+        started_at = period_boundary
     ownership_customer = {
         'organization': customer['organization'],
         'owner_user': customer['user'],
