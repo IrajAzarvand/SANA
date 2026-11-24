@@ -256,13 +256,33 @@ class Device(models.Model):
         # when its historical device link remains open.
         subscription = link.subscription
         today = timezone.localdate()
+        now = timezone.now()
         if (
             subscription.computed_status != 'active'
             or subscription.start_date > today
             or subscription.end_date < today
+            or not link.is_active
         ):
             return False
-        return link.is_active
+
+        # A live contract link and an open customer-access period must agree.
+        # Historical/closed access periods never grant live GPS visibility.
+        access = self.customer_access_periods.filter(
+            subscription_id=subscription.pk,
+            started_at__lte=now,
+            ended_at__isnull=True,
+        )
+        if subscription.customer_type == 'organization':
+            access = access.filter(
+                organization_id=subscription.organization_id,
+                user__isnull=True,
+            )
+        else:
+            access = access.filter(
+                user_id=subscription.user_id,
+                organization__isnull=True,
+            )
+        return access.exists()
 
 
 
