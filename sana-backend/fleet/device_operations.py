@@ -34,6 +34,15 @@ def _open_customer_access(device, subscription=None, branch=None, organization=N
         _close_customer_access(device, close_time)
         return None
 
+    current_link = subscription.subscription_devices.filter(
+        device=device,
+        unassigned_at__isnull=True,
+    ).order_by('-assigned_at', '-id').first()
+    if current_link is None:
+        _close_customer_access(device, close_time)
+        return None
+    close_time = max(close_time, current_link.assigned_at)
+
     if customer['organization']:
         if (
             subscription.customer_type != 'organization'
@@ -68,10 +77,11 @@ def _open_customer_access(device, subscription=None, branch=None, organization=N
         )
         same_subscription = current.subscription_id == subscription.pk
         same_branch = current.branch_id == getattr(branch, 'pk', None)
+        same_assignment = current_link.assigned_at <= current.started_at
 
-        # A new contract or branch starts a new access period, even when the
-        # legal customer remains unchanged. Never rewrite the old period.
-        if same_customer and same_subscription and same_branch:
+        # A new contract, assignment, or branch starts a new access period,
+        # even when the legal customer remains unchanged. Never rewrite history.
+        if same_customer and same_subscription and same_branch and same_assignment:
             # Collapse duplicate open rows from legacy data while retaining
             # the newest valid period for the same customer/contract/branch.
             stale_period_ids = [period.pk for period in open_periods[1:]]
