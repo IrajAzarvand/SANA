@@ -1049,3 +1049,22 @@ class InactiveOrganizationDeviceAccessTests(TestCase):
             view.action_map = {'get': 'list'}
             view.request = view.initialize_request(request)
             self.assertFalse(view.get_queryset().filter(pk=device.pk).exists())
+
+        organization.status = 'active'
+        organization.save(update_fields=['status'])
+        branch.status = 'inactive'
+        branch.save(update_fields=['status'])
+
+        self.assertTrue(authorized_live_contract_device_ids(manager).filter(pk=device.pk).exists())
+        self.assertFalse(authorized_live_contract_device_ids(branch_manager).filter(pk=device.pk).exists())
+
+        for user, expected in ((manager, True), (branch_manager, False)):
+            request = APIRequestFactory().get('/api/devices/')
+            force_authenticate(request, user=user)
+            view = DeviceViewSet()
+            view.action_map = {'get': 'list'}
+            view.request = view.initialize_request(request)
+            self.assertEqual(
+                view.get_queryset().filter(pk=device.pk).exists(),
+                expected,
+            )
