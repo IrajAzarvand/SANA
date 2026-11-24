@@ -547,6 +547,12 @@ class ContractBackedDeviceAccessTests(TestCase):
         SubscriptionDevice.objects.filter(pk=newer_link.pk).update(
             assigned_at=now - timedelta(days=1)
         )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            user=user,
+            subscription=older_subscription,
+            started_at=now - timedelta(days=5),
+        )
 
         self.client.force_authenticate(user=user)
         with patch('fleet.views.traccar_devices', return_value=[]), patch(
