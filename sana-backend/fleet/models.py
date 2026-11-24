@@ -248,7 +248,7 @@ class Device(models.Model):
         link = self.active_subscription_link
         if not link:
             return False
-        if self.management_status in {'faulty', 'in_repair', 'ready', 'lost', 'stolen', 'disconnected', 'unusable', 'disposed'}:
+        if self.management_status in {'warehouse', 'faulty', 'in_repair', 'ready', 'lost', 'stolen', 'disconnected', 'unusable', 'disposed'}:
             return False
 
         # Contract state is authoritative for service availability. A suspended,
