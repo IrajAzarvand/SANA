@@ -280,15 +280,13 @@ class Device(models.Model):
                 user__isnull=True,
             )
         else:
-            if (
-                not subscription.user_id
-                or not subscription.user.is_active
-                or not subscription.user.is_personal_user
-            ):
-                return False
-            access = access.filter(
-                user_id=subscription.user_id,
-                organization__isnull=True,
+            # Personal-customer visibility is granted by the exact active
+            # contract-device link and the parent contract dates. Historical
+            # access-period rows are not required for personal customers.
+            return bool(
+                subscription.user_id
+                and subscription.user.is_active
+                and subscription.user.is_personal_user
             )
         return access.exists()
 
