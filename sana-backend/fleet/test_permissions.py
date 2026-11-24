@@ -674,8 +674,8 @@ class BranchManagerReportHistoryPeriodFilterTests(TestCase):
         client.force_authenticate(user=manager)
         with patch('fleet.views.traccar_history_device_id', return_value=77), \
              patch('fleet.views.traccar_device_positions', return_value=positions), \
-             patch('fleet.views.connection.cursor') as map_matched_cursor:
-            map_matched_cursor.return_value.__enter__.return_value.fetchall.return_value = []
+             patch('fleet.views.connection') as map_matched_connection:
+            map_matched_connection.cursor.return_value.__enter__.return_value.fetchall.return_value = []
             response = client.get('/api/devices/report-history/', {
                 'device_id': device.id,
                 'from': (now - timedelta(days=10)).isoformat(),
@@ -747,8 +747,8 @@ class BranchManagerSuspensionHistoryTests(TestCase):
         client.force_authenticate(user=manager)
         with patch('fleet.views.traccar_history_device_id', return_value=77), \
              patch('fleet.views.traccar_device_positions', return_value=positions), \
-             patch('fleet.views.connection.cursor') as map_matched_cursor:
-            map_matched_cursor.return_value.__enter__.return_value.fetchall.return_value = []
+             patch('fleet.views.connection') as map_matched_connection:
+            map_matched_connection.cursor.return_value.__enter__.return_value.fetchall.return_value = []
             response = client.get('/api/devices/report-history/', {
                 'device_id': device.id,
                 'from': (now - timedelta(days=10)).isoformat(),
@@ -882,8 +882,8 @@ class BranchManagerExpiredRenewalHistoryTests(TestCase):
         client.force_authenticate(user=manager)
         with patch('fleet.views.traccar_history_device_id', return_value=77), \
              patch('fleet.views.traccar_device_positions', return_value=positions), \
-             patch('fleet.views.connection.cursor') as map_matched_cursor:
-            map_matched_cursor.return_value.__enter__.return_value.fetchall.return_value = []
+             patch('fleet.views.connection') as map_matched_connection:
+            map_matched_connection.cursor.return_value.__enter__.return_value.fetchall.return_value = []
             response = client.get('/api/devices/report-history/', {
                 'device_id': device.id,
                 'from': (old_assigned_at + timedelta(minutes=1)).isoformat(),
