@@ -536,47 +536,8 @@ class DeviceListSerializer(serializers.ModelSerializer):
         return self._is_in_warehouse(obj)
 
     def get_data_active(self, obj):
-        link = self._active_subscription_link(obj)
-        if not link or not link.is_active:
-            return False
-
-        # A device link can remain unassigned_at=None after a contract is
-        # suspended, cancelled, not-yet-started, or expired. Contract dates
-        # and its computed status must both authorize data service.
-        subscription = getattr(link, 'subscription', None)
-        if not subscription or subscription.computed_status != 'active':
-            return False
-
-        if obj.management_status in {
-            'faulty', 'in_repair', 'ready', 'lost', 'stolen',
-            'disconnected', 'unusable', 'disposed',
-        }:
-            return False
-
-        access = obj.customer_access_periods.filter(
-            subscription_id=subscription.pk,
-            started_at__lte=timezone.now(),
-            ended_at__isnull=True,
-        )
-        if subscription.customer_type == 'organization':
-            if subscription.organization.status != 'active':
-                return False
-            access = access.filter(
-                organization_id=subscription.organization_id,
-                user__isnull=True,
-            )
-        else:
-            if (
-                not subscription.user_id
-                or not subscription.user.is_active
-                or not subscription.user.is_personal_user
-            ):
-                return False
-            access = access.filter(
-                user_id=subscription.user_id,
-                organization__isnull=True,
-            )
-        return access.exists()
+        # Keep one authoritative implementation for every role and API.
+        return obj.is_data_active
 
     def get_data_inactive_reason(self, obj):
         """Return internal diagnostics to admins and a simple service message to customers."""
