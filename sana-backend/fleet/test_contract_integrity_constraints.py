@@ -360,6 +360,22 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
         self.assertIsNone(current_access.organization_id)
         self.assertEqual(current_access.user_id, personal_customer.id)
 
+        execute_device_operation(
+            device=device,
+            operation_type='retire',
+            performed_by=None,
+        )
+        retired_event = DeviceLifecycleEvent.objects.get(
+            device=device,
+            event_type='retired',
+        )
+        self.assertIsNone(retired_event.organization_id)
+        self.assertEqual(retired_event.user_id, personal_customer.id)
+        self.assertFalse(DeviceCustomerAccessPeriod.objects.filter(
+            device=device,
+            ended_at__isnull=True,
+        ).exists())
+
     def test_branch_transfer_uses_contract_customer_not_legal_owner(self):
         from datetime import timedelta
         from django.utils import timezone
