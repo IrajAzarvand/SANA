@@ -1484,11 +1484,14 @@ class OrganizationAndAdminAlertsAccessTests(TestCase):
             end_date=today + timedelta(days=30),
             status='active',
         )
-        SubscriptionDevice.objects.create(
+        link = SubscriptionDevice.objects.create(
             subscription=subscription,
             device=device,
             start_date=subscription.start_date,
             end_date=subscription.end_date,
+        )
+        SubscriptionDevice.objects.filter(pk=link.pk).update(
+            assigned_at=timezone.now() - timedelta(days=2)
         )
         DeviceCustomerAccessPeriod.objects.create(
             device=device,
