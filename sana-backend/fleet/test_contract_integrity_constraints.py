@@ -344,6 +344,7 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
         from datetime import timedelta
         from django.utils import timezone
         from fleet.device_operations import execute_device_operation
+        from fleet.models import Vehicle
         from organizations.models import Branch
 
         today = timezone.localdate()
@@ -351,6 +352,11 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
         customer = Organization.objects.create(name='Branch Transfer Customer', code='BR-TRANSFER-CUSTOMER')
         source_branch = Branch.objects.create(organization=customer, name='Transfer Source Branch', code='BR-TRANSFER-SRC')
         target_branch = Branch.objects.create(organization=customer, name='Transfer Target Branch', code='BR-TRANSFER-TGT')
+        vehicle = Vehicle.objects.create(
+            plate='99ب111',
+            organization=customer,
+            branch=source_branch,
+        )
         subscription = Subscription.objects.create(
             contract_number='BRANCH-TRANSFER-ACCESS',
             customer_type='organization', organization=customer,
@@ -359,6 +365,7 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
         device = Device.objects.create(
             imei='860000000000961', organization=legal_owner,
             current_holder_organization=customer, branch=source_branch,
+            vehicle=vehicle,
             management_status='installed',
         )
         SubscriptionDevice.objects.create(
@@ -375,6 +382,8 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
         self.assertEqual(device.organization_id, legal_owner.id)
         self.assertEqual(device.current_holder_organization_id, customer.id)
         self.assertEqual(device.branch_id, target_branch.id)
+        vehicle.refresh_from_db()
+        self.assertEqual(vehicle.branch_id, target_branch.id)
         current_access = DeviceCustomerAccessPeriod.objects.get(device=device, ended_at__isnull=True)
         self.assertEqual(current_access.organization_id, customer.id)
         self.assertEqual(current_access.branch_id, target_branch.id)
