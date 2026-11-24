@@ -175,8 +175,9 @@ class ContractBackedDeviceAccessTests(TestCase):
         payload = response.data['results'] if isinstance(response.data, dict) else response.data
         self.assertNotIn(device.pk, [item['id'] for item in payload])
 
-        # Re-activating the same still-valid contract restores access without
-        # replacing or deleting its historical access period.
+        # Re-activating the same still-valid contract restores access.
+        # Organization access history must remain intact; personal access
+        # intentionally does not depend on an access-period row.
         subscription.status = 'active'
         subscription.save(update_fields=['status'])
         with patch('fleet.views.traccar_devices', return_value=[]), patch(
