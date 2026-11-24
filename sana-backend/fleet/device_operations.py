@@ -37,7 +37,11 @@ def _current_customer(device, subscription=None):
 
 
 def _validate_device_customer_assignment(device, subscription):
-    """Prevent a new contract from silently replacing a different current holder."""
+    """Prevent invalid hardware or a different current holder from being reassigned."""
+    if device.management_status in {'faulty', 'in_repair', 'ready', 'lost', 'stolen', 'unusable', 'disposed'}:
+        raise ValidationError({
+            'device': 'دستگاه در وضعیت فعلی قابل اتصال به قرارداد نیست؛ ابتدا وضعیت عملیاتی آن را تعیین تکلیف کنید.'
+        })
     if subscription.customer_type == 'organization':
         target_organization_id = subscription.organization_id
         target_user_id = None
@@ -1123,6 +1127,10 @@ def execute_device_operation(
         )
 
     elif operation_type == 'transfer_customer':
+        if device.management_status in {'faulty', 'in_repair', 'ready', 'lost', 'stolen', 'unusable', 'disposed'}:
+            raise ValidationError({
+                'device': 'برای انتقال مشتری، دستگاه باید ابتدا از وضعیت تعمیر/خرابی/مفقودی خارج شده باشد.'
+            })
         _validate_transfer_target(
             organization=target_organization,
             user=target_user,
