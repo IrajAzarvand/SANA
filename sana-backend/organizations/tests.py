@@ -254,6 +254,13 @@ class SubscriptionWizardOrganizationSelectionTests(TestCase):
         self.assertFalse(serializer.is_valid())
         self.assertIn('organization_id', serializer.errors)
 
+    def test_existing_manager_without_organization_is_not_silently_attached(self):
+        self.manager.organization = None
+        self.manager.save(update_fields=['organization'])
+        serializer = SubscriptionWizardSerializer(data=self._payload())
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('existing_user_id', serializer.errors)
+
 
 class SubscriptionWizardDeviceValidationTests(TestCase):
     def setUp(self):
