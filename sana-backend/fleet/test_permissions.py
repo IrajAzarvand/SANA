@@ -604,6 +604,7 @@ class PersonalReplacementHistoryFutureAssignmentTests(TestCase):
         from datetime import timedelta
 
         from django.utils import timezone
+        from accounts.models import User
         from organizations.models import Subscription, SubscriptionDevice
         from fleet.models import Device, DeviceReplacementRelation
 
