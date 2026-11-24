@@ -697,6 +697,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
             })
 
         now = timezone.now()
+        today = timezone.localdate(now)
         default_start = now - timedelta(days=30)
         raw_start = parse_datetime(request.query_params.get('from', '')) if request.query_params.get('from') else default_start
         raw_end = parse_datetime(request.query_params.get('to', '')) if request.query_params.get('to') else now
@@ -803,6 +804,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
                             device=device,
                             assigned_at__lte=now,
                             unassigned_at__isnull=True,
+                            start_date__lte=today,
+                            end_date__gte=today,
                         ).order_by('-assigned_at', '-id').first()
                         if link is None:
                             continue
