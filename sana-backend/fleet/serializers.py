@@ -96,7 +96,11 @@ class VehicleSerializer(serializers.ModelSerializer):
         if user and user.is_site_admin:
             pass
         elif user and (user.is_main_user or user.is_branch_manager):
-            if user.is_branch_manager and not user.branch_id:
+            if user.is_branch_manager and (
+                not user.branch_id
+                or user.branch.status != 'active'
+                or user.branch.organization.status != 'active'
+            ):
                 return None
             organization_id = (
                 user.branch.organization_id
@@ -123,6 +127,7 @@ class VehicleSerializer(serializers.ModelSerializer):
             }
             if user.is_branch_manager:
                 access_filters['branch_id'] = user.branch_id
+                access_filters['branch__status'] = 'active'
             active_access = DeviceCustomerAccessPeriod.objects.filter(**access_filters)
             devices = devices.annotate(
                 has_authorized_contract=Exists(active_access)
@@ -263,7 +268,10 @@ class VehicleListSerializer(serializers.ModelSerializer):
                 customer_access_periods__ended_at__isnull=True,
             ).distinct()
         elif user and user.is_branch_manager and user.branch_id:
+            if user.branch.status != 'active' or user.branch.organization.status != 'active':
+                devices = devices.none()
             devices = devices.filter(
+                customer_access_periods__branch__status='active',
                 customer_access_periods__organization_id=user.branch.organization_id,
                 customer_access_periods__branch_id=user.branch_id,
                 customer_access_periods__subscription__customer_type='organization',
