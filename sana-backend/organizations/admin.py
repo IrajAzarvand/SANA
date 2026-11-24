@@ -26,6 +26,9 @@ class BranchAdmin(admin.ModelAdmin):
     search_fields = ['name', 'code']
     ordering = ['organization', 'name']
 
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 class SubscriptionDeviceInline(admin.TabularInline):
     model = SubscriptionDevice
