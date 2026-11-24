@@ -298,3 +298,9 @@ class CustomerAccessTimelineAndContractTests(TestCase):
         subscription.save(update_fields=['status'])
         device.refresh_from_db()
         self.assertFalse(device.is_data_active)
+
+        # Even if dates are in range, a stored expired status is not active.
+        subscription.status = 'expired'
+        subscription.save(update_fields=['status'])
+        device.refresh_from_db()
+        self.assertFalse(device.is_data_active)
