@@ -1078,10 +1078,11 @@ class PersonalDeviceAccessQueryTests(TestCase):
         force_authenticate(request, user=self.user)
         response = DeviceViewSet.as_view({'get': 'report_history'})(request)
 
-        self.assertEqual(response.status_code, 403)
+        # The device is excluded from the authorized queryset before report access checks.
+        self.assertEqual(response.status_code, 404)
         self.assertEqual(
             response.data['detail'],
-            'گزارش این دستگاه فقط در بازه قرارداد فعال قابل مشاهده است.',
+            'دستگاه یافت نشد یا مجوز مشاهده آن را ندارید.',
         )
 
 
