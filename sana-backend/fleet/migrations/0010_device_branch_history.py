@@ -162,12 +162,23 @@ def backfill_branch_history(apps, schema_editor):
                     f'does not match the active contract/branch for device {device.pk}.'
                 )
             if not current_history:
+                latest_assignment_event = LifecycleEvent.objects.filter(
+                    device_id=device.pk,
+                    event_type__in=['assigned_to_contract', 'disposition', 'transferred'],
+                    branch_id=device.branch_id,
+                    event_date__gte=active_link.assigned_at,
+                ).order_by('-event_date', '-id').first()
+                branch_started_at = (
+                    latest_assignment_event.event_date
+                    if latest_assignment_event
+                    else active_link.assigned_at
+                )
                 BranchHistory.objects.create(
                     device_id=device.pk,
                     organization_id=active_link.subscription.organization_id,
                     branch_id=device.branch_id,
                     subscription_id=active_link.subscription_id,
-                    started_at=active_link.assigned_at,
+                    started_at=branch_started_at,
                     reason='migration_active_link_backfill',
                 )
 
