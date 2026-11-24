@@ -380,3 +380,53 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
         self.assertTrue(DeviceCustomerAccessPeriod.objects.filter(
             device=source, organization=customer, ended_at__isnull=True,
         ).exists())
+
+    def test_device_link_activity_follows_parent_contract_state(self):
+        today = timezone.localdate()
+        link = SubscriptionDevice.objects.create(
+            subscription=self.subscription,
+            device=self.device,
+            start_date=self.subscription.start_date,
+            end_date=self.subscription.end_date,
+        )
+        self.assertTrue(link.is_active)
+
+        self.subscription.status = 'suspended'
+        self.subscription.save(update_fields=['status', 'updated_at'])
+        self.assertFalse(link.is_active)
+
+        self.subscription.status = 'active'
+        self.subscription.save(update_fields=['status', 'updated_at'])
+        Subscription.objects.filter(pk=self.subscription.pk).update(end_date=today - timedelta(days=1))
+        SubscriptionDevice.objects.filter(pk=link.pk).update(end_date=today - timedelta(days=1))
+        link.refresh_from_db()
+        self.assertFalse(link.is_active)
+
+    def test_suspended_contract_cannot_open_live_access_or_accept_new_device(self):
+        from rest_framework.exceptions import ValidationError
+        from fleet.device_operations import _add_to_subscription, _open_customer_access
+
+        link = SubscriptionDevice.objects.create(
+            subscription=self.subscription,
+            device=self.device,
+            start_date=self.subscription.start_date,
+            end_date=self.subscription.end_date,
+        )
+        self.subscription.status = 'suspended'
+        self.subscription.save(update_fields=['status', 'updated_at'])
+
+        self.assertIsNone(_open_customer_access(
+            self.device,
+            subscription=self.subscription,
+            organization=self.organization,
+            user=None,
+        ))
+        self.assertFalse(DeviceCustomerAccessPeriod.objects.filter(
+            device=self.device,
+            ended_at__isnull=True,
+        ).exists())
+
+        another_device = Device.objects.create(imei='860000000000970')
+        with self.assertRaises(ValidationError):
+            _add_to_subscription(another_device, self.subscription, operation=None)
+
