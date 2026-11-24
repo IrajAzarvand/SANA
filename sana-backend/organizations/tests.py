@@ -1470,6 +1470,65 @@ class SubscriptionSuspendActivateAccessPolicyTests(TestCase):
         self.assertTrue(SubscriptionDevice.objects.filter(pk=self.link.pk).exists())
         self.assertTrue(DeviceCustomerAccessPeriod.objects.filter(pk=self.old_access.pk).exists())
 
+    def test_activate_after_expiration_splits_device_link_and_preserves_gap(self):
+        from datetime import datetime, time
+
+        today = timezone.localdate()
+        old_end_date = today - timedelta(days=5)
+        old_start_date = old_end_date - timedelta(days=30)
+        old_assigned_at = timezone.now() - timedelta(days=20)
+        old_access_started_at = timezone.now() - timedelta(days=19)
+
+        Subscription.objects.filter(pk=self.subscription.pk).update(
+            start_date=old_start_date,
+            end_date=old_end_date,
+        )
+        SubscriptionDevice.objects.filter(pk=self.link.pk).update(
+            start_date=old_start_date,
+            end_date=old_end_date,
+            assigned_at=old_assigned_at,
+        )
+        self.access.started_at = old_access_started_at
+        self.access.save(update_fields=['started_at'])
+
+        expiration_cutoff = timezone.make_aware(
+            datetime.combine(old_end_date + timedelta(days=1), time.min),
+            timezone.get_current_timezone(),
+        )
+        activation_started_at = timezone.now()
+        new_end_date = today + timedelta(days=90)
+        response = self.client.post(
+            f'/api/subscriptions/{self.subscription.pk}/activate/',
+            {'end_date': new_end_date.isoformat()},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.link.refresh_from_db()
+        self.access.refresh_from_db()
+        self.subscription.refresh_from_db()
+        new_link = SubscriptionDevice.objects.get(
+            subscription=self.subscription,
+            device=self.device,
+            unassigned_at__isnull=True,
+        )
+        new_access = DeviceCustomerAccessPeriod.objects.get(
+            device=self.device,
+            subscription=self.subscription,
+            ended_at__isnull=True,
+        )
+
+        self.assertEqual(self.link.unassigned_at, expiration_cutoff)
+        self.assertEqual(self.access.ended_at, expiration_cutoff)
+        self.assertEqual(self.access.reason, 'contract_expired')
+        self.assertNotEqual(new_link.pk, self.link.pk)
+        self.assertEqual(new_link.start_date, today)
+        self.assertEqual(new_link.end_date, new_end_date)
+        self.assertGreaterEqual(new_link.assigned_at, activation_started_at)
+        self.assertGreaterEqual(new_access.started_at, activation_started_at)
+        self.assertTrue(new_link.is_active)
+        self.assertTrue(self.device.is_data_active)
+
     def test_activate_starts_new_access_period_and_sets_new_expiry(self):
         self.subscription.status = 'suspended'
         self.subscription.save(update_fields=['status'])
