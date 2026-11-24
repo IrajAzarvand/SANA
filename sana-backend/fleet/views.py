@@ -1100,54 +1100,55 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 started_at__lte=now,
             )
 
+            def link_history_interval(item):
+                start_date = max(item.start_date, item.subscription.start_date)
+                end_date = min(item.end_date, item.subscription.end_date)
+                if start_date > end_date:
+                    return None
+                interval_start = timezone.make_aware(
+                    datetime.combine(start_date, datetime_time.min)
+                )
+                interval_start = max(interval_start, item.assigned_at)
+                interval_end = timezone.make_aware(
+                    datetime.combine(end_date, datetime_time.max)
+                )
+                if item.unassigned_at:
+                    interval_end = min(interval_end, item.unassigned_at)
+                if interval_start >= interval_end:
+                    return None
+                return interval_start, interval_end
+
             if request.user.is_personal_user:
-                # Personal device visibility is granted by either a current
-                # customer-access period or a current active contract link.
-                # Report authorization must follow the same rule as get_queryset().
+                # Personal history is authorized by every exact contract-device
+                # assignment belonging to this user. Multiple links can exist
+                # after expiry/renewal; keep each interval separate so the gap
+                # between the old and renewed assignments is never exposed.
                 personal_links = [
-                    link for link in links
-                    if link.subscription.user_id == request.user.pk
-                    and link.subscription.customer_type == 'personal'
-                    and link.subscription.status in ['active', 'expired', 'suspended']
-                    and link.start_date <= link.end_date
-                    and link.subscription.start_date <= link.subscription.end_date
-                    and max(link.start_date, link.subscription.start_date)
-                    <= min(link.end_date, link.subscription.end_date)
+                    item for item in links
+                    if item.subscription.user_id == request.user.pk
+                    and item.subscription.customer_type == 'personal'
+                    and max(item.start_date, item.subscription.start_date)
+                    <= min(item.end_date, item.subscription.end_date)
                 ]
-                link = personal_links[0] if personal_links else None
+                history_access_intervals = []
+                for item in personal_links:
+                    contract_accesses = access_query.filter(subscription_id=item.subscription_id)
+                    if (
+                        contract_accesses.exists()
+                        and not contract_accesses.filter(user=request.user).exists()
+                    ):
+                        continue
+                    interval = link_history_interval(item)
+                    if interval:
+                        history_access_intervals.append(interval)
 
-                if link is None:
-                    return Response({'detail': 'گزارش این دستگاه فقط در بازه قرارداد فعال قابل مشاهده است.'}, status=403)
-
-                # The contract-device link is the historical entitlement. When
-                # access-period rows exist for this contract, they must belong
-                # to this customer; a row for another customer must never grant
-                # access. Older valid contract links may predate access-period
-                # tracking, so absence of such rows alone does not revoke history.
-                contract_accesses = access_query.filter(subscription_id=link.subscription_id)
-                if contract_accesses.exists() and not contract_accesses.filter(user=request.user).exists():
-                    return Response({'detail': 'دوره دسترسی معتبر برای این قرارداد پیدا نشد.'}, status=403)
-
-                # Contract dates remain the history boundary; suspension closes
-                # live access but must not erase historical visibility.
-                range_start = timezone.make_aware(datetime.combine(
-                    max(link.start_date, link.subscription.start_date),
-                    datetime_time.min,
-                ))
-                contract_history_end = timezone.make_aware(datetime.combine(
-                    min(link.end_date, link.subscription.end_date),
-                    datetime_time.max,
-                ))
-                range_end = min(
-                    contract_history_end,
-                    link.unassigned_at or contract_history_end,
-                )
-                history_end_exclusive = bool(
-                    link.unassigned_at and link.unassigned_at <= contract_history_end
-                )
+                if not history_access_intervals:
+                    return Response({'detail': 'گزارش این دستگاه فقط در بازه قرارداد معتبر قابل مشاهده است.'}, status=403)
+                range_start = min(start for start, _ in history_access_intervals)
+                range_end = max(end for _, end in history_access_intervals)
+                history_end_exclusive = False
             else:
                 if request.user.is_branch_manager:
-                    # Branch identity is authoritative for legacy branch-manager accounts.
                     if not request.user.branch_id:
                         return Response({'detail': 'حساب مدیر شعبه به شعبه معتبری متصل نیست.'}, status=403)
                     branch_organization_id = request.user.branch.organization_id
@@ -1160,11 +1161,9 @@ class DeviceViewSet(viewsets.ModelViewSet):
                         started_at__lte=now,
                     )
                     links = [
-                        link for link in links
-                        if link.subscription.customer_type == 'organization'
-                        and link.subscription.organization_id == branch_organization_id
-                        and max(link.start_date, link.subscription.start_date)
-                        <= min(link.end_date, link.subscription.end_date)
+                        item for item in links
+                        if item.subscription.customer_type == 'organization'
+                        and item.subscription.organization_id == branch_organization_id
                     ]
                 elif request.user.is_main_user:
                     access_query = access_query.filter(
@@ -1173,18 +1172,13 @@ class DeviceViewSet(viewsets.ModelViewSet):
                         subscription__organization_id=request.user.organization_id,
                     )
                     links = [
-                        link for link in links
-                        if link.subscription.customer_type == 'organization'
-                        and link.subscription.organization_id == request.user.organization_id
-                        and max(link.start_date, link.subscription.start_date)
-                        <= min(link.end_date, link.subscription.end_date)
+                        item for item in links
+                        if item.subscription.customer_type == 'organization'
+                        and item.subscription.organization_id == request.user.organization_id
                     ]
                 else:
                     links = []
 
-                # All periods for this contract/customer contribute to the
-                # historical window. A reactivation must not hide positions
-                # recorded before the suspension gap.
                 accesses = list(
                     branch_history_query.order_by('started_at', 'id')
                     if request.user.is_branch_manager
@@ -1194,52 +1188,56 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     return Response({'detail': 'برای این دستگاه قرارداد و دسترسی معتبر پیدا نشد.'}, status=403)
 
                 access_subscription_ids = {item.subscription_id for item in accesses}
-                link = next(
-                    (item for item in links if item.subscription_id in access_subscription_ids),
-                    None,
-                )
-                if link is None:
+                links = [
+                    item for item in links
+                    if item.subscription_id in access_subscription_ids
+                ]
+                if not links:
                     return Response({'detail': 'برای این دستگاه قرارداد و دسترسی معتبر پیدا نشد.'}, status=403)
-                if (
-                    link.subscription.customer_type == 'organization'
-                    and link.subscription.organization.status == 'archived'
+                if any(
+                    item.subscription.organization
+                    and item.subscription.organization.status == 'archived'
+                    for item in links
                 ):
                     return Response({'detail': 'دستگاه یافت نشد یا مجوز مشاهده آن را ندارید.'}, status=404)
-                accesses = [
-                    item for item in accesses
-                    if item.subscription_id == link.subscription_id
-                ]
-                if not accesses:
-                    return Response({'detail': 'دوره دسترسی معتبر برای این قرارداد پیدا نشد.'}, status=403)
 
-                contract_start_date = max(link.start_date, link.subscription.start_date)
-                contract_end_date = min(link.end_date, link.subscription.end_date)
-                contract_start = timezone.make_aware(datetime.combine(contract_start_date, datetime_time.min))
-                contract_end = timezone.make_aware(datetime.combine(contract_end_date, datetime_time.max))
-                first_access = accesses[0]
-                range_start = max(contract_start, first_access.started_at)
-                range_end = min(contract_end, link.unassigned_at or contract_end)
-                history_end_exclusive = bool(
-                    link.unassigned_at and link.unassigned_at <= contract_end
-                )
+                link_intervals = [
+                    (item, link_history_interval(item))
+                    for item in links
+                ]
+                link_intervals = [
+                    (item, interval)
+                    for item, interval in link_intervals
+                    if interval is not None
+                ]
+                if not link_intervals:
+                    return Response({'detail': 'برای این دستگاه بازه قرارداد معتبری پیدا نشد.'}, status=403)
+
                 if request.user.is_branch_manager:
-                    # Branch history remains open through contract suspension,
-                    # while branch-transfer periods remain separate and scoped.
+                    # Intersect branch assignment history with each exact
+                    # contract-device link. This preserves suspension history,
+                    # but excludes expired gaps and periods after reassignment.
+                    history_access_intervals = []
+                    for access in accesses:
+                        for item, (link_start, link_end) in link_intervals:
+                            if item.subscription_id != access.subscription_id:
+                                continue
+                            interval_start = max(link_start, access.started_at)
+                            interval_end = min(link_end, access.ended_at or link_end)
+                            if interval_start < interval_end:
+                                history_access_intervals.append((interval_start, interval_end))
+                    if not history_access_intervals:
+                        return Response({'detail': 'دوره دسترسی معتبر برای این شعبه پیدا نشد.'}, status=403)
+                else:
+                    # Organization managers retain history through suspension,
+                    # while each link interval still bounds transfer/expiry gaps.
                     history_access_intervals = [
-                        (item.started_at, min(item.ended_at or range_end, range_end))
-                        for item in accesses
+                        interval for _, interval in link_intervals
                     ]
-                if request.user.is_branch_manager:
-                    # Branch managers may see only the time windows when the device
-                    # belonged to their branch. Contract-wide bounds alone would leak
-                    # GPS points from periods spent in other branches.
-                    history_access_intervals = [
-                        (max(contract_start, access.started_at),
-                         min(contract_end, access.ended_at or contract_end))
-                        for access in accesses
-                        if max(contract_start, access.started_at)
-                        <= min(contract_end, access.ended_at or contract_end)
-                    ]
+
+                range_start = min(start for start, _ in history_access_intervals)
+                range_end = max(end for _, end in history_access_intervals)
+                history_end_exclusive = False
 
         if request.query_params.get('metadata') == 'true':
             return Response({
