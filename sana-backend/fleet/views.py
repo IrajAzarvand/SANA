@@ -1637,23 +1637,13 @@ class DeviceViewSet(viewsets.ModelViewSet):
         return super().get_permissions()
 
     def destroy(self, request, *args, **kwargs):
-        """Permanently delete a device after explicit IMEI confirmation."""
-        instance = self.get_object()
-        confirmed_imei = request.data.get('confirm_imei')
-        if confirmed_imei != instance.imei:
-            return Response(
-                {'detail': 'برای حذف دستگاه، IMEI را دقیقاً در confirm_imei ارسال کن.'},
-                status=400,
-            )
-        with transaction.atomic():
-            # GPS raw telemetry is owned by Traccar; SANA has no GPS purge function.
-            # Remove operations referencing this device before deleting the fleet record.
-            DeviceOperation.objects.filter(
-                Q(device=instance) | Q(replacement_device=instance)
-            ).delete()
-            instance.delete()
-
-        return Response(status=204)
+        # Device deletion would cascade into contract, customer-access,
+        # ownership, branch and replacement history. Retire/dispose devices
+        # through the audited lifecycle operation instead of deleting them.
+        return Response(
+            {'detail': 'حذف دائمی دستگاه غیرفعال است؛ برای خروج از چرخه، عملیات امحاء یا بازنشستگی را ثبت کنید.'},
+            status=status.HTTP_405_METHOD_NOT_ALLOWED,
+        )
 
 
 class DriverViewSet(viewsets.ModelViewSet):
