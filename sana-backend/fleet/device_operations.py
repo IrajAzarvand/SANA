@@ -78,6 +78,9 @@ def _close_customer_access(device, when=None, subscription=None):
 @transaction.atomic
 def _open_customer_access(device, subscription=None, branch=None, organization=_CUSTOMER_UNSET, user=_CUSTOMER_UNSET, started_at=None, reason=''):
     device = Device.objects.select_for_update().get(pk=device.pk)
+    # Contractless customer/branch assignments are not an authority for live GPS access.
+    if subscription is None:
+        return None
     customer = _customer_kwargs(device, organization, user)
     customer_organization = customer['organization']
     customer_user = customer['user']
