@@ -683,3 +683,35 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
             ended_at__isnull=True,
         ).exists())
 
+    def test_device_api_cannot_change_legal_owner_without_lifecycle_transfer(self):
+        from fleet.serializers import DeviceSerializer
+
+        device = Device.objects.create(
+            imei='860000000000975',
+            organization=self.organization,
+        )
+        serializer = DeviceSerializer(
+            instance=device,
+            data={'organization': self.other_organization.id},
+            partial=True,
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('organization', serializer.errors)
+
+    def test_device_creation_records_initial_legal_ownership_history(self):
+        from fleet.serializers import DeviceSerializer
+
+        serializer = DeviceSerializer(data={
+            'imei': '860000000000976',
+            'organization': self.organization.id,
+        })
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        device = serializer.save()
+
+        ownership = DeviceOwnershipHistory.objects.get(
+            device=device,
+            ended_at__isnull=True,
+        )
+        self.assertEqual(ownership.organization_id, self.organization.id)
+        self.assertIsNone(ownership.owner_user_id)
+
