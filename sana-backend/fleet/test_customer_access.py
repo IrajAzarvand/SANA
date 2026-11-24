@@ -468,6 +468,24 @@ class CustomerAccessTimelineAndContractTests(TestCase):
             ).filter(device=device).exists()
         )
 
+        # If the latest period later ends, the older stale period must not
+        # become active again for the previous branch.
+        DeviceCustomerAccessPeriod.objects.filter(
+            pk=second_period.pk
+        ).update(ended_at=timezone.now() - timedelta(seconds=1))
+        self.assertFalse(
+            active_customer_access_periods(
+                organization_id=organization.pk,
+                branch_id=first_branch.pk,
+            ).filter(device=device).exists()
+        )
+        self.assertFalse(
+            active_customer_access_periods(
+                organization_id=organization.pk,
+                branch_id=second_branch.pk,
+            ).filter(device=device).exists()
+        )
+
     def test_reactivating_contract_restores_same_access_period(self):
         organization = Organization.objects.create(
             name='Access Reactivation Organization',
