@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from django.db.models import Q
 from django.utils import timezone
+from .customer_access import active_customer_access_periods
 from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DriverVehicleAssignment, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation, DeviceCustomerAccessPeriod
 
 
@@ -110,17 +111,18 @@ class VehicleListSerializer(serializers.ModelSerializer):
 
         if user and user.is_main_user and user.organization_id:
             devices = devices.filter(
-                customer_access_periods__organization_id=user.organization_id,
-                customer_access_periods__started_at__lte=now,
-                customer_access_periods__ended_at__isnull=True,
-            ).distinct()
+                pk__in=active_customer_access_periods(
+                    organization_id=user.organization_id, now=now
+                ).values('device_id')
+            )
         elif user and user.is_branch_manager and user.branch_id:
             devices = devices.filter(
-                customer_access_periods__organization_id=user.branch.organization_id,
-                customer_access_periods__branch_id=user.branch_id,
-                customer_access_periods__started_at__lte=now,
-                customer_access_periods__ended_at__isnull=True,
-            ).distinct()
+                pk__in=active_customer_access_periods(
+                    organization_id=user.branch.organization_id,
+                    branch_id=user.branch_id,
+                    now=now,
+                ).values('device_id')
+            )
         elif user and user.is_branch_manager:
             devices = devices.none()
         elif user and user.is_personal_user:
@@ -128,25 +130,11 @@ class VehicleListSerializer(serializers.ModelSerializer):
             from organizations.models import SubscriptionDevice
 
             today = timezone.localdate()
-            active_access = DeviceCustomerAccessPeriod.objects.filter(
-                device=OuterRef('pk'),
-                user=user,
-                started_at__lte=now,
-            ).filter(
-                Q(ended_at__isnull=True) | Q(ended_at__gte=now)
-            )
-            active_contract_link = SubscriptionDevice.objects.filter(
-                device=OuterRef('pk'),
-                subscription__user=user,
-                subscription__status='active',
-                subscription__start_date__lte=today,
-                subscription__end_date__gte=today,
-                unassigned_at__isnull=True,
-                start_date__lte=today,
-                end_date__gte=today,
-            )
+            active_access = active_customer_access_periods(
+                user_id=user.pk, now=now
+            ).filter(device=OuterRef('pk'))
             devices = devices.annotate(
-                has_personal_access=Exists(active_access) | Exists(active_contract_link)
+                has_personal_access=Exists(active_access)
             ).filter(has_personal_access=True)
         elif user and not user.is_site_admin:
             devices = devices.none()
