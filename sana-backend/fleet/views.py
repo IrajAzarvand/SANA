@@ -1765,7 +1765,8 @@ class DeviceReplacementRelationViewSet(viewsets.ModelViewSet):
                 replacement_device_id__in=authorized_device_ids,
             )
         elif user.is_personal_user:
-            today = timezone.localdate()
+            now = timezone.now()
+            today = timezone.localdate(now)
             authorized_device_ids = SubscriptionDevice.objects.filter(
                 subscription__user=user,
                 subscription__customer_type='personal',
@@ -1774,6 +1775,7 @@ class DeviceReplacementRelationViewSet(viewsets.ModelViewSet):
                 subscription__end_date__gte=today,
                 start_date__lte=today,
                 end_date__gte=today,
+                assigned_at__lte=now,
                 unassigned_at__isnull=True,
             ).values_list('device_id', flat=True)
             qs = qs.filter(
