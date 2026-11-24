@@ -347,7 +347,7 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
         )
 
     def test_warehouse_and_data_status_reuse_prefetched_active_link(self):
-        subscription = SimpleNamespace(computed_status='active')
+        subscription = SimpleNamespace(status='active', computed_status='active')
         active_link = SimpleNamespace(
             unassigned_at=None, is_active=True, subscription=subscription
         )
@@ -407,7 +407,7 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
         link = SimpleNamespace(
             unassigned_at=None,
             is_active=True,
-            subscription=SimpleNamespace(computed_status='suspended'),
+            subscription=SimpleNamespace(status='suspended', computed_status='suspended'),
         )
         device = SimpleNamespace(
             management_status='faulty',
@@ -422,7 +422,7 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
         link = SimpleNamespace(
             unassigned_at=None,
             is_active=True,
-            subscription=SimpleNamespace(computed_status='active'),
+            subscription=SimpleNamespace(status='active', computed_status='active'),
         )
         device = SimpleNamespace(
             management_status='faulty',
