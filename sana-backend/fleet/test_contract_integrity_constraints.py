@@ -205,9 +205,11 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
         self.assertTrue(DeviceCustomerAccessPeriod.objects.filter(
             device=device, organization=customer, ended_at__isnull=True,
         ).exists())
+        # The original access period is closed and retained; the return
+        # creates a new open period without manufacturing repair-time access.
         self.assertGreaterEqual(DeviceCustomerAccessPeriod.objects.filter(
             device=device, ended_at__isnull=False,
-        ).count(), 2)
+        ).count(), 1)
 
     def test_branch_transfer_uses_contract_customer_not_legal_owner(self):
         from datetime import timedelta
