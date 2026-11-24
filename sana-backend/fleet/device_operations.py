@@ -14,8 +14,17 @@ def _customer_kwargs(device=None, organization=_CUSTOMER_UNSET, user=_CUSTOMER_U
     # If a caller explicitly supplies customer identity, respect both fields
     # (including explicit None) rather than falling back to legal ownership.
     if organization is _CUSTOMER_UNSET and user is _CUSTOMER_UNSET:
-        organization = (device.current_holder_organization or device.organization) if device else None
-        user = (device.current_holder_user or device.owner_user) if device else None
+        if device and (
+            device.current_holder_organization_id is not None
+            or device.current_holder_user_id is not None
+        ):
+            # Current holder is one identity pair. Never combine a personal
+            # holder with the legal owner's organization (or vice versa).
+            organization = device.current_holder_organization
+            user = device.current_holder_user
+        else:
+            organization = device.organization if device else None
+            user = device.owner_user if device else None
     else:
         organization = None if organization is _CUSTOMER_UNSET else organization
         user = None if user is _CUSTOMER_UNSET else user
