@@ -344,17 +344,10 @@ class DeviceOperation(models.Model):
 
     OPERATION_TYPE_CHOICES = [
         ('return_for_repair', 'بازگشت برای تعمیر'),
-        ('repaired', 'اتمام تعمیر'),
-        ('found', 'پیدا شدن دستگاه'),
-        ('disposition', 'تعیین تکلیف دستگاه'),
         ('temporary_replacement', 'جایگزینی موقت'),
         ('permanent_replacement', 'تعویض دائمی'),
         ('lost', 'گم‌شدن'),
-        ('stolen', 'سرقت'),
         ('transfer_customer', 'انتقال به مشتری دیگر'),
-        ('transfer_branch', 'انتقال بین شعب'),
-        ('transfer_vehicle', 'انتقال بین خودروها'),
-        ('retire', 'خارج کردن از چرخه استفاده'),
         ('dispose', 'امحاء'),
     ]
 
