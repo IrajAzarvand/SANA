@@ -635,9 +635,12 @@ class BranchManagerReportHistoryPeriodFilterTests(TestCase):
             contract_number='HIST-FILTER-CONTRACT', customer_type='organization', organization=organization,
             start_date=today - timedelta(days=12), end_date=today + timedelta(days=12), status='active',
         )
-        SubscriptionDevice.objects.create(
+        history_link = SubscriptionDevice.objects.create(
             subscription=subscription, device=device,
             start_date=today - timedelta(days=12), end_date=today + timedelta(days=12),
+        )
+        SubscriptionDevice.objects.filter(pk=history_link.pk).update(
+            assigned_at=now - timedelta(days=12),
         )
         DeviceCustomerAccessPeriod.objects.create(
             device=device, organization=organization, branch=branch_a, subscription=subscription,
@@ -708,9 +711,12 @@ class BranchManagerSuspensionHistoryTests(TestCase):
             customer_type='organization', organization=customer,
             start_date=today - timedelta(days=12), end_date=today + timedelta(days=12), status='suspended',
         )
-        SubscriptionDevice.objects.create(
+        history_link = SubscriptionDevice.objects.create(
             subscription=subscription, device=device,
             start_date=today - timedelta(days=12), end_date=today + timedelta(days=12),
+        )
+        SubscriptionDevice.objects.filter(pk=history_link.pk).update(
+            assigned_at=now - timedelta(days=12),
         )
         # Access periods close during suspension and reopen after it; branch assignment stays continuous.
         DeviceCustomerAccessPeriod.objects.create(
