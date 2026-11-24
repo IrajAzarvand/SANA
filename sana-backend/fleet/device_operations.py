@@ -26,24 +26,34 @@ def _open_customer_access(device, subscription=None, branch=None, organization=N
     customer = _customer_kwargs(device, organization, user)
     if not customer['organization'] and not customer['user']:
         return None
-    current = DeviceCustomerAccessPeriod.objects.filter(device=device, ended_at__isnull=True).first()
+    current = DeviceCustomerAccessPeriod.objects.filter(
+        device=device, ended_at__isnull=True
+    ).order_by('-started_at', '-id').first()
     if current:
-        same_customer = current.organization_id == getattr(customer['organization'], 'id', None) and current.user_id == getattr(customer['user'], 'id', None)
-        branch_id = getattr(branch, 'id', None)
-        if same_customer and current.branch_id != branch_id:
-            _close_customer_access(device, started_at)
-            current = None
-        if current and same_customer:
-            changed = []
-            if subscription and current.subscription_id != subscription.id:
-                current.subscription = subscription; changed.append('subscription')
-            if branch and current.branch_id != branch.id:
-                current.branch = branch; changed.append('branch')
-            if changed: current.save(update_fields=changed)
+        same_customer = (
+            current.organization_id == getattr(customer['organization'], 'id', None)
+            and current.user_id == getattr(customer['user'], 'id', None)
+        )
+        same_subscription = (
+            subscription is None or current.subscription_id == subscription.pk
+        )
+        same_branch = branch is None or current.branch_id == branch.pk
+
+        # A new contract or branch starts a new access period, even when the
+        # legal customer remains unchanged. Never rewrite the old period.
+        if same_customer and same_subscription and same_branch:
             return current
-        if current:
-            _close_customer_access(device, started_at)
-    return DeviceCustomerAccessPeriod.objects.create(device=device, subscription=subscription, branch=branch, started_at=started_at or timezone.now(), reason=reason, **customer)
+
+        _close_customer_access(device, started_at or timezone.now())
+
+    return DeviceCustomerAccessPeriod.objects.create(
+        device=device,
+        subscription=subscription,
+        branch=branch,
+        started_at=started_at or timezone.now(),
+        reason=reason,
+        **customer,
+    )
 
 
 def _close_ownership(device, when=None):
