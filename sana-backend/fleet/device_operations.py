@@ -1397,6 +1397,7 @@ def execute_device_operation(
         )
 
     elif operation_type == 'retire':
+        customer = _current_customer(device, subscription)
         _close_branch_history(device)
         device.management_status = 'unusable'
         device.vehicle = None
@@ -1408,8 +1409,8 @@ def execute_device_operation(
             event_type='retired',
             performed_by=performed_by,
             subscription=subscription,
-            organization=device.current_holder_organization or (subscription.organization if subscription and subscription.customer_type == 'organization' else None) or device.organization,
-            user=device.current_holder_user or (subscription.user if subscription and subscription.customer_type == 'personal' else None) or device.owner_user,
+            organization=customer['organization'],
+            user=customer['user'],
             reason=reason,
             description=description,
         )
