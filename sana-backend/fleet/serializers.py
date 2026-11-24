@@ -133,8 +133,19 @@ class VehicleListSerializer(serializers.ModelSerializer):
             active_access = active_customer_access_periods(
                 user_id=user.pk, now=now
             ).filter(device=OuterRef('pk'))
+            active_contract_link = SubscriptionDevice.objects.filter(
+                device=OuterRef('pk'),
+                subscription__user=user,
+                subscription__customer_type='personal',
+                subscription__status='active',
+                subscription__start_date__lte=today,
+                subscription__end_date__gte=today,
+                unassigned_at__isnull=True,
+                start_date__lte=today,
+                end_date__gte=today,
+            )
             devices = devices.annotate(
-                has_personal_access=Exists(active_access)
+                has_personal_access=Exists(active_access) | Exists(active_contract_link)
             ).filter(has_personal_access=True)
         elif user and not user.is_site_admin:
             devices = devices.none()
