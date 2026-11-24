@@ -83,6 +83,23 @@ class ContractBackedDeviceAccessTests(TestCase):
         payload = response.data['results'] if isinstance(response.data, dict) else response.data
         self.assertNotIn(device.pk, [item['id'] for item in payload])
 
+        # Re-activating the same still-valid contract restores access without
+        # replacing or deleting its historical access period.
+        subscription.status = 'active'
+        subscription.save(update_fields=['status'])
+        with patch('fleet.views.traccar_devices', return_value=[]), patch(
+            'fleet.views.traccar_current_positions', return_value=[]
+        ):
+            response = self.client.get('/api/devices/')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = response.data['results'] if isinstance(response.data, dict) else response.data
+        self.assertIn(device.pk, [item['id'] for item in payload])
+        self.assertEqual(
+            DeviceCustomerAccessPeriod.objects.filter(device=device).count(),
+            1,
+        )
+
     def test_organization_access_requires_active_contract(self):
         organization = Organization.objects.create(
             name='Contract Access Organization',
