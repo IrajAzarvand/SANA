@@ -961,6 +961,13 @@ class VehicleDeviceContractVisibilityTests(TestCase):
         serializer = VehicleSerializer(vehicle, context={'request': request})
         self.assertEqual(serializer.data['device_imei'], device.imei)
 
+        customer.status = 'inactive'
+        customer.save(update_fields=['status'])
+        serializer = VehicleSerializer(vehicle, context={'request': request})
+        self.assertIsNone(serializer.data['device_imei'])
+
+        customer.status = 'active'
+        customer.save(update_fields=['status'])
         subscription.status = 'suspended'
         subscription.save(update_fields=['status'])
         serializer = VehicleSerializer(vehicle, context={'request': request})
