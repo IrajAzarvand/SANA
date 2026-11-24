@@ -198,6 +198,10 @@ class VehicleSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 'vehicle_type': 'نوع خودرو متعلق به سازمان مالک خودرو نیست.'
             })
+        if owner and not owner.is_personal_user:
+            raise serializers.ValidationError({
+                'owner_user': 'مالک شخصی خودرو باید حساب دارای نقش مشتری شخصی باشد.'
+            })
 
         if self.instance is not None:
             protected_fields = ('organization', 'owner_user', 'branch')
@@ -411,6 +415,13 @@ class DeviceSerializer(serializers.ModelSerializer):
                 if attrs.get(field_name) is not None:
                     raise serializers.ValidationError({
                         field_name: 'تخصیص مشتری، شعبه و خودرو فقط پس از اتصال رسمی دستگاه به قرارداد مجاز است.'
+                    })
+
+        for field_name in ('owner_user', 'current_holder_user'):
+            if field_name in attrs and attrs[field_name] is not None:
+                if not attrs[field_name].is_personal_user:
+                    raise serializers.ValidationError({
+                        field_name: 'هویت شخصی دستگاه باید حساب دارای نقش مشتری شخصی باشد.'
                     })
 
         request = self.context.get('request')
