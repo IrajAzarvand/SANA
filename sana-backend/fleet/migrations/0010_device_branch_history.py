@@ -23,7 +23,7 @@ def backfill_branch_history(apps, schema_editor):
         group = []
         identity = None
 
-        def flush_group(keep_open=False):
+        def flush_group(end_at=None, keep_open=False):
             nonlocal group, identity
             if not group:
                 return
@@ -32,7 +32,7 @@ def backfill_branch_history(apps, schema_editor):
             organization = first['period'].organization
             subscription = first['period'].subscription
             link = first['link']
-            history_end = last['ended_at']
+            history_end = end_at if end_at is not None else last['ended_at']
             if link.unassigned_at is not None and (
                 history_end is None or link.unassigned_at < history_end
             ):
@@ -104,7 +104,10 @@ def backfill_branch_history(apps, schema_editor):
                 link.pk,
             )
             if identity != key:
-                flush_group()
+                # The next observed branch period is the best known boundary
+                # for the previous branch assignment, including a transfer
+                # performed during a suspension gap.
+                flush_group(end_at=overlap_start)
                 identity = key
             group.append({
                 'period': period,
