@@ -741,6 +741,12 @@ class CustomerAccessTimelineAndContractTests(TestCase):
             subscription=first,
             started_at=started_at,
         )
+        SubscriptionDevice.objects.create(
+            subscription=second,
+            device=device,
+            start_date=second.start_date,
+            end_date=second.end_date,
+        )
 
         changed_at = timezone.now()
         new_period = _open_customer_access(
@@ -756,6 +762,61 @@ class CustomerAccessTimelineAndContractTests(TestCase):
         self.assertNotEqual(new_period.pk, old_period.pk)
         self.assertEqual(new_period.subscription_id, second.pk)
         self.assertEqual(new_period.started_at, changed_at)
+
+    def test_reassigning_device_to_same_contract_opens_new_access_period(self):
+        organization = Organization.objects.create(
+            name='Same Contract Reassignment Organization',
+            code='SAME-CONTRACT-REASSIGN',
+        )
+        device = Device.objects.create(
+            imei='860000000001213',
+            organization=organization,
+        )
+        today = timezone.localdate()
+        subscription = Subscription.objects.create(
+            contract_number='SAME-CONTRACT-REASSIGN-001',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        first_link = SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
+        )
+        first_period = _open_customer_access(
+            device,
+            subscription=subscription,
+            organization=organization,
+            reason='first_assignment',
+        )
+
+        second_link = SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
+        )
+        second_period = _open_customer_access(
+            device,
+            subscription=subscription,
+            organization=organization,
+            reason='reassignment',
+        )
+
+        first_link.refresh_from_db()
+        first_period.refresh_from_db()
+        self.assertIsNotNone(first_link.unassigned_at)
+        self.assertIsNotNone(first_period.ended_at)
+        self.assertNotEqual(first_period.pk, second_period.pk)
+        self.assertGreaterEqual(
+            second_period.started_at,
+            second_link.assigned_at,
+        )
+        self.assertEqual(second_period.subscription_id, subscription.pk)
 
     def test_clearing_branch_creates_a_new_unscoped_access_period(self):
         organization = Organization.objects.create(
