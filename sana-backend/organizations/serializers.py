@@ -4,7 +4,7 @@ from django.utils import timezone
 from django.db import transaction
 from django.db.models import Q, Sum
 from fleet.lifecycle import record_device_lifecycle_event
-from fleet.device_operations import _open_branch_history, _open_customer_access, _open_ownership
+from fleet.device_operations import _open_branch_history, _open_customer_access, _open_ownership, _validate_device_customer_assignment
 from fleet.models import DeviceCustomerAccessPeriod
 from .models import (
     Organization,
@@ -324,6 +324,8 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     'subscription': 'نوع مشتری قرارداد نامعتبر است.'
                 })
+            if device:
+                _validate_device_customer_assignment(device, subscription)
 
         # چک ترتیب تاریخ‌ها
         if data.get('start_date') and data.get('end_date'):
@@ -350,6 +352,7 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
         # Lock and re-check the device so concurrent assignments cannot race.
         from fleet.models import Device
         device = Device.objects.select_for_update().get(pk=validated_data['device'].pk)
+        _validate_device_customer_assignment(device, validated_data['subscription'])
         if device.subscription_links.filter(unassigned_at__isnull=True).exists():
             raise serializers.ValidationError({'device': 'دستگاه به قرارداد فعال دیگری متصل است.'})
         validated_data['device'] = device
