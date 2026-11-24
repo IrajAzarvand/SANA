@@ -518,3 +518,68 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
             ended_at__isnull=True,
         ).exists())
 
+    def test_retire_and_direct_dispose_close_branch_and_ownership_lifecycle(self):
+        from fleet.device_operations import execute_device_operation
+        from fleet.models import DeviceBranchHistory
+        from organizations.models import Branch
+
+        branch = Branch.objects.create(
+            organization=self.organization,
+            name='Disposal Branch',
+            code='DISPOSAL-BRANCH',
+        )
+        device = Device.objects.create(
+            imei='860000000000972',
+            organization=self.organization,
+            current_holder_organization=self.organization,
+            branch=branch,
+            management_status='installed',
+        )
+        link = SubscriptionDevice.objects.create(
+            subscription=self.subscription,
+            device=device,
+            start_date=self.subscription.start_date,
+            end_date=self.subscription.end_date,
+        )
+        DeviceOwnershipHistory.objects.create(device=device, organization=self.organization)
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=self.organization,
+            branch=branch,
+            subscription=self.subscription,
+        )
+        DeviceBranchHistory.objects.create(
+            device=device,
+            organization=self.organization,
+            branch=branch,
+            subscription=self.subscription,
+        )
+
+        execute_device_operation(device=device, operation_type='retire', performed_by=None)
+        device.refresh_from_db()
+        self.assertEqual(device.management_status, 'unusable')
+        self.assertFalse(DeviceBranchHistory.objects.filter(
+            device=device,
+            ended_at__isnull=True,
+        ).exists())
+        self.assertFalse(DeviceCustomerAccessPeriod.objects.filter(
+            device=device,
+            ended_at__isnull=True,
+        ).exists())
+        self.assertTrue(DeviceOwnershipHistory.objects.filter(
+            device=device,
+            ended_at__isnull=True,
+        ).exists())
+
+        execute_device_operation(device=device, operation_type='dispose', performed_by=None)
+        device.refresh_from_db()
+        link.refresh_from_db()
+        self.assertEqual(device.management_status, 'disposed')
+        self.assertIsNone(device.organization_id)
+        self.assertIsNone(device.current_holder_organization_id)
+        self.assertIsNotNone(link.unassigned_at)
+        self.assertFalse(DeviceOwnershipHistory.objects.filter(
+            device=device,
+            ended_at__isnull=True,
+        ).exists())
+
