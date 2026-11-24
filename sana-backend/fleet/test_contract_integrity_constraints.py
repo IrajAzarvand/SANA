@@ -464,3 +464,49 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
             ended_at__isnull=True,
         ).exists())
 
+    def test_disposal_closes_contract_access_and_legal_ownership_history(self):
+        from fleet.device_operations import execute_device_operation
+
+        legal_owner = self.organization
+        customer = self.other_organization
+        device = Device.objects.create(
+            imei='860000000000971',
+            organization=legal_owner,
+            current_holder_organization=customer,
+            management_status='ready',
+        )
+        link = SubscriptionDevice.objects.create(
+            subscription=self.subscription,
+            device=device,
+            start_date=self.subscription.start_date,
+            end_date=self.subscription.end_date,
+        )
+        DeviceOwnershipHistory.objects.create(device=device, organization=legal_owner)
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=customer,
+            subscription=self.subscription,
+        )
+
+        execute_device_operation(
+            device=device,
+            operation_type='disposition',
+            performed_by=None,
+            outcome_action='dispose',
+        )
+
+        device.refresh_from_db()
+        link.refresh_from_db()
+        self.assertEqual(device.management_status, 'disposed')
+        self.assertIsNone(device.organization_id)
+        self.assertIsNone(device.owner_user_id)
+        self.assertIsNotNone(link.unassigned_at)
+        self.assertFalse(DeviceOwnershipHistory.objects.filter(
+            device=device,
+            ended_at__isnull=True,
+        ).exists())
+        self.assertFalse(DeviceCustomerAccessPeriod.objects.filter(
+            device=device,
+            ended_at__isnull=True,
+        ).exists())
+
