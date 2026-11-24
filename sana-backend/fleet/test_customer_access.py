@@ -455,6 +455,67 @@ class ContractBackedDeviceAccessTests(TestCase):
         payload = response.data['results'] if isinstance(response.data, dict) else response.data
         self.assertNotIn(device.pk, [item['id'] for item in payload])
 
+    def test_future_or_expired_device_link_dates_do_not_authorize_personal_devices(self):
+        user = User.objects.create_user(
+            username='contract_access_invalid_link_dates',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        today = timezone.localdate()
+        future_device = Device.objects.create(
+            imei='860000000001211',
+            owner_user=user,
+        )
+        expired_device = Device.objects.create(
+            imei='860000000001212',
+            owner_user=user,
+        )
+        future_subscription = Subscription.objects.create(
+            contract_number='ACCESS-FUTURE-LINK-DATE',
+            customer_type='personal',
+            user=user,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        expired_subscription = Subscription.objects.create(
+            contract_number='ACCESS-EXPIRED-LINK-DATE',
+            customer_type='personal',
+            user=user,
+            start_date=today - timedelta(days=20),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=future_subscription,
+            device=future_device,
+            start_date=today + timedelta(days=1),
+            end_date=today + timedelta(days=20),
+        )
+        expired_link = SubscriptionDevice.objects.create(
+            subscription=expired_subscription,
+            device=expired_device,
+            start_date=today - timedelta(days=20),
+            end_date=today - timedelta(days=1),
+        )
+        # Keep the parent contract valid to isolate the device-link end date.
+        Subscription.objects.filter(pk=expired_subscription.pk).update(
+            end_date=today + timedelta(days=20)
+        )
+
+        self.client.force_authenticate(user=user)
+        with patch('fleet.views.traccar_devices', return_value=[]), patch(
+            'fleet.views.traccar_current_positions', return_value=[]
+        ):
+            response = self.client.get('/api/devices/')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = response.data['results'] if isinstance(response.data, dict) else response.data
+        visible_ids = {item['id'] for item in payload}
+        self.assertNotIn(future_device.pk, visible_ids)
+        self.assertNotIn(expired_device.pk, visible_ids)
+
     def test_ended_assignment_does_not_authorize_personal_device(self):
         user = User.objects.create_user(
             username='contract_access_ended_assignment',
