@@ -83,6 +83,10 @@ class VehicleSerializer(serializers.ModelSerializer):
         }
 
     def get_device_imei(self, obj):
+        from django.db.models import Exists, OuterRef
+        from .models import DeviceCustomerAccessPeriod
+        from organizations.models import SubscriptionDevice
+
         request = self.context.get('request')
         user = request.user if request else None
         today = timezone.localdate()
@@ -91,41 +95,36 @@ class VehicleSerializer(serializers.ModelSerializer):
 
         if user and user.is_site_admin:
             pass
-        elif user and user.is_main_user and user.organization_id:
-            devices = devices.filter(
-                customer_access_periods__organization_id=user.organization_id,
-                customer_access_periods__subscription__customer_type='organization',
-                customer_access_periods__subscription__organization_id=user.organization_id,
-                customer_access_periods__subscription__status='active',
-                customer_access_periods__subscription__start_date__lte=today,
-                customer_access_periods__subscription__end_date__gte=today,
-                customer_access_periods__started_at__lte=now,
-                customer_access_periods__ended_at__isnull=True,
-                customer_access_periods__subscription__subscription_devices__device_id=OuterRef('pk'),
-                customer_access_periods__subscription__subscription_devices__unassigned_at__isnull=True,
-                customer_access_periods__subscription__subscription_devices__start_date__lte=today,
-                customer_access_periods__subscription__subscription_devices__end_date__gte=today,
-            ).distinct()
-        elif user and user.is_branch_manager and user.branch_id:
-            devices = devices.filter(
-                customer_access_periods__organization_id=user.branch.organization_id,
-                customer_access_periods__branch_id=user.branch_id,
-                customer_access_periods__subscription__customer_type='organization',
-                customer_access_periods__subscription__organization_id=user.branch.organization_id,
-                customer_access_periods__subscription__status='active',
-                customer_access_periods__subscription__start_date__lte=today,
-                customer_access_periods__subscription__end_date__gte=today,
-                customer_access_periods__started_at__lte=now,
-                customer_access_periods__ended_at__isnull=True,
-                customer_access_periods__subscription__subscription_devices__device_id=OuterRef('pk'),
-                customer_access_periods__subscription__subscription_devices__unassigned_at__isnull=True,
-                customer_access_periods__subscription__subscription_devices__start_date__lte=today,
-                customer_access_periods__subscription__subscription_devices__end_date__gte=today,
-            ).distinct()
+        elif user and (user.is_main_user or user.is_branch_manager):
+            organization_id = (
+                user.branch.organization_id
+                if user.is_branch_manager and user.branch_id
+                else user.organization_id
+            )
+            if not organization_id:
+                return None
+            access_filters = {
+                'device_id': OuterRef('pk'),
+                'organization_id': organization_id,
+                'subscription__customer_type': 'organization',
+                'subscription__organization_id': organization_id,
+                'subscription__status': 'active',
+                'subscription__start_date__lte': today,
+                'subscription__end_date__gte': today,
+                'started_at__lte': now,
+                'ended_at__isnull': True,
+                'subscription__subscription_devices__device_id': OuterRef('pk'),
+                'subscription__subscription_devices__unassigned_at__isnull': True,
+                'subscription__subscription_devices__start_date__lte': today,
+                'subscription__subscription_devices__end_date__gte': today,
+            }
+            if user.is_branch_manager:
+                access_filters['branch_id'] = user.branch_id
+            active_access = DeviceCustomerAccessPeriod.objects.filter(**access_filters)
+            devices = devices.annotate(
+                has_authorized_contract=Exists(active_access)
+            ).filter(has_authorized_contract=True)
         elif user and user.is_personal_user:
-            from django.db.models import Exists, OuterRef
-            from organizations.models import SubscriptionDevice
-
             active_link = SubscriptionDevice.objects.filter(
                 device_id=OuterRef('pk'),
                 subscription__customer_type='personal',
@@ -137,9 +136,9 @@ class VehicleSerializer(serializers.ModelSerializer):
                 end_date__gte=today,
                 unassigned_at__isnull=True,
             )
-            devices = devices.annotate(has_personal_contract=Exists(active_link)).filter(
-                has_personal_contract=True
-            )
+            devices = devices.annotate(
+                has_personal_contract=Exists(active_link)
+            ).filter(has_personal_contract=True)
         else:
             return None
 
