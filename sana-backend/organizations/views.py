@@ -224,7 +224,23 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         # فیلترها
         status_filter = self.request.query_params.get('status')
         if status_filter:
-            qs = qs.filter(status=status_filter)
+            today = timezone.localdate()
+            if status_filter == 'active':
+                qs = qs.filter(
+                    status='active',
+                    start_date__lte=today,
+                    end_date__gte=today,
+                )
+            elif status_filter == 'pending':
+                qs = qs.filter(status='active', start_date__gt=today)
+            elif status_filter == 'expired':
+                from django.db.models import Q
+                qs = qs.filter(
+                    Q(status='expired')
+                    | Q(status='active', end_date__lt=today)
+                )
+            else:
+                qs = qs.filter(status=status_filter)
 
         customer_type = self.request.query_params.get('customer_type')
         if customer_type:
