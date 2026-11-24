@@ -87,6 +87,49 @@ class PersonalDeviceContractBoundsTests(TestCase):
         device.refresh_from_db()
         self.assertFalse(device.is_data_active)
 
+    def test_open_period_for_another_contract_does_not_authorize_current_link(self):
+        device = Device.objects.create(
+            imei='860000000000404',
+            management_status='installed',
+        )
+        old_subscription = Subscription.objects.create(
+            contract_number='CONTRACT-BOUNDS-0404-OLD',
+            customer_type='personal',
+            user=self.user,
+            start_date=self.today - timedelta(days=60),
+            end_date=self.today - timedelta(days=30),
+            status='expired',
+        )
+        current_subscription = Subscription.objects.create(
+            contract_number='CONTRACT-BOUNDS-0404-CURRENT',
+            customer_type='personal',
+            user=self.user,
+            start_date=self.today - timedelta(days=5),
+            end_date=self.today + timedelta(days=30),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=current_subscription,
+            device=device,
+            start_date=current_subscription.start_date,
+            end_date=current_subscription.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            user=self.user,
+            subscription=old_subscription,
+            started_at=timezone.now() - timedelta(days=45),
+        )
+
+        request = APIRequestFactory().get('/api/devices/')
+        force_authenticate(request, user=self.user)
+        view = DeviceViewSet()
+        view.action_map = {'get': 'list'}
+        view.request = view.initialize_request(request)
+
+        self.assertFalse(view.get_queryset().filter(pk=device.pk).exists())
+        self.assertFalse(device.is_data_active)
+
     def test_device_link_cannot_extend_access_beyond_parent_contract_dates(self):
         expired = self.add_device_with_mismatched_parent_contract(
             imei='860000000000401',
