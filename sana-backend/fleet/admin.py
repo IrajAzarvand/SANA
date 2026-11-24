@@ -22,6 +22,13 @@ class DeviceAdmin(admin.ModelAdmin):
     search_fields = ['imei', 'sim_number', 'device_model__manufacturer', 'device_model__name']
     ordering = ['-created_at']
     raw_id_fields = ['organization', 'owner_user', 'current_holder_organization', 'current_holder_user', 'branch', 'vehicle']
+    # Ownership, holder, branch and vehicle changes must pass through audited
+    # lifecycle operations, not direct Django-admin edits.
+    readonly_fields = [
+        'organization', 'owner_user',
+        'current_holder_organization', 'current_holder_user',
+        'branch', 'vehicle', 'management_status',
+    ]
 
     def get_legal_owner(self, obj):
         if obj.organization:
@@ -47,4 +54,11 @@ class DeviceBranchHistoryAdmin(admin.ModelAdmin):
     search_fields = ['device__imei', 'organization__name', 'branch__name', 'subscription__contract_number']
     raw_id_fields = ['device', 'organization', 'branch', 'subscription']
     ordering = ['-started_at']
+    readonly_fields = [field.name for field in DeviceBranchHistory._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
