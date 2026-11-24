@@ -273,6 +273,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 subscription__end_date__gte=today,
                 start_date__lte=today,
                 end_date__gte=today,
+                assigned_at__lte=timezone.now(),
                 unassigned_at__isnull=True,
             ).values_list('device_id', flat=True)
             replacement_scope = Q(
@@ -383,6 +384,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 subscription__status='active',
                 subscription__start_date__lte=today,
                 subscription__end_date__gte=today,
+                assigned_at__lte=now,
                 unassigned_at__isnull=True,
                 start_date__lte=today,
                 end_date__gte=today,
@@ -1091,8 +1093,9 @@ class DeviceViewSet(viewsets.ModelViewSet):
             links = list(
                 SubscriptionDevice.objects.filter(
                     device=device,
+                    assigned_at__lte=now,
                     unassigned_at__isnull=True,
-                    subscription__status__in=['active', 'expired'],
+                    subscription__status='active',
                 ).select_related('subscription').order_by('-start_date', '-id')
             )
             links = [
@@ -1112,6 +1115,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 personal_links = [
                     link for link in links
                     if link.subscription.user_id == request.user.pk
+                    and link.subscription.customer_type == 'personal'
                     and link.subscription.status == 'active'
                     and link.start_date <= today <= link.end_date
                     and link.subscription.start_date <= today <= link.subscription.end_date
@@ -1154,18 +1158,31 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 else:
                     links = []
 
-                access = access_query.order_by('-started_at').first()
-                if not links or access is None:
+                access = access_query.order_by('-started_at', '-id').first()
+                if access is None:
                     return Response({'detail': 'برای این دستگاه قرارداد و دسترسی فعال پیدا نشد.'}, status=403)
 
-                link = links[0]
-                start_date = max(link.start_date, link.subscription.start_date, timezone.localdate(access.started_at))
+                # The access period and contract-device link must refer to
+                # the exact same contract, not merely the same organization.
+                link = next(
+                    (item for item in links if item.subscription_id == access.subscription_id),
+                    None,
+                )
+                if link is None:
+                    return Response({'detail': 'اتصال معتبر دستگاه به قرارداد این دسترسی پیدا نشد.'}, status=403)
+
+                start_date = max(
+                    link.start_date,
+                    link.subscription.start_date,
+                    timezone.localdate(link.assigned_at),
+                    timezone.localdate(access.started_at),
+                )
                 end_date = min(link.end_date, link.subscription.end_date)
                 if access.ended_at:
                     end_date = min(end_date, timezone.localdate(access.ended_at))
                 contract_start = timezone.make_aware(datetime.combine(start_date, datetime_time.min))
                 contract_end = timezone.make_aware(datetime.combine(end_date, datetime_time.max))
-                range_start = max(contract_start, access.started_at)
+                range_start = max(contract_start, access.started_at, link.assigned_at)
                 range_end = min(contract_end, access.ended_at) if access.ended_at else contract_end
 
         if request.query_params.get('metadata') == 'true':
