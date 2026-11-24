@@ -520,9 +520,11 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         remove_device_ids = request.data.get('remove_device_ids', [])
         notes = request.data.get('notes', '')
 
-        allowed_contract = {'start_date', 'end_date', 'notes'}
+        allowed_contract = {'notes'}
         if any(field not in allowed_contract for field in contract_changes):
-            raise serializers.ValidationError({'contract_changes': 'فقط start_date، end_date و notes قابل ویرایش هستند'})
+            raise serializers.ValidationError({
+                'contract_changes': 'تاریخ‌های قرارداد فقط از مسیر تمدید یا فعال‌سازی مجدد قابل تغییر هستند؛ در این عملیات فقط یادداشت‌ها و اطلاعات غیرهویتی قابل ویرایش‌اند.'
+            })
 
         from datetime import date
         parsed_contract = {}
