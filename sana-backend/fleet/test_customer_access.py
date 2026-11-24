@@ -123,3 +123,45 @@ class ContractBackedDeviceAccessTests(TestCase):
             customer_type='personal',
             imei='860000000001103',
         )
+    def test_expired_contract_does_not_authorize_personal_device(self):
+        user = User.objects.create_user(
+            username='contract_access_expired_personal',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        today = timezone.localdate()
+        device = Device.objects.create(
+            imei='860000000001104',
+            owner_user=user,
+        )
+        subscription = Subscription.objects.create(
+            contract_number='ACCESS-EXPIRED-PERSONAL',
+            customer_type='personal',
+            user=user,
+            start_date=today - timedelta(days=20),
+            end_date=today - timedelta(days=1),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=today - timedelta(days=20),
+            end_date=today - timedelta(days=1),
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            user=user,
+            subscription=subscription,
+            started_at=timezone.now() - timedelta(days=10),
+        )
+
+        self.client.force_authenticate(user=user)
+        with patch('fleet.views.traccar_devices', return_value=[]), patch(
+            'fleet.views.traccar_current_positions', return_value=[]
+        ):
+            response = self.client.get('/api/devices/')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = response.data['results'] if isinstance(response.data, dict) else response.data
+        self.assertNotIn(device.pk, [item['id'] for item in payload])
