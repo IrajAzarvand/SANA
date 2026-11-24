@@ -140,7 +140,20 @@ class DashboardStatsView(APIView):
             active_access = active_customer_access_periods(
                 user_id=user.pk, now=now
             ).filter(device=OuterRef('pk'))
-            personal_devices = Device.objects.filter(Exists(active_access))
+            active_contract_link = SubscriptionDevice.objects.filter(
+                device=OuterRef('pk'),
+                subscription__user=user,
+                subscription__customer_type='personal',
+                subscription__status='active',
+                subscription__start_date__lte=today,
+                subscription__end_date__gte=today,
+                unassigned_at__isnull=True,
+                start_date__lte=today,
+                end_date__gte=today,
+            )
+            personal_devices = Device.objects.filter(
+                Q(Exists(active_access)) | Q(Exists(active_contract_link))
+            )
             subscriptions = Subscription.objects.filter(user=user)
             active_sub = subscriptions.filter(
                 status='active',
@@ -273,7 +286,20 @@ class DashboardStatsView(APIView):
             active_access = active_customer_access_periods(
                 user_id=access_user.pk, now=now
             ).filter(device=OuterRef('pk'))
-            qs = qs.filter(Exists(active_access))
+            active_contract_link = SubscriptionDevice.objects.filter(
+                device=OuterRef('pk'),
+                subscription__user=access_user,
+                subscription__customer_type='personal',
+                subscription__status='active',
+                subscription__start_date__lte=today,
+                subscription__end_date__gte=today,
+                unassigned_at__isnull=True,
+                start_date__lte=today,
+                end_date__gte=today,
+            )
+            qs = qs.filter(
+                Q(Exists(active_access)) | Q(Exists(active_contract_link))
+            )
 
         result = qs.values('management_status').annotate(count=Count('id'))
         return {item['management_status']: item['count'] for item in result}
