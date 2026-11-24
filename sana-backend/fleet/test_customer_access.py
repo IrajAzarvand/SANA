@@ -105,6 +105,68 @@ class ContractBackedDeviceAccessTests(TestCase):
         )
 
 
+    def test_organization_device_detail_uses_valid_link_when_newer_duplicate_is_future(self):
+        organization = Organization.objects.create(
+            name='Future Duplicate Detail Organization',
+            code='FUTURE-DUPLICATE-DETAIL-ORG',
+        )
+        main_user = User.objects.create_user(
+            username='future_duplicate_detail_main',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=organization,
+        )
+        device = Device.objects.create(
+            imei='860000000001210',
+            organization=organization,
+            management_status='installed',
+        )
+        today = timezone.localdate()
+        now = timezone.now()
+        subscription = Subscription.objects.create(
+            contract_number='FUTURE-DUPLICATE-DETAIL-001',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        valid_link = SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
+        )
+        future_link = SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
+        )
+        SubscriptionDevice.objects.filter(
+            pk__in=[valid_link.pk, future_link.pk]
+        ).update(unassigned_at=None)
+        SubscriptionDevice.objects.filter(pk=valid_link.pk).update(
+            assigned_at=now - timedelta(days=2)
+        )
+        SubscriptionDevice.objects.filter(pk=future_link.pk).update(
+            assigned_at=now + timedelta(minutes=10)
+        )
+        period = DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            subscription=subscription,
+            started_at=now - timedelta(days=3),
+        )
+        device._active_customer_access_periods = [period]
+        device._prefetched_subscription_links = [future_link, valid_link]
+
+        request = SimpleNamespace(user=main_user)
+        self.assertTrue(
+            DeviceSerializer(context={'request': request}).get_data_active(device)
+        )
+
     def setUp(self):
         self.client = APIClient()
         today = timezone.localdate()
