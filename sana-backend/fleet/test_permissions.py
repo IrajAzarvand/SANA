@@ -754,3 +754,139 @@ class BranchManagerSuspensionHistoryTests(TestCase):
 
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual([point['id'] for point in response.data['points']], [2001, 2002, 2003])
+
+class BranchManagerExpiredRenewalHistoryTests(TestCase):
+    def test_history_excludes_expired_gap_across_multiple_links_for_same_contract(self):
+        from datetime import timedelta
+        from unittest.mock import patch
+        from django.utils import timezone
+        from rest_framework.test import APIClient
+        from accounts.models import User
+        from fleet.models import Device, DeviceCustomerAccessPeriod, DeviceBranchHistory
+        from organizations.models import Branch, Organization, Subscription, SubscriptionDevice
+
+        now = timezone.now()
+        today = timezone.localdate()
+        old_end_date = today - timedelta(days=5)
+        contract_start = old_end_date - timedelta(days=30)
+        new_end_date = today + timedelta(days=30)
+        old_assigned_at = now - timedelta(days=20)
+        expiration_cutoff = timezone.make_aware(
+            datetime.combine(old_end_date + timedelta(days=1), datetime.min.time()),
+            timezone.get_current_timezone(),
+        )
+        renewal_time = now - timedelta(hours=2)
+
+        organization = Organization.objects.create(
+            name='Expired Renewal History Org',
+            code='EXPIRED-RENEWAL-HISTORY-ORG',
+        )
+        branch = Branch.objects.create(
+            organization=organization,
+            name='Expired Renewal History Branch',
+            code='EXPIRED-RENEWAL-HISTORY-BRANCH',
+        )
+        manager = User.objects.create_user(
+            username='expired_renewal_history_manager',
+            password='test-password',
+            role='branch_manager',
+            account_type='organization',
+            organization=organization,
+            branch=branch,
+        )
+        device = Device.objects.create(
+            imei='860000000000977',
+            organization=organization,
+            current_holder_organization=organization,
+            branch=branch,
+            management_status='installed',
+        )
+        subscription = Subscription.objects.create(
+            contract_number='EXPIRED-RENEWAL-HISTORY-CONTRACT',
+            customer_type='organization',
+            organization=organization,
+            start_date=contract_start,
+            end_date=new_end_date,
+            status='active',
+        )
+        old_link = SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=contract_start,
+            end_date=old_end_date,
+        )
+        SubscriptionDevice.objects.filter(pk=old_link.pk).update(
+            assigned_at=old_assigned_at,
+            unassigned_at=expiration_cutoff,
+        )
+        new_link = SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=today,
+            end_date=new_end_date,
+        )
+        SubscriptionDevice.objects.filter(pk=new_link.pk).update(
+            assigned_at=renewal_time,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            branch=branch,
+            subscription=subscription,
+            started_at=old_assigned_at,
+            ended_at=expiration_cutoff,
+            reason='contract_expired',
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            branch=branch,
+            subscription=subscription,
+            started_at=renewal_time,
+        )
+        DeviceBranchHistory.objects.create(
+            device=device,
+            organization=organization,
+            branch=branch,
+            subscription=subscription,
+            started_at=old_assigned_at,
+        )
+
+        before_expiry = expiration_cutoff - timedelta(hours=1)
+        during_gap = expiration_cutoff + (renewal_time - expiration_cutoff) / 2
+        after_renewal = renewal_time + timedelta(hours=1)
+
+        def point(point_id, stamp):
+            value = stamp.isoformat()
+            return {
+                'id': point_id,
+                'serverTime': value,
+                'fixTime': value,
+                'latitude': 35.7 + point_id / 10000,
+                'longitude': 51.4,
+                'speed': 0,
+                'course': 0,
+                'valid': True,
+                'attributes': {},
+            }
+
+        positions = [
+            point(3001, before_expiry),
+            point(3002, during_gap),
+            point(3003, after_renewal),
+        ]
+        client = APIClient()
+        client.force_authenticate(user=manager)
+        with patch('fleet.views.traccar_history_device_id', return_value=77), \
+             patch('fleet.views.traccar_device_positions', return_value=positions), \
+             patch('fleet.views.connection.cursor') as map_matched_cursor:
+            map_matched_cursor.return_value.__enter__.return_value.fetchall.return_value = []
+            response = client.get('/api/devices/report-history/', {
+                'device_id': device.id,
+                'from': (old_assigned_at + timedelta(minutes=1)).isoformat(),
+                'to': after_renewal.isoformat(),
+            })
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual([item['id'] for item in response.data['points']], [3001, 3003])
+
