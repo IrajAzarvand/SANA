@@ -397,11 +397,23 @@ class DeviceListSerializer(serializers.ModelSerializer):
 
         if user and getattr(user, 'is_site_admin', False):
             if links is None:
-                link = obj.subscription_links.filter(
-                    unassigned_at__isnull=True
+                latest_started = obj.subscription_links.filter(
+                    assigned_at__lte=now
                 ).select_related('subscription').order_by('-assigned_at', '-id').first()
             else:
-                link = next((item for item in links if item.unassigned_at is None), None)
+                started_links = [
+                    item for item in links if item.assigned_at <= now
+                ]
+                latest_started = max(
+                    started_links,
+                    key=lambda item: (item.assigned_at, item.pk),
+                    default=None,
+                )
+            link = (
+                latest_started
+                if latest_started and latest_started.unassigned_at is None
+                else None
+            )
         elif user and getattr(user, 'is_personal_user', False):
             def belongs_to_user(link):
                 subscription = getattr(link, 'subscription', None)
@@ -470,11 +482,23 @@ class DeviceListSerializer(serializers.ModelSerializer):
                 ), None)
         else:
             if links is None:
-                link = obj.subscription_links.filter(
-                    unassigned_at__isnull=True
+                latest_started = obj.subscription_links.filter(
+                    assigned_at__lte=now
                 ).select_related('subscription').order_by('-assigned_at', '-id').first()
             else:
-                link = next((item for item in links if item.unassigned_at is None), None)
+                started_links = [
+                    item for item in links if item.assigned_at <= now
+                ]
+                latest_started = max(
+                    started_links,
+                    key=lambda item: (item.assigned_at, item.pk),
+                    default=None,
+                )
+            link = (
+                latest_started
+                if latest_started and latest_started.unassigned_at is None
+                else None
+            )
 
         obj._list_active_subscription_link = link
         return link
