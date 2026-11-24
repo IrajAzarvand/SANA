@@ -134,6 +134,33 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
             owner_user=user,
         ))
 
+    def test_device_serializer_cannot_bypass_audited_relationship_transfer(self):
+        from fleet.serializers import DeviceSerializer
+
+        device = Device.objects.create(
+            imei='860000000000981',
+            organization=self.organization,
+            current_holder_organization=self.organization,
+            management_status='installed',
+        )
+        serializer = DeviceSerializer(
+            instance=device,
+            data={'current_holder_organization': self.other_organization.id},
+            partial=True,
+        )
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('current_holder_organization', serializer.errors)
+
+    def test_device_serializer_cannot_create_preassigned_customer_or_branch(self):
+        from fleet.serializers import DeviceSerializer
+
+        serializer = DeviceSerializer(data={
+            'imei': '860000000000982',
+            'current_holder_organization': self.organization.id,
+        })
+        self.assertFalse(serializer.is_valid())
+        self.assertIn('current_holder_organization', serializer.errors)
+
     def test_device_cannot_have_both_current_holder_types(self):
         from accounts.models import User
 
