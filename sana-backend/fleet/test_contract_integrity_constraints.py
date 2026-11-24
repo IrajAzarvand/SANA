@@ -230,6 +230,75 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
             device=device, ended_at__isnull=False,
         ).count(), 1)
 
+    def test_personal_customer_lifecycle_keeps_legal_owner_separate(self):
+        from datetime import timedelta
+        from accounts.models import User
+        from fleet.device_operations import execute_device_operation
+        from fleet.models import DeviceLifecycleEvent
+
+        today = timezone.localdate()
+        personal_customer = User.objects.create_user(
+            username='personal-repair-customer',
+            password='test-password',
+            account_type='personal',
+            role='personal_user',
+        )
+        subscription = Subscription.objects.create(
+            contract_number='PERSONAL-REPAIR-CONTRACT',
+            customer_type='personal',
+            user=personal_customer,
+            start_date=today,
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        device = Device.objects.create(
+            imei='860000000000979',
+            organization=self.organization,
+            current_holder_user=personal_customer,
+            management_status='installed',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            user=personal_customer,
+            subscription=subscription,
+        )
+
+        execute_device_operation(
+            device=device,
+            operation_type='return_for_repair',
+            performed_by=None,
+        )
+        sent_event = DeviceLifecycleEvent.objects.get(
+            device=device,
+            event_type='sent_to_repair',
+        )
+        self.assertIsNone(sent_event.organization_id)
+        self.assertEqual(sent_event.user_id, personal_customer.id)
+
+        execute_device_operation(device=device, operation_type='repaired', performed_by=None)
+        execute_device_operation(
+            device=device,
+            operation_type='disposition',
+            performed_by=None,
+            outcome_action='return_customer_no_vehicle',
+        )
+        device.refresh_from_db()
+        self.assertEqual(device.organization_id, self.organization.id)
+        self.assertIsNone(device.current_holder_organization_id)
+        self.assertEqual(device.current_holder_user_id, personal_customer.id)
+        current_access = DeviceCustomerAccessPeriod.objects.get(
+            device=device,
+            ended_at__isnull=True,
+        )
+        self.assertIsNone(current_access.organization_id)
+        self.assertEqual(current_access.user_id, personal_customer.id)
+
     def test_branch_transfer_uses_contract_customer_not_legal_owner(self):
         from datetime import timedelta
         from django.utils import timezone
