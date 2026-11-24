@@ -1126,13 +1126,10 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 if link is None:
                     return Response({'detail': 'گزارش این دستگاه فقط در بازه قرارداد فعال قابل مشاهده است.'}, status=403)
 
-                range_start = max(
-                    timezone.make_aware(datetime.combine(
-                        max(link.start_date, link.subscription.start_date),
-                        datetime_time.min,
-                    )),
-                    link.assigned_at,
-                )
+                range_start = timezone.make_aware(datetime.combine(
+                    max(link.start_date, link.subscription.start_date),
+                    datetime_time.min,
+                ))
                 range_end = timezone.make_aware(datetime.combine(
                     min(link.end_date, link.subscription.end_date),
                     datetime_time.max,
