@@ -901,6 +901,54 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
         self.assertIsNone(ownership.owner_user_id)
 
 
+
+    def test_contract_assignment_rejects_inactive_customer_branch(self):
+        from rest_framework.exceptions import ValidationError
+        from fleet.device_operations import _validate_device_customer_assignment
+        from organizations.models import Branch
+
+        branch = Branch.objects.create(
+            organization=self.organization,
+            name='Inactive Assignment Branch',
+            code='INACTIVE-ASSIGNMENT-BRANCH',
+            status='inactive',
+        )
+        device = Device.objects.create(
+            imei='860000000000983',
+            current_holder_organization=self.organization,
+            branch=branch,
+            management_status='installed',
+        )
+
+        with self.assertRaises(ValidationError):
+            _validate_device_customer_assignment(device, self.subscription)
+
+    def test_contract_assignment_rejects_vehicle_owned_by_another_customer(self):
+        from rest_framework.exceptions import ValidationError
+        from fleet.device_operations import _validate_device_customer_assignment
+        from fleet.models import Vehicle
+        from organizations.models import Branch
+
+        branch = Branch.objects.create(
+            organization=self.organization,
+            name='Vehicle Assignment Branch',
+            code='VEHICLE-ASSIGNMENT-BRANCH',
+        )
+        foreign_vehicle = Vehicle.objects.create(
+            plate='77الف777',
+            organization=self.other_organization,
+        )
+        device = Device.objects.create(
+            imei='860000000000984',
+            current_holder_organization=self.organization,
+            branch=branch,
+            vehicle=foreign_vehicle,
+            management_status='installed',
+        )
+
+        with self.assertRaises(ValidationError):
+            _validate_device_customer_assignment(device, self.subscription)
+
     def test_disconnected_device_never_reports_live_data_active(self):
         device = Device.objects.create(
             imei='860000000000982',
