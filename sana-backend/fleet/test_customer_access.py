@@ -145,9 +145,7 @@ class ContractBackedDeviceAccessTests(TestCase):
             start_date=self.start_date,
             end_date=self.end_date,
         )
-        DeviceCustomerAccessPeriod.objects.create(
-            device=device,
-            if customer_type == 'organization':
+        if customer_type == 'organization':
             DeviceCustomerAccessPeriod.objects.create(
                 device=device,
                 organization=organization,
