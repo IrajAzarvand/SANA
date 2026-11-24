@@ -262,7 +262,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
   };
 
   const canAddFollowUpReplacement = ['faulty', 'in_repair', 'lost', 'stolen'].includes(historyDevice?.management_status);
-  const operationNeedsReplacement = ['return_for_repair', 'lost', 'stolen', 'temporary_replacement', 'permanent_replacement'].includes(operationForm.operation_type);
+  const operationNeedsReplacement = ['return_for_repair', 'lost', 'temporary_replacement', 'permanent_replacement'].includes(operationForm.operation_type);
   const operationNeedsReplacementType = operationNeedsReplacement && Boolean(operationForm.replacement_device);
 
   const closeModal = () => {
@@ -474,7 +474,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
                           replacement_device: '',
                           reason: ['return_for_repair', 'temporary_replacement', 'permanent_replacement'].includes(value) ? 'repair' : current.reason,
                         }));
-                        if (['return_for_repair', 'lost', 'stolen', 'temporary_replacement', 'permanent_replacement'].includes(value)) await loadReplacementCandidates();
+                        if (['return_for_repair', 'lost', 'temporary_replacement', 'permanent_replacement'].includes(value)) await loadReplacementCandidates();
                         if (value === 'transfer_customer') await loadOperationTargets(value);
                       }}
                       options={[
