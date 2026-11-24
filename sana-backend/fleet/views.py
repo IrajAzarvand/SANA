@@ -364,10 +364,24 @@ class DeviceViewSet(viewsets.ModelViewSet):
             )
         elif user.is_personal_user:
             now = timezone.now()
+            today = timezone.localdate()
             active_access = active_customer_access_periods(
                 user_id=user.pk, now=now
             ).filter(device=OuterRef('pk'))
-            qs = qs.filter(Exists(active_access))
+            active_contract_link = SubscriptionDevice.objects.filter(
+                device=OuterRef('pk'),
+                subscription__user=user,
+                subscription__customer_type='personal',
+                subscription__status='active',
+                subscription__start_date__lte=today,
+                subscription__end_date__gte=today,
+                unassigned_at__isnull=True,
+                start_date__lte=today,
+                end_date__gte=today,
+            )
+            qs = qs.filter(
+                Q(Exists(active_access)) | Q(Exists(active_contract_link))
+            )
         else:
             qs = qs.none()
 
