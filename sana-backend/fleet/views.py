@@ -264,9 +264,9 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 replacement_device_id__in=authorized_device_ids,
             )
         elif user.is_personal_user:
-            authorized_device_ids = Device.objects.filter(
-                owner_user=user
-            ).values_list('id', flat=True)
+            authorized_device_ids = active_customer_access_periods(
+                user_id=user.pk
+            ).values_list('device_id', flat=True)
             replacement_scope = Q(
                 source_device_id__in=authorized_device_ids,
                 replacement_device_id__in=authorized_device_ids,
@@ -681,27 +681,27 @@ class DeviceViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'بازه زمانی هشدارها نمی‌تواند بیشتر از ۹۰ روز باشد.'}, status=400)
 
         if request.user.is_personal_user:
-            # Include devices with historical links to this customer as well.
-            # Their event visibility is bounded by each exact assignment period.
+            active_access = active_customer_access_periods(
+                user_id=request.user.pk, now=now
+            )
             devices = list(Device.objects.filter(
-                subscription_links__subscription__user=request.user,
-                subscription_links__assigned_at__lte=now,
+                pk__in=active_access.values('device_id')
             ).distinct().select_related('vehicle'))
         elif request.user.is_site_admin:
             devices = list(self.get_queryset().select_related('vehicle'))
         else:
-            # Organization and branch customers need historical devices too:
-            # get_queryset() intentionally exposes only currently active access.
-            access_scope = DeviceCustomerAccessPeriod.objects.filter(started_at__lte=now)
             if request.user.is_main_user:
-                access_scope = access_scope.filter(organization=request.user.organization)
+                access_scope = active_customer_access_periods(
+                    organization_id=request.user.organization_id, now=now
+                )
             elif request.user.is_branch_manager:
-                access_scope = access_scope.filter(
-                    organization=request.user.branch.organization,
-                    branch=request.user.branch,
+                access_scope = active_customer_access_periods(
+                    organization_id=request.user.branch.organization_id,
+                    branch_id=request.user.branch_id,
+                    now=now,
                 )
             else:
-                access_scope = access_scope.none()
+                access_scope = DeviceCustomerAccessPeriod.objects.none()
             devices = list(Device.objects.filter(
                 customer_access_periods__in=access_scope,
             ).distinct().select_related('vehicle'))
@@ -714,22 +714,27 @@ class DeviceViewSet(viewsets.ModelViewSet):
             links = SubscriptionDevice.objects.filter(
                 device__in=devices,
                 subscription__user=request.user,
+                subscription__status='active',
+                subscription__start_date__lte=timezone.localdate(),
+                subscription__end_date__gte=timezone.localdate(),
+                start_date__lte=timezone.localdate(),
+                end_date__gte=timezone.localdate(),
+                unassigned_at__isnull=True,
                 assigned_at__lte=now,
             ).select_related('subscription').order_by('assigned_at', 'id')
             for link in links:
                 links_by_device.setdefault(link.device_id, []).append(link)
         elif not request.user.is_site_admin:
-            access_periods = DeviceCustomerAccessPeriod.objects.filter(
-                device__in=devices,
-                started_at__lte=now,
-            )
             if request.user.is_main_user:
-                access_periods = access_periods.filter(organization=request.user.organization)
-            elif request.user.is_branch_manager:
-                access_periods = access_periods.filter(
-                    organization=request.user.branch.organization,
-                    branch=request.user.branch,
-                )
+                access_periods = active_customer_access_periods(
+                    organization_id=request.user.organization_id, now=now
+                ).filter(device__in=devices)
+            else:
+                access_periods = active_customer_access_periods(
+                    organization_id=request.user.branch.organization_id,
+                    branch_id=request.user.branch_id,
+                    now=now,
+                ).filter(device__in=devices)
             for period in access_periods.order_by('started_at', 'id'):
                 access_by_device.setdefault(period.device_id, []).append(period)
 
@@ -1644,11 +1649,10 @@ class DeviceReplacementRelationViewSet(viewsets.ModelViewSet):
             pass
         elif user.is_branch_manager and user.branch_id:
             now = timezone.now()
-            authorized_device_ids = DeviceCustomerAccessPeriod.objects.filter(
-                organization=user.branch.organization,
-                branch=user.branch,
-                started_at__lte=now,
-                ended_at__isnull=True,
+            authorized_device_ids = active_customer_access_periods(
+                organization_id=user.branch.organization_id,
+                branch_id=user.branch_id,
+                now=now,
             ).values_list('device_id', flat=True)
             # Both sides must be currently accessible; otherwise a relation
             # could reveal the IMEI of a device no longer assigned to this branch.
@@ -1658,19 +1662,17 @@ class DeviceReplacementRelationViewSet(viewsets.ModelViewSet):
             )
         elif user.is_main_user and user.organization_id:
             now = timezone.now()
-            authorized_device_ids = DeviceCustomerAccessPeriod.objects.filter(
-                organization=user.organization,
-                started_at__lte=now,
-                ended_at__isnull=True,
+            authorized_device_ids = active_customer_access_periods(
+                organization_id=user.organization_id, now=now
             ).values_list('device_id', flat=True)
             qs = qs.filter(
                 source_device_id__in=authorized_device_ids,
                 replacement_device_id__in=authorized_device_ids,
             )
         elif user.is_personal_user:
-            authorized_device_ids = Device.objects.filter(
-                owner_user=user
-            ).values_list('id', flat=True)
+            authorized_device_ids = active_customer_access_periods(
+                user_id=user.pk
+            ).values_list('device_id', flat=True)
             qs = qs.filter(
                 source_device_id__in=authorized_device_ids,
                 replacement_device_id__in=authorized_device_ids,
