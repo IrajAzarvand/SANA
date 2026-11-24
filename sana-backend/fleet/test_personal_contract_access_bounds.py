@@ -42,7 +42,7 @@ class PersonalDeviceContractBoundsTests(TestCase):
         # Contract dates remain authoritative when a device link is created.
         return device
 
-    def test_personal_live_visibility_requires_matching_open_access_period(self):
+    def test_personal_live_visibility_uses_active_contract_link_without_access_period(self):
         device = Device.objects.create(
             imei='860000000000403',
             management_status='installed',
@@ -55,7 +55,7 @@ class PersonalDeviceContractBoundsTests(TestCase):
             end_date=self.today + timedelta(days=30),
             status='active',
         )
-        link = SubscriptionDevice.objects.create(
+        SubscriptionDevice.objects.create(
             subscription=subscription,
             device=device,
             start_date=subscription.start_date,
@@ -68,8 +68,10 @@ class PersonalDeviceContractBoundsTests(TestCase):
         view.action_map = {'get': 'list'}
         view.request = view.initialize_request(request)
 
-        self.assertFalse(view.get_queryset().filter(pk=device.pk).exists())
-        self.assertFalse(device.is_data_active)
+        # Personal customers are authorized by the exact active contract and
+        # device link; a DeviceCustomerAccessPeriod row is not required.
+        self.assertTrue(view.get_queryset().filter(pk=device.pk).exists())
+        self.assertTrue(device.is_data_active)
 
         access = DeviceCustomerAccessPeriod.objects.create(
             device=device,
@@ -77,15 +79,11 @@ class PersonalDeviceContractBoundsTests(TestCase):
             subscription=subscription,
             started_at=timezone.now() - timedelta(minutes=1),
         )
+        access.ended_at = timezone.now()
+        access.save(update_fields=['ended_at'])
         self.assertTrue(view.get_queryset().filter(pk=device.pk).exists())
         device.refresh_from_db()
         self.assertTrue(device.is_data_active)
-
-        access.ended_at = timezone.now()
-        access.save(update_fields=['ended_at'])
-        self.assertFalse(view.get_queryset().filter(pk=device.pk).exists())
-        device.refresh_from_db()
-        self.assertFalse(device.is_data_active)
 
     def test_open_period_for_another_contract_does_not_authorize_current_link(self):
         device = Device.objects.create(
