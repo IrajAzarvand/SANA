@@ -8,7 +8,7 @@ from rest_framework.test import APIClient
 from accounts.models import User
 from fleet.models import Device, DeviceCustomerAccessPeriod
 from fleet.customer_access import active_customer_access_periods
-from fleet.device_operations import _open_customer_access
+from fleet.device_operations import _close_active_link, _open_customer_access
 from organizations.models import Branch, Organization, Subscription, SubscriptionDevice
 
 
@@ -188,6 +188,50 @@ class ContractBackedDeviceAccessTests(TestCase):
 
 
 class CustomerAccessTimelineAndContractTests(TestCase):
+    def test_closing_device_assignment_closes_all_legacy_open_contract_links(self):
+        organization = Organization.objects.create(
+            name='Legacy Open Links Organization',
+            code='LEGACY-OPEN-LINKS',
+        )
+        device = Device.objects.create(
+            imei='860000000001205',
+            organization=organization,
+        )
+        today = timezone.localdate()
+        subscriptions = [
+            Subscription.objects.create(
+                contract_number=f'LEGACY-OPEN-LINKS-{index}',
+                customer_type='organization',
+                organization=organization,
+                start_date=today - timedelta(days=5),
+                end_date=today + timedelta(days=20),
+                status='active',
+            )
+            for index in (1, 2)
+        ]
+        links = [
+            SubscriptionDevice.objects.create(
+                subscription=subscription,
+                device=device,
+                start_date=subscription.start_date,
+                end_date=subscription.end_date,
+            )
+            for subscription in subscriptions
+        ]
+        # Simulate legacy inconsistency: both historical assignments remain open.
+        SubscriptionDevice.objects.filter(
+            pk__in=[link.pk for link in links]
+        ).update(unassigned_at=None)
+
+        _close_active_link(device, operation=None)
+
+        self.assertFalse(
+            SubscriptionDevice.objects.filter(
+                device=device,
+                unassigned_at__isnull=True,
+            ).exists()
+        )
+
     def test_changing_contract_creates_a_new_access_period(self):
         organization = Organization.objects.create(
             name='Access Timeline Organization',
