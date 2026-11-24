@@ -418,6 +418,10 @@ class DeviceSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError({
                         field_name: 'هویت شخصی دستگاه باید حساب دارای نقش مشتری شخصی باشد.'
                     })
+                if field_name == 'owner_user' and not attrs[field_name].is_active:
+                    raise serializers.ValidationError({
+                        field_name: 'مالک شخصی دستگاه باید حساب فعال داشته باشد.'
+                    })
 
         request = self.context.get('request')
         user = request.user if request else None
