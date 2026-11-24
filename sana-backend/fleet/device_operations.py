@@ -635,8 +635,30 @@ def execute_device_operation(
             _close_active_link(device, operation)
             if target_subscription:
                 _add_to_subscription(device, target_subscription, operation)
+                _open_customer_access(
+                    device,
+                    subscription=target_subscription,
+                    branch=device.branch,
+                    organization=target_organization,
+                    user=target_user,
+                    reason='transfer_customer',
+                )
+            else:
+                _close_customer_access(device)
         elif outcome_action == 'dispose':
             _close_active_link(device, operation)
+            _close_customer_access(device)
+        else:
+            # Final disposition can change the branch scope even when the
+            # legal customer and contract remain the same.
+            _open_customer_access(
+                device,
+                subscription=subscription,
+                branch=device.branch,
+                organization=device.organization or previous_org,
+                user=device.owner_user or previous_user,
+                reason='disposition',
+            )
 
         disposition_labels = {
             'return_customer_same_vehicle': 'به مشتری بازگشت و روی خودرو نصب شد',
