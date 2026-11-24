@@ -522,8 +522,9 @@ def execute_device_operation(
             device.current_holder_user = None
             device.management_status = 'in_repair'
             device.save()
-            if replacement_type == 'permanent_replacement':
-                _close_branch_history(device)
+            # The original hardware has physically left the customer's branch
+            # for repair, even when a temporary replacement remains assigned.
+            _close_branch_history(device)
 
             replacement_device.management_status = (
                 'installed'
