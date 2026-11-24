@@ -112,6 +112,7 @@ class VehicleSerializer(serializers.ModelSerializer):
             access_filters = {
                 'device_id': OuterRef('pk'),
                 'organization_id': organization_id,
+                'branch_id': OuterRef('branch_id'),
                 'subscription__customer_type': 'organization',
                 'subscription__organization_id': organization_id,
                 'subscription__organization__status': 'active',
@@ -126,7 +127,7 @@ class VehicleSerializer(serializers.ModelSerializer):
                 'subscription__subscription_devices__end_date__gte': today,
             }
             if user.is_branch_manager:
-                access_filters['branch_id'] = user.branch_id
+                devices = devices.filter(branch_id=user.branch_id)
                 access_filters['branch__status'] = 'active'
             active_access = DeviceCustomerAccessPeriod.objects.filter(**access_filters)
             devices = devices.annotate(
@@ -253,6 +254,7 @@ class VehicleListSerializer(serializers.ModelSerializer):
         if user and user.is_main_user and user.organization_id:
             devices = devices.filter(
                 customer_access_periods__organization_id=user.organization_id,
+                customer_access_periods__branch_id=F('branch_id'),
                 customer_access_periods__subscription__customer_type='organization',
                 customer_access_periods__subscription__organization_id=user.organization_id,
                 customer_access_periods__subscription__organization__status='active',
@@ -270,9 +272,10 @@ class VehicleListSerializer(serializers.ModelSerializer):
             if user.branch.status != 'active' or user.branch.organization.status != 'active':
                 devices = devices.none()
             devices = devices.filter(
+                branch_id=user.branch_id,
                 customer_access_periods__branch__status='active',
                 customer_access_periods__organization_id=user.branch.organization_id,
-                customer_access_periods__branch_id=user.branch_id,
+                customer_access_periods__branch_id=F('branch_id'),
                 customer_access_periods__subscription__customer_type='organization',
                 customer_access_periods__subscription__organization_id=user.branch.organization_id,
                 customer_access_periods__subscription__organization__status='active',
