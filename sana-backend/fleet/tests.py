@@ -258,30 +258,40 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
         self.assertIs(self.serializer._active_subscription_link(device), active_link)
 
     def test_organization_device_uses_contract_from_its_active_access_period(self):
+        today = timezone.localdate()
+        now = timezone.now()
         authorized_subscription = SimpleNamespace(
             id=8,
             status='active',
             computed_status='active',
+            start_date=today,
+            end_date=today + timedelta(days=30),
             contract_number='ORG-OLDER-AUTHORIZED',
         )
         newer_subscription = SimpleNamespace(
             id=12,
             status='active',
             computed_status='active',
+            start_date=today,
+            end_date=today + timedelta(days=30),
             contract_number='ORG-NEWER-UNAUTHORIZED',
         )
         authorized_link = SimpleNamespace(
-            assigned_at=timezone.now(),
+            assigned_at=now - timedelta(minutes=2),
             pk=1,
             unassigned_at=None,
+            start_date=today,
+            end_date=today + timedelta(days=30),
             subscription_id=8,
             is_active=True,
             subscription=authorized_subscription,
         )
         newer_link = SimpleNamespace(
-            assigned_at=timezone.now(),
-            pk=1,
+            assigned_at=now - timedelta(minutes=1),
+            pk=2,
             unassigned_at=None,
+            start_date=today,
+            end_date=today + timedelta(days=30),
             subscription_id=12,
             is_active=True,
             subscription=newer_subscription,
@@ -293,13 +303,23 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
                 SimpleNamespace(subscription_id=8),
             ],
         )
+        serializer = DeviceListSerializer(context={
+            'request': SimpleNamespace(user=SimpleNamespace(
+                is_site_admin=False,
+                is_personal_user=False,
+                is_main_user=True,
+                is_branch_manager=False,
+                organization_id=1,
+                pk=1,
+            )),
+        })
 
         self.assertIs(
-            self.serializer._display_subscription_link(device),
+            serializer._display_subscription_link(device),
             authorized_link,
         )
         self.assertEqual(
-            self.serializer.get_subscription_number(device),
+            serializer.get_subscription_number(device),
             'ORG-OLDER-AUTHORIZED',
         )
 
