@@ -15,6 +15,9 @@ class OrganizationAdmin(admin.ModelAdmin):
     search_fields = ['name', 'code', 'registration_number']
     ordering = ['name']
 
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(Branch)
 class BranchAdmin(admin.ModelAdmin):
@@ -39,7 +42,12 @@ class SubscriptionDeviceInline(admin.TabularInline):
 class SubscriptionPaymentInline(admin.TabularInline):
     model = SubscriptionPayment
     extra = 0
+    can_delete = False
     fields = ['amount', 'received_at', 'description']
+    readonly_fields = [field.name for field in SubscriptionPayment._meta.fields]
+
+    def has_add_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Subscription)
@@ -102,3 +110,10 @@ class SubscriptionPaymentAdmin(admin.ModelAdmin):
     list_filter = ['received_at']
     search_fields = ['subscription__contract_number', 'description']
     raw_id_fields = ['subscription']
+    readonly_fields = [field.name for field in SubscriptionPayment._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
