@@ -951,7 +951,7 @@ class PersonalDeviceAccessQueryTests(TestCase):
         force_authenticate(first_request, user=self.user)
         first_response = DeviceViewSet.as_view({'get': 'report_history'})(first_request)
 
-        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(first_response.status_code, 200, first_response.data)
         self.assertEqual(first_response.data['next_cursor']['cursor_id'], 5000)
         self.assertEqual(fetch_positions.call_args.kwargs['limit'], 5001)
 
