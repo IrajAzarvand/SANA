@@ -1260,6 +1260,7 @@ def execute_device_operation(
         )
 
     elif operation_type == 'retire':
+        _close_branch_history(device)
         device.management_status = 'unusable'
         device.vehicle = None
         device.branch = None
@@ -1279,19 +1280,27 @@ def execute_device_operation(
     elif operation_type == 'dispose':
         if device.management_status != 'unusable':
             raise ValidationError({'device': 'برای امحاء ابتدا دستگاه باید از چرخه استفاده خارج شده باشد.'})
+        legal_owner_organization = device.organization
+        legal_owner_user = device.owner_user
         _close_active_link(device, operation)
+        _close_branch_history(device)
+        _close_ownership(device)
+        device.organization = None
+        device.owner_user = None
+        device.current_holder_organization = None
+        device.current_holder_user = None
         device.management_status = 'disposed'
         device.vehicle = None
         device.branch = None
-        device.save(update_fields=['management_status', 'vehicle', 'branch', 'updated_at'])
+        device.save()
         record_device_lifecycle_event(
             device_operation=operation,
             device=device,
             event_type='disposed',
             performed_by=performed_by,
             subscription=subscription,
-            organization=device.organization,
-            user=device.owner_user,
+            organization=legal_owner_organization,
+            user=legal_owner_user,
             reason=reason,
             description=description,
         )
