@@ -303,9 +303,13 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
                     'subscription': 'افزودن دستگاه به قرارداد تعلیق‌شده، لغوشده یا منقضی مجاز نیست.'
                 })
             if subscription.customer_type == 'organization':
-                if not subscription.organization_id or subscription.user_id is not None:
+                if (
+                    not subscription.organization_id
+                    or subscription.user_id is not None
+                    or subscription.organization.status != 'active'
+                ):
                     raise serializers.ValidationError({
-                        'subscription': 'مشتری قرارداد سازمانی معتبر نیست.'
+                        'subscription': 'مشتری قرارداد سازمانی باید سازمان فعال و معتبر باشد.'
                     })
                 if device and device.branch_id and device.branch.organization_id != subscription.organization_id:
                     raise serializers.ValidationError({
