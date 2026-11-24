@@ -520,11 +520,9 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         remove_device_ids = request.data.get('remove_device_ids', [])
         notes = request.data.get('notes', '')
 
-        allowed_contract = {'notes'}
+        allowed_contract = {'start_date', 'end_date', 'notes'}
         if any(field not in allowed_contract for field in contract_changes):
-            raise serializers.ValidationError({
-                'contract_changes': 'تاریخ‌های قرارداد فقط از مسیر تمدید یا فعال‌سازی مجدد قابل تغییر هستند؛ در این عملیات فقط یادداشت‌ها و اطلاعات غیرهویتی قابل ویرایش‌اند.'
-            })
+            raise serializers.ValidationError({'contract_changes': 'فقط start_date، end_date و notes قابل ارسال هستند'})
 
         from datetime import date
         parsed_contract = {}
@@ -536,6 +534,12 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                     raise serializers.ValidationError({field: 'فرمت تاریخ نامعتبر است'})
             else:
                 parsed_contract[field] = value
+
+        for field in ('start_date', 'end_date'):
+            if field in parsed_contract and parsed_contract[field] != getattr(subscription, field):
+                raise serializers.ValidationError({
+                    field: 'تاریخ‌های قرارداد فقط از مسیر تمدید یا فعال‌سازی مجدد قابل تغییر هستند.'
+                })
 
         new_start = parsed_contract.get('start_date', subscription.start_date)
         new_end = parsed_contract.get('end_date', subscription.end_date)
