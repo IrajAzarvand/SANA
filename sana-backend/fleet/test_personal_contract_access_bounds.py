@@ -85,7 +85,13 @@ class PersonalDeviceContractBoundsTests(TestCase):
         device.refresh_from_db()
         self.assertTrue(device.is_data_active)
 
-    def test_open_period_for_another_contract_does_not_authorize_current_link(self):
+    def test_current_personal_contract_link_authorizes_customer_without_matching_period_row(self):
+        old_customer = User.objects.create_user(
+            username='previous-personal-contract-customer',
+            password='test-password',
+            account_type='personal',
+            role='personal_user',
+        )
         device = Device.objects.create(
             imei='860000000000404',
             management_status='installed',
@@ -93,7 +99,7 @@ class PersonalDeviceContractBoundsTests(TestCase):
         old_subscription = Subscription.objects.create(
             contract_number='CONTRACT-BOUNDS-0404-OLD',
             customer_type='personal',
-            user=self.user,
+            user=old_customer,
             start_date=self.today - timedelta(days=60),
             end_date=self.today - timedelta(days=30),
             status='expired',
@@ -114,7 +120,7 @@ class PersonalDeviceContractBoundsTests(TestCase):
         )
         DeviceCustomerAccessPeriod.objects.create(
             device=device,
-            user=self.user,
+            user=old_customer,
             subscription=old_subscription,
             started_at=timezone.now() - timedelta(days=45),
         )
@@ -125,8 +131,8 @@ class PersonalDeviceContractBoundsTests(TestCase):
         view.action_map = {'get': 'list'}
         view.request = view.initialize_request(request)
 
-        self.assertFalse(view.get_queryset().filter(pk=device.pk).exists())
-        self.assertFalse(device.is_data_active)
+        self.assertTrue(view.get_queryset().filter(pk=device.pk).exists())
+        self.assertTrue(device.is_data_active)
 
     def test_device_link_cannot_extend_access_beyond_parent_contract_dates(self):
         expired = self.add_device_with_mismatched_parent_contract(
