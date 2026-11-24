@@ -208,7 +208,7 @@ def _close_branch_history(device, when=None):
         ended_at__isnull=True,
     ).order_by('-started_at', '-id').first()
     if current:
-        current.ended_at = when
+        current.ended_at = max(when, current.started_at)
         current.save(update_fields=['ended_at'])
     return current
 
@@ -237,7 +237,7 @@ def _open_branch_history(device, branch, subscription=None, started_at=None, rea
     ):
         return current
     if current:
-        current.ended_at = started_at
+        current.ended_at = max(started_at, current.started_at)
         current.save(update_fields=['ended_at'])
     return DeviceBranchHistory.objects.create(
         device=device,
@@ -253,7 +253,13 @@ def _open_branch_history(device, branch, subscription=None, started_at=None, rea
 def _close_ownership(device, when=None):
     device = Device.objects.select_for_update().get(pk=device.pk)
     when = when or timezone.now()
-    DeviceOwnershipHistory.objects.filter(device=device, ended_at__isnull=True).update(ended_at=when)
+    periods = DeviceOwnershipHistory.objects.select_for_update().filter(
+        device=device,
+        ended_at__isnull=True,
+    )
+    for period in periods:
+        period.ended_at = max(when, period.started_at)
+        period.save(update_fields=['ended_at'])
 
 
 @transaction.atomic
