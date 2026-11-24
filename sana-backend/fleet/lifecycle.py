@@ -31,7 +31,7 @@ def record_device_lifecycle_event(
         'assigned_to_contract': 'installed',
         'returned': 'warehouse',
         'sent_to_repair': 'in_repair',
-        'repaired': 'warehouse',
+        'repaired': 'ready',
         'lost': 'lost',
         'found': 'ready',
         'stolen': 'stolen',
