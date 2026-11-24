@@ -971,6 +971,7 @@ class VehicleDeviceContractVisibilityTests(TestCase):
 class InactiveOrganizationDeviceAccessTests(TestCase):
     def test_inactive_organization_cannot_list_live_devices_or_use_live_scope(self):
         from datetime import timedelta
+        from django.utils import timezone
         from rest_framework.test import APIRequestFactory, force_authenticate
         from accounts.models import User
         from fleet.models import Device, DeviceCustomerAccessPeriod
