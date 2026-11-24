@@ -30,6 +30,9 @@ class DeviceAdmin(admin.ModelAdmin):
         'branch', 'vehicle', 'management_status',
     ]
 
+    def has_delete_permission(self, request, obj=None):
+        return False
+
     def get_legal_owner(self, obj):
         if obj.organization:
             return obj.organization.name
