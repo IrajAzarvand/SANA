@@ -145,11 +145,6 @@ class VehicleSerializer(serializers.ModelSerializer):
                 start_date__lte=today,
                 end_date__gte=today,
                 unassigned_at__isnull=True,
-                device__customer_access_periods__subscription_id=F('subscription_id'),
-                device__customer_access_periods__user=user,
-                device__customer_access_periods__organization__isnull=True,
-                device__customer_access_periods__started_at__lte=now,
-                device__customer_access_periods__ended_at__isnull=True,
             )
             devices = devices.annotate(
                 has_personal_contract=Exists(active_link),
@@ -310,11 +305,6 @@ class VehicleListSerializer(serializers.ModelSerializer):
                 unassigned_at__isnull=True,
                 start_date__lte=today,
                 end_date__gte=today,
-                device__customer_access_periods__subscription_id=F('subscription_id'),
-                device__customer_access_periods__user=user,
-                device__customer_access_periods__organization__isnull=True,
-                device__customer_access_periods__started_at__lte=now,
-                device__customer_access_periods__ended_at__isnull=True,
             )
             devices = devices.annotate(
                 has_personal_contract=Exists(active_contract_link),
