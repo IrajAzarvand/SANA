@@ -829,7 +829,7 @@ class DispositionCustomerAccessTests(TestCase):
             organization=old_organization,
             branch=old_branch,
             subscription=old_subscription,
-            started_at=old_link.assigned_at + timedelta(seconds=1),
+            started_at=timezone.now(),
         )
 
         execute_device_operation(
