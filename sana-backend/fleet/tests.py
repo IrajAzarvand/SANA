@@ -716,10 +716,25 @@ class OrganizationDeviceAccessQueryTests(TestCase):
         self.now = timezone.now()
 
     def make_device_access(self, imei, branch, started_at):
-        device = Device.objects.create(imei=imei, management_status='active')
+        device = Device.objects.create(imei=imei, organization=self.organization, branch=branch, management_status='active')
+        today = timezone.localdate()
+        subscription = Subscription.objects.create(
+            contract_number=f'ACCESS-{imei}',
+            customer_type='organization',
+            organization=self.organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
+        )
         DeviceCustomerAccessPeriod.objects.create(
             device=device, organization=self.organization, branch=branch,
-            started_at=started_at,
+            subscription=subscription, started_at=started_at,
         )
         return device
 
@@ -777,11 +792,28 @@ class PersonalDeviceAccessQueryTests(TestCase):
     def make_device(self, imei, user, started_at, ended_at=None):
         device = Device.objects.create(
             imei=imei,
+            owner_user=user,
             management_status='active',
+        )
+        today = timezone.localdate()
+        subscription = Subscription.objects.create(
+            contract_number=f'PERSONAL-{imei}',
+            customer_type='personal',
+            user=user,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
         )
         DeviceCustomerAccessPeriod.objects.create(
             device=device,
             user=user,
+            subscription=subscription,
             started_at=started_at,
             ended_at=ended_at,
         )
@@ -1005,6 +1037,7 @@ class PersonalDeviceAccessQueryTests(TestCase):
         DeviceCustomerAccessPeriod.objects.create(
             device=device,
             user=self.user,
+            subscription=subscription,
             started_at=access_start,
             ended_at=access_end,
         )
@@ -1433,11 +1466,30 @@ class OrganizationAndAdminAlertsAccessTests(TestCase):
         )
 
     def make_access_device(self, imei, branch):
-        device = Device.objects.create(imei=imei, management_status='active')
+        device = Device.objects.create(
+            imei=imei, organization=self.organization, branch=branch,
+            management_status='active',
+        )
+        today = timezone.localdate()
+        subscription = Subscription.objects.create(
+            contract_number=f'ALERT-{imei}',
+            customer_type='organization',
+            organization=self.organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
+        )
         DeviceCustomerAccessPeriod.objects.create(
             device=device,
             organization=self.organization,
             branch=branch,
+            subscription=subscription,
             started_at=timezone.now() - timedelta(days=2),
         )
         return device
