@@ -757,7 +757,7 @@ class BranchManagerSuspensionHistoryTests(TestCase):
 
 class BranchManagerExpiredRenewalHistoryTests(TestCase):
     def test_history_excludes_expired_gap_across_multiple_links_for_same_contract(self):
-        from datetime import timedelta
+        from datetime import datetime, timedelta
         from unittest.mock import patch
         from django.utils import timezone
         from rest_framework.test import APIClient
