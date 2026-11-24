@@ -878,7 +878,7 @@ class DeviceOperationSerializer(serializers.ModelSerializer):
             'subscription', 'subscription_number',
             'target_subscription', 'target_subscription_number',
             'target_organization', 'target_user', 'target_branch', 'target_vehicle',
-            'replacement_type', 'replacement_method', 'outcome_action', 'reason', 'description',
+            'replacement_type', 'reason', 'description',
             'old_status', 'new_status', 'performed_at',
             'performed_by', 'performed_by_name',
         ]
