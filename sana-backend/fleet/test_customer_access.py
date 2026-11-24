@@ -1,4 +1,5 @@
 from datetime import timedelta
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.test import TestCase
@@ -9,10 +10,101 @@ from accounts.models import User
 from fleet.models import Device, DeviceCustomerAccessPeriod
 from fleet.customer_access import active_customer_access_periods
 from fleet.device_operations import _close_active_link, _open_customer_access
+from fleet.serializers import BranchManagerDeviceSerializer, DeviceSerializer
 from organizations.models import Branch, Organization, Subscription, SubscriptionDevice
 
 
 class ContractBackedDeviceAccessTests(TestCase):
+    def test_device_detail_service_status_uses_exact_organization_access_contract(self):
+        organization = Organization.objects.create(
+            name='Exact Device Status Organization',
+            code='EXACT-DEVICE-STATUS-ORG',
+        )
+        branch = Branch.objects.create(
+            organization=organization,
+            name='Exact Device Status Branch',
+            code='EXACT-DEVICE-STATUS-BR',
+        )
+        main_user = User.objects.create_user(
+            username='exact_device_status_main',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=organization,
+        )
+        branch_user = User.objects.create_user(
+            username='exact_device_status_branch',
+            password='test-password',
+            role='branch_manager',
+            account_type='organization',
+            organization=organization,
+            branch=branch,
+        )
+        device = Device.objects.create(
+            imei='860000000001207',
+            organization=organization,
+            branch=branch,
+            management_status='installed',
+        )
+        today = timezone.localdate()
+        now = timezone.now()
+        authorized = Subscription.objects.create(
+            contract_number='EXACT-DEVICE-STATUS-OLD',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        newer = Subscription.objects.create(
+            contract_number='EXACT-DEVICE-STATUS-NEW',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+            status='suspended',
+        )
+        authorized_link = SubscriptionDevice.objects.create(
+            subscription=authorized,
+            device=device,
+            start_date=authorized.start_date,
+            end_date=authorized.end_date,
+        )
+        newer_link = SubscriptionDevice.objects.create(
+            subscription=newer,
+            device=device,
+            start_date=newer.start_date,
+            end_date=newer.end_date,
+        )
+        SubscriptionDevice.objects.filter(
+            pk__in=[authorized_link.pk, newer_link.pk]
+        ).update(unassigned_at=None)
+        SubscriptionDevice.objects.filter(pk=authorized_link.pk).update(
+            assigned_at=now - timedelta(days=2)
+        )
+        SubscriptionDevice.objects.filter(pk=newer_link.pk).update(
+            assigned_at=now - timedelta(days=1)
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            branch=branch,
+            subscription=authorized,
+            started_at=now - timedelta(days=3),
+        )
+
+        main_request = SimpleNamespace(user=main_user)
+        branch_request = SimpleNamespace(user=branch_user)
+        self.assertTrue(
+            DeviceSerializer(context={'request': main_request}).get_data_active(device)
+        )
+        self.assertTrue(
+            BranchManagerDeviceSerializer(
+                context={'request': branch_request}
+            ).get_data_active(device)
+        )
+
+
     def setUp(self):
         self.client = APIClient()
         today = timezone.localdate()
