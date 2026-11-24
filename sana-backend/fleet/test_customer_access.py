@@ -113,7 +113,7 @@ class ContractBackedDeviceAccessTests(TestCase):
 
     def _assert_device_hidden_after_contract_suspension(
         self, *, username, role, account_type, customer_type, imei,
-        organization=None, branch=None, personal_user=None,
+        organization=None, branch=None,
     ):
         user = User.objects.create_user(
             username=username,
@@ -147,12 +147,14 @@ class ContractBackedDeviceAccessTests(TestCase):
         )
         DeviceCustomerAccessPeriod.objects.create(
             device=device,
-            organization=organization if customer_type == 'organization' else None,
-            user=user if customer_type == 'personal' else None,
-            subscription=subscription,
-            branch=branch,
-            started_at=timezone.now() - timedelta(days=1),
-        )
+            if customer_type == 'organization':
+            DeviceCustomerAccessPeriod.objects.create(
+                device=device,
+                organization=organization,
+                subscription=subscription,
+                branch=branch,
+                started_at=timezone.now() - timedelta(days=1),
+            )
 
         self.client.force_authenticate(user=user)
         with patch('fleet.views.traccar_devices', return_value=[]), patch(
@@ -189,7 +191,7 @@ class ContractBackedDeviceAccessTests(TestCase):
         self.assertIn(device.pk, [item['id'] for item in payload])
         self.assertEqual(
             DeviceCustomerAccessPeriod.objects.filter(device=device).count(),
-            1,
+            1 if customer_type == 'organization' else 0,
         )
 
     def test_organization_access_requires_active_contract(self):
