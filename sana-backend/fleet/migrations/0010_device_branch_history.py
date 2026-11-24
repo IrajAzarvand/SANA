@@ -7,6 +7,7 @@ def backfill_branch_history(apps, schema_editor):
     Device = apps.get_model('fleet', 'Device')
     AccessPeriod = apps.get_model('fleet', 'DeviceCustomerAccessPeriod')
     SubscriptionDevice = apps.get_model('organizations', 'SubscriptionDevice')
+    LifecycleEvent = apps.get_model('fleet', 'DeviceLifecycleEvent')
     BranchHistory = apps.get_model('fleet', 'DeviceBranchHistory')
 
     for device in Device.objects.iterator():
@@ -20,6 +21,11 @@ def backfill_branch_history(apps, schema_editor):
         periods = AccessPeriod.objects.filter(
             device_id=device.pk,
         ).select_related('branch', 'organization', 'subscription').order_by('started_at', 'id')
+        closure_events = list(LifecycleEvent.objects.filter(
+            device_id=device.pk,
+            event_type__in=['sent_to_repair', 'lost', 'stolen', 'retired', 'disposed'],
+        ).order_by('event_date', 'id'))
+        event_index = 0
         group = []
         identity = None
 
@@ -62,6 +68,15 @@ def backfill_branch_history(apps, schema_editor):
             group, identity = [], None
 
         for period in periods:
+            # These events end the physical branch assignment even if the
+            # contract-device link remains open (repair, loss, theft, retirement).
+            while (
+                event_index < len(closure_events)
+                and closure_events[event_index].event_date <= period.started_at
+            ):
+                flush_group(end_at=closure_events[event_index].event_date)
+                event_index += 1
+
             if (
                 not period.branch_id
                 or not period.organization_id
@@ -116,6 +131,9 @@ def backfill_branch_history(apps, schema_editor):
                 'ended_at': overlap_end,
             })
 
+        while event_index < len(closure_events):
+            flush_group(end_at=closure_events[event_index].event_date)
+            event_index += 1
         flush_group(keep_open=True)
 
         active_link = SubscriptionDevice.objects.filter(
@@ -127,6 +145,7 @@ def backfill_branch_history(apps, schema_editor):
             and active_link.subscription.customer_type == 'organization'
             and active_link.subscription.organization_id
             and device.branch_id
+            and device.management_status in {'installed', 'active', 'disconnected'}
             and device.branch.organization_id == active_link.subscription.organization_id
         ):
             current_history = BranchHistory.objects.filter(
