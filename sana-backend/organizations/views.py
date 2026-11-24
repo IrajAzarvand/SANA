@@ -1,6 +1,6 @@
 from django.utils import timezone
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from datetime import timedelta
 from rest_framework import viewsets, filters, status, serializers
 from rest_framework.decorators import action
@@ -36,6 +36,7 @@ from .serializers import (
 from accounts.permissions import IsSiteAdmin, IsMainUserOrSiteAdmin
 from fleet.lifecycle import record_device_lifecycle_event
 from fleet.device_operations import _close_customer_access
+from fleet.customer_access import active_customer_access_periods, active_personal_contract_links, active_subscription_links
 
 
 # ═══════════════════════════════════════════════
@@ -741,7 +742,28 @@ class SubscriptionDeviceViewSet(viewsets.ModelViewSet):
 
         active_only = self.request.query_params.get('active')
         if active_only == 'true':
-            qs = qs.filter(unassigned_at__isnull=True)
+            now = timezone.now()
+            if user.is_site_admin:
+                qs = qs.filter(
+                    pk__in=active_subscription_links(now=now).values('pk')
+                )
+            elif user.is_main_user and user.organization_id:
+                access = active_customer_access_periods(
+                    organization_id=user.organization_id,
+                    now=now,
+                ).filter(
+                    device_id=OuterRef('device_id'),
+                    subscription_id=OuterRef('subscription_id'),
+                )
+                qs = qs.filter(Exists(access))
+            elif user.is_personal_user:
+                qs = qs.filter(
+                    pk__in=active_personal_contract_links(
+                        user_id=user.pk, now=now
+                    ).values('pk')
+                )
+            else:
+                qs = qs.none()
 
         return qs
 
