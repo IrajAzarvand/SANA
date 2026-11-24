@@ -312,9 +312,13 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
                         'device': 'شعبه دستگاه متعلق به سازمان قرارداد انتخاب‌شده نیست.'
                     })
             elif subscription.customer_type == 'personal':
-                if not subscription.user_id or subscription.organization_id is not None:
+                if (
+                    not subscription.user_id
+                    or not subscription.user.is_personal_user
+                    or subscription.organization_id is not None
+                ):
                     raise serializers.ValidationError({
-                        'subscription': 'مشتری قرارداد شخصی معتبر نیست.'
+                        'subscription': 'مشتری قرارداد شخصی باید حساب معتبر با نقش مشتری شخصی باشد.'
                     })
                 if device and device.branch_id:
                     raise serializers.ValidationError({
