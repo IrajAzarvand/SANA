@@ -67,6 +67,7 @@ def _validate_device_customer_assignment(device, subscription):
 
 @transaction.atomic
 @transaction.atomic
+@transaction.atomic
 def _close_customer_access(device, when=None, subscription=None):
     device = Device.objects.select_for_update().get(pk=device.pk)
     when = when or timezone.now()
@@ -178,7 +179,7 @@ def _open_customer_access(device, subscription=None, branch=None, organization=_
 
         # Never rewrite an existing period to point at a new contract or branch.
         # Close it and create a new row so the original history remains immutable.
-        current.ended_at = started_at or timezone.now()
+        current.ended_at = max(started_at or timezone.now(), current.started_at)
         current.save(update_fields=['ended_at'])
 
     return DeviceCustomerAccessPeriod.objects.create(
