@@ -42,6 +42,9 @@ def _device_data_active_for_request(device, request):
                 item for item in prefetched_links
                 if item.subscription_id == access.subscription_id
                 and item.unassigned_at is None
+                and item.is_active
+                and item.subscription
+                and item.subscription.is_active
             ), None)
         else:
             link = (
@@ -70,6 +73,9 @@ def _device_data_active_for_request(device, request):
                 item for item in prefetched_links
                 if item.subscription_id == access.subscription_id
                 and item.unassigned_at is None
+                and item.is_active
+                and item.subscription
+                and item.subscription.is_active
             ), None)
         else:
             link = (
