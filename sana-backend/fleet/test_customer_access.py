@@ -430,6 +430,18 @@ class CustomerAccessTimelineAndContractTests(TestCase):
             subscription=subscription,
             started_at=second_period.started_at - timedelta(days=1),
         )
+        self.assertFalse(
+            active_customer_access_periods(
+                organization_id=organization.pk,
+                branch_id=first_branch.pk,
+            ).filter(device=device).exists()
+        )
+        self.assertTrue(
+            active_customer_access_periods(
+                organization_id=organization.pk,
+                branch_id=second_branch.pk,
+            ).filter(device=device).exists()
+        )
         retained_period = _open_customer_access(
             device,
             subscription=subscription,
