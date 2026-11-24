@@ -326,7 +326,7 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
         from datetime import timedelta
         from django.utils import timezone
         from fleet.device_operations import execute_device_operation
-        from fleet.models import Vehicle
+        from fleet.models import DeviceBranchHistory, Vehicle
         from organizations.models import Branch
 
         today = timezone.localdate()
@@ -351,6 +351,12 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
         DeviceCustomerAccessPeriod.objects.create(
             device=source, organization=customer, branch=branch, subscription=subscription,
         )
+        source_branch_history = DeviceBranchHistory.objects.create(
+            device=source,
+            organization=customer,
+            branch=branch,
+            subscription=subscription,
+        )
         loaner = Device.objects.create(
             imei='860000000000969', organization=legal_owner, management_status='warehouse',
         )
@@ -370,6 +376,8 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
         source.refresh_from_db()
         from fleet.models import DeviceReplacementRelation
         relation = DeviceReplacementRelation.objects.get(source_device=source, replacement_device=loaner)
+        source_branch_history.refresh_from_db()
+        self.assertIsNotNone(source_branch_history.ended_at)
         self.assertIsNotNone(relation.returned_at)
         self.assertEqual(loaner.management_status, 'warehouse')
         # Returning a temporary loaner must not erase its separate legal owner.
