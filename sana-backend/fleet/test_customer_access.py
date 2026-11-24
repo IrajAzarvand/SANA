@@ -309,6 +309,129 @@ class ContractBackedDeviceAccessTests(TestCase):
         self.assertEqual(payload[0]['subscription_id'], valid_subscription.pk)
         self.assertNotEqual(payload[0]['subscription_id'], future_subscription.pk)
 
+    def test_future_contract_does_not_authorize_personal_device(self):
+        user = User.objects.create_user(
+            username='contract_access_future_personal',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        today = timezone.localdate()
+        device = Device.objects.create(
+            imei='860000000001106',
+            owner_user=user,
+        )
+        subscription = Subscription.objects.create(
+            contract_number='ACCESS-FUTURE-PERSONAL',
+            customer_type='personal',
+            user=user,
+            start_date=today + timedelta(days=1),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        link = SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+        )
+        # The device link itself is valid today; only the parent contract is future.
+        Subscription.objects.filter(pk=subscription.pk).update(
+            start_date=today + timedelta(days=1)
+        )
+
+        self.client.force_authenticate(user=user)
+        with patch('fleet.views.traccar_devices', return_value=[]), patch(
+            'fleet.views.traccar_current_positions', return_value=[]
+        ):
+            response = self.client.get('/api/devices/')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = response.data['results'] if isinstance(response.data, dict) else response.data
+        self.assertNotIn(device.pk, [item['id'] for item in payload])
+
+    def test_future_assigned_at_does_not_authorize_personal_device(self):
+        user = User.objects.create_user(
+            username='contract_access_future_assignment',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        today = timezone.localdate()
+        now = timezone.now()
+        device = Device.objects.create(
+            imei='860000000001107',
+            owner_user=user,
+        )
+        subscription = Subscription.objects.create(
+            contract_number='ACCESS-FUTURE-ASSIGNMENT',
+            customer_type='personal',
+            user=user,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        link = SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+        )
+        SubscriptionDevice.objects.filter(pk=link.pk).update(
+            assigned_at=now + timedelta(minutes=10)
+        )
+
+        self.client.force_authenticate(user=user)
+        with patch('fleet.views.traccar_devices', return_value=[]), patch(
+            'fleet.views.traccar_current_positions', return_value=[]
+        ):
+            response = self.client.get('/api/devices/')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = response.data['results'] if isinstance(response.data, dict) else response.data
+        self.assertNotIn(device.pk, [item['id'] for item in payload])
+
+    def test_ended_assignment_does_not_authorize_personal_device(self):
+        user = User.objects.create_user(
+            username='contract_access_ended_assignment',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        today = timezone.localdate()
+        now = timezone.now()
+        device = Device.objects.create(
+            imei='860000000001108',
+            owner_user=user,
+        )
+        subscription = Subscription.objects.create(
+            contract_number='ACCESS-ENDED-ASSIGNMENT',
+            customer_type='personal',
+            user=user,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        link = SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+        )
+        SubscriptionDevice.objects.filter(pk=link.pk).update(
+            unassigned_at=now - timedelta(seconds=1)
+        )
+
+        self.client.force_authenticate(user=user)
+        with patch('fleet.views.traccar_devices', return_value=[]), patch(
+            'fleet.views.traccar_current_positions', return_value=[]
+        ):
+            response = self.client.get('/api/devices/')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = response.data['results'] if isinstance(response.data, dict) else response.data
+        self.assertNotIn(device.pk, [item['id'] for item in payload])
+
     def test_expired_contract_does_not_authorize_personal_device(self):
         user = User.objects.create_user(
             username='contract_access_expired_personal',
@@ -335,13 +458,6 @@ class ContractBackedDeviceAccessTests(TestCase):
             start_date=today - timedelta(days=20),
             end_date=today - timedelta(days=1),
         )
-        DeviceCustomerAccessPeriod.objects.create(
-            device=device,
-            user=user,
-            subscription=subscription,
-            started_at=timezone.now() - timedelta(days=10),
-        )
-
         self.client.force_authenticate(user=user)
         with patch('fleet.views.traccar_devices', return_value=[]), patch(
             'fleet.views.traccar_current_positions', return_value=[]
@@ -447,6 +563,66 @@ class CustomerAccessTimelineAndContractTests(TestCase):
         self.assertNotEqual(new_period.pk, old_period.pk)
         self.assertEqual(new_period.subscription_id, second.pk)
         self.assertEqual(new_period.started_at, changed_at)
+
+    def test_clearing_branch_creates_a_new_unscoped_access_period(self):
+        organization = Organization.objects.create(
+            name='Clear Branch Access Organization',
+            code='CLEAR-BRANCH-ACCESS',
+        )
+        branch = Branch.objects.create(
+            organization=organization,
+            name='Old Access Branch',
+            code='CLEAR-BRANCH-OLD',
+        )
+        device = Device.objects.create(
+            imei='860000000001209',
+            organization=organization,
+            branch=branch,
+        )
+        today = timezone.localdate()
+        subscription = Subscription.objects.create(
+            contract_number='CLEAR-BRANCH-ACCESS-001',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
+        )
+
+        old_period = _open_customer_access(
+            device,
+            subscription=subscription,
+            branch=branch,
+            reason='initial_branch',
+        )
+        new_period = _open_customer_access(
+            device,
+            subscription=subscription,
+            branch=None,
+            reason='branch_cleared',
+        )
+
+        old_period.refresh_from_db()
+        self.assertIsNotNone(old_period.ended_at)
+        self.assertNotEqual(old_period.pk, new_period.pk)
+        self.assertIsNone(new_period.branch_id)
+        self.assertFalse(
+            active_customer_access_periods(
+                organization_id=organization.pk,
+                branch_id=branch.pk,
+            ).filter(device=device).exists()
+        )
+        self.assertTrue(
+            active_customer_access_periods(
+                organization_id=organization.pk,
+            ).filter(device=device).exists()
+        )
 
     def test_branch_change_creates_a_new_branch_scoped_access_period(self):
         organization = Organization.objects.create(
