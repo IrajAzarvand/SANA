@@ -7,6 +7,7 @@ from rest_framework.test import APIClient
 
 from accounts.models import User
 from fleet.models import Device
+from dashboard.views import DashboardStatsView
 from organizations.models import Subscription, SubscriptionDevice
 
 
@@ -92,6 +93,36 @@ class PersonalDashboardContractSelectionTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['devices'], 0)
         self.assertEqual(response.data['gps_status']['total'], 0)
+
+
+    def test_future_created_device_link_is_not_in_personal_device_status_counts(self):
+        today = timezone.localdate()
+        now = timezone.now()
+        device = Device.objects.create(
+            imei='860000000000413',
+            management_status='installed',
+        )
+        subscription = Subscription.objects.create(
+            contract_number='DASH-FUTURE-LINK-001',
+            customer_type='personal',
+            user=self.user,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        link = SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+        )
+        SubscriptionDevice.objects.filter(pk=link.pk).update(
+            assigned_at=now + timedelta(minutes=10)
+        )
+
+        counts = DashboardStatsView().get_devices_by_status(access_user=self.user)
+
+        self.assertEqual(counts, {})
 
     def test_contract_ending_on_previous_tehran_day_is_not_current(self):
         tehran_today = date(2026, 11, 18)
