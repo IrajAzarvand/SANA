@@ -1043,9 +1043,11 @@ class SubscriptionDeviceViewSet(viewsets.ModelViewSet):
         subscription = instance.subscription
         with transaction.atomic():
             subscription = Subscription.objects.select_for_update().get(pk=subscription.pk)
-            instance = SubscriptionDevice.objects.select_for_update().select_related('device').get(
+            device = Device.objects.select_for_update().get(pk=instance.device_id)
+            instance = SubscriptionDevice.objects.select_for_update().get(
                 pk=instance.pk,
                 subscription=subscription,
+                device=device,
             )
             operation = SubscriptionOperation.objects.create(
                 subscription=subscription,
