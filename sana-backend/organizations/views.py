@@ -256,6 +256,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             thirty_days = today + timedelta(days=30)
             qs = qs.filter(
                 status='active',
+                start_date__lte=today,
                 end_date__gte=today,
                 end_date__lte=thirty_days,
             )
