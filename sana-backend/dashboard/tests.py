@@ -162,6 +162,7 @@ class PersonalDashboardGPSStatusTests(TestCase):
 
         from django.utils import timezone
         from fleet.models import Device, DeviceCustomerAccessPeriod
+        from organizations.models import Subscription, SubscriptionDevice
 
         self.client = APIClient()
         self.user = User.objects.create_user(
@@ -179,6 +180,8 @@ class PersonalDashboardGPSStatusTests(TestCase):
         self.now = timezone.now()
         self.Device = Device
         self.DeviceCustomerAccessPeriod = DeviceCustomerAccessPeriod
+        self.Subscription = Subscription
+        self.SubscriptionDevice = SubscriptionDevice
         self.timedelta = timedelta
 
     def make_accessible_device(self, imei, *, user=None, management_status='installed'):
@@ -186,9 +189,26 @@ class PersonalDashboardGPSStatusTests(TestCase):
             imei=imei,
             management_status=management_status,
         )
+        customer = user or self.user
+        today = timezone.localdate()
+        subscription = self.Subscription.objects.create(
+            contract_number=f'DASH-{imei}',
+            customer_type='personal',
+            user=customer,
+            start_date=today - self.timedelta(days=5),
+            end_date=today + self.timedelta(days=30),
+            status='active',
+        )
+        self.SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
+        )
         self.DeviceCustomerAccessPeriod.objects.create(
             device=device,
-            user=user or self.user,
+            user=customer,
+            subscription=subscription,
             started_at=self.now - self.timedelta(days=1),
         )
         return device
@@ -326,7 +346,7 @@ class BranchManagerDashboardAccessTests(TestCase):
         from django.utils import timezone
         from accounts.models import User
         from fleet.models import Device, DeviceCustomerAccessPeriod
-        from organizations.models import Organization, Branch
+        from organizations.models import Organization, Branch, Subscription, SubscriptionDevice
 
         self.client = APIClient()
         self.organization = Organization.objects.create(
@@ -349,6 +369,8 @@ class BranchManagerDashboardAccessTests(TestCase):
         self.now = timezone.now()
         self.Device = Device
         self.DeviceCustomerAccessPeriod = DeviceCustomerAccessPeriod
+        self.Subscription = Subscription
+        self.SubscriptionDevice = SubscriptionDevice
 
     def test_dashboard_counts_only_devices_with_current_branch_access(self):
         from datetime import timedelta
@@ -364,10 +386,26 @@ class BranchManagerDashboardAccessTests(TestCase):
             organization=self.organization,
             branch=self.branch,
         )
+        today = timezone.localdate()
+        subscription = self.Subscription.objects.create(
+            contract_number='BR-DASH-ACTIVE',
+            customer_type='organization',
+            organization=self.organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        self.SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=active,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
+        )
         self.DeviceCustomerAccessPeriod.objects.create(
             device=active,
             organization=self.organization,
             branch=self.branch,
+            subscription=subscription,
             started_at=self.now - timedelta(days=1),
         )
         self.DeviceCustomerAccessPeriod.objects.create(
@@ -434,7 +472,7 @@ class MainUserDashboardDeviceAccessTests(TestCase):
         from django.utils import timezone
         from accounts.models import User
         from fleet.models import Device, DeviceCustomerAccessPeriod
-        from organizations.models import Organization
+        from organizations.models import Organization, Subscription, SubscriptionDevice
 
         organization = Organization.objects.create(
             name='Main Device Access Org',
@@ -456,9 +494,24 @@ class MainUserDashboardDeviceAccessTests(TestCase):
             imei='860000000000962',
             organization=organization,
         )
+        subscription = Subscription.objects.create(
+            contract_number='MAIN-DEVICE-ACCESS-CONTRACT',
+            customer_type='organization',
+            organization=organization,
+            start_date=timezone.localdate() - timedelta(days=5),
+            end_date=timezone.localdate() + timedelta(days=30),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=active_device,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
+        )
         DeviceCustomerAccessPeriod.objects.create(
             device=active_device,
             organization=organization,
+            subscription=subscription,
             started_at=now - timedelta(days=1),
         )
         DeviceCustomerAccessPeriod.objects.create(
