@@ -139,18 +139,24 @@ def authorized_live_contract_device_ids(user):
     )
 
     if user.is_main_user and user.organization_id:
+        if user.organization.status != 'active':
+            return Device.objects.none().values_list('id', flat=True)
         links = links.filter(
             subscription__customer_type='organization',
             subscription__organization_id=user.organization_id,
+            subscription__organization__status='active',
             device__customer_access_periods__subscription_id=F('subscription_id'),
             device__customer_access_periods__organization_id=user.organization_id,
             device__customer_access_periods__started_at__lte=timezone.now(),
             device__customer_access_periods__ended_at__isnull=True,
         )
     elif user.is_branch_manager and user.branch_id:
+        if user.branch.organization.status != 'active':
+            return Device.objects.none().values_list('id', flat=True)
         links = links.filter(
             subscription__customer_type='organization',
             subscription__organization_id=user.branch.organization_id,
+            subscription__organization__status='active',
             device__customer_access_periods__subscription_id=F('subscription_id'),
             device__customer_access_periods__organization_id=user.branch.organization_id,
             device__customer_access_periods__branch_id=user.branch_id,
@@ -282,8 +288,14 @@ class DeviceViewSet(viewsets.ModelViewSet):
             'current_holder_organization', 'current_holder_user',
         )
 
-        if not user.is_site_admin and user.organization_id and user.organization.status == 'archived':
-            return qs.none()
+        if not user.is_site_admin:
+            if user.is_main_user and user.organization_id and user.organization.status != 'active':
+                return qs.none()
+            if user.is_branch_manager and (
+                not user.branch_id
+                or user.branch.organization.status != 'active'
+            ):
+                return qs.none()
 
         # Replacement history can expose the other device's IMEI. For
         # non-admin users, prefetch only relations whose two devices are
@@ -375,6 +387,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
             active_contract_access = Q(
                 customer_access_periods__subscription__customer_type='organization',
                 customer_access_periods__subscription__organization_id=user.organization_id,
+                customer_access_periods__subscription__organization__status='active',
                 customer_access_periods__subscription__status='active',
                 customer_access_periods__subscription__start_date__lte=today,
                 customer_access_periods__subscription__end_date__gte=today,
@@ -396,6 +409,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
             active_contract_access = Q(
                 customer_access_periods__subscription__customer_type='organization',
                 customer_access_periods__subscription__organization_id=user.branch.organization_id,
+                customer_access_periods__subscription__organization__status='active',
                 customer_access_periods__subscription__status='active',
                 customer_access_periods__subscription__start_date__lte=today,
                 customer_access_periods__subscription__end_date__gte=today,
