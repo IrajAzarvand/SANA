@@ -881,6 +881,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                 )
 
         subscription.refresh_from_db()
+        subscription.refresh_from_db()
         return Response(SubscriptionSerializer(subscription).data)
 
     @action(detail=True, methods=['post'])
