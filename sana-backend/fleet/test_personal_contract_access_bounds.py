@@ -39,12 +39,7 @@ class PersonalDeviceContractBoundsTests(TestCase):
             start_date=self.today - timedelta(days=5),
             end_date=self.today + timedelta(days=30),
         )
-        # Contract dates are authoritative; a device-link date must never
-        # extend or shorten the parent contract's service window.
-        Subscription.objects.filter(pk=subscription.pk).update(
-            start_date=start_date,
-            end_date=end_date,
-        )
+        # Contract dates remain authoritative when a device link is created.
         return device
 
     def test_personal_live_visibility_requires_matching_open_access_period(self):
