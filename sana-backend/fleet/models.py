@@ -280,6 +280,12 @@ class Device(models.Model):
                 user__isnull=True,
             )
         else:
+            if (
+                not subscription.user_id
+                or not subscription.user.is_active
+                or not subscription.user.is_personal_user
+            ):
+                return False
             access = access.filter(
                 user_id=subscription.user_id,
                 organization__isnull=True,
