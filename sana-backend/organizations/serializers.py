@@ -603,7 +603,27 @@ class SubscriptionSerializer(serializers.ModelSerializer):
             'devices', 'payments', 'operations',
             'created_at', 'updated_at',
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = [
+            'id', 'customer_type', 'organization', 'user',
+            'start_date', 'end_date', 'status',
+            'created_at', 'updated_at',
+        ]
+
+    def validate(self, attrs):
+        if self.instance is not None:
+            protected_fields = {
+                'customer_type': self.instance.customer_type,
+                'organization': self.instance.organization_id,
+                'user': self.instance.user_id,
+                'start_date': self.instance.start_date,
+                'end_date': self.instance.end_date,
+            }
+            for field_name, current_value in protected_fields.items():
+                if field_name in self.initial_data and str(self.initial_data[field_name]) != str(current_value):
+                    raise serializers.ValidationError({
+                        field_name: 'تغییر مشتری و بازه قرارداد فقط از مسیر عملیات رسمی قرارداد مجاز است.'
+                    })
+        return attrs
 
     def get_devices(self, obj):
         """فقط لینک‌های فعال (unassigned_at=None) رو برگردون"""
