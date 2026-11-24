@@ -250,7 +250,16 @@ def _close_ownership(device, when=None):
 @transaction.atomic
 def _open_ownership(device, organization=_CUSTOMER_UNSET, user=_CUSTOMER_UNSET, started_at=None, reason=''):
     device = Device.objects.select_for_update().get(pk=device.pk)
-    customer = _customer_kwargs(device, organization, user)
+    # Ownership history must always describe legal ownership, never the
+    # contract customer/current holder. Explicit values remain available for
+    # audited ownership transfers.
+    if organization is _CUSTOMER_UNSET and user is _CUSTOMER_UNSET:
+        customer = {
+            'organization': device.organization,
+            'user': device.owner_user,
+        }
+    else:
+        customer = _customer_kwargs(device, organization, user)
     if not customer['organization'] and not customer['user']:
         return None
     current = DeviceOwnershipHistory.objects.filter(device=device, ended_at__isnull=True).first()
