@@ -110,6 +110,20 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
             organization=self.other_organization,
         ))
 
+    def test_ownership_history_defaults_to_legal_owner_not_current_holder(self):
+        from fleet.device_operations import _open_ownership
+
+        device = Device.objects.create(
+            imei='860000000000980',
+            organization=self.organization,
+            current_holder_organization=self.other_organization,
+            management_status='installed',
+        )
+        period = _open_ownership(device)
+        self.assertIsNotNone(period)
+        self.assertEqual(period.organization_id, self.organization.id)
+        self.assertNotEqual(period.organization_id, self.other_organization.id)
+
     def test_device_cannot_have_both_legal_owner_types(self):
         from accounts.models import User
 
