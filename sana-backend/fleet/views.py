@@ -352,6 +352,27 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     to_attr='_prefetched_replacement_target_operations',
                 ),
             )
+            if user.is_main_user and user.organization_id:
+                active_periods = active_customer_access_periods(
+                    organization_id=user.organization_id,
+                    now=timezone.now(),
+                ).select_related('subscription').order_by('-started_at', '-id')
+                qs = qs.prefetch_related(Prefetch(
+                    'customer_access_periods',
+                    queryset=active_periods,
+                    to_attr='_active_customer_access_periods',
+                ))
+            elif user.is_branch_manager and user.branch_id:
+                active_periods = active_customer_access_periods(
+                    organization_id=user.branch.organization_id,
+                    branch_id=user.branch_id,
+                    now=timezone.now(),
+                ).select_related('subscription').order_by('-started_at', '-id')
+                qs = qs.prefetch_related(Prefetch(
+                    'customer_access_periods',
+                    queryset=active_periods,
+                    to_attr='_active_customer_access_periods',
+                ))
 
         if user.is_site_admin:
             pass
@@ -1126,10 +1147,13 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 if link is None:
                     return Response({'detail': 'گزارش این دستگاه فقط در بازه قرارداد فعال قابل مشاهده است.'}, status=403)
 
-                range_start = timezone.make_aware(datetime.combine(
-                    max(link.start_date, link.subscription.start_date),
-                    datetime_time.min,
-                ))
+                range_start = max(
+                    timezone.make_aware(datetime.combine(
+                        max(link.start_date, link.subscription.start_date),
+                        datetime_time.min,
+                    )),
+                    link.assigned_at,
+                )
                 range_end = timezone.make_aware(datetime.combine(
                     min(link.end_date, link.subscription.end_date),
                     datetime_time.max,
