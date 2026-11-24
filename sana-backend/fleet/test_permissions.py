@@ -76,7 +76,7 @@ class BranchManagerReplacementHistoryScopeTests(TestCase):
         from types import SimpleNamespace
 
         from django.utils import timezone
-        from organizations.models import Organization, Branch
+        from organizations.models import Organization, Branch, Subscription, SubscriptionDevice
         from fleet.models import Device, DeviceCustomerAccessPeriod, DeviceReplacementRelation
         from accounts.models import User
 
@@ -105,11 +105,27 @@ class BranchManagerReplacementHistoryScopeTests(TestCase):
             branch=branch,
         )
         now = timezone.now()
-        for device in (first, second):
+        today = timezone.localdate()
+        for index, device in enumerate((first, second), start=1):
+            subscription = Subscription.objects.create(
+                contract_number=f'REPL-SCOPE-{index}',
+                customer_type='organization',
+                organization=organization,
+                start_date=today - timedelta(days=5),
+                end_date=today + timedelta(days=30),
+                status='active',
+            )
+            SubscriptionDevice.objects.create(
+                subscription=subscription,
+                device=device,
+                start_date=subscription.start_date,
+                end_date=subscription.end_date,
+            )
             DeviceCustomerAccessPeriod.objects.create(
                 device=device,
                 organization=organization,
                 branch=branch,
+                subscription=subscription,
                 started_at=now - timedelta(days=1),
             )
         visible = DeviceReplacementRelation.objects.create(
@@ -146,7 +162,7 @@ class BranchManagerReplacementHistoryScopeTests(TestCase):
         from django.utils import timezone
         from accounts.models import User
         from fleet.models import Device, DeviceCustomerAccessPeriod, DeviceReplacementRelation
-        from organizations.models import Organization
+        from organizations.models import Organization, Subscription, SubscriptionDevice
 
         organization = Organization.objects.create(
             name='Company Replacement Scope',
@@ -176,10 +192,26 @@ class BranchManagerReplacementHistoryScopeTests(TestCase):
             organization=other,
         )
         now = timezone.now()
-        for device in (own_device, second_own_device):
+        today = timezone.localdate()
+        for index, device in enumerate((own_device, second_own_device), start=1):
+            subscription = Subscription.objects.create(
+                contract_number=f'COMP-REPL-SCOPE-{index}',
+                customer_type='organization',
+                organization=organization,
+                start_date=today - timedelta(days=5),
+                end_date=today + timedelta(days=30),
+                status='active',
+            )
+            SubscriptionDevice.objects.create(
+                subscription=subscription,
+                device=device,
+                start_date=subscription.start_date,
+                end_date=subscription.end_date,
+            )
             DeviceCustomerAccessPeriod.objects.create(
                 device=device,
                 organization=organization,
+                subscription=subscription,
                 started_at=now - timedelta(days=1),
             )
         visible = DeviceReplacementRelation.objects.create(
@@ -315,12 +347,6 @@ class LegacyBranchManagerReportHistoryScopeTests(TestCase):
             organization=organization,
             branch=branch,
         )
-        DeviceCustomerAccessPeriod.objects.create(
-            device=device,
-            organization=organization,
-            branch=branch,
-            started_at=now - timedelta(days=2),
-        )
         subscription = Subscription.objects.create(
             contract_number='LEGACY-REPORT-CONTRACT',
             customer_type='organization',
@@ -328,6 +354,13 @@ class LegacyBranchManagerReportHistoryScopeTests(TestCase):
             start_date=today - timedelta(days=10),
             end_date=today + timedelta(days=10),
             status='active',
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            branch=branch,
+            subscription=subscription,
+            started_at=now - timedelta(days=2),
         )
         SubscriptionDevice.objects.create(
             subscription=subscription,
@@ -397,7 +430,7 @@ class BranchManagerVehicleAndDriverTenantScopeTests(TestCase):
         from rest_framework.test import APIClient
         from accounts.models import User
         from fleet.models import Device, DeviceCustomerAccessPeriod, Driver, Vehicle
-        from organizations.models import Branch, Organization
+        from organizations.models import Branch, Organization, Subscription, SubscriptionDevice
 
         organization = Organization.objects.create(
             name='Scoped Branch Tenant',
@@ -455,10 +488,26 @@ class BranchManagerVehicleAndDriverTenantScopeTests(TestCase):
             organization=organization,
             branch=branch,
         )
+        today = timezone.localdate()
+        subscription = Subscription.objects.create(
+            contract_number='BRANCH-TENANT-ACCESS',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
+        )
         DeviceCustomerAccessPeriod.objects.create(
             device=device,
             organization=organization,
             branch=branch,
+            subscription=subscription,
             started_at=timezone.now() - timedelta(days=1),
         )
 
@@ -515,9 +564,24 @@ class DeviceListContractTenantScopeTests(TestCase):
             imei='860000000000981',
             organization=organization,
         )
+        own_subscription = Subscription.objects.create(
+            contract_number='OWN-DEVICE-LIST-CONTRACT',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=5),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=own_subscription,
+            device=device,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=5),
+        )
         DeviceCustomerAccessPeriod.objects.create(
             device=device,
             organization=organization,
+            subscription=own_subscription,
             started_at=now - timedelta(days=1),
         )
         foreign_subscription = Subscription.objects.create(
@@ -546,6 +610,6 @@ class DeviceListContractTenantScopeTests(TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.data['results'] if isinstance(response.data, dict) else response.data
         self.assertEqual(len(payload), 1)
-        self.assertIsNone(payload[0]['subscription_id'])
-        self.assertIsNone(payload[0]['subscription_number'])
+        self.assertEqual(payload[0]['subscription_id'], own_subscription.id)
+        self.assertEqual(payload[0]['subscription_number'], own_subscription.contract_number)
         self.assertNotIn('FOREIGN-DEVICE-LIST-CONTRACT', str(payload[0]))
