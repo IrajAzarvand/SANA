@@ -956,11 +956,14 @@ class PersonalDeviceAccessQueryTests(TestCase):
             end_date=today + timedelta(days=2),
             status='active',
         )
-        SubscriptionDevice.objects.create(
+        link = SubscriptionDevice.objects.create(
             subscription=subscription,
             device=device,
             start_date=today - timedelta(days=2),
             end_date=today + timedelta(days=2),
+        )
+        SubscriptionDevice.objects.filter(pk=link.pk).update(
+            assigned_at=timezone.now() - timedelta(minutes=1)
         )
         lookup_device.return_value = {'id': 42}
 
