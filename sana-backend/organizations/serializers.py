@@ -926,14 +926,18 @@ class SubscriptionWizardSerializer(serializers.Serializer):
 
             if customer_type == 'organization':
                 if selected_organization:
-                    if selected_user.organization_id and selected_user.organization_id != selected_organization.id:
+                    if selected_user.organization_id != selected_organization.id:
                         raise serializers.ValidationError({
-                            'existing_user_id': 'مدیر انتخاب‌شده عضو سازمان دیگری است؛ برای جلوگیری از جابه‌جایی ناخواسته، مدیر دیگری انتخاب کنید'
+                            'existing_user_id': 'مدیر انتخاب‌شده باید از قبل عضو همین سازمان باشد؛ اتصال حساب از بخش مدیریت کاربران انجام می‌شود.'
                         })
-                elif selected_user.organization_id:
+                else:
                     raise serializers.ValidationError({
-                        'organization_id': 'مدیر انتخاب‌شده به یک سازمان موجود متصل است؛ همان سازمان را انتخاب کنید'
+                        'organization_id': 'برای استفاده از حساب مدیر موجود، باید همان سازمانی را انتخاب کنید که حساب از قبل به آن تعلق دارد.'
                     })
+            elif selected_user.organization_id is not None:
+                raise serializers.ValidationError({
+                    'existing_user_id': 'حساب مشتری شخصی نباید به سازمان دیگری متصل باشد.'
+                })
         else:
             if not data.get('password'):
                 raise serializers.ValidationError({
