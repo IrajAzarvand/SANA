@@ -226,13 +226,19 @@ class Device(models.Model):
 
     @property
     def is_data_active(self):
-        """آیا داده‌ی این دستگاه باید دریافت بشه؟"""
+        """آیا قرارداد و اتصال دستگاه در حال حاضر اجازه دریافت داده می‌دهند؟"""
         link = self.active_subscription_link
-        if not link:
+        if not link or not link.is_active:
             return False
-        if self.management_status in {'faulty', 'in_repair', 'ready', 'lost', 'stolen', 'disconnected', 'unusable', 'disposed'}:
+        subscription = link.subscription
+        if not subscription or not subscription.is_active:
             return False
-        return link.is_active
+        if self.management_status in {
+            'faulty', 'in_repair', 'ready', 'lost', 'stolen',
+            'disconnected', 'unusable', 'disposed',
+        }:
+            return False
+        return True
 
 
 
