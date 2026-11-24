@@ -327,7 +327,11 @@ class DeviceListSerializer(serializers.ModelSerializer):
         # suspended, cancelled, not-yet-started, or expired. Contract dates
         # and its computed status must both authorize data service.
         subscription = getattr(link, 'subscription', None)
-        if not subscription or subscription.computed_status != 'active':
+        if (
+            not subscription
+            or subscription.status != 'active'
+            or subscription.computed_status != 'active'
+        ):
             return False
 
         if obj.management_status in {
@@ -365,7 +369,11 @@ class DeviceListSerializer(serializers.ModelSerializer):
             'expired': 'قرارداد منقضی شده است',
             'pending': 'تاریخ شروع قرارداد هنوز نرسیده',
         }
-        contract_status = subscription.computed_status
+        contract_status = (
+            subscription.status
+            if subscription.status in {'suspended', 'cancelled', 'expired'}
+            else subscription.computed_status
+        )
         if contract_status != 'active':
             return contract_status_reasons.get(
                 contract_status,
@@ -489,6 +497,7 @@ class DeviceListSerializer(serializers.ModelSerializer):
             link
             and getattr(link, 'is_active', False)
             and subscription
+            and subscription.status == 'active'
             and subscription.computed_status == 'active'
         ):
             result = link
