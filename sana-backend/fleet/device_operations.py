@@ -66,13 +66,21 @@ def _validate_device_customer_assignment(device, subscription):
 
 
 @transaction.atomic
+@transaction.atomic
 def _close_customer_access(device, when=None, subscription=None):
     device = Device.objects.select_for_update().get(pk=device.pk)
     when = when or timezone.now()
-    periods = DeviceCustomerAccessPeriod.objects.filter(device=device, ended_at__isnull=True)
+    periods = DeviceCustomerAccessPeriod.objects.select_for_update().filter(
+        device=device,
+        ended_at__isnull=True,
+    )
     if subscription is not None:
         periods = periods.filter(subscription=subscription)
-    periods.update(ended_at=when)
+    for period in periods:
+        # Scheduled access periods may start in the future. Close them at
+        # their start boundary rather than creating an invalid negative interval.
+        period.ended_at = max(when, period.started_at)
+        period.save(update_fields=['ended_at'])
 
 
 @transaction.atomic
@@ -116,8 +124,9 @@ def _open_customer_access(device, subscription=None, branch=None, organization=_
         else:
             raise ValidationError({'subscription': 'نوع مشتری قرارداد نامعتبر است.'})
 
-        # A historical device link is not sufficient for live access. The
-        # parent contract and this exact device link must both be active today.
+        # A historical device link is not sufficient for live access.
+        # Pending contracts and future device-link dates get a scheduled
+        # period, which becomes visible only when the effective start arrives.
         active_link = SubscriptionDevice.objects.select_for_update().filter(
             device=device,
             subscription=subscription,
@@ -127,13 +136,24 @@ def _open_customer_access(device, subscription=None, branch=None, organization=_
             raise ValidationError({
                 'subscription': 'برای این دستگاه اتصال فعال به قرارداد انتخاب‌شده وجود ندارد.'
             })
-        if not active_link.is_active:
+        if subscription.computed_status in {'cancelled', 'suspended', 'expired'}:
+            return None
+        today = timezone.localdate()
+        if active_link.end_date < today:
             return None
 
     # A valid contract cannot make hardware that is physically in the
     # warehouse, repair, or disposition workflow live-accessible.
     if device.management_status not in {'installed', 'active'}:
         return None
+
+    from datetime import datetime, time
+    effective_start_date = max(active_link.start_date, subscription.start_date)
+    scheduled_start = timezone.make_aware(
+        datetime.combine(effective_start_date, time.min),
+        timezone.get_current_timezone(),
+    )
+    started_at = max(started_at or timezone.now(), scheduled_start)
 
     current = DeviceCustomerAccessPeriod.objects.select_for_update().filter(
         device=device,
