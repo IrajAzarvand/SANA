@@ -1,4 +1,4 @@
-from django.db.models import F
+from django.db.models import F, Q
 from django.utils import timezone
 
 from .models import DeviceCustomerAccessPeriod
@@ -19,7 +19,8 @@ def active_customer_access_periods(*, organization_id=None, user_id=None, branch
 
     periods = DeviceCustomerAccessPeriod.objects.filter(
         started_at__lte=now,
-        ended_at__isnull=True,
+    ).filter(
+        Q(ended_at__isnull=True) | Q(ended_at__gte=now),
         subscription__status='active',
         subscription__start_date__lte=today,
         subscription__end_date__gte=today,
