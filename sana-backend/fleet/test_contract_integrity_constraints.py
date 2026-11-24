@@ -683,6 +683,17 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
             ended_at__isnull=True,
         ).exists())
 
+        execute_device_operation(
+            device=source,
+            operation_type='found',
+            performed_by=None,
+            subscription=self.subscription,
+        )
+        self.assertFalse(DeviceBranchHistory.objects.filter(
+            device=source,
+            ended_at__isnull=True,
+        ).exists())
+
     def test_device_api_cannot_change_legal_owner_without_lifecycle_transfer(self):
         from fleet.serializers import DeviceSerializer
 
