@@ -66,8 +66,6 @@ def _validate_device_customer_assignment(device, subscription):
 
 
 @transaction.atomic
-@transaction.atomic
-@transaction.atomic
 def _close_customer_access(device, when=None, subscription=None):
     device = Device.objects.select_for_update().get(pk=device.pk)
     when = when or timezone.now()
