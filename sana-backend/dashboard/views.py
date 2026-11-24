@@ -11,6 +11,7 @@ from datetime import timedelta
 from accounts.models import User
 from organizations.models import Organization, Branch, Subscription, SubscriptionDevice
 from fleet.models import Vehicle, Device, Driver, DeviceCustomerAccessPeriod
+from fleet.customer_access import active_customer_access_periods
 from fleet.traccar_api import TraccarAPIError, traccar_current_positions, traccar_devices
 from .models import SiteSettings
 
@@ -63,10 +64,10 @@ class DashboardStatsView(APIView):
             now = timezone.now()
             organization_devices = list(
                 Device.objects.filter(
-                    customer_access_periods__organization_id=org,
-                    customer_access_periods__started_at__lte=now,
-                    customer_access_periods__ended_at__isnull=True,
-                ).distinct().only('id', 'imei')
+                    pk__in=active_customer_access_periods(
+                        organization_id=org, now=now
+                    ).values('device_id')
+                ).only('id', 'imei')
             )
             gps_status = self.get_personal_gps_status(organization_devices)
             active_sub = subscriptions.filter(
@@ -105,11 +106,12 @@ class DashboardStatsView(APIView):
             subscriptions = Subscription.objects.none()
             branch_devices = list(
                 Device.objects.filter(
-                    customer_access_periods__organization=branch.organization,
-                    customer_access_periods__branch=branch,
-                    customer_access_periods__started_at__lte=now,
-                    customer_access_periods__ended_at__isnull=True,
-                ).distinct().only('id', 'imei')
+                    pk__in=active_customer_access_periods(
+                        organization_id=branch.organization_id,
+                        branch_id=branch.pk,
+                        now=now,
+                    ).values('device_id')
+                ).only('id', 'imei')
             )
             gps_status = self.get_personal_gps_status(branch_devices)
             active_sub = subscriptions.filter(
@@ -135,26 +137,10 @@ class DashboardStatsView(APIView):
         # مشتری شخصی
         if user.is_personal_user:
             now = timezone.now()
-            active_access = DeviceCustomerAccessPeriod.objects.filter(
-                device=OuterRef('pk'),
-                user=user,
-                started_at__lte=now,
-            ).filter(
-                Q(ended_at__isnull=True) | Q(ended_at__gte=now)
-            )
-            active_contract_link = SubscriptionDevice.objects.filter(
-                device=OuterRef('pk'),
-                subscription__user=user,
-                subscription__status='active',
-                subscription__start_date__lte=today,
-                subscription__end_date__gte=today,
-                unassigned_at__isnull=True,
-                start_date__lte=today,
-                end_date__gte=today,
-            )
-            personal_devices = Device.objects.filter(
-                Q(Exists(active_access)) | Q(Exists(active_contract_link))
-            )
+            active_access = active_customer_access_periods(
+                user_id=user.pk, now=now
+            ).filter(device=OuterRef('pk'))
+            personal_devices = Device.objects.filter(Exists(active_access))
             subscriptions = Subscription.objects.filter(user=user)
             active_sub = subscriptions.filter(
                 status='active',
