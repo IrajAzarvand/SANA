@@ -264,8 +264,16 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 replacement_device_id__in=authorized_device_ids,
             )
         elif user.is_personal_user:
-            authorized_device_ids = active_customer_access_periods(
-                user_id=user.pk
+            today = timezone.localdate()
+            authorized_device_ids = SubscriptionDevice.objects.filter(
+                subscription__user=user,
+                subscription__customer_type='personal',
+                subscription__status='active',
+                subscription__start_date__lte=today,
+                subscription__end_date__gte=today,
+                start_date__lte=today,
+                end_date__gte=today,
+                unassigned_at__isnull=True,
             ).values_list('device_id', flat=True)
             replacement_scope = Q(
                 source_device_id__in=authorized_device_ids,
@@ -695,11 +703,20 @@ class DeviceViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'بازه زمانی هشدارها نمی‌تواند بیشتر از ۹۰ روز باشد.'}, status=400)
 
         if request.user.is_personal_user:
-            active_access = active_customer_access_periods(
-                user_id=request.user.pk, now=now
+            today = timezone.localdate()
+            active_links = SubscriptionDevice.objects.filter(
+                subscription__user=request.user,
+                subscription__customer_type='personal',
+                subscription__status='active',
+                subscription__start_date__lte=today,
+                subscription__end_date__gte=today,
+                start_date__lte=today,
+                end_date__gte=today,
+                unassigned_at__isnull=True,
+                assigned_at__lte=now,
             )
             devices = list(Device.objects.filter(
-                pk__in=active_access.values('device_id')
+                pk__in=active_links.values('device_id')
             ).distinct().select_related('vehicle'))
         elif request.user.is_site_admin:
             devices = list(self.get_queryset().select_related('vehicle'))
@@ -1074,20 +1091,13 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     and link.subscription.start_date <= today <= link.subscription.end_date
                 ]
                 link = personal_links[0] if personal_links else None
-                access = active_customer_access_periods(
-                    user_id=request.user.pk, now=now
-                ).filter(device=device).first()
-
-                if link is None or access is None:
+                if link is None:
                     return Response({'detail': 'گزارش این دستگاه فقط در بازه قرارداد فعال قابل مشاهده است.'}, status=403)
 
-                range_start = max(
-                    timezone.make_aware(datetime.combine(
-                        max(link.start_date, link.subscription.start_date),
-                        datetime_time.min,
-                    )),
-                    access.started_at,
-                )
+                range_start = timezone.make_aware(datetime.combine(
+                    max(link.start_date, link.subscription.start_date),
+                    datetime_time.min,
+                ))
                 range_end = timezone.make_aware(datetime.combine(
                     min(link.end_date, link.subscription.end_date),
                     datetime_time.max,
@@ -1685,8 +1695,16 @@ class DeviceReplacementRelationViewSet(viewsets.ModelViewSet):
                 replacement_device_id__in=authorized_device_ids,
             )
         elif user.is_personal_user:
-            authorized_device_ids = active_customer_access_periods(
-                user_id=user.pk
+            today = timezone.localdate()
+            authorized_device_ids = SubscriptionDevice.objects.filter(
+                subscription__user=user,
+                subscription__customer_type='personal',
+                subscription__status='active',
+                subscription__start_date__lte=today,
+                subscription__end_date__gte=today,
+                start_date__lte=today,
+                end_date__gte=today,
+                unassigned_at__isnull=True,
             ).values_list('device_id', flat=True)
             qs = qs.filter(
                 source_device_id__in=authorized_device_ids,
