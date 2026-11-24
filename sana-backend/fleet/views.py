@@ -151,7 +151,10 @@ def authorized_live_contract_device_ids(user):
             device__customer_access_periods__ended_at__isnull=True,
         )
     elif user.is_branch_manager and user.branch_id:
-        if user.branch.organization.status != 'active':
+        if (
+            user.branch.organization.status != 'active'
+            or user.branch.status != 'active'
+        ):
             return Device.objects.none().values_list('id', flat=True)
         links = links.filter(
             subscription__customer_type='organization',
@@ -294,6 +297,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
             if user.is_branch_manager and (
                 not user.branch_id
                 or user.branch.organization.status != 'active'
+                or user.branch.status != 'active'
             ):
                 return qs.none()
 
