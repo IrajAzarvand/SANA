@@ -318,6 +318,7 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
             elif subscription.customer_type == 'personal':
                 if (
                     not subscription.user_id
+                    or not subscription.user.is_active
                     or not subscription.user.is_personal_user
                     or subscription.organization_id is not None
                 ):
