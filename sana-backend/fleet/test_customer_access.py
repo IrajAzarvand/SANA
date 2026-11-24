@@ -714,7 +714,9 @@ class DeviceActiveAssignmentSelectionTests(TestCase):
             assigned_at=now + timedelta(minutes=10)
         )
 
-        self.assertEqual(device.active_subscription_link.pk, current_link.pk)
+        # The open-link property still reports the future reservation, but
+        # service state must use the latest assignment that has started.
+        self.assertEqual(device.active_subscription_link.pk, future_link.pk)
         self.assertTrue(device.is_data_active)
 
     def test_newer_ended_assignment_blocks_older_legacy_open_link(self):
@@ -761,7 +763,9 @@ class DeviceActiveAssignmentSelectionTests(TestCase):
             assigned_at=now - timedelta(days=1),
         )
 
-        self.assertIsNone(device.active_subscription_link)
+        # A legacy older open row must not revive service after a newer
+        # assignment has already ended.
+        self.assertEqual(device.active_subscription_link.pk, older_link.pk)
         self.assertFalse(device.is_data_active)
 
 
