@@ -279,6 +279,7 @@ class Device(models.Model):
             access = access.filter(
                 organization_id=subscription.organization_id,
                 user__isnull=True,
+                branch_id=self.branch_id,
             )
         else:
             # Personal-customer visibility is granted by the exact active
