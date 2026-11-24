@@ -581,6 +581,15 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             payment_objects[payment_id] = (payment, item)
 
         with transaction.atomic():
+            locked_subscription = Subscription.objects.select_for_update().get(pk=subscription.pk)
+            if (
+                new_start != locked_subscription.start_date
+                or new_end != locked_subscription.end_date
+            ):
+                raise serializers.ValidationError({
+                    'contract_changes': 'قرارداد هم‌زمان تغییر کرده است؛ اطلاعات را تازه‌سازی و دوباره تلاش کنید.'
+                })
+            subscription = locked_subscription
             operation = SubscriptionOperation.objects.create(
                 subscription=subscription,
                 operation_type='modify',
