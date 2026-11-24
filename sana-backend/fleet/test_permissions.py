@@ -356,11 +356,14 @@ class LegacyBranchManagerReportHistoryScopeTests(TestCase):
             end_date=today + timedelta(days=10),
             status='active',
         )
-        SubscriptionDevice.objects.create(
+        history_link = SubscriptionDevice.objects.create(
             subscription=subscription,
             device=device,
             start_date=today - timedelta(days=10),
             end_date=today + timedelta(days=10),
+        )
+        SubscriptionDevice.objects.filter(pk=history_link.pk).update(
+            assigned_at=now - timedelta(days=3),
         )
         DeviceCustomerAccessPeriod.objects.create(
             device=device,
