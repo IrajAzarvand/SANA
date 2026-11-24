@@ -172,11 +172,8 @@ def authorized_live_contract_device_ids(user):
         links = links.filter(
             subscription__customer_type='personal',
             subscription__user=user,
-            device__customer_access_periods__subscription_id=F('subscription_id'),
-            device__customer_access_periods__user=user,
-            device__customer_access_periods__organization__isnull=True,
-            device__customer_access_periods__started_at__lte=timezone.now(),
-            device__customer_access_periods__ended_at__isnull=True,
+            subscription__user__is_active=True,
+            subscription__user__role='personal_user',
         )
     else:
         return Device.objects.none().values_list('id', flat=True)
@@ -440,6 +437,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
             active_contract_link = SubscriptionDevice.objects.filter(
                 device=OuterRef('pk'),
                 subscription__user=user,
+                subscription__user__is_active=True,
+                subscription__user__role='personal_user',
                 subscription__customer_type='personal',
                 subscription__status='active',
                 subscription__start_date__lte=today,
@@ -447,11 +446,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 unassigned_at__isnull=True,
                 start_date__lte=today,
                 end_date__gte=today,
-                device__customer_access_periods__subscription_id=F('subscription_id'),
-                device__customer_access_periods__user=user,
-                device__customer_access_periods__organization__isnull=True,
-                device__customer_access_periods__started_at__lte=now,
-                device__customer_access_periods__ended_at__isnull=True,
             )
             qs = qs.filter(
                 Exists(active_contract_link),
