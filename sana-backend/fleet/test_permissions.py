@@ -966,3 +966,78 @@ class VehicleDeviceContractVisibilityTests(TestCase):
         serializer = VehicleSerializer(vehicle, context={'request': request})
         self.assertIsNone(serializer.data['device_imei'])
 
+
+
+class InactiveOrganizationDeviceAccessTests(TestCase):
+    def test_inactive_organization_cannot_list_live_devices_or_use_live_scope(self):
+        from datetime import timedelta
+        from rest_framework.test import APIRequestFactory, force_authenticate
+        from accounts.models import User
+        from fleet.models import Device, DeviceCustomerAccessPeriod
+        from fleet.views import authorized_live_contract_device_ids
+        from organizations.models import Branch, Organization, Subscription, SubscriptionDevice
+
+        today = timezone.localdate()
+        organization = Organization.objects.create(
+            name='Inactive Device Access Org',
+            code='INACTIVE-DEVICE-ACCESS-ORG',
+            status='inactive',
+        )
+        branch = Branch.objects.create(
+            organization=organization,
+            name='Inactive Device Access Branch',
+            code='INACTIVE-DEVICE-ACCESS-BRANCH',
+        )
+        manager = User.objects.create_user(
+            username='inactive_device_access_manager',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=organization,
+        )
+        branch_manager = User.objects.create_user(
+            username='inactive_device_access_branch_manager',
+            password='test-password',
+            role='branch_manager',
+            account_type='organization',
+            organization=organization,
+            branch=branch,
+        )
+        device = Device.objects.create(
+            imei='860000000000981',
+            current_holder_organization=organization,
+            branch=branch,
+            management_status='installed',
+        )
+        subscription = Subscription.objects.create(
+            contract_number='INACTIVE-DEVICE-ACCESS-CONTRACT',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=2),
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            branch=branch,
+            subscription=subscription,
+        )
+
+        self.assertFalse(device.is_data_active)
+        self.assertFalse(authorized_live_contract_device_ids(manager).filter(pk=device.pk).exists())
+        self.assertFalse(authorized_live_contract_device_ids(branch_manager).filter(pk=device.pk).exists())
+
+        for user in (manager, branch_manager):
+            request = APIRequestFactory().get('/api/devices/')
+            force_authenticate(request, user=user)
+            view = DeviceViewSet()
+            view.action_map = {'get': 'list'}
+            view.request = view.initialize_request(request)
+            self.assertFalse(view.get_queryset().filter(pk=device.pk).exists())
