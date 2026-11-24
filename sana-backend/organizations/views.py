@@ -400,6 +400,8 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                             event_type='removed_from_contract',
                             performed_by=request.user,
                             subscription=subscription,
+                            organization=subscription.organization,
+                            user=subscription.user,
                             description=f'دستگاه از قرارداد {subscription.contract_number} خارج شد؛ مالکیت دستگاه حفظ شد.',
                         )
                         processed_remove_ids.add(str(old_link.id))
@@ -480,6 +482,8 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                     event_type='removed_from_contract',
                     performed_by=request.user,
                     subscription=subscription,
+                    organization=subscription.organization,
+                    user=subscription.user,
                     description=f'دستگاه از قرارداد {subscription.contract_number} خارج شد؛ مالکیت دستگاه حفظ شد.',
                 )
 
@@ -662,6 +666,8 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                     event_type='removed_from_contract',
                     performed_by=request.user,
                     subscription=subscription,
+                    organization=subscription.organization,
+                    user=subscription.user,
                     description=f'دستگاه از قرارداد {subscription.contract_number} خارج شد؛ مالکیت دستگاه حفظ شد.',
                 )
 
@@ -940,6 +946,8 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                     event_type='removed_from_contract',
                     performed_by=request.user,
                     subscription=subscription,
+                    organization=subscription.organization,
+                    user=subscription.user,
                     description=f'دستگاه به‌دلیل لغو قرارداد {subscription.contract_number} از قرارداد خارج شد؛ مالکیت دستگاه حفظ شد.',
                 )
         return Response(SubscriptionSerializer(subscription).data)
@@ -1067,6 +1075,8 @@ class SubscriptionDeviceViewSet(viewsets.ModelViewSet):
                 event_type='removed_from_contract',
                 performed_by=request.user,
                 subscription=subscription,
+                organization=subscription.organization,
+                user=subscription.user,
                 description=f'دستگاه از قرارداد {subscription.contract_number} خارج شد؛ مالکیت دستگاه حفظ شد.',
             )
         return Response(status=status.HTTP_204_NO_CONTENT)
