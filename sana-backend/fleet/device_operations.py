@@ -52,6 +52,14 @@ def _validate_device_customer_assignment(device, subscription):
             'device': 'دستگاه در وضعیت فعلی قابل اتصال به قرارداد نیست؛ ابتدا وضعیت عملیاتی آن را تعیین تکلیف کنید.'
         })
     if subscription.customer_type == 'organization':
+        if (
+            not subscription.organization_id
+            or subscription.user_id is not None
+            or subscription.organization.status != 'active'
+        ):
+            raise ValidationError({
+                'subscription': 'قرارداد سازمانی باید به سازمان فعال و معتبر تعلق داشته باشد.'
+            })
         target_organization_id = subscription.organization_id
         target_user_id = None
     elif subscription.customer_type == 'personal':
@@ -112,6 +120,7 @@ def _open_customer_access(device, subscription=None, branch=None, organization=_
             if (
                 not subscription.organization_id
                 or subscription.user_id is not None
+                or subscription.organization.status != 'active'
                 or getattr(customer_organization, 'id', None) != subscription.organization_id
                 or customer_user is not None
             ):
@@ -314,6 +323,8 @@ def _validate_transfer_target(*, organization, user, branch=None, vehicle=None, 
         })
 
     if organization:
+        if organization.status != 'active':
+            raise ValidationError({'target_organization': 'سازمان مقصد باید فعال باشد.'})
         if branch and branch.organization_id != organization.id:
             raise ValidationError({'target_branch': 'شعبه مقصد متعلق به سازمان مشتری مقصد نیست.'})
         if vehicle and (
