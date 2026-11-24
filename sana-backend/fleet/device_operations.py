@@ -143,9 +143,21 @@ def _open_customer_access(device, subscription=None, branch=None, organization=_
     # Contractless customer/branch assignments are not an authority for live GPS access.
     if subscription is None:
         return None
+    # The contract customer is authoritative. Do not infer the access
+    # identity from legal ownership or a potentially stale current-holder field.
+    if organization is _CUSTOMER_UNSET:
+        organization = subscription.organization
+    if user is _CUSTOMER_UNSET:
+        user = subscription.user
     customer = _customer_kwargs(device, organization, user)
     customer_organization = customer['organization']
     customer_user = customer['user']
+    if branch is None and device.branch_id is not None:
+        branch = device.branch
+    if branch is not None and branch.pk != device.branch_id:
+        raise ValidationError({
+            'branch': 'شعبه دوره دسترسی باید با شعبه فعلی دستگاه یکسان باشد.'
+        })
     if not customer_organization and not customer_user:
         return None
 
@@ -163,7 +175,7 @@ def _open_customer_access(device, subscription=None, branch=None, organization=_
                 })
             if branch and branch.organization_id != subscription.organization_id:
                 raise ValidationError({
-                    'branch': 'شعبه انتخاب‌شده باید فعال و متعلق به سازمان قرارداد باشد.'
+                    'branch': 'شعبه انتخاب‌شده متعلق به سازمان قرارداد نیست.'
                 })
         elif subscription.customer_type == 'personal':
             if (
@@ -269,8 +281,16 @@ def _open_branch_history(device, branch, subscription=None, started_at=None, rea
     device = Device.objects.select_for_update().get(pk=device.pk)
     started_at = started_at or timezone.now()
     if branch is None:
+        if device.branch_id is not None:
+            raise ValidationError({
+                'branch': 'برای ثبت تاریخچه، شعبه باید با شعبه فعلی دستگاه مطابقت داشته باشد.'
+            })
         _close_branch_history(device, started_at)
         return None
+    if branch.pk != device.branch_id:
+        raise ValidationError({
+            'branch': 'شعبه تاریخچه باید با شعبه فعلی دستگاه یکسان باشد.'
+        })
     organization = branch.organization
     if subscription and (
         subscription.customer_type != 'organization'
@@ -330,6 +350,13 @@ def _open_ownership(device, organization=_CUSTOMER_UNSET, user=_CUSTOMER_UNSET, 
         customer = _customer_kwargs(device, organization, user)
     if not customer['organization'] and not customer['user']:
         return None
+    if (
+        getattr(customer['organization'], 'id', None) != device.organization_id
+        or getattr(customer['user'], 'id', None) != device.owner_user_id
+    ):
+        raise ValidationError({
+            'ownership': 'تاریخچه مالکیت باید دقیقاً با مالک قانونی فعلی دستگاه مطابقت داشته باشد.'
+        })
     current = DeviceOwnershipHistory.objects.filter(device=device, ended_at__isnull=True).first()
     same_customer = current and current.organization_id == getattr(customer['organization'], 'id', None) and current.owner_user_id == getattr(customer['user'], 'id', None)
     if same_customer:
