@@ -345,8 +345,9 @@ class SubscriptionDevice(models.Model):
         """آیا این دستگاه در حال حاضر فعاله؟"""
         today = timezone.localdate()
         return (
-            self.unassigned_at is None and
-            self.start_date <= today <= self.end_date
+            self.unassigned_at is None
+            and self.assigned_at <= timezone.now()
+            and self.start_date <= today <= self.end_date
         )
 
     @property
