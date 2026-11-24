@@ -32,7 +32,7 @@ from .serializers import (
 from organizations.models import SubscriptionDevice
 from accounts.permissions import IsSiteAdmin, IsMainUserOrSiteAdmin
 from .traccar_api import TraccarAPIError, traccar_current_positions, traccar_device_by_unique_id, traccar_device_positions, traccar_device_events, traccar_devices
-from .customer_access import active_customer_access_periods
+from .customer_access import active_customer_access_periods, active_personal_contract_links
 
 
 
@@ -264,17 +264,9 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 replacement_device_id__in=authorized_device_ids,
             )
         elif user.is_personal_user:
-            today = timezone.localdate()
-            authorized_device_ids = SubscriptionDevice.objects.filter(
-                subscription__user=user,
-                subscription__customer_type='personal',
-                subscription__status='active',
-                subscription__start_date__lte=today,
-                subscription__end_date__gte=today,
-                start_date__lte=today,
-                end_date__gte=today,
-                assigned_at__lte=timezone.now(),
-                unassigned_at__isnull=True,
+            now = timezone.now()
+            authorized_device_ids = active_personal_contract_links(
+                user_id=user.pk, now=now
             ).values_list('device_id', flat=True)
             replacement_scope = Q(
                 source_device_id__in=authorized_device_ids,
@@ -297,9 +289,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 subscription__organization_id=user.branch.organization_id
             )
         elif user.is_personal_user:
-            subscription_link_queryset = subscription_link_queryset.filter(
-                subscription__user=user,
-                subscription__customer_type='personal',
+            subscription_link_queryset = active_personal_contract_links(
+                user_id=user.pk, now=timezone.now()
             )
 
         # The list serializer needs a compact, preloaded snapshot of the
@@ -395,22 +386,12 @@ class DeviceViewSet(viewsets.ModelViewSet):
             )
         elif user.is_personal_user:
             now = timezone.now()
-            today = timezone.localdate()
             active_access = active_customer_access_periods(
                 user_id=user.pk, now=now
             ).filter(device=OuterRef('pk'))
-            active_contract_link = SubscriptionDevice.objects.filter(
-                device=OuterRef('pk'),
-                subscription__user=user,
-                subscription__customer_type='personal',
-                subscription__status='active',
-                subscription__start_date__lte=today,
-                subscription__end_date__gte=today,
-                assigned_at__lte=now,
-                unassigned_at__isnull=True,
-                start_date__lte=today,
-                end_date__gte=today,
-            )
+            active_contract_link = active_personal_contract_links(
+                user_id=user.pk, now=now
+            ).filter(device=OuterRef('pk'))
             qs = qs.filter(
                 Q(Exists(active_access)) | Q(Exists(active_contract_link))
             )
@@ -731,17 +712,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'بازه زمانی هشدارها نمی‌تواند بیشتر از ۹۰ روز باشد.'}, status=400)
 
         if request.user.is_personal_user:
-            today = timezone.localdate()
-            active_links = SubscriptionDevice.objects.filter(
-                subscription__user=request.user,
-                subscription__customer_type='personal',
-                subscription__status='active',
-                subscription__start_date__lte=today,
-                subscription__end_date__gte=today,
-                start_date__lte=today,
-                end_date__gte=today,
-                unassigned_at__isnull=True,
-                assigned_at__lte=now,
+            active_links = active_personal_contract_links(
+                user_id=request.user.pk, now=now
             )
             devices = list(Device.objects.filter(
                 pk__in=active_links.values('device_id')
@@ -770,18 +742,9 @@ class DeviceViewSet(viewsets.ModelViewSet):
         links_by_device = {}
         access_by_device = {}
         if request.user.is_personal_user:
-            links = SubscriptionDevice.objects.filter(
-                device__in=devices,
-                subscription__user=request.user,
-                subscription__customer_type='personal',
-                subscription__status='active',
-                subscription__start_date__lte=timezone.localdate(),
-                subscription__end_date__gte=timezone.localdate(),
-                start_date__lte=timezone.localdate(),
-                end_date__gte=timezone.localdate(),
-                unassigned_at__isnull=True,
-                assigned_at__lte=now,
-            ).select_related('subscription').order_by('assigned_at', 'id')
+            links = active_personal_contract_links(
+                user_id=request.user.pk, now=now
+            ).filter(device__in=devices).order_by('assigned_at', 'id')
             for link in links:
                 links_by_device.setdefault(link.device_id, []).append(link)
         elif not request.user.is_site_admin:
@@ -1140,15 +1103,10 @@ class DeviceViewSet(viewsets.ModelViewSet):
             )
 
             if request.user.is_personal_user:
-                personal_links = [
-                    link for link in links
-                    if link.subscription.user_id == request.user.pk
-                    and link.subscription.customer_type == 'personal'
-                    and link.subscription.status == 'active'
-                    and link.start_date <= today <= link.end_date
-                    and link.subscription.start_date <= today <= link.subscription.end_date
-                ]
-                link = personal_links[0] if personal_links else None
+                personal_link = active_personal_contract_links(
+                    user_id=request.user.pk, now=now
+                ).filter(device=device).first()
+                link = personal_link
                 if link is None:
                     return Response({'detail': 'گزارش این دستگاه فقط در بازه قرارداد فعال قابل مشاهده است.'}, status=403)
 
@@ -1770,17 +1728,8 @@ class DeviceReplacementRelationViewSet(viewsets.ModelViewSet):
             )
         elif user.is_personal_user:
             now = timezone.now()
-            today = timezone.localdate(now)
-            authorized_device_ids = SubscriptionDevice.objects.filter(
-                subscription__user=user,
-                subscription__customer_type='personal',
-                subscription__status='active',
-                subscription__start_date__lte=today,
-                subscription__end_date__gte=today,
-                start_date__lte=today,
-                end_date__gte=today,
-                assigned_at__lte=now,
-                unassigned_at__isnull=True,
+            authorized_device_ids = active_personal_contract_links(
+                user_id=user.pk, now=now
             ).values_list('device_id', flat=True)
             qs = qs.filter(
                 source_device_id__in=authorized_device_ids,
