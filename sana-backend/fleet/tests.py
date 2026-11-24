@@ -1568,3 +1568,137 @@ class OrganizationAndAdminAlertsAccessTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['results'][0]['device_id'], device.pk)
+
+
+class FutureContractDeviceAssignmentTests(TestCase):
+    def test_personal_device_list_hides_future_created_contract_link(self):
+        user = User.objects.create_user(
+            username='personal_future_link_list',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        today = timezone.localdate()
+        now = timezone.now()
+        device = Device.objects.create(
+            imei='860000000001301',
+            management_status='installed',
+        )
+        subscription = Subscription.objects.create(
+            contract_number='PERSONAL-FUTURE-LINK-LIST',
+            customer_type='personal',
+            user=user,
+            start_date=today - timedelta(days=2),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        link = SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=today - timedelta(days=2),
+            end_date=today + timedelta(days=20),
+        )
+        SubscriptionDevice.objects.filter(pk=link.pk).update(
+            assigned_at=now + timedelta(minutes=10)
+        )
+
+        request = APIRequestFactory().get('/api/devices/')
+        force_authenticate(request, user=user)
+        view = DeviceViewSet()
+        view.action_map = {'get': 'list'}
+        view.request = view.initialize_request(request)
+
+        self.assertNotIn(device.pk, set(view.get_queryset().values_list('id', flat=True)))
+
+
+class OrganizationReportContractLinkConsistencyTests(TestCase):
+    def test_report_history_uses_contract_from_the_exact_access_period(self):
+        organization = Organization.objects.create(
+            name='Report Contract Consistency Organization',
+            code='REPORT-CONTRACT-CONSISTENCY',
+        )
+        branch = Branch.objects.create(
+            organization=organization,
+            name='Report Contract Consistency Branch',
+            code='REPORT-CONTRACT-CONSISTENCY-BR',
+        )
+        manager = User.objects.create_user(
+            username='report_contract_consistency_manager',
+            password='test-password',
+            role='branch_manager',
+            account_type='organization',
+            organization=organization,
+            branch=branch,
+        )
+        device = Device.objects.create(
+            imei='860000000001302',
+            organization=organization,
+            branch=branch,
+            management_status='installed',
+        )
+        today = timezone.localdate()
+        now = timezone.now()
+        first_contract = Subscription.objects.create(
+            contract_number='REPORT-CONTRACT-OLDER',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=12),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        second_contract = Subscription.objects.create(
+            contract_number='REPORT-CONTRACT-NEWER',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=3),
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        first_link = SubscriptionDevice.objects.create(
+            subscription=first_contract,
+            device=device,
+            start_date=first_contract.start_date,
+            end_date=first_contract.end_date,
+        )
+        second_link = SubscriptionDevice.objects.create(
+            subscription=second_contract,
+            device=device,
+            start_date=second_contract.start_date,
+            end_date=second_contract.end_date,
+        )
+
+        # Simulate inconsistent legacy data with two open links. The access
+        # period is explicitly tied to the older contract.
+        SubscriptionDevice.objects.filter(
+            pk__in=[first_link.pk, second_link.pk]
+        ).update(unassigned_at=None)
+        SubscriptionDevice.objects.filter(pk=first_link.pk).update(
+            assigned_at=now - timedelta(days=10)
+        )
+        SubscriptionDevice.objects.filter(pk=second_link.pk).update(
+            assigned_at=now - timedelta(days=2)
+        )
+        access_started_at = now - timedelta(days=8)
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            branch=branch,
+            subscription=first_contract,
+            started_at=access_started_at,
+        )
+
+        request = APIRequestFactory().get(
+            '/api/devices/report-history/',
+            {'device_id': str(device.pk), 'metadata': 'true'},
+        )
+        force_authenticate(request, user=manager)
+        response = DeviceViewSet.as_view({'get': 'report_history'})(request)
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['range_start'], access_started_at.isoformat())
+        self.assertEqual(
+            response.data['range_end'],
+            timezone.make_aware(
+                datetime.combine(first_contract.end_date, datetime.max.time())
+            ).isoformat(),
+        )
