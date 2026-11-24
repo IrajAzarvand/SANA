@@ -295,7 +295,28 @@ class DeviceListSerializer(serializers.ModelSerializer):
             return obj._list_active_subscription_link
 
         links = getattr(obj, '_prefetched_subscription_links', None)
-        if links is None:
+        access_periods = getattr(obj, '_active_customer_access_periods', None)
+        if access_periods is not None:
+            # Organization/branch visibility is granted by a specific access
+            # period, so the displayed contract must be that exact contract.
+            access_period = access_periods[0] if access_periods else None
+            if access_period is None:
+                link = None
+            elif links is None:
+                link = obj.subscription_links.filter(
+                    subscription_id=access_period.subscription_id,
+                    unassigned_at__isnull=True,
+                ).select_related('subscription').order_by('-assigned_at', '-id').first()
+            else:
+                link = next(
+                    (
+                        item for item in links
+                        if item.unassigned_at is None
+                        and item.subscription_id == access_period.subscription_id
+                    ),
+                    None,
+                )
+        elif links is None:
             link = obj.active_subscription_link
         else:
             link = next(
