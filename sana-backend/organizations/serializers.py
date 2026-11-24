@@ -167,11 +167,9 @@ class BranchListSerializer(serializers.ModelSerializer):
             data['vehicles_count'] = instance.vehicles.filter(
                 organization_id=instance.organization_id
             ).count()
-            data['devices_count'] = DeviceCustomerAccessPeriod.objects.filter(
+            data['devices_count'] = active_customer_access_periods(
                 organization_id=instance.organization_id,
-                branch=instance,
-                started_at__lte=timezone.now(),
-                ended_at__isnull=True,
+                branch_id=instance.pk,
             ).values('device_id').distinct().count()
             data['drivers_count'] = instance.drivers.filter(
                 organization_id=instance.organization_id
