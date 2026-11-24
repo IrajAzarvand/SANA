@@ -26,9 +26,12 @@ def _open_customer_access(device, subscription=None, branch=None, organization=N
     customer = _customer_kwargs(device, organization, user)
     if not customer['organization'] and not customer['user']:
         return None
-    current = DeviceCustomerAccessPeriod.objects.filter(
-        device=device, ended_at__isnull=True
-    ).order_by('-started_at', '-id').first()
+    open_periods = list(
+        DeviceCustomerAccessPeriod.objects.filter(
+            device=device, ended_at__isnull=True
+        ).order_by('-started_at', '-id')
+    )
+    current = open_periods[0] if open_periods else None
     if current:
         same_customer = (
             current.organization_id == getattr(customer['organization'], 'id', None)
@@ -41,10 +44,19 @@ def _open_customer_access(device, subscription=None, branch=None, organization=N
 
         # A new contract or branch starts a new access period, even when the
         # legal customer remains unchanged. Never rewrite the old period.
+        close_time = started_at or timezone.now()
         if same_customer and same_subscription and same_branch:
+            # Collapse duplicate open rows from legacy data while retaining
+            # the newest valid period for the same customer/contract/branch.
+            stale_period_ids = [period.pk for period in open_periods[1:]]
+            if stale_period_ids:
+                DeviceCustomerAccessPeriod.objects.filter(
+                    pk__in=stale_period_ids,
+                    ended_at__isnull=True,
+                ).update(ended_at=close_time)
             return current
 
-        _close_customer_access(device, started_at or timezone.now())
+        _close_customer_access(device, close_time)
 
     return DeviceCustomerAccessPeriod.objects.create(
         device=device,
