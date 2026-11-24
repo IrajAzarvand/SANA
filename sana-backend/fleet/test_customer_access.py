@@ -145,8 +145,9 @@ class ContractBackedDeviceAccessTests(TestCase):
             start_date=self.start_date,
             end_date=self.end_date,
         )
+        access_period = None
         if customer_type == 'organization':
-            DeviceCustomerAccessPeriod.objects.create(
+            access_period = DeviceCustomerAccessPeriod.objects.create(
                 device=device,
                 organization=organization,
                 subscription=subscription,
@@ -188,9 +189,14 @@ class ContractBackedDeviceAccessTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         payload = response.data['results'] if isinstance(response.data, dict) else response.data
         self.assertIn(device.pk, [item['id'] for item in payload])
+        access_period_ids = list(
+            DeviceCustomerAccessPeriod.objects.filter(
+                device=device
+            ).values_list('pk', flat=True)
+        )
         self.assertEqual(
-            DeviceCustomerAccessPeriod.objects.filter(device=device).count(),
-            1 if customer_type == 'organization' else 0,
+            access_period_ids,
+            [access_period.pk] if access_period else [],
         )
 
     def test_organization_access_requires_active_contract(self):
