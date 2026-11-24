@@ -410,6 +410,8 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
             event_type='assigned_to_contract',
             performed_by=request.user if request else None,
             subscription=subscription,
+            organization=subscription.organization,
+            user=subscription.user,
             description=f'دستگاه به قرارداد {subscription.contract_number} اضافه شد.',
         )
         return instance
@@ -1263,6 +1265,8 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                     event_type='assigned_to_contract',
                     performed_by=self.context.get('request').user if self.context.get('request') else None,
                     subscription=subscription,
+                    organization=subscription.organization,
+                    user=subscription.user,
                     description=f'دستگاه به قرارداد {subscription.contract_number} اضافه شد.',
                 )
 
