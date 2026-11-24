@@ -265,8 +265,9 @@ class Device(models.Model):
         ):
             return False
 
-        # A live contract link and an open customer-access period must agree.
-        # Historical/closed access periods never grant live GPS visibility.
+        # Organization customers need an exact open access period because
+        # it carries the current branch scope. Personal customers are authorized
+        # directly by their exact active contract-device link below.
         access = self.customer_access_periods.filter(
             subscription_id=subscription.pk,
             started_at__lte=now,
