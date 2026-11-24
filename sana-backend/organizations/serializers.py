@@ -1182,6 +1182,7 @@ class SubscriptionWizardSerializer(serializers.Serializer):
             # ─── ۴. اضافه کردن دستگاه‌ها ───
             for device_data in devices_data:
                 device = locked_devices[device_data['device_id']]
+                _validate_device_customer_assignment(device, subscription)
 
                 SubscriptionDevice.objects.create(
                     subscription=subscription,
