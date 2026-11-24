@@ -127,6 +127,8 @@ def normalize_traccar_history_positions(positions, range_start, range_end, curso
 
 def authorized_live_contract_device_ids(user):
     """Device IDs whose current contract grants this customer live visibility."""
+    if not user.is_active:
+        return Device.objects.none().values_list('id', flat=True)
     today = timezone.localdate()
     links = SubscriptionDevice.objects.filter(
         subscription__status='active',
@@ -292,6 +294,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
         )
 
         if not user.is_site_admin:
+            if not user.is_active:
+                return qs.none()
             if user.is_main_user and user.organization_id and user.organization.status != 'active':
                 return qs.none()
             if user.is_branch_manager and (
