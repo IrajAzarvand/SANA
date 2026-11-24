@@ -218,16 +218,6 @@ class Subscription(models.Model):
         """تعداد دستگاه‌هایی که هم اتصال و هم خود قراردادشان اکنون فعال است."""
         return sum(1 for link in self.subscription_devices.filter(unassigned_at__isnull=True) if link.is_active)
 
-    def recalculate_end_date(self):
-        """محاسبه‌ی مجدد end_date از آخرین دستگاه فعال"""
-        latest = self.subscription_devices.filter(
-            unassigned_at__isnull=True
-        ).order_by('-end_date').first()
-
-        if latest:
-            self.end_date = latest.end_date
-            self.save(update_fields=['end_date'])
-
     @classmethod
     def generate_contract_number(cls, customer_type='organization'):
         """
@@ -401,9 +391,8 @@ class SubscriptionDevice(models.Model):
             )
 
         super().save(*args, **kwargs)
-
-        # بعد از ذخیره، end_date قرارداد رو آپدیت کن
-        self.subscription.recalculate_end_date()
+        # Device-link dates are independent service-assignment bounds.
+        # They must never rewrite the parent contract's legal dates.
 
 
 class SubscriptionPayment(models.Model):
