@@ -4,7 +4,7 @@ from rest_framework.exceptions import ValidationError
 
 from .models import Device, DeviceOperation, DeviceReplacementRelation, DeviceLifecycleEvent, DeviceOwnershipHistory, DeviceCustomerAccessPeriod, DeviceBranchHistory
 from .lifecycle import record_device_lifecycle_event
-from organizations.models import SubscriptionDevice
+from organizations.models import Subscription, SubscriptionDevice
 
 
 _CUSTOMER_UNSET = object()
@@ -441,14 +441,68 @@ def execute_device_operation(
     reason='',
     description='',
 ):
-    device = Device.objects.select_for_update().get(pk=device.pk)
-    if replacement_device:
-        replacement_device = Device.objects.select_for_update().get(pk=replacement_device.pk)
+    # Use one lock order for every lifecycle path:
+    # contract rows -> device rows (sorted by PK) -> assignment/history rows.
+    # This serializes transfers and device operations with suspend/cancel/renew.
+    source_link = SubscriptionDevice.objects.filter(
+        device_id=device.pk,
+        unassigned_at__isnull=True,
+    ).only('subscription_id').first()
+    source_subscription_id = source_link.subscription_id if source_link else None
+    requested_subscription_id = getattr(subscription, 'pk', None)
+    target_subscription_id = getattr(target_subscription, 'pk', None)
+    if (
+        source_subscription_id
+        and requested_subscription_id
+        and source_subscription_id != requested_subscription_id
+    ):
+        raise ValidationError({
+            'subscription': 'قرارداد انتخاب‌شده با اتصال فعلی دستگاه مطابقت ندارد.'
+        })
 
-    active_link = device.subscription_links.filter(
-        unassigned_at__isnull=True
+    subscription_ids = {
+        value for value in (
+            source_subscription_id,
+            requested_subscription_id,
+            target_subscription_id,
+        ) if value is not None
+    }
+    locked_subscriptions = {
+        item.pk: item
+        for item in Subscription.objects.select_for_update().filter(
+            pk__in=subscription_ids
+        ).order_by('pk')
+    }
+    if subscription_ids.difference(locked_subscriptions):
+        raise ValidationError({'subscription': 'قرارداد انتخاب‌شده دیگر در دسترس نیست.'})
+
+    device_ids = {device.pk}
+    if replacement_device:
+        device_ids.add(replacement_device.pk)
+    locked_devices = {
+        item.pk: item
+        for item in Device.objects.select_for_update().filter(
+            pk__in=device_ids
+        ).order_by('pk')
+    }
+    device = locked_devices[device.pk]
+    if replacement_device:
+        replacement_device = locked_devices[replacement_device.pk]
+
+    active_link = SubscriptionDevice.objects.select_for_update().filter(
+        device=device,
+        unassigned_at__isnull=True,
     ).select_related('subscription').first()
-    subscription = subscription or (active_link.subscription if active_link else None)
+    if active_link and active_link.subscription_id not in locked_subscriptions:
+        raise ValidationError({
+            'device': 'اتصال قرارداد دستگاه هم‌زمان تغییر کرده است؛ عملیات را دوباره اجرا کنید.'
+        })
+    subscription = (
+        locked_subscriptions.get(active_link.subscription_id)
+        if active_link else locked_subscriptions.get(requested_subscription_id)
+    )
+    if target_subscription_id:
+        target_subscription = locked_subscriptions[target_subscription_id]
 
     if replacement_device and replacement_device.pk == device.pk:
         raise ValidationError({'replacement_device': 'دستگاه جایگزین نمی‌تواند همان دستگاه قبلی باشد.'})
