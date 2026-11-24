@@ -27,7 +27,7 @@ from organizations.models import (
     Organization, Branch, Subscription, SubscriptionOperation,
     SubscriptionPayment, SubscriptionInstallment,
 )
-from fleet.customer_access import active_customer_access_periods
+from fleet.customer_access import active_customer_access_periods, active_personal_contract_links
 from fleet.models import Device, DeviceOperation, DeviceLifecycleEvent, DeviceAlertState
 
 
@@ -308,15 +308,10 @@ class UserViewSet(viewsets.ModelViewSet):
             # and a currently valid device-to-contract assignment belong in
             # the customer's present-day business notification scope.
             devices = Device.objects.filter(
-                subscription_links__subscription__in=subscriptions,
-                subscription_links__subscription__status='active',
-                subscription_links__subscription__start_date__lte=today,
-                subscription_links__subscription__end_date__gte=today,
-                subscription_links__start_date__lte=today,
-                subscription_links__end_date__gte=today,
-                subscription_links__assigned_at__lte=now,
-                subscription_links__unassigned_at__isnull=True,
-            ).distinct()
+                pk__in=active_personal_contract_links(
+                    user_id=user.pk, now=now
+                ).values('device_id')
+            )
             subscription_ops = SubscriptionOperation.objects.select_related(
                 'subscription', 'subscription__user', 'performed_by'
             ).filter(subscription__in=subscriptions, performed_at__gte=cutoff)
