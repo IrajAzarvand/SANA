@@ -200,6 +200,15 @@ class VehicleListSerializer(serializers.ModelSerializer):
         if user and user.is_main_user and user.organization_id:
             devices = devices.filter(
                 customer_access_periods__organization_id=user.organization_id,
+                customer_access_periods__subscription__customer_type='organization',
+                customer_access_periods__subscription__organization_id=user.organization_id,
+                customer_access_periods__subscription__status='active',
+                customer_access_periods__subscription__start_date__lte=timezone.localdate(),
+                customer_access_periods__subscription__end_date__gte=timezone.localdate(),
+                customer_access_periods__subscription__subscription_devices__device_id=F('pk'),
+                customer_access_periods__subscription__subscription_devices__unassigned_at__isnull=True,
+                customer_access_periods__subscription__subscription_devices__start_date__lte=timezone.localdate(),
+                customer_access_periods__subscription__subscription_devices__end_date__gte=timezone.localdate(),
                 customer_access_periods__started_at__lte=now,
                 customer_access_periods__ended_at__isnull=True,
             ).distinct()
@@ -207,6 +216,15 @@ class VehicleListSerializer(serializers.ModelSerializer):
             devices = devices.filter(
                 customer_access_periods__organization_id=user.branch.organization_id,
                 customer_access_periods__branch_id=user.branch_id,
+                customer_access_periods__subscription__customer_type='organization',
+                customer_access_periods__subscription__organization_id=user.branch.organization_id,
+                customer_access_periods__subscription__status='active',
+                customer_access_periods__subscription__start_date__lte=timezone.localdate(),
+                customer_access_periods__subscription__end_date__gte=timezone.localdate(),
+                customer_access_periods__subscription__subscription_devices__device_id=F('pk'),
+                customer_access_periods__subscription__subscription_devices__unassigned_at__isnull=True,
+                customer_access_periods__subscription__subscription_devices__start_date__lte=timezone.localdate(),
+                customer_access_periods__subscription__subscription_devices__end_date__gte=timezone.localdate(),
                 customer_access_periods__started_at__lte=now,
                 customer_access_periods__ended_at__isnull=True,
             ).distinct()
