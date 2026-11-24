@@ -243,8 +243,12 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
         self.assertIsNone(self.serializer.get_traccar_protocol(device))
 
     def test_active_subscription_link_uses_prefetched_links_and_is_cached(self):
-        active_link = SimpleNamespace(unassigned_at=None, subscription_id=12)
-        older_link = SimpleNamespace(unassigned_at=None, subscription_id=8)
+        active_link = SimpleNamespace(assigned_at=timezone.now(),
+            pk=1,
+            unassigned_at=None, subscription_id=12)
+        older_link = SimpleNamespace(assigned_at=timezone.now(),
+            pk=1,
+            unassigned_at=None, subscription_id=8)
         device = SimpleNamespace(
             management_status='active',
             _prefetched_subscription_links=[active_link, older_link],
@@ -267,12 +271,16 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
             contract_number='ORG-NEWER-UNAUTHORIZED',
         )
         authorized_link = SimpleNamespace(
+            assigned_at=timezone.now(),
+            pk=1,
             unassigned_at=None,
             subscription_id=8,
             is_active=True,
             subscription=authorized_subscription,
         )
         newer_link = SimpleNamespace(
+            assigned_at=timezone.now(),
+            pk=1,
             unassigned_at=None,
             subscription_id=12,
             is_active=True,
@@ -296,8 +304,12 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
         )
 
     def test_historical_subscription_links_are_not_displayed_as_current_contract(self):
-        latest = SimpleNamespace(unassigned_at=object(), subscription_id=12)
-        older = SimpleNamespace(unassigned_at=object(), subscription_id=8)
+        latest = SimpleNamespace(assigned_at=timezone.now(),
+            pk=1,
+            unassigned_at=object(), subscription_id=12)
+        older = SimpleNamespace(assigned_at=timezone.now(),
+            pk=1,
+            unassigned_at=object(), subscription_id=8)
         device = SimpleNamespace(
             management_status='warehouse',
             _prefetched_subscription_links=[latest, older],
@@ -309,6 +321,8 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
     def test_ended_or_unassigned_contract_is_not_displayed(self):
         subscription = SimpleNamespace(status='active', computed_status='active')
         ended_link = SimpleNamespace(
+            assigned_at=timezone.now(),
+            pk=1,
             unassigned_at=object(),
             is_active=False,
             subscription=subscription,
@@ -323,6 +337,8 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
     def test_expired_contract_is_not_displayed_even_if_assignment_is_open(self):
         subscription = SimpleNamespace(status='expired', computed_status='expired')
         link = SimpleNamespace(
+            assigned_at=timezone.now(),
+            pk=1,
             unassigned_at=None,
             is_active=False,
             subscription=subscription,
@@ -342,6 +358,8 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
             computed_status='active',
         )
         link = SimpleNamespace(
+            assigned_at=timezone.now(),
+            pk=1,
             unassigned_at=None,
             is_active=True,
             subscription=subscription,
@@ -366,7 +384,9 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
         self.assertIsNone(self.serializer._display_subscription_link(device))
 
     def test_current_replacement_operation_matches_active_subscription(self):
-        active_link = SimpleNamespace(unassigned_at=None, subscription_id=12)
+        active_link = SimpleNamespace(assigned_at=timezone.now(),
+            pk=1,
+            unassigned_at=None, subscription_id=12)
         old_operation = SimpleNamespace(
             operation_type='return_for_repair',
             subscription_id=8,
@@ -391,6 +411,8 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
     def test_warehouse_and_data_status_reuse_prefetched_active_link(self):
         subscription = SimpleNamespace(status='active', computed_status='active')
         active_link = SimpleNamespace(
+            assigned_at=timezone.now(),
+            pk=1,
             unassigned_at=None, is_active=True, subscription=subscription
         )
         device = SimpleNamespace(
@@ -408,7 +430,9 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
             with self.subTest(contract_status=contract_status):
                 subscription = SimpleNamespace(status=contract_status, computed_status=contract_status)
                 active_link = SimpleNamespace(
-                    unassigned_at=None, is_active=True, subscription=subscription
+                    assigned_at=timezone.now(),
+            pk=1,
+            unassigned_at=None, is_active=True, subscription=subscription
                 )
                 device = SimpleNamespace(
                     management_status='active',
@@ -430,6 +454,8 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
     @patch('fleet.serializers.timezone.localdate', return_value=date(2026, 11, 6))
     def test_inactive_reason_reports_assignment_date_before_contract_status(self, _today):
         link = SimpleNamespace(
+            assigned_at=timezone.now(),
+            pk=1,
             unassigned_at=None,
             is_active=False,
             start_date=date(2026, 11, 7),
@@ -447,6 +473,8 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
 
     def test_inactive_reason_reports_contract_status_before_management_status(self):
         link = SimpleNamespace(
+            assigned_at=timezone.now(),
+            pk=1,
             unassigned_at=None,
             is_active=True,
             subscription=SimpleNamespace(status='suspended', computed_status='suspended'),
@@ -462,6 +490,8 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
 
     def test_inactive_reason_reports_management_status(self):
         link = SimpleNamespace(
+            assigned_at=timezone.now(),
+            pk=1,
             unassigned_at=None,
             is_active=True,
             subscription=SimpleNamespace(status='active', computed_status='active'),
@@ -482,6 +512,8 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
             get_customer_name=lambda: 'مشتری قرارداد'
         )
         active_link = SimpleNamespace(
+            assigned_at=timezone.now(),
+            pk=1,
             unassigned_at=None, is_active=True, subscription=subscription
         )
         device = SimpleNamespace(
