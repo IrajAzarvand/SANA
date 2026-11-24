@@ -34,7 +34,7 @@ from .serializers import (
     SubscriptionOperationSerializer,
 )
 from accounts.permissions import IsSiteAdmin, IsMainUserOrSiteAdmin
-from fleet.models import DeviceCustomerAccessPeriod
+from fleet.models import Device, DeviceCustomerAccessPeriod
 from fleet.lifecycle import record_device_lifecycle_event
 from fleet.device_operations import _close_branch_history, _close_customer_access, _open_customer_access
 
