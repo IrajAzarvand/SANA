@@ -893,3 +893,76 @@ class BranchManagerExpiredRenewalHistoryTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual([item['id'] for item in response.data['points']], [3001, 3003])
 
+class VehicleDeviceContractVisibilityTests(TestCase):
+    def test_vehicle_imei_is_visible_only_through_current_contract_access(self):
+        from types import SimpleNamespace
+        from django.utils import timezone
+        from accounts.models import User
+        from fleet.models import Device, DeviceCustomerAccessPeriod, Vehicle
+        from fleet.serializers import VehicleSerializer
+        from organizations.models import Branch, Organization, Subscription, SubscriptionDevice
+
+        today = timezone.localdate()
+        customer = Organization.objects.create(
+            name='Vehicle Customer Org',
+            code='VEHICLE-CUSTOMER-ORG',
+        )
+        legal_owner = Organization.objects.create(
+            name='Vehicle Legal Owner',
+            code='VEHICLE-LEGAL-OWNER',
+        )
+        branch = Branch.objects.create(
+            organization=customer,
+            name='Vehicle Customer Branch',
+            code='VEHICLE-CUSTOMER-BRANCH',
+        )
+        manager = User.objects.create_user(
+            username='vehicle_customer_manager',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=customer,
+        )
+        vehicle = Vehicle.objects.create(
+            plate='12الف345',
+            organization=customer,
+            branch=branch,
+        )
+        device = Device.objects.create(
+            imei='860000000000979',
+            organization=legal_owner,
+            current_holder_organization=customer,
+            branch=branch,
+            vehicle=vehicle,
+            management_status='installed',
+        )
+        subscription = Subscription.objects.create(
+            contract_number='VEHICLE-DEVICE-CONTRACT',
+            customer_type='organization',
+            organization=customer,
+            start_date=today - timedelta(days=2),
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=customer,
+            branch=branch,
+            subscription=subscription,
+        )
+
+        request = SimpleNamespace(user=manager)
+        serializer = VehicleSerializer(vehicle, context={'request': request})
+        self.assertEqual(serializer.data['device_imei'], device.imei)
+
+        subscription.status = 'suspended'
+        subscription.save(update_fields=['status'])
+        serializer = VehicleSerializer(vehicle, context={'request': request})
+        self.assertIsNone(serializer.data['device_imei'])
+
