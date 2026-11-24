@@ -32,6 +32,7 @@ from .serializers import (
 from organizations.models import SubscriptionDevice
 from accounts.permissions import IsSiteAdmin, IsMainUserOrSiteAdmin
 from .traccar_api import TraccarAPIError, traccar_current_positions, traccar_device_by_unique_id, traccar_device_positions, traccar_device_events, traccar_devices
+from .customer_access import active_customer_access_periods
 
 
 
@@ -244,10 +245,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
             replacement_scope = Q()
         elif user.is_main_user and user.organization_id:
             now = timezone.now()
-            authorized_device_ids = DeviceCustomerAccessPeriod.objects.filter(
-                organization=user.organization,
-                started_at__lte=now,
-                ended_at__isnull=True,
+            authorized_device_ids = active_customer_access_periods(
+                organization_id=user.organization_id, now=now
             ).values_list('device_id', flat=True)
             replacement_scope = Q(
                 source_device_id__in=authorized_device_ids,
@@ -255,11 +254,10 @@ class DeviceViewSet(viewsets.ModelViewSet):
             )
         elif user.is_branch_manager and user.branch_id:
             now = timezone.now()
-            authorized_device_ids = DeviceCustomerAccessPeriod.objects.filter(
-                organization=user.branch.organization,
-                branch=user.branch,
-                started_at__lte=now,
-                ended_at__isnull=True,
+            authorized_device_ids = active_customer_access_periods(
+                organization_id=user.branch.organization_id,
+                branch_id=user.branch_id,
+                now=now,
             ).values_list('device_id', flat=True)
             replacement_scope = Q(
                 source_device_id__in=authorized_device_ids,
@@ -351,41 +349,25 @@ class DeviceViewSet(viewsets.ModelViewSet):
         elif user.is_main_user and user.organization:
             now = timezone.now()
             qs = qs.filter(
-                customer_access_periods__organization=user.organization,
-                customer_access_periods__started_at__lte=now,
-                customer_access_periods__ended_at__isnull=True,
-            ).distinct()
+                pk__in=active_customer_access_periods(
+                    organization_id=user.organization_id, now=now
+                ).values('device_id')
+            )
         elif user.is_branch_manager and user.branch:
             now = timezone.now()
             qs = qs.filter(
-                customer_access_periods__organization=user.branch.organization,
-                customer_access_periods__branch=user.branch,
-                customer_access_periods__started_at__lte=now,
-                customer_access_periods__ended_at__isnull=True,
-            ).distinct()
+                pk__in=active_customer_access_periods(
+                    organization_id=user.branch.organization_id,
+                    branch_id=user.branch_id,
+                    now=now,
+                ).values('device_id')
+            )
         elif user.is_personal_user:
             now = timezone.now()
-            today = timezone.localdate()
-            active_access = DeviceCustomerAccessPeriod.objects.filter(
-                device=OuterRef('pk'),
-                user=user,
-                started_at__lte=now,
-            ).filter(
-                Q(ended_at__isnull=True) | Q(ended_at__gte=now)
-            )
-            active_contract_link = SubscriptionDevice.objects.filter(
-                device=OuterRef('pk'),
-                subscription__user=user,
-                subscription__status='active',
-                subscription__start_date__lte=today,
-                subscription__end_date__gte=today,
-                unassigned_at__isnull=True,
-                start_date__lte=today,
-                end_date__gte=today,
-            )
-            qs = qs.filter(
-                Q(Exists(active_access)) | Q(Exists(active_contract_link))
-            )
+            active_access = active_customer_access_periods(
+                user_id=user.pk, now=now
+            ).filter(device=OuterRef('pk'))
+            qs = qs.filter(Exists(active_access))
         else:
             qs = qs.none()
 
@@ -1054,14 +1036,10 @@ class DeviceViewSet(viewsets.ModelViewSet):
             access_query = DeviceCustomerAccessPeriod.objects.filter(
                 device=device,
                 started_at__lte=now,
-            ).filter(
-                Q(ended_at__isnull=True) | Q(ended_at__gte=now)
+                ended_at__isnull=True,
             )
 
             if request.user.is_personal_user:
-                # Personal device visibility is granted by either a current
-                # customer-access period or a current active contract link.
-                # Report authorization must follow the same rule as get_queryset().
                 personal_links = [
                     link for link in links
                     if link.subscription.user_id == request.user.pk
@@ -1070,16 +1048,20 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     and link.subscription.start_date <= today <= link.subscription.end_date
                 ]
                 link = personal_links[0] if personal_links else None
+                access = active_customer_access_periods(
+                    user_id=request.user.pk, now=now
+                ).filter(device=device).first()
 
-                if link is None:
+                if link is None or access is None:
                     return Response({'detail': 'گزارش این دستگاه فقط در بازه قرارداد فعال قابل مشاهده است.'}, status=403)
 
-                # Contract dates are the sole reporting boundary for personal
-                # users. Operational access periods do not extend or narrow it.
-                range_start = timezone.make_aware(datetime.combine(
-                    max(link.start_date, link.subscription.start_date),
-                    datetime_time.min,
-                ))
+                range_start = max(
+                    timezone.make_aware(datetime.combine(
+                        max(link.start_date, link.subscription.start_date),
+                        datetime_time.min,
+                    )),
+                    access.started_at,
+                )
                 range_end = timezone.make_aware(datetime.combine(
                     min(link.end_date, link.subscription.end_date),
                     datetime_time.max,
@@ -1089,16 +1071,20 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     # Legacy branch-manager accounts may have organization_id=NULL;
                     # the branch's organization is the authoritative tenant link.
                     branch_organization_id = request.user.branch.organization_id
-                    access_query = access_query.filter(
+                    access_query = active_customer_access_periods(
                         organization_id=branch_organization_id,
                         branch_id=request.user.branch_id,
-                    )
+                        now=now,
+                    ).filter(device=device)
                     links = [
                         link for link in links
                         if link.subscription.organization_id == branch_organization_id
                     ]
                 elif request.user.is_main_user:
-                    access_query = access_query.filter(organization_id=request.user.organization_id)
+                    access_query = active_customer_access_periods(
+                        organization_id=request.user.organization_id,
+                        now=now,
+                    ).filter(device=device)
                     links = [
                         link for link in links
                         if link.subscription.organization_id == request.user.organization_id
