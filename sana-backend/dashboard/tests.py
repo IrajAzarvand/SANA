@@ -185,6 +185,8 @@ class PersonalDashboardGPSStatusTests(TestCase):
         self.timedelta = timedelta
 
     def make_accessible_device(self, imei, *, user=None, management_status='installed'):
+        from django.utils import timezone
+
         device = self.Device.objects.create(
             imei=imei,
             management_status=management_status,
@@ -375,6 +377,7 @@ class BranchManagerDashboardAccessTests(TestCase):
     def test_dashboard_counts_only_devices_with_current_branch_access(self):
         from datetime import timedelta
         from unittest.mock import patch
+        from django.utils import timezone
 
         active = self.Device.objects.create(
             imei='860000000000901',
