@@ -2,7 +2,74 @@ from rest_framework import serializers
 from django.db.models import Q
 from django.utils import timezone
 from .customer_access import active_customer_access_periods
+from organizations.models import SubscriptionDevice
 from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DriverVehicleAssignment, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation, DeviceCustomerAccessPeriod
+
+
+def _device_data_active_for_request(device, request):
+    """Evaluate service status against the exact contract granting this user access."""
+    if not request or getattr(request.user, 'is_site_admin', False):
+        return device.is_data_active
+
+    user = request.user
+    now = timezone.now()
+    today = timezone.localdate(now)
+
+    if getattr(user, 'is_personal_user', False):
+        link = SubscriptionDevice.objects.filter(
+            device=device,
+            subscription__user=user,
+            subscription__customer_type='personal',
+            subscription__status='active',
+            subscription__start_date__lte=today,
+            subscription__end_date__gte=today,
+            start_date__lte=today,
+            end_date__gte=today,
+            assigned_at__lte=now,
+            unassigned_at__isnull=True,
+        ).select_related('subscription').order_by('-assigned_at', '-id').first()
+    elif getattr(user, 'is_main_user', False) and user.organization_id:
+        access = active_customer_access_periods(
+            organization_id=user.organization_id,
+            now=now,
+        ).filter(device=device).order_by('-started_at', '-id').first()
+        link = (
+            SubscriptionDevice.objects.filter(
+                device=device,
+                subscription_id=access.subscription_id,
+                assigned_at__lte=now,
+                unassigned_at__isnull=True,
+                start_date__lte=today,
+                end_date__gte=today,
+            ).select_related('subscription').first()
+            if access else None
+        )
+    elif getattr(user, 'is_branch_manager', False) and user.branch_id:
+        access = active_customer_access_periods(
+            organization_id=user.branch.organization_id,
+            branch_id=user.branch_id,
+            now=now,
+        ).filter(device=device).order_by('-started_at', '-id').first()
+        link = (
+            SubscriptionDevice.objects.filter(
+                device=device,
+                subscription_id=access.subscription_id,
+                assigned_at__lte=now,
+                unassigned_at__isnull=True,
+                start_date__lte=today,
+                end_date__gte=today,
+            ).select_related('subscription').first()
+            if access else None
+        )
+    else:
+        return False
+
+    if not link or not link.is_active or not link.subscription or not link.subscription.is_active:
+        return False
+    return device.management_status not in {
+        'faulty', 'in_repair', 'ready', 'lost', 'stolen',
+        'disconnected', 'unusable', 'disposed',
+    }
 
 
 class VehicleTypeSerializer(serializers.ModelSerializer):
@@ -186,7 +253,7 @@ class DeviceSerializer(serializers.ModelSerializer):
     owner_name = serializers.CharField(source='owner_user.full_name', read_only=True)
     vehicle_plate = serializers.CharField(source='vehicle.plate', read_only=True)
     management_status = serializers.SerializerMethodField()
-    data_active = serializers.BooleanField(source='is_data_active', read_only=True)
+    data_active = serializers.SerializerMethodField()
 
     def get_management_status(self, obj):
         request = self.context.get('request')
@@ -195,6 +262,9 @@ class DeviceSerializer(serializers.ModelSerializer):
         if obj.is_in_warehouse:
             return 'warehouse'
         return obj.management_status
+
+    def get_data_active(self, obj):
+        return _device_data_active_for_request(obj, self.context.get('request'))
 
     class Meta:
         model = Device
@@ -271,8 +341,11 @@ class BranchManagerDeviceSerializer(serializers.ModelSerializer):
     device_model_manufacturer = serializers.CharField(source='device_model.manufacturer', read_only=True, allow_null=True)
     branch_name = serializers.CharField(source='branch.name', read_only=True)
     vehicle_plate = serializers.CharField(source='vehicle.plate', read_only=True)
-    data_active = serializers.BooleanField(source='is_data_active', read_only=True)
+    data_active = serializers.SerializerMethodField()
     last_data_received_at = serializers.DateTimeField(read_only=True, allow_null=True)
+
+    def get_data_active(self, obj):
+        return _device_data_active_for_request(obj, self.context.get('request'))
 
     class Meta:
         model = Device
