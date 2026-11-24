@@ -320,4 +320,7 @@ class CustomerAccessTimelineAndContractTests(TestCase):
         subscription.status = 'expired'
         subscription.save(update_fields=['status'])
         device.refresh_from_db()
+        subscription.refresh_from_db()
+        self.assertEqual(subscription.computed_status, 'expired')
+        self.assertFalse(subscription.is_active)
         self.assertFalse(device.is_data_active)
