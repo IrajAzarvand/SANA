@@ -811,6 +811,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                         subscription = access_period.subscription
                         link = subscription.subscription_devices.filter(
                             device=device,
+                            assigned_at__lte=now,
                             unassigned_at__isnull=True,
                         ).order_by('-assigned_at', '-id').first()
                         if link is None:
