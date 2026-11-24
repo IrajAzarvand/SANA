@@ -544,6 +544,8 @@ class DeviceListSerializer(serializers.ModelSerializer):
             ended_at__isnull=True,
         )
         if subscription.customer_type == 'organization':
+            if subscription.organization.status != 'active':
+                return False
             access = access.filter(
                 organization_id=subscription.organization_id,
                 user__isnull=True,
