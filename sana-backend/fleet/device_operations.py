@@ -1087,6 +1087,7 @@ def execute_device_operation(
                 )
         elif outcome_action == 'dispose':
             _close_active_link(device, operation)
+            _close_ownership(device)
 
         disposition_labels = {
             'return_customer_same_vehicle': 'به مشتری بازگشت و روی خودرو نصب شد',
