@@ -424,8 +424,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
             # Contract links are the only live-access authority; legacy periods without
             # a subscription remain historical records and never grant live access.
             qs = qs.filter(
-                management_status__in=['installed', 'active'],
                 Exists(active_contract_link),
+                management_status__in=['installed', 'active'],
             )
         else:
             qs = qs.none()
