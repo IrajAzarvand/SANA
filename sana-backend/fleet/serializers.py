@@ -13,6 +13,36 @@ class VehicleTypeSerializer(serializers.ModelSerializer):
         return data
 
     def validate(self, attrs):
+        protected_relationships = (
+            'organization',
+            'owner_user',
+            'current_holder_organization',
+            'current_holder_user',
+            'branch',
+            'vehicle',
+        )
+        if self.instance is not None:
+            for field_name in protected_relationships:
+                if field_name not in attrs:
+                    continue
+                current_id = getattr(self.instance, f'{field_name}_id')
+                new_id = getattr(attrs[field_name], 'pk', None)
+                if current_id != new_id:
+                    raise serializers.ValidationError({
+                        field_name: 'تغییر مالکیت، دارنده، شعبه یا خودرو باید از عملیات رسمی چرخه عمر دستگاه انجام شود.'
+                    })
+        else:
+            for field_name in (
+                'current_holder_organization',
+                'current_holder_user',
+                'branch',
+                'vehicle',
+            ):
+                if attrs.get(field_name) is not None:
+                    raise serializers.ValidationError({
+                        field_name: 'تخصیص مشتری، شعبه و خودرو فقط پس از اتصال رسمی دستگاه به قرارداد مجاز است.'
+                    })
+
         request = self.context.get('request')
         user = request.user if request else None
         if user and user.is_main_user:
@@ -257,7 +287,15 @@ class DeviceSerializer(serializers.ModelSerializer):
                 validated_data['owner_user'] = user
 
         instance = super().create(validated_data)
+        from .device_operations import _open_ownership
         from .lifecycle import record_device_lifecycle_event
+        if instance.organization_id or instance.owner_user_id:
+            _open_ownership(
+                instance,
+                organization=instance.organization,
+                user=instance.owner_user,
+                reason='device_received',
+            )
         record_device_lifecycle_event(
             device=instance,
             event_type='received',
