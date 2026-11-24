@@ -298,6 +298,10 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
                     'device': f'دستگاه {device.imei} در قرارداد فعال دیگری است'
                 })
         if subscription:
+            if subscription.computed_status in {'suspended', 'cancelled', 'expired'}:
+                raise serializers.ValidationError({
+                    'subscription': 'افزودن دستگاه به قرارداد تعلیق‌شده، لغوشده یا منقضی مجاز نیست.'
+                })
             if subscription.customer_type == 'organization':
                 if not subscription.organization_id or subscription.user_id is not None:
                     raise serializers.ValidationError({
