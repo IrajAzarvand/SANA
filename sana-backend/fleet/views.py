@@ -425,19 +425,14 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 unassigned_at__isnull=True,
                 start_date__lte=today,
                 end_date__gte=today,
-            )
-            active_customer_access = DeviceCustomerAccessPeriod.objects.filter(
-                device=OuterRef('pk'),
-                subscription__user=user,
-                subscription__customer_type='personal',
-                user=user,
-                organization__isnull=True,
-                started_at__lte=now,
-                ended_at__isnull=True,
+                device__customer_access_periods__subscription_id=F('subscription_id'),
+                device__customer_access_periods__user=user,
+                device__customer_access_periods__organization__isnull=True,
+                device__customer_access_periods__started_at__lte=now,
+                device__customer_access_periods__ended_at__isnull=True,
             )
             qs = qs.filter(
                 Exists(active_contract_link),
-                Exists(active_customer_access),
                 management_status__in=['installed', 'active'],
             )
         else:
