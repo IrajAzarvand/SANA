@@ -207,8 +207,16 @@ class Device(models.Model):
 
     @property
     def active_subscription_link(self):
-        """اتصال فعال این دستگاه به قرارداد"""
-        return self.subscription_links.filter(unassigned_at__isnull=True).first()
+        """Latest assignment that has started, if it has not been ended."""
+        now = timezone.now()
+        latest_started = self.subscription_links.filter(
+            assigned_at__lte=now,
+        ).order_by('-assigned_at', '-id').first()
+        return (
+            latest_started
+            if latest_started and latest_started.unassigned_at is None
+            else None
+        )
 
     @property
     def current_subscription(self):
