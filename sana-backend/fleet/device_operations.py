@@ -451,12 +451,22 @@ def execute_device_operation(
             user=active_link.subscription.user,
             reason='existing_relationship',
         )
-        _open_branch_history(
-            device,
-            device.branch,
-            subscription=active_link.subscription,
-            reason='existing_relationship',
-        )
+        if device.management_status in {'installed', 'active', 'disconnected'}:
+            _open_branch_history(
+                device,
+                device.branch,
+                subscription=active_link.subscription,
+                reason='existing_relationship',
+            )
+        else:
+            _close_branch_history(device)
+
+    if operation_type in {'transfer_branch', 'transfer_vehicle'} and device.management_status not in {
+        'installed', 'active', 'disconnected',
+    }:
+        raise ValidationError({
+            'device': 'انتقال شعبه یا خودرو فقط برای دستگاه نصب‌شده و در اختیار مشتری مجاز است.'
+        })
 
     if operation_type in {
         'return_for_repair', 'temporary_replacement', 'permanent_replacement',
