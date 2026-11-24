@@ -621,3 +621,57 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
             ended_at__isnull=True,
         ).exists())
 
+    def test_lost_device_closes_old_branch_history_for_temporary_replacement(self):
+        from fleet.device_operations import execute_device_operation
+        from fleet.models import DeviceBranchHistory
+        from organizations.models import Branch
+
+        branch = Branch.objects.create(
+            organization=self.organization,
+            name='Lost Device Branch',
+            code='LOST-DEVICE-BRANCH',
+        )
+        source = Device.objects.create(
+            imei='860000000000973',
+            organization=self.other_organization,
+            current_holder_organization=self.organization,
+            branch=branch,
+            management_status='installed',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=self.subscription,
+            device=source,
+            start_date=self.subscription.start_date,
+            end_date=self.subscription.end_date,
+        )
+        source_history = DeviceBranchHistory.objects.create(
+            device=source,
+            organization=self.organization,
+            branch=branch,
+            subscription=self.subscription,
+        )
+        replacement = Device.objects.create(
+            imei='860000000000974',
+            management_status='warehouse',
+        )
+
+        execute_device_operation(
+            device=source,
+            operation_type='lost',
+            performed_by=None,
+            replacement_device=replacement,
+            subscription=self.subscription,
+            replacement_type='temporary_repair',
+            replacement_method='warranty',
+        )
+
+        source_history.refresh_from_db()
+        self.assertIsNotNone(source_history.ended_at)
+        self.assertTrue(DeviceBranchHistory.objects.filter(
+            device=replacement,
+            organization=self.organization,
+            branch=branch,
+            subscription=self.subscription,
+            ended_at__isnull=True,
+        ).exists())
+
