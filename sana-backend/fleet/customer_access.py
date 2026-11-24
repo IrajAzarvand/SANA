@@ -1,4 +1,4 @@
-from django.db.models import F, Q
+from django.db.models import F, OuterRef, Q, Subquery
 from django.utils import timezone
 
 from .models import DeviceCustomerAccessPeriod
@@ -17,7 +17,17 @@ def active_customer_access_periods(*, organization_id=None, user_id=None, branch
     now = now or timezone.now()
     today = timezone.localdate(now)
 
+    # A device can have only one current customer/branch assignment.
+    # If legacy data contains overlapping open periods, only the latest
+    # started period may authorize access; an invalid newer period must not
+    # reactivate an older customer's stale access row.
+    latest_period_id = DeviceCustomerAccessPeriod.objects.filter(
+        device_id=OuterRef('device_id'),
+        started_at__lte=now,
+    ).order_by('-started_at', '-id').values('pk')[:1]
+
     periods = DeviceCustomerAccessPeriod.objects.filter(
+        pk=Subquery(latest_period_id),
         started_at__lte=now,
     ).filter(
         Q(ended_at__isnull=True) | Q(ended_at__gte=now),
