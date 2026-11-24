@@ -281,6 +281,65 @@ class CustomerAccessTimelineAndContractTests(TestCase):
         self.assertEqual(new_period.subscription_id, second.pk)
         self.assertEqual(new_period.started_at, changed_at)
 
+    def test_reactivating_contract_restores_same_access_period(self):
+        organization = Organization.objects.create(
+            name='Access Reactivation Organization',
+            code='ACCESS-REACTIVATION-ORG',
+        )
+        device = Device.objects.create(
+            imei='860000000001206',
+            organization=organization,
+        )
+        today = timezone.localdate()
+        subscription = Subscription.objects.create(
+            contract_number='ACCESS-REACTIVATION-001',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
+        )
+        access = DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            subscription=subscription,
+            started_at=timezone.now() - timedelta(days=2),
+        )
+
+        self.assertEqual(
+            active_customer_access_periods(organization_id=organization.pk)
+            .filter(device=device).count(),
+            1,
+        )
+
+        subscription.status = 'suspended'
+        subscription.save(update_fields=['status'])
+        self.assertFalse(
+            active_customer_access_periods(organization_id=organization.pk)
+            .filter(device=device).exists()
+        )
+        access.refresh_from_db()
+        self.assertIsNone(access.ended_at)
+
+        subscription.status = 'active'
+        subscription.save(update_fields=['status'])
+        restored = active_customer_access_periods(
+            organization_id=organization.pk
+        ).filter(device=device)
+
+        self.assertEqual(restored.count(), 1)
+        self.assertEqual(restored.get().pk, access.pk)
+        self.assertEqual(
+            DeviceCustomerAccessPeriod.objects.filter(device=device).count(),
+            1,
+        )
+
     def test_future_contract_device_assignment_does_not_authorize_access_period(self):
         user = User.objects.create_user(
             username='future_assignment_access',
