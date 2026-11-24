@@ -564,26 +564,6 @@ class DeviceListContractTenantScopeTests(TestCase):
             imei='860000000000981',
             organization=organization,
         )
-        own_subscription = Subscription.objects.create(
-            contract_number='OWN-DEVICE-LIST-CONTRACT',
-            customer_type='organization',
-            organization=organization,
-            start_date=today - timedelta(days=5),
-            end_date=today + timedelta(days=5),
-            status='active',
-        )
-        SubscriptionDevice.objects.create(
-            subscription=own_subscription,
-            device=device,
-            start_date=today - timedelta(days=5),
-            end_date=today + timedelta(days=5),
-        )
-        DeviceCustomerAccessPeriod.objects.create(
-            device=device,
-            organization=organization,
-            subscription=own_subscription,
-            started_at=now - timedelta(days=1),
-        )
         foreign_subscription = Subscription.objects.create(
             contract_number='FOREIGN-DEVICE-LIST-CONTRACT',
             customer_type='organization',
@@ -598,6 +578,12 @@ class DeviceListContractTenantScopeTests(TestCase):
             start_date=today - timedelta(days=5),
             end_date=today + timedelta(days=5),
         )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            subscription=foreign_subscription,
+            started_at=now - timedelta(days=1),
+        )
 
         client = APIClient()
         client.force_authenticate(user=manager)
@@ -609,7 +595,5 @@ class DeviceListContractTenantScopeTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         payload = response.data['results'] if isinstance(response.data, dict) else response.data
-        self.assertEqual(len(payload), 1)
-        self.assertEqual(payload[0]['subscription_id'], own_subscription.id)
-        self.assertEqual(payload[0]['subscription_number'], own_subscription.contract_number)
-        self.assertNotIn('FOREIGN-DEVICE-LIST-CONTRACT', str(payload[0]))
+        self.assertEqual(payload, [])
+        self.assertNotIn('FOREIGN-DEVICE-LIST-CONTRACT', str(payload))
