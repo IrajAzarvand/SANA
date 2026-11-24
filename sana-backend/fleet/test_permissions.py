@@ -1119,3 +1119,84 @@ class PersonalVehicleContractVisibilityTests(TestCase):
             context={'request': SimpleNamespace(user=user)},
         )
         self.assertEqual(serializer.data['device_imei'], device.imei)
+
+
+class DeviceAccessBranchConsistencyTests(TestCase):
+    def test_open_access_for_previous_branch_cannot_authorize_current_device_branch(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from rest_framework.test import APIRequestFactory, force_authenticate
+        from accounts.models import User
+        from fleet.models import Device, DeviceCustomerAccessPeriod
+        from fleet.views import DeviceViewSet, authorized_live_contract_device_ids
+        from organizations.models import Branch, Organization, Subscription, SubscriptionDevice
+
+        today = timezone.localdate()
+        organization = Organization.objects.create(
+            name='Branch Consistency Org',
+            code='BRANCH-CONSISTENCY-ORG',
+        )
+        previous_branch = Branch.objects.create(
+            organization=organization,
+            name='Previous Device Branch',
+            code='BRANCH-CONSISTENCY-OLD',
+        )
+        current_branch = Branch.objects.create(
+            organization=organization,
+            name='Current Device Branch',
+            code='BRANCH-CONSISTENCY-NEW',
+        )
+        manager = User.objects.create_user(
+            username='branch_consistency_manager',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=organization,
+        )
+        branch_manager = User.objects.create_user(
+            username='branch_consistency_branch_manager',
+            password='test-password',
+            role='branch_manager',
+            account_type='organization',
+            organization=organization,
+            branch=previous_branch,
+        )
+        device = Device.objects.create(
+            imei='860000000000986',
+            current_holder_organization=organization,
+            branch=current_branch,
+            management_status='installed',
+        )
+        subscription = Subscription.objects.create(
+            contract_number='BRANCH-CONSISTENCY-CONTRACT',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=2),
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            branch=previous_branch,
+            subscription=subscription,
+            started_at=timezone.now() - timedelta(minutes=1),
+        )
+
+        self.assertFalse(device.is_data_active)
+        self.assertNotIn(device.pk, set(authorized_live_contract_device_ids(manager)))
+        self.assertNotIn(device.pk, set(authorized_live_contract_device_ids(branch_manager)))
+
+        for user in (manager, branch_manager):
+            request = APIRequestFactory().get('/api/devices/')
+            force_authenticate(request, user=user)
+            view = DeviceViewSet()
+            view.action_map = {'get': 'list'}
+            view.request = view.initialize_request(request)
+            self.assertFalse(view.get_queryset().filter(pk=device.pk).exists())
