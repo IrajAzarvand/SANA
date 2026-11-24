@@ -83,6 +83,20 @@ def _open_customer_access(device, subscription=None, branch=None, organization=_
         else:
             raise ValidationError({'subscription': 'نوع مشتری قرارداد نامعتبر است.'})
 
+        # A historical device link is not sufficient for live access. The
+        # parent contract and this exact device link must both be active today.
+        active_link = SubscriptionDevice.objects.select_for_update().filter(
+            device=device,
+            subscription=subscription,
+            unassigned_at__isnull=True,
+        ).first()
+        if active_link is None:
+            raise ValidationError({
+                'subscription': 'برای این دستگاه اتصال فعال به قرارداد انتخاب‌شده وجود ندارد.'
+            })
+        if not active_link.is_active:
+            return None
+
     current = DeviceCustomerAccessPeriod.objects.select_for_update().filter(
         device=device,
         ended_at__isnull=True,
