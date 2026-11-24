@@ -135,6 +135,7 @@ def authorized_live_contract_device_ids(user):
         unassigned_at__isnull=True,
         start_date__lte=today,
         end_date__gte=today,
+        device__management_status__in=['installed', 'active'],
     )
 
     if user.is_main_user and user.organization_id:
@@ -378,6 +379,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 customer_access_periods__subscription__subscription_devices__end_date__gte=today,
             )
             qs = qs.filter(
+                management_status__in=['installed', 'active'],
                 customer_access_periods__organization_id=user.organization_id,
                 customer_access_periods__subscription__isnull=False,
                 customer_access_periods__started_at__lte=now,
@@ -398,6 +400,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 customer_access_periods__subscription__subscription_devices__end_date__gte=today,
             )
             qs = qs.filter(
+                management_status__in=['installed', 'active'],
                 customer_access_periods__organization_id=user.branch.organization_id,
                 customer_access_periods__branch=user.branch,
                 customer_access_periods__subscription__isnull=False,
@@ -420,7 +423,10 @@ class DeviceViewSet(viewsets.ModelViewSet):
             )
             # Contract links are the only live-access authority; legacy periods without
             # a subscription remain historical records and never grant live access.
-            qs = qs.filter(Exists(active_contract_link))
+            qs = qs.filter(
+                management_status__in=['installed', 'active'],
+                Exists(active_contract_link),
+            )
         else:
             qs = qs.none()
 
@@ -468,6 +474,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 subscription_links__start_date__lte=today,
                 subscription_links__end_date__gte=today,
                 subscription_links__subscription__status='active',
+                management_status__in=['installed', 'active'],
             ).distinct()
 
         if not user.is_site_admin:
