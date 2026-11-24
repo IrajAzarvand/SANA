@@ -469,6 +469,14 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
 
         legal_owner = self.organization
         customer = self.other_organization
+        subscription = Subscription.objects.create(
+            contract_number='DISPOSAL-ACCESS-CONTRACT',
+            customer_type='organization',
+            organization=customer,
+            start_date=timezone.localdate(),
+            end_date=timezone.localdate() + timedelta(days=30),
+            status='active',
+        )
         device = Device.objects.create(
             imei='860000000000971',
             organization=legal_owner,
@@ -476,16 +484,16 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
             management_status='ready',
         )
         link = SubscriptionDevice.objects.create(
-            subscription=self.subscription,
+            subscription=subscription,
             device=device,
-            start_date=self.subscription.start_date,
-            end_date=self.subscription.end_date,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
         )
         DeviceOwnershipHistory.objects.create(device=device, organization=legal_owner)
         DeviceCustomerAccessPeriod.objects.create(
             device=device,
             organization=customer,
-            subscription=self.subscription,
+            subscription=subscription,
         )
 
         execute_device_operation(
