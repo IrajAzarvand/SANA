@@ -1735,3 +1735,45 @@ class ContractAssignmentOwnershipSeparationTests(TestCase):
         access = DeviceCustomerAccessPeriod.objects.get(device=device, ended_at__isnull=True)
         self.assertEqual(access.organization_id, customer.id)
         self.assertEqual(access.subscription_id, subscription.id)
+
+class SubscriptionIdentityMutationTests(TestCase):
+    def test_customer_and_date_changes_require_explicit_contract_operations(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from organizations.models import Organization, Subscription
+        from organizations.serializers import SubscriptionSerializer
+
+        today = timezone.localdate()
+        customer = Organization.objects.create(
+            name='Immutable Contract Customer',
+            code='IMMUTABLE-CONTRACT-CUSTOMER',
+        )
+        other_customer = Organization.objects.create(
+            name='Other Contract Customer',
+            code='OTHER-CONTRACT-CUSTOMER',
+        )
+        subscription = Subscription.objects.create(
+            contract_number='IMMUTABLE-CONTRACT-0001',
+            customer_type='organization',
+            organization=customer,
+            start_date=today,
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+
+        customer_change = SubscriptionSerializer(
+            instance=subscription,
+            data={'organization': other_customer.id},
+            partial=True,
+        )
+        self.assertFalse(customer_change.is_valid())
+        self.assertIn('organization', customer_change.errors)
+
+        date_change = SubscriptionSerializer(
+            instance=subscription,
+            data={'end_date': (today + timedelta(days=60)).isoformat()},
+            partial=True,
+        )
+        self.assertFalse(date_change.is_valid())
+        self.assertIn('end_date', date_change.errors)
+
