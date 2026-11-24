@@ -760,18 +760,20 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         """تعلیق قرارداد"""
         subscription = self.get_object()
         with transaction.atomic():
+            subscription = Subscription.objects.select_for_update().get(pk=subscription.pk)
             operation = SubscriptionOperation.objects.create(
                 subscription=subscription, operation_type='suspend',
                 performed_by=request.user, old_status=subscription.status, new_status='suspended'
             )
             subscription.status = 'suspended'
             subscription.save(update_fields=['status', 'updated_at'])
-            # Stop live access for this contract only; keep all access-period rows
-            # so customers can still query their authorized historical positions.
-            DeviceCustomerAccessPeriod.objects.filter(
-                subscription=subscription,
-                ended_at__isnull=True,
-            ).update(ended_at=timezone.now())
+            # Close scheduled/current live periods without changing the physical
+            # branch assignment; historical access remains available.
+            active_links = subscription.subscription_devices.filter(
+                unassigned_at__isnull=True
+            ).select_related('device')
+            for link in active_links:
+                _close_customer_access(link.device, subscription=subscription)
         return Response(SubscriptionSerializer(subscription).data)
 
     @action(detail=True, methods=['post'])
@@ -905,6 +907,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         """لغو قرارداد و پایان‌دادن به تخصیص دستگاه‌های فعال آن."""
         subscription = self.get_object()
         with transaction.atomic():
+            subscription = Subscription.objects.select_for_update().get(pk=subscription.pk)
             operation = SubscriptionOperation.objects.create(
                 subscription=subscription, operation_type='cancel',
                 performed_by=request.user, old_status=subscription.status, new_status='cancelled'
