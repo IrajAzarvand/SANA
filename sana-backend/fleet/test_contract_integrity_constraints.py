@@ -110,6 +110,26 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
             organization=self.other_organization,
         ))
 
+    def test_personal_current_holder_is_not_confused_with_organization_legal_owner(self):
+        from accounts.models import User
+        from fleet.device_operations import _current_customer
+
+        personal_customer = User.objects.create_user(
+            username='personal-current-holder',
+            password='test-password',
+            account_type='personal',
+            role='personal_user',
+        )
+        device = Device.objects.create(
+            imei='860000000000983',
+            organization=self.organization,
+            current_holder_user=personal_customer,
+            management_status='installed',
+        )
+        customer = _current_customer(device)
+        self.assertIsNone(customer['organization'])
+        self.assertEqual(customer['user'].id, personal_customer.id)
+
     def test_ownership_history_defaults_to_legal_owner_not_current_holder(self):
         from fleet.device_operations import _open_ownership
 
