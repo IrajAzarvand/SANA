@@ -70,12 +70,14 @@ class ContractBackedDeviceAccessTests(TestCase):
             start_date=authorized.start_date,
             end_date=authorized.end_date,
         )
-        newer_link = SubscriptionDevice.objects.create(
-            subscription=newer,
-            device=device,
-            start_date=newer.start_date,
-            end_date=newer.end_date,
-        )
+        newer_link = SubscriptionDevice.objects.bulk_create([
+            SubscriptionDevice(
+                subscription=newer,
+                device=device,
+                start_date=newer.start_date,
+                end_date=newer.end_date,
+            )
+        ])[0]
         SubscriptionDevice.objects.filter(
             pk__in=[authorized_link.pk, newer_link.pk]
         ).update(unassigned_at=None)
@@ -138,12 +140,14 @@ class ContractBackedDeviceAccessTests(TestCase):
             start_date=subscription.start_date,
             end_date=subscription.end_date,
         )
-        future_link = SubscriptionDevice.objects.create(
-            subscription=subscription,
-            device=device,
-            start_date=subscription.start_date,
-            end_date=subscription.end_date,
-        )
+        future_link = SubscriptionDevice.objects.bulk_create([
+            SubscriptionDevice(
+                subscription=subscription,
+                device=device,
+                start_date=subscription.start_date,
+                end_date=subscription.end_date,
+            )
+        ])[0]
         SubscriptionDevice.objects.filter(
             pk__in=[valid_link.pk, future_link.pk]
         ).update(unassigned_at=None)
@@ -341,12 +345,14 @@ class ContractBackedDeviceAccessTests(TestCase):
             start_date=valid_subscription.start_date,
             end_date=valid_subscription.end_date,
         )
-        future_link = SubscriptionDevice.objects.create(
-            subscription=future_subscription,
-            device=device,
-            start_date=future_subscription.start_date,
-            end_date=future_subscription.end_date,
-        )
+        future_link = SubscriptionDevice.objects.bulk_create([
+            SubscriptionDevice(
+                subscription=future_subscription,
+                device=device,
+                start_date=future_subscription.start_date,
+                end_date=future_subscription.end_date,
+            )
+        ])[0]
         # Model.save() normally closes the previous assignment. Re-open both
         # rows to reproduce legacy overlapping data with a future-dated link.
         SubscriptionDevice.objects.filter(
@@ -592,12 +598,14 @@ class ContractBackedDeviceAccessTests(TestCase):
             start_date=older_subscription.start_date,
             end_date=older_subscription.end_date,
         )
-        newer_link = SubscriptionDevice.objects.create(
-            subscription=newer_subscription,
-            device=device,
-            start_date=newer_subscription.start_date,
-            end_date=newer_subscription.end_date,
-        )
+        newer_link = SubscriptionDevice.objects.bulk_create([
+            SubscriptionDevice(
+                subscription=newer_subscription,
+                device=device,
+                start_date=newer_subscription.start_date,
+                end_date=newer_subscription.end_date,
+            )
+        ])[0]
         # Reproduce inconsistent legacy rows: both assignments remain open.
         SubscriptionDevice.objects.filter(
             pk__in=[older_link.pk, newer_link.pk]
@@ -698,12 +706,14 @@ class DeviceActiveAssignmentSelectionTests(TestCase):
             start_date=current_subscription.start_date,
             end_date=current_subscription.end_date,
         )
-        future_link = SubscriptionDevice.objects.create(
-            subscription=future_subscription,
-            device=device,
-            start_date=future_subscription.start_date,
-            end_date=future_subscription.end_date,
-        )
+        future_link = SubscriptionDevice.objects.bulk_create([
+            SubscriptionDevice(
+                subscription=future_subscription,
+                device=device,
+                start_date=future_subscription.start_date,
+                end_date=future_subscription.end_date,
+            )
+        ])[0]
         SubscriptionDevice.objects.filter(
             pk__in=[current_link.pk, future_link.pk]
         ).update(unassigned_at=None)
@@ -748,12 +758,14 @@ class DeviceActiveAssignmentSelectionTests(TestCase):
             start_date=subscriptions[0].start_date,
             end_date=subscriptions[0].end_date,
         )
-        newer_link = SubscriptionDevice.objects.create(
-            subscription=subscriptions[1],
-            device=device,
-            start_date=subscriptions[1].start_date,
-            end_date=subscriptions[1].end_date,
-        )
+        newer_link = SubscriptionDevice.objects.bulk_create([
+            SubscriptionDevice(
+                subscription=subscriptions[1],
+                device=device,
+                start_date=subscriptions[1].start_date,
+                end_date=subscriptions[1].end_date,
+            )
+        ])[0]
         SubscriptionDevice.objects.filter(pk=older_link.pk).update(
             unassigned_at=None,
             assigned_at=now - timedelta(days=3),
@@ -887,15 +899,15 @@ class CustomerAccessTimelineAndContractTests(TestCase):
             )
             for index in (1, 2)
         ]
-        links = [
-            SubscriptionDevice.objects.create(
+        links = SubscriptionDevice.objects.bulk_create([
+            SubscriptionDevice(
                 subscription=subscription,
                 device=device,
                 start_date=subscription.start_date,
                 end_date=subscription.end_date,
             )
             for subscription in subscriptions
-        ]
+        ])
         # Simulate legacy inconsistency: both historical assignments remain open.
         SubscriptionDevice.objects.filter(
             pk__in=[link.pk for link in links]
@@ -996,6 +1008,9 @@ class CustomerAccessTimelineAndContractTests(TestCase):
             reason='first_assignment',
         )
 
+        SubscriptionDevice.objects.filter(pk=first_link.pk).update(
+            unassigned_at=timezone.now()
+        )
         second_link = SubscriptionDevice.objects.create(
             subscription=subscription,
             device=device,
