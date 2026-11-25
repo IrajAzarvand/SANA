@@ -1,4 +1,6 @@
 from django.contrib import admin
+from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from .models import User, UserSession
 
@@ -9,6 +11,34 @@ class UserAdmin(BaseUserAdmin):
     list_filter = ['role', 'account_type', 'is_active', 'organization']
     search_fields = ['username', 'first_name', 'last_name', 'email', 'mobile']
     ordering = ['-date_joined']
+
+    @transaction.atomic
+    def save_model(self, request, obj, form, change):
+        if request.user.pk == obj.pk and (
+            obj.role != 'site_admin' or not obj.is_active
+        ):
+            raise ValidationError(
+                'امکان تنزل نقش یا غیرفعال‌سازی حساب مدیر سایتِ واردشده وجود ندارد.'
+            )
+
+        if change:
+            previous = User.objects.select_for_update().get(pk=obj.pk)
+            if previous.role == 'site_admin' and previous.is_active and (
+                obj.role != 'site_admin' or not obj.is_active
+            ):
+                active_admin_ids = list(
+                    User.objects.select_for_update().filter(
+                        role='site_admin', is_active=True
+                    ).values_list('pk', flat=True)
+                )
+                if obj.pk in active_admin_ids and len(active_admin_ids) <= 1:
+                    raise ValidationError(
+                        'حداقل یک مدیر سایت فعال باید در سامانه باقی بماند.'
+                    )
+
+        obj.is_staff = obj.role == 'site_admin'
+        obj.is_superuser = obj.role == 'site_admin'
+        super().save_model(request, obj, form, change)
 
     fieldsets = (
         (None, {'fields': ('username', 'password')}),

@@ -1,10 +1,13 @@
 from datetime import timedelta
 
-from django.test import TestCase
+from django.test import TestCase, RequestFactory
+from django.contrib import admin as django_admin
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from accounts.models import User, UserSession
+from accounts.admin import UserAdmin
 from organizations.models import Organization, Branch
 
 
@@ -339,3 +342,31 @@ class UserManagementRoleBoundaryTests(TestCase):
         target.refresh_from_db()
         self.assertTrue(target.is_staff)
         self.assertTrue(target.is_superuser)
+
+
+    def test_django_admin_save_model_synchronizes_role_permissions(self):
+        request = RequestFactory().post('/admin/accounts/user/')
+        request.user = self.admin
+        model_admin = UserAdmin(User, django_admin.site)
+        target = User.objects.create_user(
+            username='admin-ui-target', password='test-password-123',
+            role='site_admin', account_type='admin', is_staff=True, is_superuser=True,
+        )
+        target.role = 'personal_user'
+        target.account_type = 'personal'
+        model_admin.save_model(request, target, form=None, change=True)
+        target.refresh_from_db()
+        self.assertFalse(target.is_staff)
+        self.assertFalse(target.is_superuser)
+
+    def test_django_admin_cannot_demote_or_deactivate_own_account(self):
+        request = RequestFactory().post('/admin/accounts/user/')
+        request.user = self.admin
+        model_admin = UserAdmin(User, django_admin.site)
+        self.admin.role = 'personal_user'
+        self.admin.account_type = 'personal'
+        with self.assertRaises(DjangoValidationError):
+            model_admin.save_model(request, self.admin, form=None, change=True)
+        self.admin.refresh_from_db()
+        self.assertEqual(self.admin.role, 'site_admin')
+        self.assertTrue(self.admin.is_active)
