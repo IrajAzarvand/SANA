@@ -38,12 +38,65 @@ def _current_customer(device, subscription=None):
     return {'organization': device.organization, 'user': device.owner_user}
 
 
+def _validate_transfer_target(*, organization, user, branch=None, vehicle=None, subscription=None):
+    if bool(organization) == bool(user):
+        raise ValidationError({
+            'target_organization': 'باید دقیقاً یک مشتری سازمانی یا شخصی برای انتقال انتخاب شود.'
+        })
+
+    if organization:
+        if organization.status != 'active':
+            raise ValidationError({'target_organization': 'سازمان مقصد باید فعال باشد.'})
+        if branch and (
+            branch.organization_id != organization.id
+            or branch.status != 'active'
+        ):
+            raise ValidationError({'target_branch': 'شعبه مقصد باید فعال و متعلق به سازمان مشتری مقصد باشد.'})
+        if vehicle and (
+            vehicle.organization_id != organization.id
+            or vehicle.owner_user_id is not None
+            or (vehicle.branch_id and vehicle.branch.status != 'active')
+            or (branch and vehicle.branch_id != branch.id)
+        ):
+            raise ValidationError({'target_vehicle': 'خودروی مقصد متعلق به سازمان یا شعبه انتخاب‌شده نیست.'})
+        if subscription and (
+            subscription.customer_type != 'organization'
+            or subscription.organization_id != organization.id
+            or subscription.user_id is not None
+            or subscription.computed_status != 'active'
+        ):
+            raise ValidationError({'target_subscription': 'قرارداد مقصد باید فعال و متعلق به سازمان انتخاب‌شده باشد.'})
+    else:
+        if not user.is_active or not user.is_personal_user:
+            raise ValidationError({
+                'target_user': 'انتقال شخصی فقط به حساب دارای نقش مشتری شخصی فعال مجاز است.'
+            })
+        if branch:
+            raise ValidationError({'target_branch': 'مشتری شخصی نمی‌تواند شعبه سازمانی داشته باشد.'})
+        if vehicle and (
+            vehicle.owner_user_id != user.id
+            or vehicle.organization_id is not None
+            or vehicle.branch_id is not None
+        ):
+            raise ValidationError({'target_vehicle': 'خودروی مقصد متعلق به کاربر شخصی انتخاب‌شده نیست.'})
+        if subscription and (
+            subscription.customer_type != 'personal'
+            or subscription.user_id != user.id
+            or subscription.organization_id is not None
+            or subscription.computed_status != 'active'
+        ):
+            raise ValidationError({'target_subscription': 'قرارداد مقصد باید فعال و متعلق به کاربر شخصی انتخاب‌شده باشد.'})
+
+
 def _validate_device_customer_assignment(device, subscription):
     """Validate a warehouse device against the exact contract customer and its current holder."""
     if device.management_status in {'faulty', 'in_repair', 'ready', 'lost', 'stolen', 'unusable', 'disposed'}:
         raise ValidationError({
             'device': 'دستگاه در وضعیت فعلی قابل اتصال به قرارداد نیست؛ ابتدا وضعیت عملیاتی آن را تعیین تکلیف کنید.'
         })
+
+    if subscription.computed_status != 'active':
+        raise ValidationError({'subscription': 'اتصال دستگاه به قرارداد غیرفعال یا منقضی مجاز نیست.'})
 
     if subscription.customer_type == 'organization':
         if (
@@ -283,6 +336,8 @@ def _close_active_link(device, operation):
 def _add_to_subscription(device, subscription, operation, start_date=None, end_date=None):
     if not subscription:
         raise ValidationError({'target_subscription': 'انتخاب قرارداد مقصد الزامی است'})
+    if subscription.computed_status != 'active':
+        raise ValidationError({'target_subscription': 'افزودن دستگاه به قرارداد غیرفعال یا منقضی مجاز نیست.'})
     start_date = start_date or subscription.start_date
     end_date = end_date or subscription.end_date
     if start_date > end_date:
@@ -950,8 +1005,13 @@ def execute_device_operation(
         )
 
     elif operation_type == 'transfer_customer':
-        if not target_organization and not target_user:
-            raise ValidationError({'target_organization': 'مالک مقصد را مشخص کنید'})
+        _validate_transfer_target(
+            organization=target_organization,
+            user=target_user,
+            branch=target_branch,
+            vehicle=target_vehicle,
+            subscription=target_subscription,
+        )
         _close_active_link(device, operation)
         _close_customer_access(device)
         _close_ownership(device)
