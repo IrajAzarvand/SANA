@@ -350,11 +350,6 @@ class SubscriptionDevice(models.Model):
         verbose_name_plural = 'دستگاه‌های قرارداد'
         ordering = ['-assigned_at']
         constraints = [
-            models.UniqueConstraint(
-                fields=['device'],
-                condition=models.Q(unassigned_at__isnull=True),
-                name='subscription_device_one_active',
-            ),
             models.CheckConstraint(
                 condition=models.Q(end_date__gte=models.F('start_date')),
                 name='sub_device_valid_dates',
