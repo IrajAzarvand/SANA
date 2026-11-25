@@ -3,7 +3,7 @@ from decimal import Decimal, InvalidOperation
 from django.utils import timezone
 from django.db.models import Q, Sum
 from fleet.lifecycle import record_device_lifecycle_event
-from fleet.device_operations import _open_customer_access
+from fleet.device_operations import _open_customer_access, _open_ownership, _validate_device_customer_assignment
 from fleet.customer_access import active_customer_access_periods
 from fleet.models import DeviceCustomerAccessPeriod
 from .models import (
@@ -293,6 +293,8 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     'device': f'دستگاه {device.imei} در قرارداد فعال دیگری است'
                 })
+        if device and subscription:
+            _validate_device_customer_assignment(device, subscription)
         # چک ترتیب تاریخ‌ها
         if data.get('start_date') and data.get('end_date'):
             if data['start_date'] > data['end_date']:
@@ -314,43 +316,55 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
         return data
 
     def create(self, validated_data):
-        # بعد از ساخت، مالکیت دستگاه رو هم به قرارداد اختصاص بده
-        instance = super().create(validated_data)
-        device = instance.device
-        subscription = instance.subscription
+        from django.db import transaction
 
-        # اختصاص مالکیت
-        if subscription.organization:
-            device.organization = subscription.organization
-            device.owner_user = None
-            device.current_holder_organization = subscription.organization
-            device.current_holder_user = None
-        elif subscription.user:
-            device.owner_user = subscription.user
-            device.organization = None
-            device.current_holder_organization = None
-            device.current_holder_user = subscription.user
+        device = validated_data['device']
+        subscription = validated_data['subscription']
+        _validate_device_customer_assignment(device, subscription)
 
-        # آپدیت وضعیت
-        if device.management_status == 'warehouse':
-            device.management_status = 'installed'
+        with transaction.atomic():
+            instance = super().create(validated_data)
+            device = instance.device
+            subscription = instance.subscription
 
-        device.save()
-        _open_customer_access(
-            device,
-            subscription=subscription,
-            branch=device.branch,
-            reason='contract_assignment',
-        )
-        request = self.context.get('request')
-        record_device_lifecycle_event(
-            device=device,
-            event_type='assigned_to_contract',
-            performed_by=request.user if request else None,
-            subscription=subscription,
-            description=f'دستگاه به قرارداد {subscription.contract_number} اضافه شد.',
-        )
-        return instance
+            # Contract assignment changes the current holder, never legal ownership.
+            if subscription.organization:
+                device.current_holder_organization = subscription.organization
+                device.current_holder_user = None
+            elif subscription.user:
+                device.current_holder_organization = None
+                device.current_holder_user = subscription.user
+
+            if device.management_status == 'warehouse':
+                device.management_status = 'installed'
+
+            device.save()
+            if device.organization_id or device.owner_user_id:
+                _open_ownership(
+                    device,
+                    organization=device.organization,
+                    user=device.owner_user,
+                    reason='contract_assignment',
+                )
+            _open_customer_access(
+                device,
+                subscription=subscription,
+                branch=device.branch,
+                organization=subscription.organization,
+                user=subscription.user,
+                reason='contract_assignment',
+            )
+            request = self.context.get('request')
+            record_device_lifecycle_event(
+                device=device,
+                event_type='assigned_to_contract',
+                performed_by=request.user if request else None,
+                subscription=subscription,
+                organization=subscription.organization,
+                user=subscription.user,
+                description=f'دستگاه به قرارداد {subscription.contract_number} اضافه شد.',
+            )
+            return instance
 
     
 # ═══════════════════════════════════════════════
@@ -1127,6 +1141,7 @@ class SubscriptionWizardSerializer(serializers.Serializer):
             # ─── ۴. اضافه کردن دستگاه‌ها ───
             for device_data in devices_data:
                 device = locked_devices[device_data['device_id']]
+                _validate_device_customer_assignment(device, subscription)
 
                 SubscriptionDevice.objects.create(
                     subscription=subscription,
@@ -1136,25 +1151,29 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                     added_by_operation=operation,
                 )
 
-                # تخصیص مالکیت و مشتری فعلی دستگاه
+                # Contract assignment changes the current holder, never legal ownership.
                 if organization:
-                    device.organization = organization
-                    device.owner_user = None
                     device.current_holder_organization = organization
                     device.current_holder_user = None
                 else:
-                    device.owner_user = user
-                    device.organization = None
                     device.current_holder_organization = None
                     device.current_holder_user = user
 
-                # آپدیت وضعیت مدیریتی دستگاه — از انبار خارج شد
                 device.management_status = 'installed'
                 device.save()
+                if device.organization_id or device.owner_user_id:
+                    _open_ownership(
+                        device,
+                        organization=device.organization,
+                        user=device.owner_user,
+                        reason='contract_assignment',
+                    )
                 _open_customer_access(
                     device,
                     subscription=subscription,
                     branch=device.branch,
+                    organization=organization,
+                    user=user if customer_type == 'personal' else None,
                     reason='contract_assignment',
                 )
                 record_device_lifecycle_event(
@@ -1162,6 +1181,8 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                     event_type='assigned_to_contract',
                     performed_by=self.context.get('request').user if self.context.get('request') else None,
                     subscription=subscription,
+                    organization=subscription.organization,
+                    user=subscription.user,
                     description=f'دستگاه به قرارداد {subscription.contract_number} اضافه شد.',
                 )
 
