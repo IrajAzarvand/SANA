@@ -5,6 +5,12 @@ def synchronize_user_roles_and_admin_flags(apps, schema_editor):
     User = apps.get_model('accounts', 'User')
     database = schema_editor.connection.alias
 
+    users = User.objects.using(database)
+    if users.exists() and not users.filter(role='site_admin', is_active=True).exists():
+        raise RuntimeError(
+            'Role synchronization aborted: no active site_admin account exists.'
+        )
+
     role_account_types = {
         'site_admin': 'admin',
         'main_user': 'organization',
