@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils import timezone
 from django.contrib.auth import get_user_model
@@ -86,6 +87,20 @@ class UserCreateSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         request = self.context.get('request')
         actor = getattr(request, 'user', None)
+
+        # Apply Django's configured password validators to API-created accounts,
+        # using the submitted identity fields for similarity checks.
+        candidate = User(
+            username=attrs.get('username', ''),
+            first_name=attrs.get('first_name', ''),
+            last_name=attrs.get('last_name', ''),
+            email=attrs.get('email', ''),
+        )
+        try:
+            validate_password(attrs.get('password', ''), user=candidate)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({'password': exc.messages})
+
         if actor and actor.is_main_user:
             branch = attrs.get('branch')
             if not actor.organization_id:
@@ -128,6 +143,9 @@ class UserCreateSerializer(serializers.ModelSerializer):
         password = validated_data.pop('password')
         user = User(**validated_data)
         user.set_password(password)
+        # The application role is the source of truth for Django admin access.
+        user.is_staff = user.role == 'site_admin'
+        user.is_superuser = user.role == 'site_admin'
         user.save()
         return user
 
@@ -193,7 +211,36 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'organization': 'برای مدیر شرکت، انتخاب شرکت الزامی است.'})
         if role in {'site_admin', 'personal_user'} and (organization or branch):
             raise serializers.ValidationError('ادمین سایت و کاربر شخصی نباید به شرکت یا شعبه سازمانی متصل باشند.')
+
+        if self.instance and actor:
+            resulting_active = attrs.get('is_active', self.instance.is_active)
+            is_leaving_admin_role = role != 'site_admin'
+            is_becoming_inactive = not resulting_active
+
+            # Never allow an administrator to lock themselves out through the API.
+            if self.instance.pk == actor.pk and (is_leaving_admin_role or is_becoming_inactive):
+                raise serializers.ValidationError(
+                    'امکان تنزل نقش یا غیرفعال‌سازی حساب مدیر سایتِ واردشده وجود ندارد.'
+                )
+
+            # Preserve at least one active site administrator.
+            if self.instance.role == 'site_admin' and (is_leaving_admin_role or is_becoming_inactive):
+                another_active_admin_exists = User.objects.filter(
+                    role='site_admin', is_active=True
+                ).exclude(pk=self.instance.pk).exists()
+                if not another_active_admin_exists:
+                    raise serializers.ValidationError(
+                        'حداقل یک مدیر سایت فعال باید در سامانه باقی بماند.'
+                    )
         return attrs
+
+    def update(self, instance, validated_data):
+        resulting_role = validated_data.get('role', instance.role)
+        # Do not leave Django's independent staff/superuser flags out of sync
+        # with the application role after any administrative update.
+        validated_data['is_staff'] = resulting_role == 'site_admin'
+        validated_data['is_superuser'] = resulting_role == 'site_admin'
+        return super().update(instance, validated_data)
 
 
 class UserProfileUpdateSerializer(serializers.ModelSerializer):
