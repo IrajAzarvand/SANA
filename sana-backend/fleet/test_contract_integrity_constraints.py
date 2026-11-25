@@ -274,6 +274,91 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
         self.assertEqual(self.subscription.end_date, original_contract_end)
 
 
+    def test_temporary_replacement_returns_to_warehouse_when_original_returns(self):
+        from fleet.device_operations import execute_device_operation
+        from fleet.models import DeviceReplacementRelation, Vehicle
+        from organizations.models import Branch
+
+        branch = Branch.objects.create(
+            organization=self.organization,
+            name='Temporary Loaner Branch',
+            code='TEMP-LOANER-BRANCH',
+        )
+        vehicle = Vehicle.objects.create(
+            plate='99ج999',
+            organization=self.organization,
+            branch=branch,
+        )
+        source = Device.objects.create(
+            imei='860000000000979',
+            organization=self.other_organization,
+            current_holder_organization=self.organization,
+            branch=branch,
+            vehicle=vehicle,
+            management_status='installed',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=self.subscription,
+            device=source,
+            start_date=self.subscription.start_date,
+            end_date=self.subscription.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=source,
+            organization=self.organization,
+            branch=branch,
+            subscription=self.subscription,
+            started_at=timezone.now() - timedelta(minutes=2),
+        )
+        loaner = Device.objects.create(
+            imei='860000000000980',
+            organization=self.other_organization,
+            management_status='warehouse',
+        )
+
+        execute_device_operation(
+            device=source,
+            operation_type='return_for_repair',
+            performed_by=None,
+            replacement_device=loaner,
+            subscription=self.subscription,
+            replacement_type='temporary_repair',
+            replacement_method='warranty',
+        )
+        execute_device_operation(
+            device=source,
+            operation_type='repaired',
+            performed_by=None,
+        )
+        execute_device_operation(
+            device=source,
+            operation_type='disposition',
+            performed_by=None,
+            outcome_action='return_customer_no_vehicle',
+        )
+
+        source.refresh_from_db()
+        loaner.refresh_from_db()
+        relation = DeviceReplacementRelation.objects.get(
+            source_device=source,
+            replacement_device=loaner,
+        )
+        self.assertIsNotNone(relation.returned_at)
+        self.assertEqual(source.current_holder_organization_id, self.organization.id)
+        self.assertTrue(DeviceCustomerAccessPeriod.objects.filter(
+            device=source,
+            organization=self.organization,
+            ended_at__isnull=True,
+        ).exists())
+        self.assertEqual(loaner.management_status, 'warehouse')
+        self.assertEqual(loaner.organization_id, self.other_organization.id)
+        self.assertIsNone(loaner.current_holder_organization_id)
+        self.assertIsNone(loaner.active_subscription_link)
+        self.assertFalse(DeviceCustomerAccessPeriod.objects.filter(
+            device=loaner,
+            ended_at__isnull=True,
+        ).exists())
+
     def test_future_contract_assignment_is_recorded_but_access_starts_on_contract_date(self):
         from fleet.customer_access import active_customer_access_periods
         from organizations.serializers import SubscriptionDeviceSerializer
