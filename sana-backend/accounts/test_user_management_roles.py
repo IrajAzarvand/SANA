@@ -370,3 +370,25 @@ class UserManagementRoleBoundaryTests(TestCase):
         self.admin.refresh_from_db()
         self.assertEqual(self.admin.role, 'site_admin')
         self.assertTrue(self.admin.is_active)
+
+
+    def test_user_manager_keeps_site_admin_role_and_permissions_consistent(self):
+        admin_user = User.objects.create_user(
+            username='manager-created-admin', password='test-password-123',
+            role='site_admin', account_type='admin',
+        )
+        ordinary_user = User.objects.create_user(
+            username='manager-created-ordinary', password='test-password-123',
+            role='personal_user', account_type='personal', is_staff=True, is_superuser=True,
+        )
+        self.assertTrue(admin_user.is_staff)
+        self.assertTrue(admin_user.is_superuser)
+        self.assertFalse(ordinary_user.is_staff)
+        self.assertFalse(ordinary_user.is_superuser)
+
+    def test_create_superuser_rejects_non_admin_application_role(self):
+        with self.assertRaises(ValueError):
+            User.objects.create_superuser(
+                username='invalid-superuser-role', password='test-password-123',
+                role='main_user', account_type='organization',
+            )

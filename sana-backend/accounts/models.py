@@ -10,16 +10,29 @@ class UserManager(BaseUserManager):
     def create_user(self, username, password=None, **extra_fields):
         if not username:
             raise ValueError('نام کاربری الزامی است')
+        # The application role is the source of truth for Django admin access
+        # across every user-creation path, not only API serializers.
+        is_site_admin = extra_fields.get('role', 'personal_user') == 'site_admin'
+        extra_fields['is_staff'] = is_site_admin
+        extra_fields['is_superuser'] = is_site_admin
         user = self.model(username=username, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
         return user
 
     def create_superuser(self, username, password=None, **extra_fields):
-        extra_fields.setdefault('is_staff', True)
-        extra_fields.setdefault('is_superuser', True)
-        extra_fields.setdefault('role', 'site_admin')
-        extra_fields.setdefault('account_type', 'admin')
+        if extra_fields.get('role', 'site_admin') != 'site_admin':
+            raise ValueError('Superusers must have the site_admin role')
+        if extra_fields.get('account_type', 'admin') != 'admin':
+            raise ValueError('Superusers must have the admin account type')
+        if extra_fields.get('is_staff', True) is not True:
+            raise ValueError('Superusers must have is_staff=True')
+        if extra_fields.get('is_superuser', True) is not True:
+            raise ValueError('Superusers must have is_superuser=True')
+        extra_fields['is_staff'] = True
+        extra_fields['is_superuser'] = True
+        extra_fields['role'] = 'site_admin'
+        extra_fields['account_type'] = 'admin'
         return self.create_user(username, password, **extra_fields)
 
 
