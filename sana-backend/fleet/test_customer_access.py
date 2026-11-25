@@ -1196,7 +1196,10 @@ class CustomerAccessTimelineAndContractTests(TestCase):
         # become active again for the previous branch.
         DeviceCustomerAccessPeriod.objects.filter(
             pk=second_period.pk
-        ).update(ended_at=timezone.now() - timedelta(seconds=1))
+        ).update(ended_at=max(
+            timezone.now() - timedelta(seconds=1),
+            second_period.started_at,
+        ))
         DeviceCustomerAccessPeriod.objects.create(
             device=device,
             organization=organization,
