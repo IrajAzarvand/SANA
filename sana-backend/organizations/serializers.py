@@ -317,13 +317,17 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         from django.db import transaction
+from django.core.exceptions import ValidationError as DjangoValidationError
 
         device = validated_data['device']
         subscription = validated_data['subscription']
         _validate_device_customer_assignment(device, subscription)
 
         with transaction.atomic():
-            instance = super().create(validated_data)
+            try:
+                instance = super().create(validated_data)
+            except DjangoValidationError as exc:
+                raise serializers.ValidationError({'device': exc.messages}) from exc
             device = instance.device
             subscription = instance.subscription
 
@@ -1143,13 +1147,16 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                 device = locked_devices[device_data['device_id']]
                 _validate_device_customer_assignment(device, subscription)
 
-                SubscriptionDevice.objects.create(
-                    subscription=subscription,
-                    device=device,
-                    start_date=device_data['start_date'],
-                    end_date=device_data['end_date'],
-                    added_by_operation=operation,
-                )
+                try:
+                    SubscriptionDevice.objects.create(
+                        subscription=subscription,
+                        device=device,
+                        start_date=device_data['start_date'],
+                        end_date=device_data['end_date'],
+                        added_by_operation=operation,
+                    )
+                except DjangoValidationError as exc:
+                    raise serializers.ValidationError({'device': exc.messages}) from exc
 
                 # Contract assignment changes the current holder, never legal ownership.
                 if organization:
