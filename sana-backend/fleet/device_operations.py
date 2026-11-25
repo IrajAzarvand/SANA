@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
@@ -7,14 +8,169 @@ from .lifecycle import record_device_lifecycle_event
 from organizations.models import SubscriptionDevice
 
 
-def _customer_kwargs(device=None, organization=None, user=None):
-    organization = organization if organization is not None else (device.organization if device else None)
-    user = user if user is not None else (device.owner_user if device else None)
+_CUSTOMER_UNSET = object()
+
+
+def _customer_kwargs(device=None, organization=_CUSTOMER_UNSET, user=_CUSTOMER_UNSET):
+    if organization is _CUSTOMER_UNSET:
+        organization = device.organization if device else None
+    if user is _CUSTOMER_UNSET:
+        user = device.owner_user if device else None
     if organization:
         return {'organization': organization, 'user': None}
     if user:
         return {'organization': None, 'user': user}
     return {'organization': None, 'user': None}
+
+
+def _current_customer(device, subscription=None):
+    """Resolve the contract customer/current holder without confusing legal ownership."""
+    if subscription is not None:
+        if subscription.customer_type == 'organization':
+            return {'organization': subscription.organization, 'user': None}
+        if subscription.customer_type == 'personal':
+            return {'organization': None, 'user': subscription.user}
+    if device.current_holder_organization_id is not None or device.current_holder_user_id is not None:
+        return {
+            'organization': device.current_holder_organization,
+            'user': device.current_holder_user,
+        }
+    return {'organization': device.organization, 'user': device.owner_user}
+
+
+def _validate_transfer_target(*, organization, user, branch=None, vehicle=None, subscription=None):
+    if bool(organization) == bool(user):
+        raise ValidationError({
+            'target_organization': 'باید دقیقاً یک مشتری سازمانی یا شخصی برای انتقال انتخاب شود.'
+        })
+
+    if organization:
+        if organization.status != 'active':
+            raise ValidationError({'target_organization': 'سازمان مقصد باید فعال باشد.'})
+        if branch and (
+            branch.organization_id != organization.id
+            or branch.status != 'active'
+        ):
+            raise ValidationError({'target_branch': 'شعبه مقصد باید فعال و متعلق به سازمان مشتری مقصد باشد.'})
+        if vehicle and (
+            vehicle.organization_id != organization.id
+            or vehicle.owner_user_id is not None
+            or (vehicle.branch_id and vehicle.branch.status != 'active')
+            or (branch and vehicle.branch_id != branch.id)
+        ):
+            raise ValidationError({'target_vehicle': 'خودروی مقصد متعلق به سازمان یا شعبه انتخاب‌شده نیست.'})
+        if subscription and (
+            subscription.customer_type != 'organization'
+            or subscription.organization_id != organization.id
+            or subscription.user_id is not None
+            or subscription.status != 'active'
+            or subscription.end_date < timezone.localdate()
+        ):
+            raise ValidationError({'target_subscription': 'قرارداد مقصد باید فعال و متعلق به سازمان انتخاب‌شده باشد.'})
+    else:
+        if not user.is_active or not user.is_personal_user:
+            raise ValidationError({
+                'target_user': 'انتقال شخصی فقط به حساب دارای نقش مشتری شخصی فعال مجاز است.'
+            })
+        if branch:
+            raise ValidationError({'target_branch': 'مشتری شخصی نمی‌تواند شعبه سازمانی داشته باشد.'})
+        if vehicle and (
+            vehicle.owner_user_id != user.id
+            or vehicle.organization_id is not None
+            or vehicle.branch_id is not None
+        ):
+            raise ValidationError({'target_vehicle': 'خودروی مقصد متعلق به کاربر شخصی انتخاب‌شده نیست.'})
+        if subscription and (
+            subscription.customer_type != 'personal'
+            or subscription.user_id != user.id
+            or subscription.organization_id is not None
+            or subscription.status != 'active'
+            or subscription.end_date < timezone.localdate()
+        ):
+            raise ValidationError({'target_subscription': 'قرارداد مقصد باید فعال و متعلق به کاربر شخصی انتخاب‌شده باشد.'})
+
+
+def _validate_device_customer_assignment(device, subscription):
+    """Validate a warehouse device against the exact contract customer and its current holder."""
+    if device.management_status in {'faulty', 'in_repair', 'ready', 'lost', 'stolen', 'unusable', 'disposed'}:
+        raise ValidationError({
+            'device': 'دستگاه در وضعیت فعلی قابل اتصال به قرارداد نیست؛ ابتدا وضعیت عملیاتی آن را تعیین تکلیف کنید.'
+        })
+
+    # A future-dated active contract may receive its device assignment now.
+    # The access-period query still blocks customer visibility until the legal
+    # contract and device start dates are reached.
+    if subscription.status != 'active' or subscription.end_date < timezone.localdate():
+        raise ValidationError({'subscription': 'اتصال دستگاه به قرارداد غیرفعال یا منقضی مجاز نیست.'})
+
+    if subscription.customer_type == 'organization':
+        if (
+            not subscription.organization_id
+            or subscription.user_id is not None
+            or subscription.organization.status != 'active'
+        ):
+            raise ValidationError({
+                'subscription': 'قرارداد سازمانی باید به سازمان فعال و معتبر تعلق داشته باشد.'
+            })
+        target_organization_id = subscription.organization_id
+        target_user_id = None
+    elif subscription.customer_type == 'personal':
+        if (
+            not subscription.user_id
+            or not subscription.user.is_active
+            or not subscription.user.is_personal_user
+            or subscription.organization_id is not None
+        ):
+            raise ValidationError({
+                'subscription': 'مشتری قرارداد شخصی باید حساب فعال با نقش مشتری شخصی باشد.'
+            })
+        target_organization_id = None
+        target_user_id = subscription.user_id
+    else:
+        raise ValidationError({'subscription': 'نوع مشتری قرارداد نامعتبر است.'})
+
+    if target_organization_id is not None:
+        if device.branch_id and (
+            device.branch.organization_id != target_organization_id
+            or device.branch.status != 'active'
+        ):
+            raise ValidationError({
+                'device': 'شعبه فعلی دستگاه باید فعال و متعلق به سازمان قرارداد باشد.'
+            })
+        if device.vehicle_id and (
+            device.vehicle.organization_id != target_organization_id
+            or device.vehicle.owner_user_id is not None
+            or device.vehicle.branch_id != device.branch_id
+        ):
+            raise ValidationError({
+                'device': 'خودروی متصل به دستگاه باید متعلق به سازمان قرارداد و در همان شعبه باشد.'
+            })
+    else:
+        if device.branch_id:
+            raise ValidationError({
+                'device': 'دستگاه مشتری شخصی نمی‌تواند به شعبه سازمانی متصل باشد.'
+            })
+        if device.vehicle_id and (
+            device.vehicle.owner_user_id != target_user_id
+            or device.vehicle.organization_id is not None
+            or device.vehicle.branch_id is not None
+        ):
+            raise ValidationError({
+                'device': 'خودروی متصل به دستگاه باید متعلق به همان مشتری شخصی باشد.'
+            })
+
+    current_organization_id = device.current_holder_organization_id
+    current_user_id = device.current_holder_user_id
+    if (
+        (current_organization_id is not None or current_user_id is not None)
+        and (
+            current_organization_id != target_organization_id
+            or current_user_id != target_user_id
+        )
+    ):
+        raise ValidationError({
+            'device': 'دستگاه در حال حاضر به مشتری دیگری تحویل شده است؛ ابتدا انتقال رسمی مشتری را انجام دهید.'
+        })
 
 
 def _close_customer_access(device, when=None):
@@ -30,7 +186,19 @@ def _close_customer_access(device, when=None):
     DeviceCustomerAccessPeriod.objects.filter(device=device, ended_at__isnull=True).update(ended_at=when)
 
 
-def _open_customer_access(device, subscription=None, branch=None, organization=None, user=None, started_at=None, reason=''):
+def _open_customer_access(device, subscription=None, branch=None, organization=_CUSTOMER_UNSET, user=_CUSTOMER_UNSET, started_at=None, reason=''):
+    # A contract is the authority for customer identity. Legal ownership must
+    # never be substituted for the customer who receives the service.
+    if subscription is not None:
+        if organization is _CUSTOMER_UNSET:
+            organization = subscription.organization
+        if user is _CUSTOMER_UNSET:
+            user = subscription.user
+    else:
+        if organization is _CUSTOMER_UNSET:
+            organization = device.current_holder_organization or device.organization
+        if user is _CUSTOMER_UNSET:
+            user = device.current_holder_user or device.owner_user
     customer = _customer_kwargs(device, organization, user)
     if not customer['organization'] and not customer['user']:
         _close_customer_access(device, started_at or timezone.now())
@@ -47,7 +215,14 @@ def _open_customer_access(device, subscription=None, branch=None, organization=N
         device=device,
         unassigned_at__isnull=True,
     ).order_by('-assigned_at', '-id').first()
-    if current_link is None:
+    today = timezone.localdate()
+    if (
+        current_link is None
+        or current_link.unassigned_at is not None
+        or current_link.end_date < today
+        or subscription.status != 'active'
+        or subscription.end_date < today
+    ):
         _close_customer_access(device, close_time)
         return None
     close_time = max(close_time, current_link.assigned_at)
@@ -126,7 +301,11 @@ def _close_ownership(device, when=None):
     DeviceOwnershipHistory.objects.filter(device=device, ended_at__isnull=True).update(ended_at=when)
 
 
-def _open_ownership(device, organization=None, user=None, started_at=None, reason=''):
+def _open_ownership(device, organization=_CUSTOMER_UNSET, user=_CUSTOMER_UNSET, started_at=None, reason=''):
+    # Ownership history records legal ownership only, never the contract customer.
+    if organization is _CUSTOMER_UNSET and user is _CUSTOMER_UNSET:
+        organization = device.organization
+        user = device.owner_user
     customer = _customer_kwargs(device, organization, user)
     if not customer['organization'] and not customer['user']:
         return None
@@ -150,6 +329,79 @@ def _open_ownership(device, organization=None, user=None, started_at=None, reaso
     )
 
 
+@transaction.atomic
+def _return_temporary_replacements_to_warehouse(
+    source_device,
+    *,
+    subscription=None,
+    customer_organization=None,
+    customer_user=None,
+    performed_by=None,
+    operation=None,
+):
+    """Return temporary loaners when the original device is returned to its customer."""
+    relations = DeviceReplacementRelation.objects.filter(
+        source_device=source_device,
+        replacement_type='temporary_repair',
+        returned_at__isnull=True,
+    ).select_related('replacement_device').order_by('-id')
+    returned = []
+    customer_organization_id = getattr(customer_organization, 'id', None)
+    customer_user_id = getattr(customer_user, 'id', None)
+
+    for relation in relations:
+        replacement = Device.objects.select_for_update().get(
+            pk=relation.replacement_device_id
+        )
+        holder_matches = (
+            replacement.current_holder_organization_id == customer_organization_id
+            and replacement.current_holder_user_id == customer_user_id
+        )
+        active_link = replacement.active_subscription_link
+
+        if active_link:
+            if (
+                not subscription
+                or active_link.subscription_id != subscription.id
+                or not holder_matches
+            ):
+                continue
+        elif replacement.management_status != 'installed' or not holder_matches:
+            continue
+
+        if active_link:
+            _close_active_link(replacement, operation)
+        _close_customer_access(replacement)
+
+        replacement.vehicle = None
+        replacement.branch = None
+        replacement.current_holder_organization = None
+        replacement.current_holder_user = None
+        replacement.management_status = 'warehouse'
+        replacement.save()
+
+        relation.returned_at = timezone.now()
+        relation.save(update_fields=['returned_at'])
+
+        record_device_lifecycle_event(
+            device_operation=operation,
+            device=replacement,
+            event_type='returned',
+            performed_by=performed_by,
+            subscription=subscription,
+            organization=customer_organization,
+            user=customer_user,
+            reason='replacement',
+            description=(
+                f'دستگاه جایگزین موقت {source_device.imei} پس از بازگشت دستگاه اصلی '
+                'به انبار برگشت.'
+            ),
+        )
+        returned.append(replacement)
+
+    return returned
+
+
 def _close_active_link(device, operation):
     links = device.subscription_links.filter(
         unassigned_at__isnull=True
@@ -169,16 +421,21 @@ def _close_active_link(device, operation):
 def _add_to_subscription(device, subscription, operation, start_date=None, end_date=None):
     if not subscription:
         raise ValidationError({'target_subscription': 'انتخاب قرارداد مقصد الزامی است'})
+    if subscription.status != 'active' or subscription.end_date < timezone.localdate():
+        raise ValidationError({'target_subscription': 'افزودن دستگاه به قرارداد غیرفعال یا منقضی مجاز نیست.'})
     start_date = start_date or subscription.start_date
     end_date = end_date or subscription.end_date
     if start_date > end_date:
         raise ValidationError({'target_subscription': 'بازه قرارداد مقصد نامعتبر است'})
-    return SubscriptionDevice.objects.create(
-        subscription=subscription,
-        device=device,
-        start_date=start_date,
-        end_date=end_date,
-    )
+    try:
+        return SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    except DjangoValidationError as exc:
+        raise ValidationError({'device': exc.messages}) from exc
 
 
 @transaction.atomic
@@ -248,8 +505,9 @@ def execute_device_operation(
 
             old_vehicle = device.vehicle
             old_branch = device.branch
-            old_org = device.organization or device.current_holder_organization
-            old_user = device.owner_user or device.current_holder_user
+            customer = _current_customer(device, subscription)
+            old_org = customer['organization']
+            old_user = customer['user']
 
             DeviceReplacementRelation.objects.create(
                 source_device=device,
@@ -258,7 +516,8 @@ def execute_device_operation(
                 description=description,
             )
 
-            # تعمیر، مالکیت و اتصال قراردادی دستگاه اصلی را از بین نمی‌برد.
+            # تعمیر، مالکیت قانونی و سابقه قرارداد را حفظ می‌کند؛ دسترسی جاری بسته می‌شود.
+            _close_customer_access(device)
             device.vehicle = None
             device.branch = None
             device.current_holder_organization = None
@@ -274,12 +533,18 @@ def execute_device_operation(
             replacement_device.current_holder_organization = old_org
             replacement_device.current_holder_user = old_user
             if replacement_type == 'permanent_replacement':
-                replacement_device.organization = old_org
-                replacement_device.owner_user = old_user
+                replacement_device.organization = device.organization
+                replacement_device.owner_user = device.owner_user
             replacement_device.save()
 
             if replacement_type == 'permanent_replacement':
-                _open_ownership(replacement_device, organization=old_org, user=old_user, reason='permanent_replacement')
+                _close_active_link(device, operation)
+                _open_ownership(
+                    replacement_device,
+                    organization=replacement_device.organization,
+                    user=replacement_device.owner_user,
+                    reason='permanent_replacement',
+                )
             if subscription:
                 _add_to_subscription(replacement_device, subscription, operation)
                 _open_customer_access(replacement_device, subscription=subscription, branch=old_branch, organization=old_org, user=old_user, reason='replacement')
@@ -303,19 +568,21 @@ def execute_device_operation(
                 event_type='assigned_to_contract',
                 performed_by=performed_by,
                 subscription=subscription,
-                organization=replacement_device.organization,
-                user=replacement_device.owner_user,
+                organization=old_org,
+                user=old_user,
                 vehicle=replacement_device.vehicle,
                 branch=replacement_device.branch,
                 reason='replacement',
                 description=f'به عنوان جایگزین دستگاه {device.imei} به قرارداد متصل شد.',
             )
         else:
-            old_org = device.organization or device.current_holder_organization
-            old_user = device.owner_user or device.current_holder_user
+            customer = _current_customer(device, subscription)
+            old_org = customer['organization']
+            old_user = customer['user']
             old_vehicle = device.vehicle
             old_branch = device.branch
 
+            _close_customer_access(device)
             device.vehicle = None
             device.branch = None
             device.current_holder_organization = None
@@ -358,8 +625,10 @@ def execute_device_operation(
         ).order_by('-event_date', '-id').first()
         previous_vehicle = previous_event.vehicle if previous_event else None
         previous_branch = previous_event.branch if previous_event else None
-        customer_org = device.organization or device.current_holder_organization
-        customer_user = device.owner_user or device.current_holder_user
+        customer = _current_customer(device, subscription)
+        _close_customer_access(device)
+        customer_org = customer['organization']
+        customer_user = customer['user']
 
         DeviceReplacementRelation.objects.create(
             source_device=device,
@@ -376,15 +645,15 @@ def execute_device_operation(
         replacement_device.current_holder_organization = customer_org
         replacement_device.current_holder_user = customer_user
         if replacement_type == 'permanent_replacement':
-            replacement_device.organization = customer_org
-            replacement_device.owner_user = customer_user
+            replacement_device.organization = device.organization
+            replacement_device.owner_user = device.owner_user
         replacement_device.save()
 
         if replacement_type == 'permanent_replacement':
             _open_ownership(
                 replacement_device,
-                organization=customer_org,
-                user=customer_user,
+                organization=replacement_device.organization,
+                user=replacement_device.owner_user,
                 reason='permanent_replacement',
             )
 
@@ -428,14 +697,16 @@ def execute_device_operation(
         device.current_holder_user = None
         device.save()
 
+        _close_customer_access(device)
+        customer = _current_customer(device, subscription)
         record_device_lifecycle_event(
             device_operation=operation,
             device=device,
             event_type='repaired',
             performed_by=performed_by,
             subscription=subscription,
-            organization=device.organization,
-            user=device.owner_user,
+            organization=customer['organization'],
+            user=customer['user'],
             vehicle=None,
             branch=None,
             reason=reason or 'repair',
@@ -451,8 +722,10 @@ def execute_device_operation(
 
         old_vehicle = device.vehicle
         old_branch = device.branch
-        old_org = device.organization or device.current_holder_organization
-        old_user = device.owner_user or device.current_holder_user
+        customer = _current_customer(device, subscription)
+        _close_customer_access(device)
+        old_org = customer['organization']
+        old_user = customer['user']
 
         # مفقودی/سرقت مالکیت و قرارداد را لغو نمی‌کند؛ فقط نصب فعلی را جدا می‌کند.
         device.vehicle = None
@@ -486,12 +759,31 @@ def execute_device_operation(
                 'installed'
             )
             if replacement_type == 'permanent_replacement':
-                replacement_device.organization = old_org
-                replacement_device.owner_user = old_user
+                _close_active_link(device, operation)
+                replacement_device.organization = device.organization
+                replacement_device.owner_user = device.owner_user
             replacement_device.save()
+
+            if replacement_type == 'permanent_replacement' and (
+                replacement_device.organization_id or replacement_device.owner_user_id
+            ):
+                _open_ownership(
+                    replacement_device,
+                    organization=replacement_device.organization,
+                    user=replacement_device.owner_user,
+                    reason='permanent_replacement',
+                )
 
             if subscription:
                 _add_to_subscription(replacement_device, subscription, operation)
+                _open_customer_access(
+                    replacement_device,
+                    subscription=subscription,
+                    branch=old_branch,
+                    organization=old_org,
+                    user=old_user,
+                    reason='replacement',
+                )
 
             DeviceReplacementRelation.objects.create(
                 source_device=device,
@@ -505,8 +797,8 @@ def execute_device_operation(
                 event_type='assigned_to_contract',
                 performed_by=performed_by,
                 subscription=subscription,
-                organization=replacement_device.organization,
-                user=replacement_device.owner_user,
+                organization=old_org,
+                user=old_user,
                 vehicle=replacement_device.vehicle,
                 branch=replacement_device.branch,
                 reason='replacement',
@@ -520,11 +812,12 @@ def execute_device_operation(
             })
 
         old_status = device.management_status
+        customer = _current_customer(device, subscription)
         device.management_status = 'ready'
         device.vehicle = None
         device.branch = None
-        device.current_holder_organization = device.organization
-        device.current_holder_user = device.owner_user
+        device.current_holder_organization = None
+        device.current_holder_user = None
         device.save()
 
         record_device_lifecycle_event(
@@ -533,8 +826,8 @@ def execute_device_operation(
             event_type='found',
             performed_by=performed_by,
             subscription=subscription,
-            organization=device.organization,
-            user=device.owner_user,
+            organization=customer['organization'],
+            user=customer['user'],
             reason=reason or 'other',
             description=description or (
                 f'دستگاه پس از وضعیت {old_status} پیدا شد و آماده تعیین تکلیف است.'
@@ -555,8 +848,26 @@ def execute_device_operation(
         ).order_by('-event_date', '-id').first()
         previous_vehicle = previous_event.vehicle if previous_event else None
         previous_branch = previous_event.branch if previous_event else None
-        previous_org = device.organization
-        previous_user = device.owner_user
+        previous_customer = _current_customer(device, subscription)
+        has_current_customer = (
+            subscription is not None
+            or device.current_holder_organization_id is not None
+            or device.current_holder_user_id is not None
+        )
+        if has_current_customer:
+            previous_org = previous_customer['organization']
+            previous_user = previous_customer['user']
+        else:
+            previous_org = (
+                previous_event.organization
+                if previous_event and previous_event.organization_id
+                else previous_customer['organization']
+            )
+            previous_user = (
+                previous_event.user
+                if previous_event and previous_event.user_id
+                else previous_customer['user']
+            )
 
         if outcome_action == 'return_customer_same_vehicle':
             target = previous_vehicle
@@ -571,7 +882,7 @@ def execute_device_operation(
                     'outcome_action': 'خودروی قبلی هنوز دستگاه دیگری دارد؛ ابتدا تکلیف آن دستگاه را مشخص کنید.'
                 })
             device.vehicle = target
-            device.branch = previous_branch or target.branch
+            device.branch = target.branch
             device.current_holder_organization = previous_org
             device.current_holder_user = previous_user
             device.management_status = 'installed'
@@ -602,10 +913,26 @@ def execute_device_operation(
                 raise ValidationError({
                     'target_vehicle': 'برای نصب روی خودروی دیگر، خودروی مقصد را مشخص کنید'
                 })
-            if previous_org and target_vehicle.organization_id != previous_org.id:
-                raise ValidationError({
-                    'target_vehicle': 'خودروی مقصد باید متعلق به همان مشتری دستگاه باشد'
-                })
+            if previous_org:
+                if (
+                    target_vehicle.organization_id != previous_org.id
+                    or target_vehicle.owner_user_id is not None
+                    or (target_vehicle.branch_id and target_vehicle.branch.organization_id != previous_org.id)
+                ):
+                    raise ValidationError({
+                        'target_vehicle': 'خودروی مقصد باید متعلق به همان سازمان مشتری باشد'
+                    })
+            elif previous_user:
+                if (
+                    target_vehicle.owner_user_id != previous_user.id
+                    or target_vehicle.organization_id is not None
+                    or target_vehicle.branch_id is not None
+                ):
+                    raise ValidationError({
+                        'target_vehicle': 'خودروی مقصد باید متعلق به همان کاربر شخصی باشد'
+                    })
+            else:
+                raise ValidationError({'device': 'مشتری قبلی دستگاه مشخص نیست.'})
             if Device.objects.filter(vehicle=target_vehicle).exclude(pk=device.pk).exclude(
                 management_status__in=['faulty', 'in_repair', 'lost', 'stolen', 'unusable', 'disposed']
             ).exists():
@@ -617,8 +944,16 @@ def execute_device_operation(
             device.management_status = 'installed'
 
         elif outcome_action == 'transfer_customer':
-            if not target_organization and not target_user:
-                raise ValidationError({'target_organization': 'مالک مقصد را مشخص کنید'})
+            _validate_transfer_target(
+                organization=target_organization,
+                user=target_user,
+                branch=target_branch,
+                vehicle=target_vehicle,
+                subscription=target_subscription,
+            )
+            _close_active_link(device, operation)
+            _close_customer_access(device)
+            _close_ownership(device)
             device.organization = target_organization
             device.owner_user = target_user
             device.current_holder_organization = target_organization
@@ -635,6 +970,9 @@ def execute_device_operation(
             device.management_status = 'unusable'
 
         elif outcome_action == 'dispose':
+            _close_active_link(device, operation)
+            _close_customer_access(device)
+            _close_ownership(device)
             device.organization = None
             device.owner_user = None
             device.current_holder_organization = None
@@ -646,12 +984,23 @@ def execute_device_operation(
         elif outcome_action == 'other':
             device.vehicle = None
             device.branch = None
+            device.current_holder_organization = None
+            device.current_holder_user = None
             device.management_status = 'ready'
+
+        else:
+            raise ValidationError({'outcome_action': 'تکلیف انتخاب‌شده پشتیبانی نمی‌شود.'})
 
         device.save()
 
         if outcome_action == 'transfer_customer':
-            _close_active_link(device, operation)
+            if device.organization_id or device.owner_user_id:
+                _open_ownership(
+                    device,
+                    organization=device.organization,
+                    user=device.owner_user,
+                    reason='customer_transfer',
+                )
             if target_subscription:
                 _add_to_subscription(device, target_subscription, operation)
                 _open_customer_access(
@@ -660,24 +1009,39 @@ def execute_device_operation(
                     branch=device.branch,
                     organization=target_organization,
                     user=target_user,
-                    reason='transfer_customer',
+                    reason='customer_transfer',
+                )
+        elif outcome_action in {'sana_warehouse', 'retire', 'other'}:
+            _close_active_link(device, operation)
+            _close_customer_access(device)
+        elif outcome_action in {
+            'return_customer_same_vehicle', 'return_customer_no_vehicle',
+            'customer_spare', 'install_other_vehicle',
+        }:
+            _return_temporary_replacements_to_warehouse(
+                device,
+                subscription=subscription,
+                customer_organization=previous_org,
+                customer_user=previous_user,
+                performed_by=performed_by,
+                operation=operation,
+            )
+            current_link = device.active_subscription_link
+            if (
+                current_link
+                and current_link.is_active
+                and current_link.subscription.computed_status == 'active'
+            ):
+                _open_customer_access(
+                    device,
+                    subscription=current_link.subscription,
+                    branch=device.branch,
+                    organization=previous_org,
+                    user=previous_user,
+                    reason='disposition_return',
                 )
             else:
                 _close_customer_access(device)
-        elif outcome_action == 'dispose':
-            _close_active_link(device, operation)
-            _close_customer_access(device)
-        else:
-            # Final disposition can change the branch scope even when the
-            # legal customer and contract remain the same.
-            _open_customer_access(
-                device,
-                subscription=subscription,
-                branch=device.branch,
-                organization=device.organization or previous_org,
-                user=device.owner_user or previous_user,
-                reason='disposition',
-            )
 
         disposition_labels = {
             'return_customer_same_vehicle': 'به مشتری بازگشت و روی خودرو نصب شد',
@@ -690,14 +1054,19 @@ def execute_device_operation(
             'dispose': 'امحاء شد',
             'other': 'طبق توضیحات تکمیلی تعیین شد',
         }
+        event_customer = (
+            {'organization': target_organization, 'user': target_user}
+            if outcome_action == 'transfer_customer'
+            else {'organization': previous_org, 'user': previous_user}
+        )
         record_device_lifecycle_event(
             device_operation=operation,
             device=device,
             event_type='disposition',
             performed_by=performed_by,
             subscription=target_subscription or subscription,
-            organization=device.organization,
-            user=device.owner_user,
+            organization=event_customer['organization'],
+            user=event_customer['user'],
             vehicle=device.vehicle,
             branch=device.branch,
             reason=reason or 'other',
@@ -705,8 +1074,13 @@ def execute_device_operation(
         )
 
     elif operation_type == 'transfer_customer':
-        if not target_organization and not target_user:
-            raise ValidationError({'target_organization': 'مالک مقصد را مشخص کنید'})
+        _validate_transfer_target(
+            organization=target_organization,
+            user=target_user,
+            branch=target_branch,
+            vehicle=target_vehicle,
+            subscription=target_subscription,
+        )
         _close_active_link(device, operation)
         _close_customer_access(device)
         _close_ownership(device)
@@ -737,6 +1111,11 @@ def execute_device_operation(
     elif operation_type == 'transfer_branch':
         if not target_branch:
             raise ValidationError({'target_branch': 'شعبه مقصد را مشخص کنید'})
+        customer = _current_customer(device, subscription)
+        if customer['organization'] is None or target_branch.organization_id != customer['organization'].pk:
+            raise ValidationError({'target_branch': 'شعبه مقصد باید متعلق به سازمان مشتری فعلی باشد.'})
+        if target_branch.status != 'active':
+            raise ValidationError({'target_branch': 'شعبه مقصد باید فعال باشد.'})
         device.branch = target_branch
         device.save(update_fields=['branch', 'updated_at'])
         _open_customer_access(device, subscription=subscription, branch=target_branch)
@@ -746,8 +1125,8 @@ def execute_device_operation(
             event_type='transferred',
             performed_by=performed_by,
             subscription=subscription,
-            organization=device.organization,
-            user=device.owner_user,
+            organization=customer['organization'],
+            user=customer['user'],
             vehicle=device.vehicle,
             branch=target_branch,
             reason=reason,
@@ -757,10 +1136,22 @@ def execute_device_operation(
     elif operation_type == 'transfer_vehicle':
         if not target_vehicle:
             raise ValidationError({'target_vehicle': 'خودرو مقصد را مشخص کنید'})
-        if target_vehicle.organization_id != device.organization_id and device.organization_id:
-            raise ValidationError({
-                'target_vehicle': 'خودرو مقصد باید متعلق به همان مشتری دستگاه باشد'
-            })
+        customer = _current_customer(device, subscription)
+        if customer['organization']:
+            if (
+                target_vehicle.organization_id != customer['organization'].pk
+                or target_vehicle.owner_user_id is not None
+            ):
+                raise ValidationError({'target_vehicle': 'خودرو مقصد باید متعلق به همان سازمان مشتری باشد.'})
+        elif customer['user']:
+            if (
+                target_vehicle.owner_user_id != customer['user'].pk
+                or target_vehicle.organization_id is not None
+                or target_vehicle.branch_id is not None
+            ):
+                raise ValidationError({'target_vehicle': 'خودرو مقصد باید متعلق به همان مشتری شخصی باشد.'})
+        else:
+            raise ValidationError({'device': 'مشتری فعلی دستگاه مشخص نیست.'})
         if Device.objects.filter(vehicle=target_vehicle).exclude(pk=device.pk).exclude(
             management_status__in=['faulty', 'in_repair', 'lost', 'stolen', 'unusable', 'disposed']
         ).exists():
@@ -776,8 +1167,8 @@ def execute_device_operation(
             event_type='transferred',
             performed_by=performed_by,
             subscription=subscription,
-            organization=device.organization,
-            user=device.owner_user,
+            organization=customer['organization'],
+            user=customer['user'],
             vehicle=target_vehicle,
             branch=target_vehicle.branch,
             reason=reason,
@@ -787,6 +1178,9 @@ def execute_device_operation(
         )
 
     elif operation_type == 'retire':
+        customer = _current_customer(device, subscription)
+        _close_active_link(device, operation)
+        _close_customer_access(device)
         device.management_status = 'unusable'
         device.vehicle = None
         device.branch = None
@@ -797,8 +1191,8 @@ def execute_device_operation(
             event_type='retired',
             performed_by=performed_by,
             subscription=subscription,
-            organization=device.organization,
-            user=device.owner_user,
+            organization=customer['organization'],
+            user=customer['user'],
             reason=reason,
             description=description,
         )
@@ -806,7 +1200,9 @@ def execute_device_operation(
     elif operation_type == 'dispose':
         if device.management_status != 'unusable':
             raise ValidationError({'device': 'برای امحاء ابتدا دستگاه باید از چرخه استفاده خارج شده باشد.'})
+        customer = _current_customer(device, subscription)
         _close_active_link(device, operation)
+        _close_customer_access(device)
         device.management_status = 'disposed'
         device.vehicle = None
         device.branch = None
@@ -817,8 +1213,8 @@ def execute_device_operation(
             event_type='disposed',
             performed_by=performed_by,
             subscription=subscription,
-            organization=device.organization,
-            user=device.owner_user,
+            organization=customer['organization'],
+            user=customer['user'],
             reason=reason,
             description=description,
         )

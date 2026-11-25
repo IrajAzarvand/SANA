@@ -1,5 +1,6 @@
 from django.conf import settings
-from django.db import models
+from django.core.exceptions import ValidationError
+from django.db import models, transaction
 from django.utils import timezone
 
 
@@ -381,17 +382,31 @@ class SubscriptionDevice(models.Model):
         return (self.end_date - today).days
 
     def save(self, *args, **kwargs):
-        # اگه رکورد جدید، رکوردهای فعال قبلی همین دستگاه رو ببند
-        if self.pk is None:
-            SubscriptionDevice.objects.filter(
-                device=self.device,
-                unassigned_at__isnull=True,
-            ).update(unassigned_at=timezone.now())
+        # Serialize assignments per device so concurrent requests cannot
+        # silently create two new open contract links.
+        with transaction.atomic():
+            is_new_open_assignment = self.unassigned_at is None and self.pk is None
+            if self.pk is not None and self.unassigned_at is None:
+                previous_unassigned_at = SubscriptionDevice.objects.filter(
+                    pk=self.pk
+                ).values_list('unassigned_at', flat=True).first()
+                is_new_open_assignment = previous_unassigned_at is not None
 
-        super().save(*args, **kwargs)
+            if is_new_open_assignment:
+                device_model = self._meta.get_field('device').remote_field.model
+                device_model.objects.select_for_update().get(pk=self.device_id)
+                active_links = SubscriptionDevice.objects.filter(
+                    device_id=self.device_id,
+                    unassigned_at__isnull=True,
+                ).exclude(pk=self.pk)
+                if active_links.exists():
+                    raise ValidationError(
+                        'این دستگاه هنوز به یک اتصال قرارداد باز متصل است؛ ابتدا انتقال یا پایان اتصال قبلی را از عملیات رسمی انجام دهید.'
+                    )
 
-        # بعد از ذخیره، end_date قرارداد رو آپدیت کن
-        self.subscription.recalculate_end_date()
+            super().save(*args, **kwargs)
+            # Contract dates are legal dates; device assignment windows must
+            # never recalculate or shorten the parent subscription period.
 
 
 class SubscriptionPayment(models.Model):

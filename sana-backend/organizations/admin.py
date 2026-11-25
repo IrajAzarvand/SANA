@@ -15,6 +15,9 @@ class OrganizationAdmin(admin.ModelAdmin):
     search_fields = ['name', 'code', 'registration_number']
     ordering = ['name']
 
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(Branch)
 class BranchAdmin(admin.ModelAdmin):
@@ -23,19 +26,31 @@ class BranchAdmin(admin.ModelAdmin):
     search_fields = ['name', 'code']
     ordering = ['organization', 'name']
 
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 class SubscriptionDeviceInline(admin.TabularInline):
     model = SubscriptionDevice
     extra = 0
+    can_delete = False
     raw_id_fields = ['device']
     fields = ['device', 'start_date', 'end_date', 'assigned_at', 'unassigned_at']
-    readonly_fields = ['assigned_at', 'unassigned_at']
+    readonly_fields = [field.name for field in SubscriptionDevice._meta.fields]
+
+    def has_add_permission(self, request, obj=None):
+        return False
 
 
 class SubscriptionPaymentInline(admin.TabularInline):
     model = SubscriptionPayment
     extra = 0
+    can_delete = False
     fields = ['amount', 'received_at', 'description']
+    readonly_fields = [field.name for field in SubscriptionPayment._meta.fields]
+
+    def has_add_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(Subscription)
@@ -55,6 +70,14 @@ class SubscriptionAdmin(admin.ModelAdmin):
     ordering = ['-created_at']
     inlines = [SubscriptionDeviceInline, SubscriptionPaymentInline]
     raw_id_fields = ['organization', 'user']
+    # Contract identity, dates and state change only through audited API actions.
+    readonly_fields = [field.name for field in Subscription._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
     def days_until_expiry_display(self, obj):
         d = obj.days_until_expiry
@@ -75,6 +98,13 @@ class SubscriptionDeviceAdmin(admin.ModelAdmin):
     list_filter = ['start_date', 'end_date', 'unassigned_at']
     search_fields = ['device__imei', 'subscription__contract_number']
     raw_id_fields = ['device', 'subscription']
+    readonly_fields = [field.name for field in SubscriptionDevice._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(SubscriptionPayment)
@@ -83,3 +113,10 @@ class SubscriptionPaymentAdmin(admin.ModelAdmin):
     list_filter = ['received_at']
     search_fields = ['subscription__contract_number', 'description']
     raw_id_fields = ['subscription']
+    readonly_fields = [field.name for field in SubscriptionPayment._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False

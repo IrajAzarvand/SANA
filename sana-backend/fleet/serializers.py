@@ -301,6 +301,47 @@ class DeviceSerializer(serializers.ModelSerializer):
         }
 
     def validate(self, attrs):
+        protected_relationships = (
+            'organization',
+            'owner_user',
+            'current_holder_organization',
+            'current_holder_user',
+            'branch',
+            'vehicle',
+        )
+        if self.instance is not None:
+            for field_name in protected_relationships:
+                if field_name not in attrs:
+                    continue
+                current_id = getattr(self.instance, f'{field_name}_id')
+                new_id = getattr(attrs[field_name], 'pk', None)
+                if current_id != new_id:
+                    raise serializers.ValidationError({
+                        field_name: 'تغییر مالکیت، تحویل‌گیرنده، شعبه یا خودرو فقط از عملیات رسمی چرخه عمر دستگاه مجاز است.'
+                    })
+        else:
+            for field_name in (
+                'current_holder_organization',
+                'current_holder_user',
+                'branch',
+                'vehicle',
+            ):
+                if attrs.get(field_name) is not None:
+                    raise serializers.ValidationError({
+                        field_name: 'تخصیص مشتری، شعبه و خودرو فقط پس از اتصال رسمی دستگاه به قرارداد مجاز است.'
+                    })
+
+        for field_name in ('owner_user', 'current_holder_user'):
+            if field_name in attrs and attrs[field_name] is not None:
+                if not attrs[field_name].is_personal_user:
+                    raise serializers.ValidationError({
+                        field_name: 'هویت شخصی دستگاه باید حساب دارای نقش مشتری شخصی باشد.'
+                    })
+                if field_name == 'owner_user' and not attrs[field_name].is_active:
+                    raise serializers.ValidationError({
+                        field_name: 'مالک شخصی دستگاه باید حساب فعال داشته باشد.'
+                    })
+
         request = self.context.get('request')
         user = request.user if request else None
         if user and user.is_main_user:
@@ -325,26 +366,42 @@ class DeviceSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({'current_holder_user': 'دارنده دستگاه متعلق به سازمان شما نیست.'})
             if vehicle and branch and vehicle.branch_id and vehicle.branch_id != branch.pk:
                 raise serializers.ValidationError({'vehicle': 'خودرو و دستگاه باید در یک شعبه باشند.'})
+        if self.instance is not None and 'organization' in attrs:
+            if getattr(attrs['organization'], 'pk', None) != self.instance.organization_id:
+                raise serializers.ValidationError({
+                    'organization': 'تغییر مالک قانونی فقط از عملیات رسمی انتقال مالکیت مجاز است.'
+                })
         return attrs
 
     def create(self, validated_data):
-        request = self.context.get('request')
-        if request:
-            user = request.user
-            if user.account_type == 'organization' and user.organization_id:
-                validated_data.setdefault('organization_id', user.organization_id)
-            elif user.account_type == 'personal':
-                validated_data['owner_user'] = user
-
-        instance = super().create(validated_data)
+        from django.db import transaction
+        from .device_operations import _open_ownership
         from .lifecycle import record_device_lifecycle_event
-        record_device_lifecycle_event(
-            device=instance,
-            event_type='received',
-            performed_by=self.context.get('request').user if self.context.get('request') else None,
-            description='دستگاه به موجودی سانا اضافه شد.',
-        )
-        return instance
+
+        with transaction.atomic():
+            request = self.context.get('request')
+            if request:
+                user = request.user
+                if user.account_type == 'organization' and user.organization_id:
+                    validated_data.setdefault('organization_id', user.organization_id)
+                elif user.account_type == 'personal':
+                    validated_data['owner_user'] = user
+
+            instance = super().create(validated_data)
+            if instance.organization_id or instance.owner_user_id:
+                _open_ownership(
+                    instance,
+                    organization=instance.organization,
+                    user=instance.owner_user,
+                    reason='device_received',
+                )
+            record_device_lifecycle_event(
+                device=instance,
+                event_type='received',
+                performed_by=request.user if request else None,
+                description='دستگاه به موجودی سانا اضافه شد.',
+            )
+            return instance
 
 class BranchManagerDeviceSerializer(serializers.ModelSerializer):
     device_model_name = serializers.CharField(source='device_model.name', read_only=True, allow_null=True)
@@ -1026,6 +1083,12 @@ class DeviceLifecycleEventSerializer(serializers.ModelSerializer):
         event_type = validated_data.pop('event_type')
         request = self.context.get('request')
         performed_by = request.user if request else None
+        subscription = validated_data.get('subscription')
+        if subscription is not None:
+            # Lifecycle events attached to a contract must identify the
+            # contract customer, not the device's legal owner.
+            validated_data['organization'] = subscription.organization
+            validated_data['user'] = subscription.user
         return record_device_lifecycle_event(
             device=device,
             event_type=event_type,
