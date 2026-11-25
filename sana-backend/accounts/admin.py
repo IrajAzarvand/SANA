@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.utils import timezone
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from .models import User, UserSession
 
@@ -21,8 +22,16 @@ class UserAdmin(BaseUserAdmin):
                 'امکان تنزل نقش یا غیرفعال‌سازی حساب مدیر سایتِ واردشده وجود ندارد.'
             )
 
+        previous_access_state = None
         if change:
             previous = User.objects.get(pk=obj.pk)
+            previous_access_state = (
+                previous.role,
+                previous.account_type,
+                previous.organization_id,
+                previous.branch_id,
+                previous.is_active,
+            )
             if previous.role == 'site_admin' and previous.is_active and (
                 obj.role != 'site_admin' or not obj.is_active
             ):
@@ -41,6 +50,19 @@ class UserAdmin(BaseUserAdmin):
         obj.is_staff = obj.role == 'site_admin'
         obj.is_superuser = obj.role == 'site_admin'
         super().save_model(request, obj, form, change)
+
+        current_access_state = (
+            obj.role,
+            obj.account_type,
+            obj.organization_id,
+            obj.branch_id,
+            obj.is_active,
+        )
+        if previous_access_state is not None and current_access_state != previous_access_state:
+            UserSession.objects.filter(
+                user=obj,
+                revoked_at__isnull=True,
+            ).update(revoked_at=timezone.now())
 
     fieldsets = (
         (None, {'fields': ('username', 'password')}),

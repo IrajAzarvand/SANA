@@ -437,3 +437,24 @@ class UserManagementRoleBoundaryTests(TestCase):
         self.assertEqual(response.status_code, 200)
         session.refresh_from_db()
         self.assertIsNotNone(session.revoked_at)
+
+
+    def test_django_admin_access_scope_change_revokes_sessions(self):
+        request = RequestFactory().post('/admin/accounts/user/')
+        request.user = self.admin
+        model_admin = UserAdmin(User, django_admin.site)
+        target = User.objects.create_user(
+            username='admin-ui-branch-transfer', password='test-password-123',
+            role='branch_manager', account_type='organization',
+            organization=self.organization, branch=self.branch,
+        )
+        other_branch = Branch.objects.create(
+            organization=self.organization, name='Admin UI Second Branch', code='ROLE-BRANCH-4'
+        )
+        session = UserSession.objects.create(
+            user=target, expires_at=timezone.now() + timedelta(hours=2),
+        )
+        target.branch = other_branch
+        model_admin.save_model(request, target, form=None, change=True)
+        session.refresh_from_db()
+        self.assertIsNotNone(session.revoked_at)
