@@ -117,6 +117,14 @@ def _validate_device_customer_assignment(device, subscription):
 
 def _close_customer_access(device, when=None):
     when = when or timezone.now()
+    latest_open_start = DeviceCustomerAccessPeriod.objects.filter(
+        device=device,
+        ended_at__isnull=True,
+    ).order_by('-started_at', '-id').values_list('started_at', flat=True).first()
+    if latest_open_start and when < latest_open_start:
+        # Clock adjustments or legacy future-dated rows must never create
+        # a negative access interval.
+        when = latest_open_start
     DeviceCustomerAccessPeriod.objects.filter(device=device, ended_at__isnull=True).update(ended_at=when)
 
 
@@ -217,6 +225,12 @@ def _open_customer_access(device, subscription=None, branch=None, organization=_
 
 def _close_ownership(device, when=None):
     when = when or timezone.now()
+    latest_open_start = DeviceOwnershipHistory.objects.filter(
+        device=device,
+        ended_at__isnull=True,
+    ).order_by('-started_at', '-id').values_list('started_at', flat=True).first()
+    if latest_open_start and when < latest_open_start:
+        when = latest_open_start
     DeviceOwnershipHistory.objects.filter(device=device, ended_at__isnull=True).update(ended_at=when)
 
 
