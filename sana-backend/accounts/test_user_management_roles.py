@@ -306,3 +306,36 @@ class UserManagementRoleBoundaryTests(TestCase):
         self.assertTrue(self.admin.is_active)
         self.assertTrue(self.admin.is_staff)
         self.assertTrue(self.admin.is_superuser)
+
+
+    def test_archiving_site_admin_revokes_sessions_without_removing_last_admin(self):
+        second_admin = User.objects.create_user(
+            username='archived-site-admin', password='test-password-123',
+            role='site_admin', account_type='admin', is_staff=True, is_superuser=True,
+        )
+        session = UserSession.objects.create(
+            user=second_admin, expires_at=timezone.now() + timedelta(hours=2),
+        )
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(f'/api/users/{second_admin.id}/archive/', {}, format='json')
+        self.assertEqual(response.status_code, 200)
+        second_admin.refresh_from_db()
+        session.refresh_from_db()
+        self.assertIsNotNone(second_admin.archived_at)
+        self.assertFalse(second_admin.is_active)
+        self.assertIsNotNone(session.revoked_at)
+        self.assertTrue(User.objects.filter(role='site_admin', is_active=True).exists())
+
+    def test_restoring_site_admin_restores_django_admin_permissions(self):
+        target = User.objects.create_user(
+            username='restore-site-admin', password='test-password-123',
+            role='site_admin', account_type='admin', is_staff=False, is_superuser=False,
+        )
+        self.client.force_authenticate(self.admin)
+        archived = self.client.post(f'/api/users/{target.id}/archive/', {}, format='json')
+        self.assertEqual(archived.status_code, 200)
+        restored = self.client.post(f'/api/users/{target.id}/restore/', {}, format='json')
+        self.assertEqual(restored.status_code, 200)
+        target.refresh_from_db()
+        self.assertTrue(target.is_staff)
+        self.assertTrue(target.is_superuser)
