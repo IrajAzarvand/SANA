@@ -10,9 +10,23 @@ class UserManager(BaseUserManager):
     def create_user(self, username, password=None, **extra_fields):
         if not username:
             raise ValueError('نام کاربری الزامی است')
-        # The application role is the source of truth for Django admin access
+        # Keep role/account type and Django's independent admin flags aligned
         # across every user-creation path, not only API serializers.
-        is_site_admin = extra_fields.get('role', 'personal_user') == 'site_admin'
+        role_account_types = {
+            'site_admin': 'admin',
+            'main_user': 'organization',
+            'branch_manager': 'organization',
+            'personal_user': 'personal',
+        }
+        role = extra_fields.get('role', 'personal_user')
+        expected_account_type = role_account_types.get(role)
+        if expected_account_type:
+            account_type = extra_fields.get('account_type', expected_account_type)
+            if account_type != expected_account_type:
+                raise ValueError('Account type does not match the application role')
+            extra_fields['account_type'] = expected_account_type
+
+        is_site_admin = role == 'site_admin'
         extra_fields['is_staff'] = is_site_admin
         extra_fields['is_superuser'] = is_site_admin
         user = self.model(username=username, **extra_fields)

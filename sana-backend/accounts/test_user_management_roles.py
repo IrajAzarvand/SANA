@@ -485,3 +485,18 @@ class UserManagementRoleBoundaryTests(TestCase):
         )
         with self.assertRaises(DjangoValidationError):
             model_admin.save_model(request, target, form=None, change=False)
+
+
+    def test_user_manager_defaults_account_type_from_role_and_rejects_mismatch(self):
+        site_admin = User.objects.create_user(
+            username='manager-admin-default-type', password='test-password-123',
+            role='site_admin',
+        )
+        self.assertEqual(site_admin.account_type, 'admin')
+        self.assertTrue(site_admin.is_staff)
+        self.assertTrue(site_admin.is_superuser)
+        with self.assertRaises(ValueError):
+            User.objects.create_user(
+                username='manager-role-type-mismatch', password='test-password-123',
+                role='branch_manager', account_type='personal',
+            )
