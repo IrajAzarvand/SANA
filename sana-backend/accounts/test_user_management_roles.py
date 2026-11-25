@@ -551,3 +551,59 @@ class UserManagementRoleBoundaryTests(TestCase):
         target.refresh_from_db()
         self.assertFalse(target.is_active)
         self.assertIsNotNone(target.archived_at)
+
+
+    def test_personal_user_can_only_read_own_user_record(self):
+        personal = User.objects.create_user(
+            username='role-personal-user', password='test-password-123',
+            role='personal_user', account_type='personal',
+        )
+        another = User.objects.create_user(
+            username='another-role-personal-user', password='test-password-123',
+            role='personal_user', account_type='personal',
+        )
+        self.client.force_authenticate(personal)
+        listing = self.client.get('/api/users/')
+        self.assertEqual(listing.status_code, 200)
+        payload = listing.data['results'] if isinstance(listing.data, dict) else listing.data
+        self.assertEqual([item['id'] for item in payload], [personal.id])
+        own_detail = self.client.get(f'/api/users/{personal.id}/')
+        other_detail = self.client.get(f'/api/users/{another.id}/')
+        self.assertEqual(own_detail.status_code, 200)
+        self.assertEqual(other_detail.status_code, 404)
+
+    def test_branch_manager_cannot_read_another_user_detail(self):
+        another = User.objects.create_user(
+            username='other-branch-user-detail', password='test-password-123',
+            role='branch_manager', account_type='organization',
+            organization=self.organization, branch=self.branch,
+        )
+        self.client.force_authenticate(self.branch_manager)
+        response = self.client.get(f'/api/users/{another.id}/')
+        self.assertEqual(response.status_code, 404)
+
+    def test_company_manager_cannot_update_or_restore_foreign_user(self):
+        foreign = User.objects.create_user(
+            username='foreign-user-management-target', password='test-password-123',
+            role='branch_manager', account_type='organization',
+            organization=self.other_organization, branch=self.other_branch,
+        )
+        foreign.is_active = False
+        foreign.archived_at = timezone.now()
+        foreign.archived_was_active = True
+        foreign.save(update_fields=['is_active', 'archived_at', 'archived_was_active'])
+
+        self.client.force_authenticate(self.company_manager)
+        update_response = self.client.patch(
+            f'/api/users/{foreign.id}/?archived=true',
+            {'mobile': '09129999999'},
+            format='json',
+        )
+        restore_response = self.client.post(
+            f'/api/users/{foreign.id}/restore/', {}, format='json',
+        )
+        self.assertEqual(update_response.status_code, 404)
+        self.assertEqual(restore_response.status_code, 404)
+        foreign.refresh_from_db()
+        self.assertIsNotNone(foreign.archived_at)
+        self.assertFalse(foreign.is_active)
