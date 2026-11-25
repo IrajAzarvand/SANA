@@ -20,6 +20,7 @@ import { useAuth } from '../context/AuthContext';
 import { organizationsAPI, branchesAPI } from '../api/services/organizations';
 import { subscriptionsAPI } from '../api/services/subscriptions';
 import { getManagementStatus } from '../utils/deviceStatus';
+import { fetchAllPages } from '../utils/fetchAllPages';
 
 const deviceOperationTypeMap = {
   return_for_repair: 'بازگشت برای تعمیر',
@@ -152,28 +153,28 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
       const normalize = (result) => Array.isArray(result) ? result : result.results || [];
       if (operationType === 'disposition') {
         const [orgs, users, subs, vehicles] = await Promise.all([
-          organizationsAPI.list(),
-          usersAPI.list(),
+          fetchAllPages(organizationsAPI.list),
+          fetchAllPages(usersAPI.list),
           subscriptionsAPI.list({ status: 'active' }),
           vehiclesAPI.list(historyDevice.organization ? { organization: historyDevice.organization } : {}),
         ]);
         setOperationTargets((current) => ({
           ...current,
-          organizations: normalize(orgs),
-          users: normalize(users),
+          organizations: orgs,
+          users,
           subscriptions: normalize(subs),
           vehicles: normalize(vehicles),
         }));
       } else if (operationType === 'transfer_customer') {
         const [orgs, users, subs] = await Promise.all([
-          organizationsAPI.list(),
-          usersAPI.list(),
+          fetchAllPages(organizationsAPI.list),
+          fetchAllPages(usersAPI.list),
           subscriptionsAPI.list({ status: 'active' }),
         ]);
         setOperationTargets((current) => ({
           ...current,
-          organizations: normalize(orgs),
-          users: normalize(users),
+          organizations: orgs,
+          users,
           subscriptions: normalize(subs),
         }));
       } else if (operationType === 'transfer_branch') {
