@@ -367,11 +367,6 @@ class DeviceCustomerAccessPeriod(models.Model):
                 ),
                 name='device_access_one_customer',
             ),
-            models.UniqueConstraint(
-                fields=['device'],
-                condition=models.Q(ended_at__isnull=True),
-                name='device_access_one_open_period',
-            ),
             models.CheckConstraint(
                 condition=models.Q(ended_at__isnull=True) | models.Q(ended_at__gte=models.F('started_at')),
                 name='device_access_valid_dates',
