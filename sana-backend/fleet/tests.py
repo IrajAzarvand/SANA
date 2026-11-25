@@ -243,12 +243,19 @@ class DeviceListSerializerPrefetchTests(SimpleTestCase):
         self.assertIsNone(self.serializer.get_traccar_protocol(device))
 
     def test_active_subscription_link_uses_prefetched_links_and_is_cached(self):
-        active_link = SimpleNamespace(assigned_at=timezone.now(),
-            pk=1,
-            unassigned_at=None, subscription_id=12)
-        older_link = SimpleNamespace(assigned_at=timezone.now(),
-            pk=1,
-            unassigned_at=None, subscription_id=8)
+        now = timezone.now()
+        active_link = SimpleNamespace(
+            assigned_at=now,
+            pk=12,
+            unassigned_at=None,
+            subscription_id=12,
+        )
+        older_link = SimpleNamespace(
+            assigned_at=now - timedelta(seconds=1),
+            pk=8,
+            unassigned_at=None,
+            subscription_id=8,
+        )
         device = SimpleNamespace(
             management_status='active',
             _prefetched_subscription_links=[active_link, older_link],
