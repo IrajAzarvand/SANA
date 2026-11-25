@@ -1287,6 +1287,13 @@ class BranchDeletionDataIntegrityTests(TestCase):
     def test_branch_with_user_vehicle_and_access_history_cannot_be_deleted(self):
         User.objects.create_user(username='branch-integrity-user', password='test-password-123', role='branch_manager', account_type='organization', branch=self.branch)
         Vehicle.objects.create(organization=self.organization, branch=self.branch, plate='BRINTEGRITY01')
+        driver = Driver.objects.create(
+            organization=self.organization,
+            branch=self.branch,
+            first_name='Branch',
+            last_name='Integrity',
+            mobile='09120000000',
+        )
         device = Device.objects.create(imei='987654321098799', organization=self.organization, branch=self.branch)
         access_period = DeviceCustomerAccessPeriod.objects.create(device=device, organization=self.organization, branch=self.branch, started_at=timezone.now())
         operation = DeviceOperation.objects.create(
@@ -1305,6 +1312,8 @@ class BranchDeletionDataIntegrityTests(TestCase):
         access_period.refresh_from_db()
         self.assertEqual(access_period.branch_id, self.branch.pk)
         self.assertEqual(Device.objects.get(pk=device.pk).branch_id, self.branch.pk)
+        driver.refresh_from_db()
+        self.assertEqual(driver.branch_id, self.branch.pk)
         operation.refresh_from_db()
         lifecycle_event.refresh_from_db()
         self.assertEqual(operation.target_branch_id, self.branch.pk)
