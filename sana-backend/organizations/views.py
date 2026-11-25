@@ -178,10 +178,17 @@ class BranchViewSet(viewsets.ModelViewSet):
 
     @transaction.atomic
     def destroy(self, request, *args, **kwargs):
-        # Lock the row while checking every reverse FK relation. This prevents
-        # a concurrent assignment from slipping between the check and deletion.
-        branch = self.get_object()
-        branch = Branch.objects.select_for_update().get(pk=branch.pk)
+        # Acquire the row lock in the initial lookup. A second concurrent
+        # delete then waits and receives a normal 404 after the first commits,
+        # rather than racing between get_object() and the lock query.
+        lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
+        lookup_value = self.kwargs[lookup_url_kwarg]
+        branch = self.filter_queryset(self.get_queryset()).select_for_update().filter(
+            **{self.lookup_field: lookup_value}
+        ).first()
+        if branch is None:
+            from rest_framework.exceptions import NotFound
+            raise NotFound()
         self.check_object_permissions(request, branch)
 
         references = []
