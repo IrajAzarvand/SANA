@@ -221,6 +221,8 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
 
         device.refresh_from_db()
         self.assertEqual(device.organization_id, self.organization.id)
+        self.assertIsNone(device.current_holder_organization_id)
+        self.assertIsNone(device.current_holder_user_id)
         self.assertIsNone(device.branch_id)
         self.assertIsNone(device.vehicle_id)
 
