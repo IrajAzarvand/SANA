@@ -406,8 +406,9 @@ def execute_device_operation(
                 description=f'به عنوان جایگزین دستگاه {device.imei} به قرارداد متصل شد.',
             )
         else:
-            old_org = device.organization or device.current_holder_organization
-            old_user = device.owner_user or device.current_holder_user
+            customer = _current_customer(device, subscription)
+            old_org = customer['organization']
+            old_user = customer['user']
             old_vehicle = device.vehicle
             old_branch = device.branch
 
@@ -479,8 +480,8 @@ def execute_device_operation(
         if replacement_type == 'permanent_replacement':
             _open_ownership(
                 replacement_device,
-                organization=customer_org,
-                user=customer_user,
+                organization=replacement_device.organization,
+                user=replacement_device.owner_user,
                 reason='permanent_replacement',
             )
 
@@ -548,6 +549,7 @@ def execute_device_operation(
         old_vehicle = device.vehicle
         old_branch = device.branch
         customer = _current_customer(device, subscription)
+        _close_customer_access(device)
         old_org = customer['organization']
         old_user = customer['user']
 
@@ -583,8 +585,8 @@ def execute_device_operation(
                 'installed'
             )
             if replacement_type == 'permanent_replacement':
-                replacement_device.organization = old_org
-                replacement_device.owner_user = old_user
+                replacement_device.organization = device.organization
+                replacement_device.owner_user = device.owner_user
             replacement_device.save()
 
             if subscription:
@@ -617,11 +619,12 @@ def execute_device_operation(
             })
 
         old_status = device.management_status
+        customer = _current_customer(device, subscription)
         device.management_status = 'ready'
         device.vehicle = None
         device.branch = None
-        device.current_holder_organization = device.organization
-        device.current_holder_user = device.owner_user
+        device.current_holder_organization = customer['organization']
+        device.current_holder_user = customer['user']
         device.save()
 
         record_device_lifecycle_event(
@@ -630,8 +633,8 @@ def execute_device_operation(
             event_type='found',
             performed_by=performed_by,
             subscription=subscription,
-            organization=device.organization,
-            user=device.owner_user,
+            organization=customer['organization'],
+            user=customer['user'],
             reason=reason or 'other',
             description=description or (
                 f'دستگاه پس از وضعیت {old_status} پیدا شد و آماده تعیین تکلیف است.'
