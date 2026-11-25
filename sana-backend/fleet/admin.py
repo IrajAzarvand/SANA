@@ -15,19 +15,42 @@ from .models import VehicleType, Vehicle, Device, Driver
 @admin.register(Device)
 class DeviceAdmin(admin.ModelAdmin):
     list_display = [
-        'imei', 'device_model', 'protocol', 'get_customer',
-        'vehicle', 'management_status', 'created_at',
+        'imei', 'device_model', 'protocol', 'get_legal_owner',
+        'get_current_holder', 'vehicle', 'management_status', 'created_at',
     ]
     list_filter = ['management_status', 'protocol']
     search_fields = ['imei', 'sim_number', 'device_model__manufacturer', 'device_model__name']
     ordering = ['-created_at']
-    raw_id_fields = ['organization', 'owner_user', 'branch', 'vehicle']
+    raw_id_fields = [
+        'organization', 'owner_user', 'current_holder_organization',
+        'current_holder_user', 'branch', 'vehicle',
+    ]
+    # Relationship and lifecycle state changes must pass through audited operations.
+    readonly_fields = [
+        'organization', 'owner_user',
+        'current_holder_organization', 'current_holder_user',
+        'branch', 'vehicle', 'management_status',
+    ]
 
-    def get_customer(self, obj):
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def get_legal_owner(self, obj):
         if obj.organization:
             return obj.organization.name
         if obj.owner_user:
             return obj.owner_user.full_name or obj.owner_user.username
         return '—'
-    get_customer.short_description = 'مشتری'
+    get_legal_owner.short_description = 'مالک قانونی'
+
+    def get_current_holder(self, obj):
+        if obj.current_holder_organization:
+            return obj.current_holder_organization.name
+        if obj.current_holder_user:
+            return obj.current_holder_user.full_name or obj.current_holder_user.username
+        return '—'
+    get_current_holder.short_description = 'تحویل‌گیرنده فعلی'
 
