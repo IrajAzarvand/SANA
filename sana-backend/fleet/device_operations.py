@@ -63,7 +63,8 @@ def _validate_transfer_target(*, organization, user, branch=None, vehicle=None, 
             subscription.customer_type != 'organization'
             or subscription.organization_id != organization.id
             or subscription.user_id is not None
-            or subscription.computed_status != 'active'
+            or subscription.status != 'active'
+            or subscription.end_date < timezone.localdate()
         ):
             raise ValidationError({'target_subscription': 'قرارداد مقصد باید فعال و متعلق به سازمان انتخاب‌شده باشد.'})
     else:
@@ -83,7 +84,8 @@ def _validate_transfer_target(*, organization, user, branch=None, vehicle=None, 
             subscription.customer_type != 'personal'
             or subscription.user_id != user.id
             or subscription.organization_id is not None
-            or subscription.computed_status != 'active'
+            or subscription.status != 'active'
+            or subscription.end_date < timezone.localdate()
         ):
             raise ValidationError({'target_subscription': 'قرارداد مقصد باید فعال و متعلق به کاربر شخصی انتخاب‌شده باشد.'})
 
@@ -95,7 +97,10 @@ def _validate_device_customer_assignment(device, subscription):
             'device': 'دستگاه در وضعیت فعلی قابل اتصال به قرارداد نیست؛ ابتدا وضعیت عملیاتی آن را تعیین تکلیف کنید.'
         })
 
-    if subscription.computed_status != 'active':
+    # A future-dated active contract may receive its device assignment now.
+    # The access-period query still blocks customer visibility until the legal
+    # contract and device start dates are reached.
+    if subscription.status != 'active' or subscription.end_date < timezone.localdate():
         raise ValidationError({'subscription': 'اتصال دستگاه به قرارداد غیرفعال یا منقضی مجاز نیست.'})
 
     if subscription.customer_type == 'organization':
@@ -210,10 +215,14 @@ def _open_customer_access(device, subscription=None, branch=None, organization=_
         device=device,
         unassigned_at__isnull=True,
     ).order_by('-assigned_at', '-id').first()
-    if current_link is None or not current_link.is_active:
-        _close_customer_access(device, close_time)
-        return None
-    if subscription.computed_status != 'active':
+    today = timezone.localdate()
+    if (
+        current_link is None
+        or current_link.unassigned_at is not None
+        or current_link.end_date < today
+        or subscription.status != 'active'
+        or subscription.end_date < today
+    ):
         _close_customer_access(device, close_time)
         return None
     close_time = max(close_time, current_link.assigned_at)
@@ -339,7 +348,7 @@ def _close_active_link(device, operation):
 def _add_to_subscription(device, subscription, operation, start_date=None, end_date=None):
     if not subscription:
         raise ValidationError({'target_subscription': 'انتخاب قرارداد مقصد الزامی است'})
-    if subscription.computed_status != 'active':
+    if subscription.status != 'active' or subscription.end_date < timezone.localdate():
         raise ValidationError({'target_subscription': 'افزودن دستگاه به قرارداد غیرفعال یا منقضی مجاز نیست.'})
     start_date = start_date or subscription.start_date
     end_date = end_date or subscription.end_date
