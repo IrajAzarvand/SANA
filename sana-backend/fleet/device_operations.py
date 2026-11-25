@@ -205,10 +205,11 @@ def _open_customer_access(device, subscription=None, branch=None, organization=_
             # the newest valid period for the same customer/contract/branch.
             stale_period_ids = [period.pk for period in open_periods[1:]]
             if stale_period_ids:
-                DeviceCustomerAccessPeriod.objects.filter(
-                    pk__in=stale_period_ids,
-                    ended_at__isnull=True,
-                ).update(ended_at=close_time)
+                for stale_period in open_periods[1:]:
+                    DeviceCustomerAccessPeriod.objects.filter(
+                        pk=stale_period.pk,
+                        ended_at__isnull=True,
+                    ).update(ended_at=max(close_time, stale_period.started_at))
             return current
 
         _close_customer_access(device, close_time)
