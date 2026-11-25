@@ -374,7 +374,13 @@ def execute_device_operation(
             replacement_device.save()
 
             if replacement_type == 'permanent_replacement':
-                _open_ownership(replacement_device, organization=replacement_device.organization, user=replacement_device.owner_user, reason='permanent_replacement')
+                _close_active_link(device, operation)
+                _open_ownership(
+                    replacement_device,
+                    organization=replacement_device.organization,
+                    user=replacement_device.owner_user,
+                    reason='permanent_replacement',
+                )
             if subscription:
                 _add_to_subscription(replacement_device, subscription, operation)
                 _open_customer_access(replacement_device, subscription=subscription, branch=old_branch, organization=old_org, user=old_user, reason='replacement')
@@ -525,14 +531,16 @@ def execute_device_operation(
         device.current_holder_user = None
         device.save()
 
+        _close_customer_access(device)
+        customer = _current_customer(device, subscription)
         record_device_lifecycle_event(
             device_operation=operation,
             device=device,
             event_type='repaired',
             performed_by=performed_by,
             subscription=subscription,
-            organization=device.organization,
-            user=device.owner_user,
+            organization=customer['organization'],
+            user=customer['user'],
             vehicle=None,
             branch=None,
             reason=reason or 'repair',
@@ -585,12 +593,31 @@ def execute_device_operation(
                 'installed'
             )
             if replacement_type == 'permanent_replacement':
+                _close_active_link(device, operation)
                 replacement_device.organization = device.organization
                 replacement_device.owner_user = device.owner_user
             replacement_device.save()
 
+            if replacement_type == 'permanent_replacement' and (
+                replacement_device.organization_id or replacement_device.owner_user_id
+            ):
+                _open_ownership(
+                    replacement_device,
+                    organization=replacement_device.organization,
+                    user=replacement_device.owner_user,
+                    reason='permanent_replacement',
+                )
+
             if subscription:
                 _add_to_subscription(replacement_device, subscription, operation)
+                _open_customer_access(
+                    replacement_device,
+                    subscription=subscription,
+                    branch=old_branch,
+                    organization=old_org,
+                    user=old_user,
+                    reason='replacement',
+                )
 
             DeviceReplacementRelation.objects.create(
                 source_device=device,
@@ -623,8 +650,8 @@ def execute_device_operation(
         device.management_status = 'ready'
         device.vehicle = None
         device.branch = None
-        device.current_holder_organization = customer['organization']
-        device.current_holder_user = customer['user']
+        device.current_holder_organization = None
+        device.current_holder_user = None
         device.save()
 
         record_device_lifecycle_event(
