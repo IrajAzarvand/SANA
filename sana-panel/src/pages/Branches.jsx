@@ -130,7 +130,7 @@ export default function Branches() {
       const detail = err.response?.data?.detail || 'حذف شعبه انجام نشد.';
       const references = err.response?.data?.references || [];
       const summary = references.map((item) => `${item.model}: ${item.count}`).join('، ');
-      alert(summary ? `${detail}\\n\\nوابستگی‌های شناسایی‌شده: ${summary}` : detail);
+      alert(summary ? `${detail}\n\nوابستگی‌های شناسایی‌شده: ${summary}` : detail);
     }
   };
 
