@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.utils import timezone
 from django.contrib.auth import get_user_model
@@ -86,6 +87,19 @@ class UserCreateSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         request = self.context.get('request')
         actor = getattr(request, 'user', None)
+
+        # Apply the same configured password policy used by password changes.
+        candidate = User(
+            username=attrs.get('username', ''),
+            first_name=attrs.get('first_name', ''),
+            last_name=attrs.get('last_name', ''),
+            email=attrs.get('email', ''),
+        )
+        try:
+            validate_password(attrs.get('password', ''), user=candidate)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({'password': exc.messages})
+
         if actor and actor.is_main_user:
             branch = attrs.get('branch')
             if not actor.organization_id:
