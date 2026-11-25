@@ -3,6 +3,9 @@ from django.utils import timezone
 from .models import DeviceLifecycleEvent
 
 
+_EVENT_RELATION_UNSET = object()
+
+
 def record_device_lifecycle_event(
     *,
     device,
@@ -11,10 +14,10 @@ def record_device_lifecycle_event(
     performed_by=None,
     event_date=None,
     subscription=None,
-    organization=None,
-    user=None,
-    vehicle=None,
-    branch=None,
+    organization=_EVENT_RELATION_UNSET,
+    user=_EVENT_RELATION_UNSET,
+    vehicle=_EVENT_RELATION_UNSET,
+    branch=_EVENT_RELATION_UNSET,
     reason='',
     description='',
     new_status=None,
@@ -31,7 +34,7 @@ def record_device_lifecycle_event(
         'assigned_to_contract': 'installed',
         'returned': 'warehouse',
         'sent_to_repair': 'in_repair',
-        'repaired': 'warehouse',
+        'repaired': 'ready',
         'lost': 'lost',
         'found': 'ready',
         'stolen': 'stolen',
@@ -41,8 +44,8 @@ def record_device_lifecycle_event(
     target_status = new_status if new_status is not None else status_map.get(event_type)
 
     if event_type == 'returned':
-        device.organization = None
-        device.owner_user = None
+        # Returning hardware to the warehouse changes its physical location,
+        # not its legal ownership. Ownership changes require an explicit transfer.
         device.branch = None
         device.vehicle = None
 
@@ -52,13 +55,15 @@ def record_device_lifecycle_event(
     elif event_type in {'returned', 'repaired'}:
         device.save()
 
-    if organization is None:
+    # Distinguish an omitted relation (inherit the previous value) from an
+    # explicitly empty relation (for example, a personal customer has no org).
+    if organization is _EVENT_RELATION_UNSET:
         organization = previous_organization
-    if user is None:
+    if user is _EVENT_RELATION_UNSET:
         user = previous_user
-    if vehicle is None:
+    if vehicle is _EVENT_RELATION_UNSET:
         vehicle = previous_vehicle
-    if branch is None:
+    if branch is _EVENT_RELATION_UNSET:
         branch = previous_branch
 
     return DeviceLifecycleEvent.objects.create(
