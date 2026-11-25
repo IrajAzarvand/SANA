@@ -210,7 +210,10 @@ def _open_customer_access(device, subscription=None, branch=None, organization=_
         device=device,
         unassigned_at__isnull=True,
     ).order_by('-assigned_at', '-id').first()
-    if current_link is None:
+    if current_link is None or not current_link.is_active:
+        _close_customer_access(device, close_time)
+        return None
+    if subscription.computed_status != 'active':
         _close_customer_access(device, close_time)
         return None
     close_time = max(close_time, current_link.assigned_at)
