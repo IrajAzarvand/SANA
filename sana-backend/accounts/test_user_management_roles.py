@@ -458,3 +458,30 @@ class UserManagementRoleBoundaryTests(TestCase):
         model_admin.save_model(request, target, form=None, change=True)
         session.refresh_from_db()
         self.assertIsNotNone(session.revoked_at)
+
+
+    def test_django_admin_rejects_role_account_type_mismatch(self):
+        request = RequestFactory().post('/admin/accounts/user/')
+        request.user = self.admin
+        model_admin = UserAdmin(User, django_admin.site)
+        target = User(
+            username='invalid-admin-account-type',
+            role='site_admin',
+            account_type='personal',
+        )
+        with self.assertRaises(DjangoValidationError):
+            model_admin.save_model(request, target, form=None, change=False)
+
+    def test_django_admin_rejects_branch_from_another_organization(self):
+        request = RequestFactory().post('/admin/accounts/user/')
+        request.user = self.admin
+        model_admin = UserAdmin(User, django_admin.site)
+        target = User(
+            username='invalid-admin-branch-link',
+            role='branch_manager',
+            account_type='organization',
+            organization=self.organization,
+            branch=self.other_branch,
+        )
+        with self.assertRaises(DjangoValidationError):
+            model_admin.save_model(request, target, form=None, change=False)

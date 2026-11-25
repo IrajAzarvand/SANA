@@ -15,6 +15,44 @@ class UserAdmin(BaseUserAdmin):
 
     @transaction.atomic
     def save_model(self, request, obj, form, change):
+        expected_account_type = {
+            'site_admin': 'admin',
+            'main_user': 'organization',
+            'branch_manager': 'organization',
+            'personal_user': 'personal',
+        }.get(obj.role)
+        if expected_account_type and obj.account_type != expected_account_type:
+            raise ValidationError({
+                'account_type': 'نوع حساب با نقش انتخاب‌شده سازگار نیست.'
+            })
+
+        if obj.branch_id and not obj.organization_id:
+            obj.organization = obj.branch.organization
+        if obj.branch_id and obj.organization_id and (
+            obj.branch.organization_id != obj.organization_id
+        ):
+            raise ValidationError({
+                'branch': 'شعبه انتخاب‌شده متعلق به سازمان انتخاب‌شده نیست.'
+            })
+        if obj.role == 'branch_manager' and (not obj.organization_id or not obj.branch_id):
+            raise ValidationError({
+                'branch': 'برای مدیر شعبه، انتخاب شرکت و شعبه الزامی است.'
+            })
+        if obj.role == 'main_user' and not obj.organization_id:
+            raise ValidationError({
+                'organization': 'برای مدیر شرکت، انتخاب شرکت الزامی است.'
+            })
+        if obj.role == 'main_user' and obj.branch_id:
+            raise ValidationError({
+                'branch': 'مدیر شرکت نباید به یک شعبه خاص متصل باشد.'
+            })
+        if obj.role in {'site_admin', 'personal_user'} and (
+            obj.organization_id or obj.branch_id
+        ):
+            raise ValidationError(
+                'ادمین سایت و کاربر شخصی نباید به شرکت یا شعبه سازمانی متصل باشند.'
+            )
+
         if request.user.pk == obj.pk and (
             obj.role != 'site_admin' or not obj.is_active
         ):
