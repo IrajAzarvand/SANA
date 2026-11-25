@@ -76,13 +76,29 @@ class UserViewSet(viewsets.ModelViewSet):
         if user.is_site_admin:
             qs = User.objects.all()
         # مدیر شرکت فقط کاربران سازمان خودش
-        elif user.is_main_user and user.organization:
+        elif user.is_main_user and user.organization_id:
+            # Include directly linked users and legacy branch managers whose
+            # organization FK is empty and whose branch belongs to this tenant.
+            # A conflicting direct organization FK must never be overridden by
+            # a branch relation pointing at another tenant.
             qs = User.objects.filter(
-                branch__organization=user.organization,
                 role='branch_manager',
-            ).exclude(
-                branch__organization__status='archived'
-            )
+            ).filter(
+                (
+                    Q(organization_id=user.organization_id)
+                    & (
+                        Q(branch__isnull=True)
+                        | Q(branch__organization_id=user.organization_id)
+                    )
+                )
+                | Q(organization__isnull=True, branch__organization_id=user.organization_id)
+            ).filter(
+                Q(organization__isnull=True)
+                | ~Q(organization_id__in=Organization.objects.filter(status='archived').values('pk'))
+            ).filter(
+                Q(branch__isnull=True)
+                | ~Q(branch__organization_id__in=Organization.objects.filter(status='archived').values('pk'))
+            ).distinct()
         # مدیر شعبه فقط کاربران شعبه خودش
         elif user.is_branch_manager and user.branch:
             qs = User.objects.filter(id=user.id)
@@ -101,7 +117,16 @@ class UserViewSet(viewsets.ModelViewSet):
 
         organization = self.request.query_params.get('organization')
         if organization:
-            qs = qs.filter(organization_id=organization)
+            qs = qs.filter(
+                (
+                    Q(organization_id=organization)
+                    & (
+                        Q(branch__isnull=True)
+                        | Q(branch__organization_id=organization)
+                    )
+                )
+                | Q(organization__isnull=True, branch__organization_id=organization)
+            ).distinct()
 
         if user.is_main_user:
             qs = qs.exclude(role__in=['site_admin', 'main_user'])

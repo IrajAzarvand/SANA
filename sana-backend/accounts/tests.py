@@ -1209,3 +1209,40 @@ class PersonalAndTenantFinancialNotificationTests(TestCase):
         ]
         self.assertEqual(len(matches), 1)
 
+class OrganizationRelatedUsersQueryTests(TestCase):
+    def setUp(self):
+        self.organization = Organization.objects.create(name='Related Users Organization', code='RELATED-USERS-ORG-001')
+        self.other_organization = Organization.objects.create(name='Other Related Users Organization', code='RELATED-USERS-ORG-002')
+        self.branch = Branch.objects.create(organization=self.organization, name='Related Users Branch', code='RELATED-USERS-BR-001')
+        self.other_branch = Branch.objects.create(organization=self.other_organization, name='Other Related Users Branch', code='RELATED-USERS-BR-002')
+        self.manager = User.objects.create_user(username='related-users-main', password='test-password-123', account_type='organization', role='main_user', organization=self.organization)
+        self.legacy_branch_manager = User.objects.create_user(username='related-users-legacy', password='test-password-123', account_type='organization', role='branch_manager', branch=self.branch)
+        self.direct_branch_manager = User.objects.create_user(username='related-users-direct', password='test-password-123', account_type='organization', role='branch_manager', organization=self.organization)
+        self.other_branch_manager = User.objects.create_user(username='related-users-other', password='test-password-123', account_type='organization', role='branch_manager', branch=self.other_branch)
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.manager)
+
+    def test_company_filter_includes_direct_and_legacy_branch_users(self):
+        response = self.client.get('/api/users/', {'organization': self.organization.pk})
+        self.assertEqual(response.status_code, 200, response.data)
+        results = response.data['results'] if isinstance(response.data, dict) else response.data
+        returned_ids = {item['id'] for item in results}
+        self.assertIn(self.legacy_branch_manager.pk, returned_ids)
+        self.assertIn(self.direct_branch_manager.pk, returned_ids)
+        self.assertNotIn(self.other_branch_manager.pk, returned_ids)
+
+    def test_company_manager_cannot_expand_user_list_to_another_tenant(self):
+        response = self.client.get('/api/users/', {'organization': self.other_organization.pk})
+        self.assertEqual(response.status_code, 200, response.data)
+        results = response.data['results'] if isinstance(response.data, dict) else response.data
+        self.assertEqual(results, [])
+
+    def test_conflicting_organization_and_branch_relations_do_not_leak_users(self):
+        mismatched_user = User.objects.create_user(username='related-users-mismatch', password='test-password-123', account_type='organization', role='branch_manager', organization=self.other_organization, branch=self.branch)
+        reverse_mismatch_user = User.objects.create_user(username='related-users-reverse-mismatch', password='test-password-123', account_type='organization', role='branch_manager', organization=self.organization, branch=self.other_branch)
+        response = self.client.get('/api/users/', {'organization': self.organization.pk})
+        self.assertEqual(response.status_code, 200, response.data)
+        results = response.data['results'] if isinstance(response.data, dict) else response.data
+        returned_ids = {item['id'] for item in results}
+        self.assertNotIn(mismatched_user.pk, returned_ids)
+        self.assertNotIn(reverse_mismatch_user.pk, returned_ids)
