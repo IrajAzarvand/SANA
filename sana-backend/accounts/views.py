@@ -138,6 +138,7 @@ class UserViewSet(viewsets.ModelViewSet):
             qs = qs.filter(archived_at__isnull=True)
         return qs.select_related('organization', 'branch', 'archived_by')
 
+    @transaction.atomic
     def perform_update(self, serializer):
         previous = serializer.instance
         previous_access_state = (
