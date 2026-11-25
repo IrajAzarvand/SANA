@@ -357,7 +357,8 @@ def execute_device_operation(
                 description=description,
             )
 
-            # تعمیر، مالکیت و اتصال قراردادی دستگاه اصلی را از بین نمی‌برد.
+            # تعمیر، مالکیت قانونی و سابقه قرارداد را حفظ می‌کند؛ دسترسی جاری بسته می‌شود.
+            _close_customer_access(device)
             device.vehicle = None
             device.branch = None
             device.current_holder_organization = None
@@ -466,6 +467,7 @@ def execute_device_operation(
         previous_vehicle = previous_event.vehicle if previous_event else None
         previous_branch = previous_event.branch if previous_event else None
         customer = _current_customer(device, subscription)
+        _close_customer_access(device)
         customer_org = customer['organization']
         customer_user = customer['user']
 
