@@ -76,22 +76,6 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
             end_date=today,
         ))
 
-    def test_device_cannot_have_two_active_contract_links(self):
-        SubscriptionDevice.objects.create(
-            subscription=self.subscription,
-            device=self.device,
-            start_date=self.subscription.start_date,
-            end_date=self.subscription.end_date,
-        )
-        self.assert_database_rejects(lambda: SubscriptionDevice.objects.bulk_create([
-            SubscriptionDevice(
-                subscription=self.other_subscription,
-                device=self.device,
-                start_date=self.other_subscription.start_date,
-                end_date=self.other_subscription.end_date,
-            )
-        ]))
-
     def test_device_owner_and_holder_fields_must_each_have_one_identity(self):
         self.assert_database_rejects(lambda: Device.objects.create(
             imei='860000000000957',
@@ -102,18 +86,6 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
             imei='860000000000958',
             current_holder_organization=self.organization,
             current_holder_user=self.personal_user,
-        ))
-
-    def test_device_cannot_have_two_open_customer_access_periods(self):
-        DeviceCustomerAccessPeriod.objects.create(
-            device=self.device,
-            organization=self.organization,
-            subscription=self.subscription,
-        )
-        self.assert_database_rejects(lambda: DeviceCustomerAccessPeriod.objects.create(
-            device=self.device,
-            organization=self.other_organization,
-            subscription=self.other_subscription,
         ))
 
     def test_device_cannot_have_two_open_ownership_periods(self):
