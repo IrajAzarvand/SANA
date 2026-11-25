@@ -317,7 +317,6 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         from django.db import transaction
-        from django.core.exceptions import ValidationError as DjangoValidationError
 
         device = validated_data['device']
         subscription = validated_data['subscription']
