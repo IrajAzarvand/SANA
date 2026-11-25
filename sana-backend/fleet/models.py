@@ -201,6 +201,24 @@ class Device(models.Model):
         verbose_name = 'دستگاه'
         verbose_name_plural = 'دستگاه‌ها'
         ordering = ['-created_at']
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    (models.Q(organization__isnull=True) & models.Q(owner_user__isnull=True))
+                    | (models.Q(organization__isnull=False) & models.Q(owner_user__isnull=True))
+                    | (models.Q(organization__isnull=True) & models.Q(owner_user__isnull=False))
+                ),
+                name='device_legal_owner_shape',
+            ),
+            models.CheckConstraint(
+                condition=(
+                    (models.Q(current_holder_organization__isnull=True) & models.Q(current_holder_user__isnull=True))
+                    | (models.Q(current_holder_organization__isnull=False) & models.Q(current_holder_user__isnull=True))
+                    | (models.Q(current_holder_organization__isnull=True) & models.Q(current_holder_user__isnull=False))
+                ),
+                name='device_holder_shape',
+            ),
+        ]
 
     def __str__(self):
         return self.imei
@@ -281,6 +299,15 @@ class DeviceOwnershipHistory(models.Model):
                 ),
                 name='device_ownership_one_customer',
             ),
+            models.UniqueConstraint(
+                fields=['device'],
+                condition=models.Q(ended_at__isnull=True),
+                name='ownership_one_open_period',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(ended_at__isnull=True) | models.Q(ended_at__gte=models.F('started_at')),
+                name='device_ownership_valid_dates',
+            ),
         ]
 
     def clean(self):
@@ -339,6 +366,10 @@ class DeviceCustomerAccessPeriod(models.Model):
                     | (models.Q(organization__isnull=True) & models.Q(user__isnull=False))
                 ),
                 name='device_access_one_customer',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(ended_at__isnull=True) | models.Q(ended_at__gte=models.F('started_at')),
+                name='device_access_valid_dates',
             ),
         ]
 

@@ -19,6 +19,14 @@ def _customer_kwargs(device=None, organization=None, user=None):
 
 def _close_customer_access(device, when=None):
     when = when or timezone.now()
+    latest_open_start = DeviceCustomerAccessPeriod.objects.filter(
+        device=device,
+        ended_at__isnull=True,
+    ).order_by('-started_at', '-id').values_list('started_at', flat=True).first()
+    if latest_open_start and when < latest_open_start:
+        # Clock adjustments or legacy future-dated rows must never create
+        # a negative access interval.
+        when = latest_open_start
     DeviceCustomerAccessPeriod.objects.filter(device=device, ended_at__isnull=True).update(ended_at=when)
 
 
@@ -87,12 +95,14 @@ def _open_customer_access(device, subscription=None, branch=None, organization=N
             # the newest valid period for the same customer/contract/branch.
             stale_period_ids = [period.pk for period in open_periods[1:]]
             if stale_period_ids:
-                DeviceCustomerAccessPeriod.objects.filter(
-                    pk__in=stale_period_ids,
-                    ended_at__isnull=True,
-                ).update(ended_at=close_time)
+                for stale_period in open_periods[1:]:
+                    DeviceCustomerAccessPeriod.objects.filter(
+                        pk=stale_period.pk,
+                        ended_at__isnull=True,
+                    ).update(ended_at=max(close_time, stale_period.started_at))
             return current
 
+        close_time = max(close_time, current.started_at)
         _close_customer_access(device, close_time)
 
     return DeviceCustomerAccessPeriod.objects.create(
@@ -107,6 +117,12 @@ def _open_customer_access(device, subscription=None, branch=None, organization=N
 
 def _close_ownership(device, when=None):
     when = when or timezone.now()
+    latest_open_start = DeviceOwnershipHistory.objects.filter(
+        device=device,
+        ended_at__isnull=True,
+    ).order_by('-started_at', '-id').values_list('started_at', flat=True).first()
+    if latest_open_start and when < latest_open_start:
+        when = latest_open_start
     DeviceOwnershipHistory.objects.filter(device=device, ended_at__isnull=True).update(ended_at=when)
 
 
@@ -114,18 +130,21 @@ def _open_ownership(device, organization=None, user=None, started_at=None, reaso
     customer = _customer_kwargs(device, organization, user)
     if not customer['organization'] and not customer['user']:
         return None
-    current = DeviceOwnershipHistory.objects.filter(device=device, ended_at__isnull=True).first()
+    current = DeviceOwnershipHistory.objects.filter(device=device, ended_at__isnull=True).order_by('-started_at', '-id').first()
     same_customer = current and current.organization_id == getattr(customer['organization'], 'id', None) and current.owner_user_id == getattr(customer['user'], 'id', None)
     if same_customer:
         return current
-    if current: _close_ownership(device, started_at)
+    ownership_started_at = started_at or timezone.now()
+    if current:
+        ownership_started_at = max(ownership_started_at, current.started_at)
+        _close_ownership(device, ownership_started_at)
     ownership_customer = {
         'organization': customer['organization'],
         'owner_user': customer['user'],
     }
     return DeviceOwnershipHistory.objects.create(
         device=device,
-        started_at=started_at or timezone.now(),
+        started_at=ownership_started_at,
         reason=reason,
         **ownership_customer,
     )

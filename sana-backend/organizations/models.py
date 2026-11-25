@@ -146,6 +146,19 @@ class Subscription(models.Model):
         verbose_name = 'قرارداد'
         verbose_name_plural = 'قراردادها'
         ordering = ['-created_at']
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(customer_type='organization', organization__isnull=False, user__isnull=True)
+                    | models.Q(customer_type='personal', organization__isnull=True, user__isnull=False)
+                ),
+                name='subscription_customer_shape',
+            ),
+            models.CheckConstraint(
+                condition=models.Q(end_date__gte=models.F('start_date')),
+                name='subscription_valid_dates',
+            ),
+        ]
 
     def __str__(self):
         return f'{self.contract_number} — {self.get_customer_name()}'
@@ -336,6 +349,12 @@ class SubscriptionDevice(models.Model):
         verbose_name = 'دستگاه قرارداد'
         verbose_name_plural = 'دستگاه‌های قرارداد'
         ordering = ['-assigned_at']
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(end_date__gte=models.F('start_date')),
+                name='sub_device_valid_dates',
+            ),
+        ]
 
     def __str__(self):
         return f'{self.device.imei} → {self.subscription.contract_number}'
