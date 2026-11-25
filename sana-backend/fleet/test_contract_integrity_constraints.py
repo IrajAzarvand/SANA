@@ -143,17 +143,19 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
             organization=self.organization,
             branch=branch,
         )
-        serializer = DeviceSerializer(data={
-            'imei': '860000000000971',
-            'organization': self.organization.id,
-            'current_holder_organization': self.organization.id,
-            'branch': branch.id,
-            'vehicle': vehicle.id,
-        })
-        self.assertFalse(serializer.is_valid())
-        self.assertIn('current_holder_organization', serializer.errors)
-        self.assertIn('branch', serializer.errors)
-        self.assertIn('vehicle', serializer.errors)
+        invalid_assignments = (
+            ('current_holder_organization', self.organization.id, '860000000000971'),
+            ('branch', branch.id, '860000000000976'),
+            ('vehicle', vehicle.id, '860000000000977'),
+        )
+        for field_name, value, imei in invalid_assignments:
+            serializer = DeviceSerializer(data={
+                'imei': imei,
+                'organization': self.organization.id,
+                field_name: value,
+            })
+            self.assertFalse(serializer.is_valid())
+            self.assertIn(field_name, serializer.errors)
 
     def test_device_creation_records_initial_legal_ownership_history(self):
         from fleet.serializers import DeviceSerializer
