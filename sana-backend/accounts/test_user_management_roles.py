@@ -396,3 +396,44 @@ class UserManagementRoleBoundaryTests(TestCase):
                 username='invalid-superuser-role', password='test-password-123',
                 role='main_user', account_type='organization',
             )
+
+
+    def test_site_admin_role_change_revokes_all_existing_sessions(self):
+        target = User.objects.create_user(
+            username='role-change-session-target', password='test-password-123',
+            role='site_admin', account_type='admin',
+        )
+        session = UserSession.objects.create(
+            user=target, expires_at=timezone.now() + timedelta(hours=2),
+        )
+        self.client.force_authenticate(self.admin)
+        response = self.client.patch(
+            f'/api/users/{target.id}/',
+            {'role': 'personal_user', 'account_type': 'personal'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        session.refresh_from_db()
+        self.assertIsNotNone(session.revoked_at)
+
+    def test_company_manager_branch_transfer_revokes_user_sessions(self):
+        other_branch = Branch.objects.create(
+            organization=self.organization, name='Second Branch', code='ROLE-BRANCH-3'
+        )
+        target = User.objects.create_user(
+            username='branch-transfer-session-target', password='test-password-123',
+            role='branch_manager', account_type='organization',
+            organization=self.organization, branch=self.branch,
+        )
+        session = UserSession.objects.create(
+            user=target, expires_at=timezone.now() + timedelta(hours=2),
+        )
+        self.client.force_authenticate(self.company_manager)
+        response = self.client.patch(
+            f'/api/users/{target.id}/',
+            {'branch': other_branch.id},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        session.refresh_from_db()
+        self.assertIsNotNone(session.revoked_at)

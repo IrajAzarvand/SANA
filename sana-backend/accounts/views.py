@@ -139,9 +139,29 @@ class UserViewSet(viewsets.ModelViewSet):
         return qs.select_related('organization', 'branch', 'archived_by')
 
     def perform_update(self, serializer):
+        previous = serializer.instance
+        previous_access_state = (
+            previous.role,
+            previous.account_type,
+            previous.organization_id,
+            previous.branch_id,
+            previous.is_active,
+        )
         instance = serializer.save()
-        if not instance.is_active:
-            UserSession.objects.filter(user=instance, revoked_at__isnull=True).update(revoked_at=timezone.now())
+        current_access_state = (
+            instance.role,
+            instance.account_type,
+            instance.organization_id,
+            instance.branch_id,
+            instance.is_active,
+        )
+        if current_access_state != previous_access_state:
+            # Role, tenant, branch, or active-state changes invalidate old JWT
+            # claims and must revoke every session so the user signs in again.
+            UserSession.objects.filter(
+                user=instance,
+                revoked_at__isnull=True,
+            ).update(revoked_at=timezone.now())
 
     def perform_destroy(self, instance):
         self._archive_user(instance)
