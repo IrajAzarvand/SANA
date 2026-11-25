@@ -859,37 +859,13 @@ def execute_device_operation(
             device.management_status = 'installed'
 
         elif outcome_action == 'transfer_customer':
-            if bool(target_organization) == bool(target_user):
-                raise ValidationError({'target_organization': 'دقیقاً یک مالک مقصد سازمانی یا شخصی باید مشخص شود.'})
-            if target_organization:
-                if target_organization.status != 'active':
-                    raise ValidationError({'target_organization': 'سازمان مقصد باید فعال باشد.'})
-                if target_branch and target_branch.organization_id != target_organization.pk:
-                    raise ValidationError({'target_branch': 'شعبه مقصد باید متعلق به سازمان مقصد باشد.'})
-                if target_vehicle and (
-                    target_vehicle.organization_id != target_organization.pk
-                    or target_vehicle.owner_user_id is not None
-                    or (target_branch and target_vehicle.branch_id != target_branch.pk)
-                ):
-                    raise ValidationError({'target_vehicle': 'خودروی مقصد با سازمان یا شعبه مقصد سازگار نیست.'})
-            else:
-                if not target_user.is_active or not target_user.is_personal_user:
-                    raise ValidationError({'target_user': 'مالک شخصی مقصد باید حساب فعال مشتری شخصی باشد.'})
-                if target_branch:
-                    raise ValidationError({'target_branch': 'مشتری شخصی نمی‌تواند شعبه سازمانی داشته باشد.'})
-                if target_vehicle and (
-                    target_vehicle.owner_user_id != target_user.pk
-                    or target_vehicle.organization_id is not None
-                    or target_vehicle.branch_id is not None
-                ):
-                    raise ValidationError({'target_vehicle': 'خودروی مقصد متعلق به مشتری شخصی مقصد نیست.'})
-            if target_subscription and (
-                target_subscription.organization_id != getattr(target_organization, 'pk', None)
-                or target_subscription.user_id != getattr(target_user, 'pk', None)
-                or target_subscription.computed_status != 'active'
-            ):
-                raise ValidationError({'target_subscription': 'قرارداد مقصد باید فعال و متعلق به مشتری مقصد باشد.'})
-
+            _validate_transfer_target(
+                organization=target_organization,
+                user=target_user,
+                branch=target_branch,
+                vehicle=target_vehicle,
+                subscription=target_subscription,
+            )
             _close_active_link(device, operation)
             _close_customer_access(device)
             _close_ownership(device)
