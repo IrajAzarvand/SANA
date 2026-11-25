@@ -418,6 +418,7 @@ def execute_device_operation(
             old_vehicle = device.vehicle
             old_branch = device.branch
 
+            _close_customer_access(device)
             device.vehicle = None
             device.branch = None
             device.current_holder_organization = None
@@ -947,6 +948,11 @@ def execute_device_operation(
     elif operation_type == 'transfer_branch':
         if not target_branch:
             raise ValidationError({'target_branch': 'شعبه مقصد را مشخص کنید'})
+        customer = _current_customer(device, subscription)
+        if customer['organization'] is None or target_branch.organization_id != customer['organization'].pk:
+            raise ValidationError({'target_branch': 'شعبه مقصد باید متعلق به سازمان مشتری فعلی باشد.'})
+        if target_branch.status != 'active':
+            raise ValidationError({'target_branch': 'شعبه مقصد باید فعال باشد.'})
         device.branch = target_branch
         device.save(update_fields=['branch', 'updated_at'])
         _open_customer_access(device, subscription=subscription, branch=target_branch)
@@ -956,8 +962,8 @@ def execute_device_operation(
             event_type='transferred',
             performed_by=performed_by,
             subscription=subscription,
-            organization=device.organization,
-            user=device.owner_user,
+            organization=customer['organization'],
+            user=customer['user'],
             vehicle=device.vehicle,
             branch=target_branch,
             reason=reason,
@@ -967,10 +973,22 @@ def execute_device_operation(
     elif operation_type == 'transfer_vehicle':
         if not target_vehicle:
             raise ValidationError({'target_vehicle': 'خودرو مقصد را مشخص کنید'})
-        if target_vehicle.organization_id != device.organization_id and device.organization_id:
-            raise ValidationError({
-                'target_vehicle': 'خودرو مقصد باید متعلق به همان مشتری دستگاه باشد'
-            })
+        customer = _current_customer(device, subscription)
+        if customer['organization']:
+            if (
+                target_vehicle.organization_id != customer['organization'].pk
+                or target_vehicle.owner_user_id is not None
+            ):
+                raise ValidationError({'target_vehicle': 'خودرو مقصد باید متعلق به همان سازمان مشتری باشد.'})
+        elif customer['user']:
+            if (
+                target_vehicle.owner_user_id != customer['user'].pk
+                or target_vehicle.organization_id is not None
+                or target_vehicle.branch_id is not None
+            ):
+                raise ValidationError({'target_vehicle': 'خودرو مقصد باید متعلق به همان مشتری شخصی باشد.'})
+        else:
+            raise ValidationError({'device': 'مشتری فعلی دستگاه مشخص نیست.'})
         if Device.objects.filter(vehicle=target_vehicle).exclude(pk=device.pk).exclude(
             management_status__in=['faulty', 'in_repair', 'lost', 'stolen', 'unusable', 'disposed']
         ).exists():
@@ -986,8 +1004,8 @@ def execute_device_operation(
             event_type='transferred',
             performed_by=performed_by,
             subscription=subscription,
-            organization=device.organization,
-            user=device.owner_user,
+            organization=customer['organization'],
+            user=customer['user'],
             vehicle=target_vehicle,
             branch=target_vehicle.branch,
             reason=reason,
@@ -997,6 +1015,9 @@ def execute_device_operation(
         )
 
     elif operation_type == 'retire':
+        customer = _current_customer(device, subscription)
+        _close_active_link(device, operation)
+        _close_customer_access(device)
         device.management_status = 'unusable'
         device.vehicle = None
         device.branch = None
@@ -1007,8 +1028,8 @@ def execute_device_operation(
             event_type='retired',
             performed_by=performed_by,
             subscription=subscription,
-            organization=device.organization,
-            user=device.owner_user,
+            organization=customer['organization'],
+            user=customer['user'],
             reason=reason,
             description=description,
         )
@@ -1016,7 +1037,9 @@ def execute_device_operation(
     elif operation_type == 'dispose':
         if device.management_status != 'unusable':
             raise ValidationError({'device': 'برای امحاء ابتدا دستگاه باید از چرخه استفاده خارج شده باشد.'})
+        customer = _current_customer(device, subscription)
         _close_active_link(device, operation)
+        _close_customer_access(device)
         device.management_status = 'disposed'
         device.vehicle = None
         device.branch = None
@@ -1027,8 +1050,8 @@ def execute_device_operation(
             event_type='disposed',
             performed_by=performed_by,
             subscription=subscription,
-            organization=device.organization,
-            user=device.owner_user,
+            organization=customer['organization'],
+            user=customer['user'],
             reason=reason,
             description=description,
         )
