@@ -147,8 +147,6 @@ export default function UserComboBox({
   }, [open]);
 
   const handleSelect = (user) => {
-    console.log('Selected user:', user);
-    console.log('Organization data:', user.organization_data);
     setSearch(user.username);
     onChange(user.username);
     if (onSelectUser) onSelectUser(user);
