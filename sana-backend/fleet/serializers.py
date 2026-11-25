@@ -1083,6 +1083,12 @@ class DeviceLifecycleEventSerializer(serializers.ModelSerializer):
         event_type = validated_data.pop('event_type')
         request = self.context.get('request')
         performed_by = request.user if request else None
+        subscription = validated_data.get('subscription')
+        if subscription is not None:
+            # Lifecycle events attached to a contract must identify the
+            # contract customer, not the device's legal owner.
+            validated_data['organization'] = subscription.organization
+            validated_data['user'] = subscription.user
         return record_device_lifecycle_event(
             device=device,
             event_type=event_type,
