@@ -366,6 +366,11 @@ class DeviceSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({'current_holder_user': 'دارنده دستگاه متعلق به سازمان شما نیست.'})
             if vehicle and branch and vehicle.branch_id and vehicle.branch_id != branch.pk:
                 raise serializers.ValidationError({'vehicle': 'خودرو و دستگاه باید در یک شعبه باشند.'})
+        if self.instance is not None and 'organization' in attrs:
+            if getattr(attrs['organization'], 'pk', None) != self.instance.organization_id:
+                raise serializers.ValidationError({
+                    'organization': 'تغییر مالک قانونی فقط از عملیات رسمی انتقال مالکیت مجاز است.'
+                })
         return attrs
 
     def create(self, validated_data):
