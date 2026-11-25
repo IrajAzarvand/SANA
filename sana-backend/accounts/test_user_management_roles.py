@@ -529,3 +529,25 @@ class UserManagementRoleBoundaryTests(TestCase):
         target.refresh_from_db()
         self.assertFalse(target.is_active)
         self.assertIsNotNone(target.archived_at)
+
+
+    def test_archived_user_cannot_be_reactivated_through_update_api(self):
+        target = User.objects.create_user(
+            username='archived-api-reactivation-target', password='test-password-123',
+            role='branch_manager', account_type='organization',
+            organization=self.organization, branch=self.branch,
+        )
+        target.is_active = False
+        target.archived_at = timezone.now()
+        target.archived_was_active = True
+        target.save(update_fields=['is_active', 'archived_at', 'archived_was_active'])
+        self.client.force_authenticate(self.admin)
+        response = self.client.patch(
+            f'/api/users/{target.id}/?archived=true',
+            {'is_active': True},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        target.refresh_from_db()
+        self.assertFalse(target.is_active)
+        self.assertIsNotNone(target.archived_at)
