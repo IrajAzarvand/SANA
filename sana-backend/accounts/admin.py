@@ -10,11 +10,6 @@ class UserAdmin(BaseUserAdmin):
     search_fields = ['username', 'first_name', 'last_name', 'email', 'mobile']
     ordering = ['-date_joined']
 
-    def has_delete_permission(self, request, obj=None):
-        # Account deletion must go through the archive lifecycle so historical
-        # contracts, ownership, and audit references remain intact.
-        return False
-
     fieldsets = (
         (None, {'fields': ('username', 'password')}),
         ('اطلاعات شخصی', {'fields': ('first_name', 'last_name', 'email', 'mobile', 'national_id')}),
@@ -28,6 +23,11 @@ class UserAdmin(BaseUserAdmin):
             'fields': ('username', 'password1', 'password2', 'role', 'account_type', 'organization', 'branch'),
         }),
     )
+
+    def has_delete_permission(self, request, obj=None):
+        # Account deletion must go through the archive lifecycle so historical
+        # contracts, ownership, and audit references remain intact.
+        return False
 
 @admin.register(UserSession)
 class UserSessionAdmin(admin.ModelAdmin):
