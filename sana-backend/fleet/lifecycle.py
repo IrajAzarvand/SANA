@@ -48,6 +48,8 @@ def record_device_lifecycle_event(
         # not its legal ownership. Ownership changes require an explicit transfer.
         device.branch = None
         device.vehicle = None
+        device.current_holder_organization = None
+        device.current_holder_user = None
 
     if target_status and target_status != device.management_status:
         device.management_status = target_status
