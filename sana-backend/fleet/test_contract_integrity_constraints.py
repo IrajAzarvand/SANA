@@ -235,3 +235,24 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
 
         device.refresh_from_db()
         self.assertEqual(device.management_status, 'ready')
+
+
+    def test_new_contract_link_cannot_implicitly_close_another_contract(self):
+        from django.core.exceptions import ValidationError
+
+        first_link = SubscriptionDevice.objects.create(
+            subscription=self.subscription,
+            device=self.device,
+            start_date=self.subscription.start_date,
+            end_date=self.subscription.end_date,
+        )
+        with self.assertRaises(ValidationError):
+            SubscriptionDevice.objects.create(
+                subscription=self.other_subscription,
+                device=self.device,
+                start_date=self.other_subscription.start_date,
+                end_date=self.other_subscription.end_date,
+            )
+
+        first_link.refresh_from_db()
+        self.assertIsNone(first_link.unassigned_at)
