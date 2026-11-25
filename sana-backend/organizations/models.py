@@ -1,6 +1,6 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 
 
@@ -382,23 +382,25 @@ class SubscriptionDevice(models.Model):
         return (self.end_date - today).days
 
     def save(self, *args, **kwargs):
-        # A new assignment must never silently terminate another contract.
-        # Legacy duplicate rows are still tolerated by read/repair paths and
-        # must be closed explicitly through the lifecycle operation.
-        if self.unassigned_at is None:
-            active_links = SubscriptionDevice.objects.filter(
-                device_id=self.device_id,
-                unassigned_at__isnull=True,
-            ).exclude(pk=self.pk)
-            if active_links.exists():
-                raise ValidationError(
-                    'این دستگاه هنوز به یک اتصال قرارداد باز متصل است؛ ابتدا انتقال یا پایان اتصال قبلی را از عملیات رسمی انجام دهید.'
-                )
+        # Serialize assignments per device so concurrent requests cannot
+        # silently create two new open contract links.
+        with transaction.atomic():
+            if self.unassigned_at is None:
+                device_model = self._meta.get_field('device').remote_field.model
+                device_model.objects.select_for_update().get(pk=self.device_id)
+                active_links = SubscriptionDevice.objects.filter(
+                    device_id=self.device_id,
+                    unassigned_at__isnull=True,
+                ).exclude(pk=self.pk)
+                if active_links.exists():
+                    raise ValidationError(
+                        'این دستگاه هنوز به یک اتصال قرارداد باز متصل است؛ ابتدا انتقال یا پایان اتصال قبلی را از عملیات رسمی انجام دهید.'
+                    )
 
-        super().save(*args, **kwargs)
+            super().save(*args, **kwargs)
 
-        # بعد از ذخیره، end_date قرارداد رو آپدیت کن
-        self.subscription.recalculate_end_date()
+            # بعد از ذخیره، end_date قرارداد رو آپدیت کن
+            self.subscription.recalculate_end_date()
 
 
 class SubscriptionPayment(models.Model):
