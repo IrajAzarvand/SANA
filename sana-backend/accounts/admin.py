@@ -52,6 +52,10 @@ class UserAdmin(BaseUserAdmin):
             raise ValidationError(
                 'ادمین سایت و کاربر شخصی نباید به شرکت یا شعبه سازمانی متصل باشند.'
             )
+        if obj.archived_at and obj.is_active:
+            raise ValidationError({
+                'is_active': 'برای فعال‌سازی حساب بایگانی‌شده ابتدا آن را بازیابی کنید.'
+            })
 
         if request.user.pk == obj.pk and (
             obj.role != 'site_admin' or not obj.is_active

@@ -508,3 +508,24 @@ class UserManagementRoleBoundaryTests(TestCase):
                 username='manager-invalid-role', password='test-password-123',
                 role='unknown_role',
             )
+
+
+    def test_django_admin_cannot_reactivate_archived_user_without_restore(self):
+        request = RequestFactory().post('/admin/accounts/user/')
+        request.user = self.admin
+        model_admin = UserAdmin(User, django_admin.site)
+        target = User.objects.create_user(
+            username='archived-admin-ui-target', password='test-password-123',
+            role='branch_manager', account_type='organization',
+            organization=self.organization, branch=self.branch,
+        )
+        target.is_active = False
+        target.archived_at = timezone.now()
+        target.archived_was_active = True
+        target.save(update_fields=['is_active', 'archived_at', 'archived_was_active'])
+        target.is_active = True
+        with self.assertRaises(DjangoValidationError):
+            model_admin.save_model(request, target, form=None, change=True)
+        target.refresh_from_db()
+        self.assertFalse(target.is_active)
+        self.assertIsNotNone(target.archived_at)
