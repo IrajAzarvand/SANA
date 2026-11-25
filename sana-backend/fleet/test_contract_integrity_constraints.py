@@ -256,3 +256,17 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
 
         first_link.refresh_from_db()
         self.assertIsNone(first_link.unassigned_at)
+
+
+    def test_device_assignment_dates_do_not_recalculate_legal_contract_dates(self):
+        original_contract_end = self.subscription.end_date
+        link_end = self.subscription.start_date + timedelta(days=5)
+        SubscriptionDevice.objects.create(
+            subscription=self.subscription,
+            device=self.device,
+            start_date=self.subscription.start_date,
+            end_date=link_end,
+        )
+
+        self.subscription.refresh_from_db()
+        self.assertEqual(self.subscription.end_date, original_contract_end)
