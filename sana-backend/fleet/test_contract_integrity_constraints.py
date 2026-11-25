@@ -200,3 +200,65 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
         )
         self.assertEqual(ownership.organization_id, self.organization.id)
         self.assertIsNone(ownership.owner_user_id)
+
+
+    def test_contract_assignment_preserves_legal_owner_and_sets_current_holder(self):
+        from organizations.serializers import SubscriptionDeviceSerializer
+
+        device = Device.objects.create(
+            imei='860000000000973',
+            owner_user=self.personal_user,
+        )
+        serializer = SubscriptionDeviceSerializer(data={
+            'subscription': self.subscription.id,
+            'device': device.id,
+            'start_date': self.subscription.start_date,
+            'end_date': self.subscription.end_date,
+        })
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        serializer.save()
+
+        device.refresh_from_db()
+        self.assertEqual(device.owner_user_id, self.personal_user.id)
+        self.assertIsNone(device.organization_id)
+        self.assertEqual(device.current_holder_organization_id, self.organization.id)
+        self.assertIsNone(device.current_holder_user_id)
+        access = DeviceCustomerAccessPeriod.objects.get(
+            device=device,
+            ended_at__isnull=True,
+        )
+        self.assertEqual(access.organization_id, self.organization.id)
+        self.assertIsNone(access.user_id)
+
+    def test_returned_lifecycle_event_does_not_erase_legal_owner(self):
+        from fleet.lifecycle import record_device_lifecycle_event
+
+        device = Device.objects.create(
+            imei='860000000000974',
+            organization=self.organization,
+            current_holder_organization=self.other_organization,
+            management_status='installed',
+        )
+        record_device_lifecycle_event(
+            device=device,
+            event_type='returned',
+            organization=self.other_organization,
+            user=None,
+        )
+
+        device.refresh_from_db()
+        self.assertEqual(device.organization_id, self.organization.id)
+        self.assertIsNone(device.branch_id)
+        self.assertIsNone(device.vehicle_id)
+
+    def test_repaired_lifecycle_event_marks_device_ready_for_disposition(self):
+        from fleet.lifecycle import record_device_lifecycle_event
+
+        device = Device.objects.create(
+            imei='860000000000975',
+            management_status='in_repair',
+        )
+        record_device_lifecycle_event(device=device, event_type='repaired')
+
+        device.refresh_from_db()
+        self.assertEqual(device.management_status, 'ready')
