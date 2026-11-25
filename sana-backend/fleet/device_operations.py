@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
@@ -267,12 +268,15 @@ def _add_to_subscription(device, subscription, operation, start_date=None, end_d
     end_date = end_date or subscription.end_date
     if start_date > end_date:
         raise ValidationError({'target_subscription': 'بازه قرارداد مقصد نامعتبر است'})
-    return SubscriptionDevice.objects.create(
-        subscription=subscription,
-        device=device,
-        start_date=start_date,
-        end_date=end_date,
-    )
+    try:
+        return SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    except DjangoValidationError as exc:
+        raise ValidationError({'device': exc.messages}) from exc
 
 
 @transaction.atomic
