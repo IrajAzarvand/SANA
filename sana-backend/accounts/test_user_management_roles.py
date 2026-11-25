@@ -500,3 +500,11 @@ class UserManagementRoleBoundaryTests(TestCase):
                 username='manager-role-type-mismatch', password='test-password-123',
                 role='branch_manager', account_type='personal',
             )
+
+
+    def test_user_manager_rejects_unknown_application_role(self):
+        with self.assertRaises(ValueError):
+            User.objects.create_user(
+                username='manager-invalid-role', password='test-password-123',
+                role='unknown_role',
+            )

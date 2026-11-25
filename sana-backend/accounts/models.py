@@ -20,6 +20,8 @@ class UserManager(BaseUserManager):
         }
         role = extra_fields.get('role', 'personal_user')
         expected_account_type = role_account_types.get(role)
+        if expected_account_type is None:
+            raise ValueError('Invalid user role')
         if expected_account_type:
             account_type = extra_fields.get('account_type', expected_account_type)
             if account_type != expected_account_type:
