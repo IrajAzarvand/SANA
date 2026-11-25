@@ -84,7 +84,13 @@ class UserViewSet(viewsets.ModelViewSet):
             qs = User.objects.filter(
                 role='branch_manager',
             ).filter(
-                Q(organization_id=user.organization_id)
+                (
+                    Q(organization_id=user.organization_id)
+                    & (
+                        Q(branch__isnull=True)
+                        | Q(branch__organization_id=user.organization_id)
+                    )
+                )
                 | Q(organization__isnull=True, branch__organization_id=user.organization_id)
             ).filter(
                 Q(organization__isnull=True)
@@ -112,7 +118,13 @@ class UserViewSet(viewsets.ModelViewSet):
         organization = self.request.query_params.get('organization')
         if organization:
             qs = qs.filter(
-                Q(organization_id=organization)
+                (
+                    Q(organization_id=organization)
+                    & (
+                        Q(branch__isnull=True)
+                        | Q(branch__organization_id=organization)
+                    )
+                )
                 | Q(organization__isnull=True, branch__organization_id=organization)
             ).distinct()
 

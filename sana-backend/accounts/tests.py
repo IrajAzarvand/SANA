@@ -1239,8 +1239,10 @@ class OrganizationRelatedUsersQueryTests(TestCase):
 
     def test_conflicting_organization_and_branch_relations_do_not_leak_users(self):
         mismatched_user = User.objects.create_user(username='related-users-mismatch', password='test-password-123', account_type='organization', role='branch_manager', organization=self.other_organization, branch=self.branch)
+        reverse_mismatch_user = User.objects.create_user(username='related-users-reverse-mismatch', password='test-password-123', account_type='organization', role='branch_manager', organization=self.organization, branch=self.other_branch)
         response = self.client.get('/api/users/', {'organization': self.organization.pk})
         self.assertEqual(response.status_code, 200, response.data)
         results = response.data['results'] if isinstance(response.data, dict) else response.data
         returned_ids = {item['id'] for item in results}
         self.assertNotIn(mismatched_user.pk, returned_ids)
+        self.assertNotIn(reverse_mismatch_user.pk, returned_ids)
