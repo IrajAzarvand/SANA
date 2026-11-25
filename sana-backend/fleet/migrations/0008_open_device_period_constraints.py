@@ -7,16 +7,12 @@ def validate_open_period_integrity(apps, schema_editor):
     OwnershipHistory = apps.get_model('fleet', 'DeviceOwnershipHistory')
     invalid_access_dates = AccessPeriod.objects.filter(ended_at__lt=models.F('started_at')).count()
     invalid_ownership_dates = OwnershipHistory.objects.filter(ended_at__lt=models.F('started_at')).count()
-    duplicate_access = AccessPeriod.objects.filter(ended_at__isnull=True).values(
-        'device_id'
-    ).annotate(total=Count('id')).filter(total__gt=1).count()
     duplicate_ownership = OwnershipHistory.objects.filter(ended_at__isnull=True).values(
         'device_id'
     ).annotate(total=Count('id')).filter(total__gt=1).count()
-    if duplicate_access or duplicate_ownership or invalid_access_dates or invalid_ownership_dates:
+    if duplicate_ownership or invalid_access_dates or invalid_ownership_dates:
         raise RuntimeError(
-            f'Device history migration blocked: {duplicate_access} devices with multiple open '
-            f'access periods, {duplicate_ownership} devices with multiple open ownership records, '
+            f'Device history migration blocked: {duplicate_ownership} devices with multiple open ownership records, '
             f'{invalid_access_dates} access periods and {invalid_ownership_dates} ownership periods with reversed dates. '
             'Resolve these records before applying constraints.'
         )
@@ -29,14 +25,6 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.RunPython(validate_open_period_integrity, migrations.RunPython.noop),
-        migrations.AddConstraint(
-            model_name='devicecustomeraccessperiod',
-            constraint=models.UniqueConstraint(
-                fields=['device'],
-                condition=models.Q(ended_at__isnull=True),
-                name='device_access_one_open_period',
-            ),
-        ),
         migrations.AddConstraint(
             model_name='devicecustomeraccessperiod',
             constraint=models.CheckConstraint(
