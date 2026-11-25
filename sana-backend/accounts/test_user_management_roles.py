@@ -255,3 +255,54 @@ class UserManagementRoleBoundaryTests(TestCase):
         self.client.force_authenticate(self.company_manager)
         response = self.client.post(f'/api/users/{foreign.id}/archive/', {}, format='json')
         self.assertEqual(response.status_code, 404)
+
+
+    def test_api_created_site_admin_gets_django_admin_permissions(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.post('/api/users/', {
+            'username': 'new-site-admin',
+            'password': 'test-password-123',
+            'account_type': 'admin',
+            'role': 'site_admin',
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        created = User.objects.get(username='new-site-admin')
+        self.assertTrue(created.is_staff)
+        self.assertTrue(created.is_superuser)
+
+    def test_demoting_site_admin_revokes_django_admin_permissions(self):
+        second_admin = User.objects.create_user(
+            username='second-site-admin', password='test-password-123',
+            role='site_admin', account_type='admin', is_staff=True, is_superuser=True,
+        )
+        self.client.force_authenticate(self.admin)
+        response = self.client.patch(
+            f'/api/users/{second_admin.id}/',
+            {'role': 'personal_user', 'account_type': 'personal'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        second_admin.refresh_from_db()
+        self.assertEqual(second_admin.role, 'personal_user')
+        self.assertFalse(second_admin.is_staff)
+        self.assertFalse(second_admin.is_superuser)
+
+    def test_site_admin_cannot_demote_or_deactivate_own_account(self):
+        self.client.force_authenticate(self.admin)
+        demote = self.client.patch(
+            f'/api/users/{self.admin.id}/',
+            {'role': 'personal_user', 'account_type': 'personal'},
+            format='json',
+        )
+        deactivate = self.client.patch(
+            f'/api/users/{self.admin.id}/',
+            {'is_active': False},
+            format='json',
+        )
+        self.assertEqual(demote.status_code, 400)
+        self.assertEqual(deactivate.status_code, 400)
+        self.admin.refresh_from_db()
+        self.assertEqual(self.admin.role, 'site_admin')
+        self.assertTrue(self.admin.is_active)
+        self.assertTrue(self.admin.is_staff)
+        self.assertTrue(self.admin.is_superuser)
