@@ -19,7 +19,7 @@ class UserCreationPasswordValidationTests(TestCase):
         invalid_credentials = [
             ('numeric-password-user', '12345678'),
             ('common-password-user', 'password'),
-            ('similar-password-user', 'similarity-target'),
+            ('similar-password-user', 'similar-password-user'),
         ]
         for username, password in invalid_credentials:
             with self.subTest(username=username):
