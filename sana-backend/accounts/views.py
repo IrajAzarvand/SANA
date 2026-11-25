@@ -158,7 +158,7 @@ class UserViewSet(viewsets.ModelViewSet):
             active_admin_ids = list(
                 User.objects.select_for_update().filter(
                     role='site_admin', is_active=True
-                ).values_list('pk', flat=True)
+                ).order_by('pk').values_list('pk', flat=True)
             )
             if instance.pk in active_admin_ids and len(active_admin_ids) <= 1:
                 from rest_framework.exceptions import ValidationError

@@ -22,14 +22,16 @@ class UserAdmin(BaseUserAdmin):
             )
 
         if change:
-            previous = User.objects.select_for_update().get(pk=obj.pk)
+            previous = User.objects.get(pk=obj.pk)
             if previous.role == 'site_admin' and previous.is_active and (
                 obj.role != 'site_admin' or not obj.is_active
             ):
+                # Lock active admins in a consistent order to serialize concurrent
+                # demotion/deactivation attempts without creating lock-order cycles.
                 active_admin_ids = list(
                     User.objects.select_for_update().filter(
                         role='site_admin', is_active=True
-                    ).values_list('pk', flat=True)
+                    ).order_by('pk').values_list('pk', flat=True)
                 )
                 if obj.pk in active_admin_ids and len(active_admin_ids) <= 1:
                     raise ValidationError(
