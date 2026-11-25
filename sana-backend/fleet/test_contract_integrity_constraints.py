@@ -272,3 +272,56 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
 
         self.subscription.refresh_from_db()
         self.assertEqual(self.subscription.end_date, original_contract_end)
+
+
+    def test_future_contract_assignment_is_recorded_but_access_starts_on_contract_date(self):
+        from fleet.customer_access import active_customer_access_periods
+        from organizations.serializers import SubscriptionDeviceSerializer
+
+        today = timezone.localdate()
+        future_start = today + timedelta(days=2)
+        future_end = today + timedelta(days=30)
+        subscription = Subscription.objects.create(
+            contract_number='INTEGRITY-FUTURE-CONTRACT',
+            customer_type='personal',
+            user=self.personal_user,
+            start_date=future_start,
+            end_date=future_end,
+            status='active',
+        )
+        device = Device.objects.create(
+            imei='860000000000978',
+            owner_user=self.personal_user,
+        )
+        serializer = SubscriptionDeviceSerializer(data={
+            'subscription': subscription.id,
+            'device': device.id,
+            'start_date': future_start,
+            'end_date': future_end,
+        })
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        link = serializer.save()
+
+        self.assertTrue(
+            DeviceCustomerAccessPeriod.objects.filter(
+                device=device,
+                subscription=subscription,
+                ended_at__isnull=True,
+            ).exists()
+        )
+        self.assertFalse(
+            active_customer_access_periods(user_id=self.personal_user.id)
+            .filter(device=device)
+            .exists()
+        )
+
+        subscription.start_date = today
+        subscription.save(update_fields=['start_date'])
+        link.start_date = today
+        link.save(update_fields=['start_date'])
+
+        self.assertTrue(
+            active_customer_access_periods(user_id=self.personal_user.id)
+            .filter(device=device)
+            .exists()
+        )
