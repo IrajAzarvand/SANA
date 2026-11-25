@@ -332,8 +332,12 @@ class UserManagementRoleBoundaryTests(TestCase):
     def test_restoring_site_admin_restores_django_admin_permissions(self):
         target = User.objects.create_user(
             username='restore-site-admin', password='test-password-123',
-            role='site_admin', account_type='admin', is_staff=False, is_superuser=False,
+            role='site_admin', account_type='admin',
         )
+        # Simulate a legacy row whose Django admin flags drifted from its role.
+        target.is_staff = False
+        target.is_superuser = False
+        target.save(update_fields=['is_staff', 'is_superuser'])
         self.client.force_authenticate(self.admin)
         archived = self.client.post(f'/api/users/{target.id}/archive/', {}, format='json')
         self.assertEqual(archived.status_code, 200)
