@@ -128,6 +128,9 @@ class UserCreateSerializer(serializers.ModelSerializer):
         password = validated_data.pop('password')
         user = User(**validated_data)
         user.set_password(password)
+        # Keep Django admin access aligned when a site administrator is created.
+        user.is_staff = user.role == 'site_admin'
+        user.is_superuser = user.role == 'site_admin'
         user.save()
         return user
 
