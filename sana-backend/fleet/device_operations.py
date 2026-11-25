@@ -102,6 +102,7 @@ def _open_customer_access(device, subscription=None, branch=None, organization=N
                     ).update(ended_at=max(close_time, stale_period.started_at))
             return current
 
+        close_time = max(close_time, current.started_at)
         _close_customer_access(device, close_time)
 
     return DeviceCustomerAccessPeriod.objects.create(
