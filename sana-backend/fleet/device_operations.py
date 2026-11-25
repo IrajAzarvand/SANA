@@ -22,6 +22,21 @@ def _customer_kwargs(device=None, organization=_CUSTOMER_UNSET, user=_CUSTOMER_U
     return {'organization': None, 'user': None}
 
 
+def _current_customer(device, subscription=None):
+    """Resolve the contract customer/current holder without confusing legal ownership."""
+    if subscription is not None:
+        if subscription.customer_type == 'organization':
+            return {'organization': subscription.organization, 'user': None}
+        if subscription.customer_type == 'personal':
+            return {'organization': None, 'user': subscription.user}
+    if device.current_holder_organization_id is not None or device.current_holder_user_id is not None:
+        return {
+            'organization': device.current_holder_organization,
+            'user': device.current_holder_user,
+        }
+    return {'organization': device.organization, 'user': device.owner_user}
+
+
 def _validate_device_customer_assignment(device, subscription):
     """Validate a warehouse device against the exact contract customer and its current holder."""
     if device.management_status in {'faulty', 'in_repair', 'ready', 'lost', 'stolen', 'unusable', 'disposed'}:
@@ -327,8 +342,9 @@ def execute_device_operation(
 
             old_vehicle = device.vehicle
             old_branch = device.branch
-            old_org = device.organization or device.current_holder_organization
-            old_user = device.owner_user or device.current_holder_user
+            customer = _current_customer(device, subscription)
+            old_org = customer['organization']
+            old_user = customer['user']
 
             DeviceReplacementRelation.objects.create(
                 source_device=device,
@@ -353,12 +369,12 @@ def execute_device_operation(
             replacement_device.current_holder_organization = old_org
             replacement_device.current_holder_user = old_user
             if replacement_type == 'permanent_replacement':
-                replacement_device.organization = old_org
-                replacement_device.owner_user = old_user
+                replacement_device.organization = device.organization
+                replacement_device.owner_user = device.owner_user
             replacement_device.save()
 
             if replacement_type == 'permanent_replacement':
-                _open_ownership(replacement_device, organization=old_org, user=old_user, reason='permanent_replacement')
+                _open_ownership(replacement_device, organization=replacement_device.organization, user=replacement_device.owner_user, reason='permanent_replacement')
             if subscription:
                 _add_to_subscription(replacement_device, subscription, operation)
                 _open_customer_access(replacement_device, subscription=subscription, branch=old_branch, organization=old_org, user=old_user, reason='replacement')
@@ -382,8 +398,8 @@ def execute_device_operation(
                 event_type='assigned_to_contract',
                 performed_by=performed_by,
                 subscription=subscription,
-                organization=replacement_device.organization,
-                user=replacement_device.owner_user,
+                organization=old_org,
+                user=old_user,
                 vehicle=replacement_device.vehicle,
                 branch=replacement_device.branch,
                 reason='replacement',
@@ -437,8 +453,9 @@ def execute_device_operation(
         ).order_by('-event_date', '-id').first()
         previous_vehicle = previous_event.vehicle if previous_event else None
         previous_branch = previous_event.branch if previous_event else None
-        customer_org = device.organization or device.current_holder_organization
-        customer_user = device.owner_user or device.current_holder_user
+        customer = _current_customer(device, subscription)
+        customer_org = customer['organization']
+        customer_user = customer['user']
 
         DeviceReplacementRelation.objects.create(
             source_device=device,
@@ -455,8 +472,8 @@ def execute_device_operation(
         replacement_device.current_holder_organization = customer_org
         replacement_device.current_holder_user = customer_user
         if replacement_type == 'permanent_replacement':
-            replacement_device.organization = customer_org
-            replacement_device.owner_user = customer_user
+            replacement_device.organization = device.organization
+            replacement_device.owner_user = device.owner_user
         replacement_device.save()
 
         if replacement_type == 'permanent_replacement':
@@ -530,8 +547,9 @@ def execute_device_operation(
 
         old_vehicle = device.vehicle
         old_branch = device.branch
-        old_org = device.organization or device.current_holder_organization
-        old_user = device.owner_user or device.current_holder_user
+        customer = _current_customer(device, subscription)
+        old_org = customer['organization']
+        old_user = customer['user']
 
         # مفقودی/سرقت مالکیت و قرارداد را لغو نمی‌کند؛ فقط نصب فعلی را جدا می‌کند.
         device.vehicle = None
@@ -584,8 +602,8 @@ def execute_device_operation(
                 event_type='assigned_to_contract',
                 performed_by=performed_by,
                 subscription=subscription,
-                organization=replacement_device.organization,
-                user=replacement_device.owner_user,
+                organization=old_org,
+                user=old_user,
                 vehicle=replacement_device.vehicle,
                 branch=replacement_device.branch,
                 reason='replacement',
