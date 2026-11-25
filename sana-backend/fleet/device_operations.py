@@ -130,18 +130,21 @@ def _open_ownership(device, organization=None, user=None, started_at=None, reaso
     customer = _customer_kwargs(device, organization, user)
     if not customer['organization'] and not customer['user']:
         return None
-    current = DeviceOwnershipHistory.objects.filter(device=device, ended_at__isnull=True).first()
+    current = DeviceOwnershipHistory.objects.filter(device=device, ended_at__isnull=True).order_by('-started_at', '-id').first()
     same_customer = current and current.organization_id == getattr(customer['organization'], 'id', None) and current.owner_user_id == getattr(customer['user'], 'id', None)
     if same_customer:
         return current
-    if current: _close_ownership(device, started_at)
+    ownership_started_at = started_at or timezone.now()
+    if current:
+        ownership_started_at = max(ownership_started_at, current.started_at)
+        _close_ownership(device, ownership_started_at)
     ownership_customer = {
         'organization': customer['organization'],
         'owner_user': customer['user'],
     }
     return DeviceOwnershipHistory.objects.create(
         device=device,
-        started_at=started_at or timezone.now(),
+        started_at=ownership_started_at,
         reason=reason,
         **ownership_customer,
     )
