@@ -7,12 +7,28 @@ def synchronize_user_roles_and_admin_flags(apps, schema_editor):
     database = schema_editor.connection.alias
 
     users = User.objects.using(database)
-    if users.exists() and not users.filter(role='site_admin', is_active=True).exists():
+    if users.exists() and not users.filter(
+        role='site_admin', is_active=True, archived_at__isnull=True
+    ).exists():
         raise RuntimeError(
-            'Role synchronization aborted: no active site_admin account exists.'
+            'Role synchronization aborted: no active, non-archived site_admin account exists.'
         )
 
     UserSession = apps.get_model('accounts', 'UserSession')
+
+    # Archived accounts must remain unable to authenticate even if legacy data
+    # accidentally left is_active=True.
+    archived_active_ids = list(
+        users.filter(
+            archived_at__isnull=False, is_active=True
+        ).values_list('pk', flat=True)
+    )
+    if archived_active_ids:
+        UserSession.objects.using(database).filter(
+            user_id__in=archived_active_ids,
+            revoked_at__isnull=True,
+        ).update(revoked_at=timezone.now())
+        users.filter(pk__in=archived_active_ids).update(is_active=False)
     role_account_types = {
         'site_admin': 'admin',
         'main_user': 'organization',

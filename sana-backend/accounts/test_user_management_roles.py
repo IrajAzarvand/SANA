@@ -607,3 +607,14 @@ class UserManagementRoleBoundaryTests(TestCase):
         foreign.refresh_from_db()
         self.assertIsNotNone(foreign.archived_at)
         self.assertFalse(foreign.is_active)
+
+
+    def test_archived_user_cannot_login_if_legacy_active_flag_is_inconsistent(self):
+        archived_user = User.objects.create_user(
+            username='archived-but-active-legacy-user', password='test-password-123',
+            role='site_admin', account_type='admin',
+        )
+        archived_user.archived_at = timezone.now()
+        archived_user.is_active = True
+        archived_user.save(update_fields=['archived_at', 'is_active'])
+        self.assertFalse(archived_user.can_login)

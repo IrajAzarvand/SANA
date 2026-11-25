@@ -208,7 +208,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         2. Organization.status (اگه سازمانی)
         3. قرارداد فعال
         """
-        if not self.is_active:
+        if not self.is_active or self.archived_at is not None:
             return False
 
         if self.is_site_admin:
