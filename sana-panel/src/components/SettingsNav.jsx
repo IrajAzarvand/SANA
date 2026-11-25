@@ -1,4 +1,4 @@
-import { User, Shield, Building2, GitBranch, Users, Bell, Globe } from 'lucide-react';
+import { User, Shield, Building2, GitBranch, Bell, Globe } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 
 export default function SettingsNav({ active, onChange }) {
@@ -10,7 +10,6 @@ export default function SettingsNav({ active, onChange }) {
     { id: 'security',      label: 'امنیت',            icon: Shield,    show: true },
     { id: 'organization',  label: 'اطلاعات سازمان',   icon: Building2, show: isSiteAdmin || isMainUser },
     { id: 'branches',      label: 'شعبه‌ها',           icon: GitBranch, show: isSiteAdmin || isMainUser },
-    { id: 'users',         label: 'کاربران',          icon: Users,     show: isSiteAdmin || isMainUser },
     { id: 'notifications', label: 'اعلان‌ها',          icon: Bell,      show: isPersonal || isBranchManager },
     { id: 'system',        label: 'تنظیمات سامانه',   icon: Globe,     show: isSiteAdmin },
   ].filter((item) => item.show);
