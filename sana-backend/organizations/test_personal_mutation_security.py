@@ -177,7 +177,7 @@ class BranchDeletionPermissionTests(TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertTrue(Branch.objects.filter(pk=self.branch.pk).exists())
 
-    def test_site_admin_can_physically_delete_branch_and_detach_resources(self):
+    def test_site_admin_cannot_delete_branch_and_detach_resources(self):
         vehicle = Vehicle.objects.create(
             organization=self.organization,
             branch=self.branch,
@@ -192,10 +192,10 @@ class BranchDeletionPermissionTests(TestCase):
 
         response = self.client.delete(f'/api/branches/{self.branch.id}/')
 
-
-        self.assertEqual(response.status_code, 204)
-        self.assertFalse(Branch.objects.filter(pk=self.branch.pk).exists())
+        self.assertEqual(response.status_code, 409, response.data)
+        self.assertTrue(Branch.objects.filter(pk=self.branch.pk).exists())
         vehicle.refresh_from_db()
         device.refresh_from_db()
-        self.assertIsNone(vehicle.branch_id)
-        self.assertIsNone(device.branch_id)
+        self.assertEqual(vehicle.branch_id, self.branch.pk)
+        self.assertEqual(device.branch_id, self.branch.pk)
+        self.assertTrue(response.data['references'])

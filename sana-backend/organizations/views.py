@@ -176,6 +176,50 @@ class BranchViewSet(viewsets.ModelViewSet):
             return
         serializer.save()
 
+    @transaction.atomic
+    def destroy(self, request, *args, **kwargs):
+        # Acquire the row lock in the initial lookup. A second concurrent
+        # delete then waits and receives a normal 404 after the first commits,
+        # rather than racing between get_object() and the lock query.
+        lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
+        lookup_value = self.kwargs[lookup_url_kwarg]
+        branch = self.filter_queryset(self.get_queryset()).select_for_update().filter(
+            **{self.lookup_field: lookup_value}
+        ).first()
+        if branch is None:
+            from rest_framework.exceptions import NotFound
+            raise NotFound()
+        self.check_object_permissions(request, branch)
+
+        references = []
+        for relation in Branch._meta.related_objects:
+            related_model = relation.related_model
+            relation_field = relation.field
+            count = related_model._base_manager.filter(
+                **{relation_field.name: branch}
+            ).count()
+            if count:
+                references.append({
+                    'model': str(related_model._meta.verbose_name_plural),
+                    'count': count,
+                })
+
+        if references:
+            return Response(
+                {
+                    'detail': (
+                        'این شعبه دارای کاربر، خودرو، دستگاه یا سابقه عملیاتی است '
+                        'و حذف فیزیکی آن مجاز نیست. ابتدا وابستگی‌ها را از مسیرهای '
+                        'مجاز مدیریت کنید یا وضعیت شعبه را غیرفعال کنید.'
+                    ),
+                    'references': references,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        self.perform_destroy(branch)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
     def perform_update(self, serializer):
         user = self.request.user
         if user.is_main_user:
