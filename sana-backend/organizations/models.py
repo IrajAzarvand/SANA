@@ -405,9 +405,8 @@ class SubscriptionDevice(models.Model):
                     )
 
             super().save(*args, **kwargs)
-
-            # بعد از ذخیره، end_date قرارداد رو آپدیت کن
-            self.subscription.recalculate_end_date()
+            # Contract dates are legal dates; device assignment windows must
+            # never recalculate or shorten the parent subscription period.
 
 
 class SubscriptionPayment(models.Model):
