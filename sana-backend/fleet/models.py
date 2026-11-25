@@ -504,6 +504,7 @@ class DeviceReplacementRelation(models.Model):
         verbose_name='نوع جایگزینی',
     )
     replacement_date = models.DateTimeField(default=timezone.now, verbose_name='تاریخ جایگزینی')
+    returned_at = models.DateTimeField(null=True, blank=True, verbose_name='تاریخ بازگشت دستگاه جایگزین موقت')
     description = models.TextField(blank=True, verbose_name='شرح')
     created_at = models.DateTimeField(auto_now_add=True)
 
