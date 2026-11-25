@@ -385,7 +385,14 @@ class SubscriptionDevice(models.Model):
         # Serialize assignments per device so concurrent requests cannot
         # silently create two new open contract links.
         with transaction.atomic():
-            if self.unassigned_at is None:
+            is_new_open_assignment = self.unassigned_at is None and self.pk is None
+            if self.pk is not None and self.unassigned_at is None:
+                previous_unassigned_at = SubscriptionDevice.objects.filter(
+                    pk=self.pk
+                ).values_list('unassigned_at', flat=True).first()
+                is_new_open_assignment = previous_unassigned_at is not None
+
+            if is_new_open_assignment:
                 device_model = self._meta.get_field('device').remote_field.model
                 device_model.objects.select_for_update().get(pk=self.device_id)
                 active_links = SubscriptionDevice.objects.filter(
