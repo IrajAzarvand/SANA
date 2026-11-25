@@ -127,7 +127,10 @@ export default function Branches() {
       refetch();
     } catch (err) {
       console.error('Error deleting branch:', err);
-      alert('خطا در حذف شعبه');
+      const detail = err.response?.data?.detail || 'حذف شعبه انجام نشد.';
+      const references = err.response?.data?.references || [];
+      const summary = references.map((item) => `${item.model}: ${item.count}`).join('، ');
+      alert(summary ? `${detail}\\n\\nوابستگی‌های شناسایی‌شده: ${summary}` : detail);
     }
   };
 
@@ -349,8 +352,8 @@ export default function Branches() {
         {deleteBranch && (
           <div className="space-y-4">
             <div className="rounded-lg border border-red-500/40 bg-red-500/5 p-3 text-sm">
-              <p className="font-semibold text-red-500">حذف شعبه برگشت‌پذیر نیست.</p>
-              <p className="mt-2">با حذف این شعبه، خود شرکت و منابع سازمانی حذف نمی‌شوند؛ اما ارتباط شعبه‌ای خودروها، دستگاه‌ها، کاربران و رانندگان از بین می‌رود و برخی سوابق شعبه‌ای ممکن است بدون اتصال به شعبه باقی بمانند.</p>
+              <p className="font-semibold text-red-500">حذف فقط برای شعبه کاملاً خالی مجاز است.</p>
+              <p className="mt-2">اگر شعبه به کاربر، خودرو، دستگاه، راننده یا هر سابقه عملیاتی و تاریخی متصل باشد، سرور حذف را رد می‌کند تا ارتباط اطلاعات از بین نرود. برای توقف فعالیت شعبه، وضعیت آن را غیرفعال کنید.</p>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-sm">
               {[['کاربر', deleteBranch.users_count], ['خودرو', deleteBranch.vehicles_count], ['دستگاه', deleteBranch.devices_count], ['راننده', deleteBranch.drivers_count]].map(([label, count]) => <div key={label} className="rounded-lg border border-border-base p-3"><div className="text-xs text-text-muted">{label}</div><div className="mt-1 font-semibold">{count ?? '—'}</div></div>)}
@@ -361,7 +364,7 @@ export default function Branches() {
         )}
         <div className="flex justify-end gap-2 pt-4">
           <Button variant="secondary" onClick={() => { setDeleteBranch(null); setDeleteBranchName(''); }}>انصراف</Button>
-          <Button variant="danger" disabled={!deleteBranch || deleteBranchName.trim() !== deleteBranch.name} onClick={confirmDeleteBranch}>حذف فیزیکی شعبه</Button>
+          <Button variant="danger" disabled={!deleteBranch || deleteBranchName.trim() !== deleteBranch.name} onClick={confirmDeleteBranch}>حذف شعبه خالی</Button>
         </div>
       </Modal>
 

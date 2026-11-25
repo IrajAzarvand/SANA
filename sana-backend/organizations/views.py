@@ -176,6 +176,43 @@ class BranchViewSet(viewsets.ModelViewSet):
             return
         serializer.save()
 
+    @transaction.atomic
+    def destroy(self, request, *args, **kwargs):
+        # Lock the row while checking every reverse FK relation. This prevents
+        # a concurrent assignment from slipping between the check and deletion.
+        branch = self.get_object()
+        branch = Branch.objects.select_for_update().get(pk=branch.pk)
+        self.check_object_permissions(request, branch)
+
+        references = []
+        for relation in Branch._meta.related_objects:
+            related_model = relation.related_model
+            relation_field = relation.field
+            count = related_model._base_manager.filter(
+                **{relation_field.name: branch}
+            ).count()
+            if count:
+                references.append({
+                    'model': str(related_model._meta.verbose_name_plural),
+                    'count': count,
+                })
+
+        if references:
+            return Response(
+                {
+                    'detail': (
+                        'این شعبه دارای کاربر، خودرو، دستگاه یا سابقه عملیاتی است '
+                        'و حذف فیزیکی آن مجاز نیست. ابتدا وابستگی‌ها را از مسیرهای '
+                        'مجاز مدیریت کنید یا وضعیت شعبه را غیرفعال کنید.'
+                    ),
+                    'references': references,
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        self.perform_destroy(branch)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
     def perform_update(self, serializer):
         user = self.request.user
         if user.is_main_user:

@@ -5,7 +5,7 @@ from unittest.mock import patch
 from accounts.models import User
 from fleet.models import Device, Vehicle, Driver, VehicleType, DeviceCustomerAccessPeriod
 from organizations.models import (
-    Organization, Subscription, SubscriptionDevice, SubscriptionPayment, SubscriptionOperation,
+    Branch, Organization, Subscription, SubscriptionDevice, SubscriptionPayment, SubscriptionOperation,
     SubscriptionInstallmentPlan, SubscriptionInstallment, SubscriptionPaymentAllocation,
 )
 from organizations.financial import create_installment_plan, allocate_payment, revise_installment_plan
@@ -1275,3 +1275,36 @@ class SubscriptionDeviceCustomerAccessClosureTests(TestCase):
         self.assertEqual(response.status_code, 204)
         self._assert_access_closed_and_history_preserved()
         self.assertEqual(self.link.removed_by_operation.operation_type, 'remove_device')
+
+class BranchDeletionDataIntegrityTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.organization = Organization.objects.create(name='Branch Integrity Organization', code='BRANCH-INTEGRITY-ORG-001')
+        self.branch = Branch.objects.create(organization=self.organization, name='Branch With History', code='BRANCH-INTEGRITY-001')
+        self.site_admin = User.objects.create_user(username='branch-integrity-admin', password='test-password-123', role='site_admin', account_type='admin', is_staff=True, is_superuser=True)
+        self.client.force_authenticate(user=self.site_admin)
+
+    def test_branch_with_user_vehicle_and_access_history_cannot_be_deleted(self):
+        User.objects.create_user(username='branch-integrity-user', password='test-password-123', role='branch_manager', account_type='organization', branch=self.branch)
+        Vehicle.objects.create(organization=self.organization, branch=self.branch, plate='BRINTEGRITY01')
+        device = Device.objects.create(imei='987654321098799', organization=self.organization, branch=self.branch)
+        access_period = DeviceCustomerAccessPeriod.objects.create(device=device, organization=self.organization, branch=self.branch, started_at=timezone.now())
+        response = self.client.delete(f'/api/branches/{self.branch.pk}/')
+        self.assertEqual(response.status_code, 409, response.data)
+        self.assertTrue(Branch.objects.filter(pk=self.branch.pk).exists())
+        access_period.refresh_from_db()
+        self.assertEqual(access_period.branch_id, self.branch.pk)
+        self.assertEqual(Device.objects.get(pk=device.pk).branch_id, self.branch.pk)
+        self.assertTrue(response.data['references'])
+
+    def test_empty_branch_can_still_be_deleted(self):
+        response = self.client.delete(f'/api/branches/{self.branch.pk}/')
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Branch.objects.filter(pk=self.branch.pk).exists())
+
+    def test_company_manager_cannot_delete_branch_even_when_empty(self):
+        manager = User.objects.create_user(username='branch-integrity-manager', password='test-password-123', role='main_user', account_type='organization', organization=self.organization)
+        self.client.force_authenticate(user=manager)
+        response = self.client.delete(f'/api/branches/{self.branch.pk}/')
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(Branch.objects.filter(pk=self.branch.pk).exists())
