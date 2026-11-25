@@ -3,7 +3,7 @@ from rest_framework.test import APIClient
 from unittest.mock import patch
 
 from accounts.models import User
-from fleet.models import Device, Vehicle, Driver, VehicleType, DeviceCustomerAccessPeriod
+from fleet.models import Device, Vehicle, Driver, VehicleType, DeviceCustomerAccessPeriod, DeviceOperation, DeviceLifecycleEvent
 from organizations.models import (
     Branch, Organization, Subscription, SubscriptionDevice, SubscriptionPayment, SubscriptionOperation,
     SubscriptionInstallmentPlan, SubscriptionInstallment, SubscriptionPaymentAllocation,
@@ -1289,12 +1289,26 @@ class BranchDeletionDataIntegrityTests(TestCase):
         Vehicle.objects.create(organization=self.organization, branch=self.branch, plate='BRINTEGRITY01')
         device = Device.objects.create(imei='987654321098799', organization=self.organization, branch=self.branch)
         access_period = DeviceCustomerAccessPeriod.objects.create(device=device, organization=self.organization, branch=self.branch, started_at=timezone.now())
+        operation = DeviceOperation.objects.create(
+            operation_type='lost',
+            device=device,
+            target_branch=self.branch,
+        )
+        lifecycle_event = DeviceLifecycleEvent.objects.create(
+            device=device,
+            event_type='received',
+            branch=self.branch,
+        )
         response = self.client.delete(f'/api/branches/{self.branch.pk}/')
         self.assertEqual(response.status_code, 409, response.data)
         self.assertTrue(Branch.objects.filter(pk=self.branch.pk).exists())
         access_period.refresh_from_db()
         self.assertEqual(access_period.branch_id, self.branch.pk)
         self.assertEqual(Device.objects.get(pk=device.pk).branch_id, self.branch.pk)
+        operation.refresh_from_db()
+        lifecycle_event.refresh_from_db()
+        self.assertEqual(operation.target_branch_id, self.branch.pk)
+        self.assertEqual(lifecycle_event.branch_id, self.branch.pk)
         self.assertTrue(response.data['references'])
 
     def test_empty_branch_can_still_be_deleted(self):
