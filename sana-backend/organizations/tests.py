@@ -327,9 +327,14 @@ class SubscriptionWizardDeviceValidationTests(TestCase):
 class SubscriptionContractNumberUniquenessTests(TestCase):
     def test_contract_number_cannot_duplicate_any_existing_contract(self):
         existing_number = 'PRS-TEST-DUPLICATE'
+        organization = Organization.objects.create(
+            name='Contract Number Test Org',
+            code='CONTRACT-NUMBER-TEST-ORG',
+        )
         Subscription.objects.create(
             contract_number=existing_number,
             customer_type='organization',
+            organization=organization,
             start_date='2026-11-07',
             end_date='2027-11-07',
         )
@@ -365,9 +370,16 @@ class SubscriptionContractNumberUniquenessTests(TestCase):
 
 class SubscriptionContractPriceTests(TestCase):
     def test_receipt_does_not_change_contract_total(self):
+        user = User.objects.create_user(
+            username='fin-test-personal',
+            password='test-password',
+            account_type='personal',
+            role='personal_user',
+        )
         subscription = Subscription.objects.create(
             contract_number='FIN-TEST-0001',
             customer_type='personal',
+            user=user,
             start_date='2026-11-07',
             end_date='2027-11-07',
             price=100000000,
@@ -395,9 +407,16 @@ class SubscriptionContractPriceTests(TestCase):
 
 class SubscriptionInstallmentLedgerTests(TestCase):
     def setUp(self):
+        user = User.objects.create_user(
+            username='inst-test-personal',
+            password='test-password',
+            account_type='personal',
+            role='personal_user',
+        )
         self.subscription = Subscription.objects.create(
             contract_number='INST-TEST-0001',
             customer_type='personal',
+            user=user,
             start_date='2026-01-31',
             end_date='2027-01-31',
             price=100,
