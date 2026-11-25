@@ -7,9 +7,14 @@ from .lifecycle import record_device_lifecycle_event
 from organizations.models import SubscriptionDevice
 
 
-def _customer_kwargs(device=None, organization=None, user=None):
-    organization = organization if organization is not None else (device.organization if device else None)
-    user = user if user is not None else (device.owner_user if device else None)
+_CUSTOMER_UNSET = object()
+
+
+def _customer_kwargs(device=None, organization=_CUSTOMER_UNSET, user=_CUSTOMER_UNSET):
+    if organization is _CUSTOMER_UNSET:
+        organization = device.organization if device else None
+    if user is _CUSTOMER_UNSET:
+        user = device.owner_user if device else None
     if organization:
         return {'organization': organization, 'user': None}
     if user:
@@ -17,12 +22,101 @@ def _customer_kwargs(device=None, organization=None, user=None):
     return {'organization': None, 'user': None}
 
 
+def _validate_device_customer_assignment(device, subscription):
+    """Validate a warehouse device against the exact contract customer and its current holder."""
+    if device.management_status in {'faulty', 'in_repair', 'ready', 'lost', 'stolen', 'unusable', 'disposed'}:
+        raise ValidationError({
+            'device': 'دستگاه در وضعیت فعلی قابل اتصال به قرارداد نیست؛ ابتدا وضعیت عملیاتی آن را تعیین تکلیف کنید.'
+        })
+
+    if subscription.customer_type == 'organization':
+        if (
+            not subscription.organization_id
+            or subscription.user_id is not None
+            or subscription.organization.status != 'active'
+        ):
+            raise ValidationError({
+                'subscription': 'قرارداد سازمانی باید به سازمان فعال و معتبر تعلق داشته باشد.'
+            })
+        target_organization_id = subscription.organization_id
+        target_user_id = None
+    elif subscription.customer_type == 'personal':
+        if (
+            not subscription.user_id
+            or not subscription.user.is_active
+            or not subscription.user.is_personal_user
+            or subscription.organization_id is not None
+        ):
+            raise ValidationError({
+                'subscription': 'مشتری قرارداد شخصی باید حساب فعال با نقش مشتری شخصی باشد.'
+            })
+        target_organization_id = None
+        target_user_id = subscription.user_id
+    else:
+        raise ValidationError({'subscription': 'نوع مشتری قرارداد نامعتبر است.'})
+
+    if target_organization_id is not None:
+        if device.branch_id and (
+            device.branch.organization_id != target_organization_id
+            or device.branch.status != 'active'
+        ):
+            raise ValidationError({
+                'device': 'شعبه فعلی دستگاه باید فعال و متعلق به سازمان قرارداد باشد.'
+            })
+        if device.vehicle_id and (
+            device.vehicle.organization_id != target_organization_id
+            or device.vehicle.owner_user_id is not None
+            or device.vehicle.branch_id != device.branch_id
+        ):
+            raise ValidationError({
+                'device': 'خودروی متصل به دستگاه باید متعلق به سازمان قرارداد و در همان شعبه باشد.'
+            })
+    else:
+        if device.branch_id:
+            raise ValidationError({
+                'device': 'دستگاه مشتری شخصی نمی‌تواند به شعبه سازمانی متصل باشد.'
+            })
+        if device.vehicle_id and (
+            device.vehicle.owner_user_id != target_user_id
+            or device.vehicle.organization_id is not None
+            or device.vehicle.branch_id is not None
+        ):
+            raise ValidationError({
+                'device': 'خودروی متصل به دستگاه باید متعلق به همان مشتری شخصی باشد.'
+            })
+
+    current_organization_id = device.current_holder_organization_id
+    current_user_id = device.current_holder_user_id
+    if (
+        (current_organization_id is not None or current_user_id is not None)
+        and (
+            current_organization_id != target_organization_id
+            or current_user_id != target_user_id
+        )
+    ):
+        raise ValidationError({
+            'device': 'دستگاه در حال حاضر به مشتری دیگری تحویل شده است؛ ابتدا انتقال رسمی مشتری را انجام دهید.'
+        })
+
+
 def _close_customer_access(device, when=None):
     when = when or timezone.now()
     DeviceCustomerAccessPeriod.objects.filter(device=device, ended_at__isnull=True).update(ended_at=when)
 
 
-def _open_customer_access(device, subscription=None, branch=None, organization=None, user=None, started_at=None, reason=''):
+def _open_customer_access(device, subscription=None, branch=None, organization=_CUSTOMER_UNSET, user=_CUSTOMER_UNSET, started_at=None, reason=''):
+    # A contract is the authority for customer identity. Legal ownership must
+    # never be substituted for the customer who receives the service.
+    if subscription is not None:
+        if organization is _CUSTOMER_UNSET:
+            organization = subscription.organization
+        if user is _CUSTOMER_UNSET:
+            user = subscription.user
+    else:
+        if organization is _CUSTOMER_UNSET:
+            organization = device.current_holder_organization or device.organization
+        if user is _CUSTOMER_UNSET:
+            user = device.current_holder_user or device.owner_user
     customer = _customer_kwargs(device, organization, user)
     if not customer['organization'] and not customer['user']:
         _close_customer_access(device, started_at or timezone.now())
@@ -110,7 +204,11 @@ def _close_ownership(device, when=None):
     DeviceOwnershipHistory.objects.filter(device=device, ended_at__isnull=True).update(ended_at=when)
 
 
-def _open_ownership(device, organization=None, user=None, started_at=None, reason=''):
+def _open_ownership(device, organization=_CUSTOMER_UNSET, user=_CUSTOMER_UNSET, started_at=None, reason=''):
+    # Ownership history records legal ownership only, never the contract customer.
+    if organization is _CUSTOMER_UNSET and user is _CUSTOMER_UNSET:
+        organization = device.organization
+        user = device.owner_user
     customer = _customer_kwargs(device, organization, user)
     if not customer['organization'] and not customer['user']:
         return None
