@@ -704,16 +704,25 @@ def execute_device_operation(
         previous_vehicle = previous_event.vehicle if previous_event else None
         previous_branch = previous_event.branch if previous_event else None
         previous_customer = _current_customer(device, subscription)
-        previous_org = (
-            previous_event.organization
-            if previous_event and previous_event.organization_id
-            else previous_customer['organization']
+        has_current_customer = (
+            subscription is not None
+            or device.current_holder_organization_id is not None
+            or device.current_holder_user_id is not None
         )
-        previous_user = (
-            previous_event.user
-            if previous_event and previous_event.user_id
-            else previous_customer['user']
-        )
+        if has_current_customer:
+            previous_org = previous_customer['organization']
+            previous_user = previous_customer['user']
+        else:
+            previous_org = (
+                previous_event.organization
+                if previous_event and previous_event.organization_id
+                else previous_customer['organization']
+            )
+            previous_user = (
+                previous_event.user
+                if previous_event and previous_event.user_id
+                else previous_customer['user']
+            )
 
         if outcome_action == 'return_customer_same_vehicle':
             target = previous_vehicle
