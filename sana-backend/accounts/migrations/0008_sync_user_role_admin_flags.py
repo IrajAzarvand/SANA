@@ -1,4 +1,5 @@
 from django.db import migrations
+from django.utils import timezone
 
 
 def synchronize_user_roles_and_admin_flags(apps, schema_editor):
@@ -11,6 +12,7 @@ def synchronize_user_roles_and_admin_flags(apps, schema_editor):
             'Role synchronization aborted: no active site_admin account exists.'
         )
 
+    UserSession = apps.get_model('accounts', 'UserSession')
     role_account_types = {
         'site_admin': 'admin',
         'main_user': 'organization',
@@ -19,8 +21,18 @@ def synchronize_user_roles_and_admin_flags(apps, schema_editor):
     }
 
     for role, account_type in role_account_types.items():
+        role_users = users.filter(role=role)
+        account_type_changed_ids = list(
+            role_users.exclude(account_type=account_type).values_list('pk', flat=True)
+        )
+        if account_type_changed_ids:
+            UserSession.objects.using(database).filter(
+                user_id__in=account_type_changed_ids,
+                revoked_at__isnull=True,
+            ).update(revoked_at=timezone.now())
+
         is_site_admin = role == 'site_admin'
-        User.objects.using(database).filter(role=role).update(
+        role_users.update(
             account_type=account_type,
             is_staff=is_site_admin,
             is_superuser=is_site_admin,
