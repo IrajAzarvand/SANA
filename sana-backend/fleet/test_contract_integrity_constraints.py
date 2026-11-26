@@ -445,12 +445,12 @@ class SingleOpenDeviceRelationshipTests(TestCase):
             end_date=self.subscription.end_date,
         )
         with self.assertRaises(IntegrityError), transaction.atomic():
-            SubscriptionDevice.objects.create(
+            SubscriptionDevice.objects.bulk_create([SubscriptionDevice(
                 subscription=self.second_subscription,
                 device=self.device,
                 start_date=self.second_subscription.start_date,
                 end_date=self.second_subscription.end_date,
-            )
+            )])
 
     def test_device_cannot_have_two_open_customer_access_periods(self):
         DeviceCustomerAccessPeriod.objects.create(
