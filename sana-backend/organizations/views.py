@@ -113,12 +113,14 @@ def _validated_positive_id_list(value, field_name):
 
 def _apply_customer_profile_changes(subscription, customer_changes, operation):
     """Validate and persist shared customer data, with a contract audit trail."""
-    if not customer_changes:
+    if customer_changes is None:
         return
     if not isinstance(customer_changes, dict):
         raise serializers.ValidationError({
             'customer_changes': 'اطلاعات مشتری باید به‌صورت یک شیء ارسال شود.'
         })
+    if not customer_changes:
+        return
 
     if subscription.customer_type == 'organization':
         target = subscription.organization
