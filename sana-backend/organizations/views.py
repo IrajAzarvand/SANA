@@ -630,6 +630,12 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                 except (TypeError, ValueError):
                     raise serializers.ValidationError({field: 'فرمت تاریخ نامعتبر است'})
             else:
+                if value is None:
+                    value = ''
+                if not isinstance(value, str):
+                    raise serializers.ValidationError({
+                        'contract_changes': 'یادداشت قرارداد باید متن باشد.'
+                    })
                 parsed_contract[field] = value
 
         new_start = parsed_contract.get('start_date', subscription.start_date)
