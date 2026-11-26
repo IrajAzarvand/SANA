@@ -588,6 +588,11 @@ class SubscriptionSerializer(serializers.ModelSerializer):
         return obj.subscription_devices.filter(unassigned_at__isnull=True).count()
 
     def get_active_device_count(self, obj):
+        # A link is countable only while both its assignment window and the
+        # parent contract are currently valid. Future, suspended, cancelled,
+        # and expired contracts must not inflate the active-device total.
+        if not obj.is_active:
+            return 0
         return sum(
             1 for link in obj.subscription_devices.filter(unassigned_at__isnull=True)
             if link.is_active
