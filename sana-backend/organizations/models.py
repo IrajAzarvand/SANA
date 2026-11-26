@@ -215,8 +215,17 @@ class Subscription(models.Model):
         return 1 <= self.days_until_expiry <= 30
     @property
     def active_device_count(self):
-        """تعداد دستگاه‌های فعال این قرارداد"""
-        return self.subscription_devices.filter(unassigned_at__isnull=True).count()
+        """تعداد دستگاه‌هایی که قرارداد و بازه اتصالشان اکنون فعال است."""
+        if not self.is_active:
+            return 0
+        now = timezone.now()
+        today = timezone.localdate(now)
+        return self.subscription_devices.filter(
+            unassigned_at__isnull=True,
+            assigned_at__lte=now,
+            start_date__lte=today,
+            end_date__gte=today,
+        ).count()
 
     def recalculate_end_date(self):
         """محاسبه‌ی مجدد end_date از آخرین دستگاه فعال"""
@@ -354,6 +363,11 @@ class SubscriptionDevice(models.Model):
             models.CheckConstraint(
                 condition=models.Q(end_date__gte=models.F('start_date')),
                 name='sub_device_valid_dates',
+            ),
+            models.UniqueConstraint(
+                fields=['device'],
+                condition=models.Q(unassigned_at__isnull=True),
+                name='sub_device_one_open_link',
             ),
         ]
 

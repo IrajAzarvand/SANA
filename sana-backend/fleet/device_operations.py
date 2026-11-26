@@ -421,13 +421,22 @@ def _close_active_link(device, operation):
 def _add_to_subscription(device, subscription, operation, start_date=None, end_date=None):
     if not subscription:
         raise ValidationError({'target_subscription': 'انتخاب قرارداد مقصد الزامی است'})
+
+    # Re-read and lock the contract while the enclosing device operation is
+    # atomic. This prevents a concurrent suspend/cancel from racing assignment.
+    subscription = subscription.__class__.objects.select_for_update(
+        of=('self',)
+    ).get(pk=subscription.pk)
     if subscription.status != 'active' or subscription.end_date < timezone.localdate():
         raise ValidationError({'target_subscription': 'افزودن دستگاه به قرارداد غیرفعال یا منقضی مجاز نیست.'})
+
     start_date = start_date or subscription.start_date
     end_date = end_date or subscription.end_date
-    if start_date > end_date:
-        raise ValidationError({'target_subscription': 'بازه قرارداد مقصد نامعتبر است'})
+    if start_date < subscription.start_date or end_date > subscription.end_date or start_date > end_date:
+        raise ValidationError({'target_subscription': 'بازه اتصال دستگاه باید کاملاً داخل بازه قرارداد باشد.'})
+
     try:
+        _validate_device_customer_assignment(device, subscription)
         return SubscriptionDevice.objects.create(
             subscription=subscription,
             device=device,
@@ -457,9 +466,46 @@ def execute_device_operation(
     reason='',
     description='',
 ):
-    device = Device.objects.select_for_update().get(pk=device.pk)
+    # Every operation that needs more than one device row must acquire
+    # locks in ascending primary-key order. Otherwise opposing source/replacement
+    # requests can deadlock before their business validation rejects one side.
+    requested_device_ids = {device.pk}
     if replacement_device:
-        replacement_device = Device.objects.select_for_update().get(pk=replacement_device.pk)
+        requested_device_ids.add(replacement_device.pk)
+    # Temporary loaners may also be returned during this operation. Include
+    # their rows in the same ordered lock set rather than locking them later
+    # in relation order.
+    temporary_loaner_ids = set(
+        DeviceReplacementRelation.objects.filter(
+            source_device_id=device.pk,
+            replacement_type='temporary_repair',
+            returned_at__isnull=True,
+        ).values_list('replacement_device_id', flat=True)
+    )
+    requested_device_ids.update(temporary_loaner_ids)
+    locked_devices = {
+        locked.pk: locked
+        for locked in Device.objects.select_for_update()
+        .filter(pk__in=requested_device_ids)
+        .order_by('pk')
+    }
+    # A relation may have been created between the pre-read and acquiring the
+    # source lock. Abort and retry rather than acquiring a newly discovered
+    # device out of global primary-key order.
+    current_loaner_ids = set(
+        DeviceReplacementRelation.objects.filter(
+            source_device_id=device.pk,
+            replacement_type='temporary_repair',
+            returned_at__isnull=True,
+        ).values_list('replacement_device_id', flat=True)
+    )
+    if not current_loaner_ids.issubset(requested_device_ids):
+        raise ValidationError({
+            'device': 'سوابق جایگزینی دستگاه هم‌زمان تغییر کرده است؛ عملیات را دوباره انجام دهید.'
+        })
+    device = locked_devices[device.pk]
+    if replacement_device:
+        replacement_device = locked_devices[replacement_device.pk]
 
     active_link = device.subscription_links.filter(
         unassigned_at__isnull=True

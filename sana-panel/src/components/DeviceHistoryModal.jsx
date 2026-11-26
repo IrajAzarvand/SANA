@@ -155,7 +155,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
         const [orgs, users, subs, vehicles] = await Promise.all([
           fetchAllPages(organizationsAPI.list),
           fetchAllPages(usersAPI.list),
-          subscriptionsAPI.list({ status: 'active' }),
+          fetchAllPages((params) => subscriptionsAPI.list({ ...params, status: 'active' })),
           vehiclesAPI.list(historyDevice.organization ? { organization: historyDevice.organization } : {}),
         ]);
         setOperationTargets((current) => ({
@@ -169,7 +169,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
         const [orgs, users, subs] = await Promise.all([
           fetchAllPages(organizationsAPI.list),
           fetchAllPages(usersAPI.list),
-          subscriptionsAPI.list({ status: 'active' }),
+          fetchAllPages((params) => subscriptionsAPI.list({ ...params, status: 'active' })),
         ]);
         setOperationTargets((current) => ({
           ...current,

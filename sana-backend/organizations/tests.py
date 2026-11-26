@@ -12,6 +12,7 @@ from organizations.financial import create_installment_plan, allocate_payment, r
 from rest_framework.exceptions import ValidationError
 from django.utils import timezone
 from datetime import timedelta
+from django.db import transaction
 from django.db.models import Sum
 from .serializers import SubscriptionWizardSerializer, SubscriptionPaymentSerializer
 
@@ -1188,6 +1189,114 @@ class OrganizationAndBranchDeletionPermissionTests(TestCase):
         self.assertIsNone(self.organization.archived_by)
 
 
+class SubscriptionPaymentMutationValidationTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin = User.objects.create_user(
+            username='payment-mutation-admin',
+            password='test-password-123',
+            account_type='admin',
+            role='site_admin',
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.client.force_authenticate(user=self.admin)
+        user = User.objects.create_user(
+            username='payment-mutation-customer',
+            password='test-password-123',
+            account_type='personal',
+            role='personal_user',
+        )
+        today = timezone.localdate()
+        self.subscription = Subscription.objects.create(
+            contract_number='PAYMENT-MUTATION-CONTRACT',
+            customer_type='personal',
+            user=user,
+            start_date=today - timedelta(days=10),
+            end_date=today + timedelta(days=30),
+            status='active',
+            price=1000,
+        )
+        self.payment = SubscriptionPayment.objects.create(
+            subscription=self.subscription,
+            amount=500,
+            received_at=today,
+            description='Original receipt',
+        )
+
+    def test_valid_payment_edit_is_saved_and_audited(self):
+        response = self.client.post(
+            f'/api/subscriptions/{self.subscription.pk}/modify/',
+            {
+                'contract_changes': {},
+                'payment_changes': [
+                    {
+                        'id': self.payment.pk,
+                        'amount': 600,
+                        'description': 'Updated receipt',
+                    }
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.amount, 600)
+        self.assertEqual(self.payment.description, 'Updated receipt')
+        operation = self.subscription.operations.get(operation_type='modify')
+        self.assertEqual(
+            set(operation.changes.values_list('field_name', flat=True)),
+            {'amount', 'description'},
+        )
+
+    def test_payment_edit_rejects_non_positive_amount_without_partial_write(self):
+        response = self.client.post(
+            f'/api/subscriptions/{self.subscription.pk}/modify/',
+            {
+                'contract_changes': {},
+                'payment_changes': [{'id': self.payment.pk, 'amount': 0}],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.amount, 500)
+        self.assertEqual(self.payment.description, 'Original receipt')
+        self.assertEqual(self.subscription.operations.count(), 0)
+
+    def test_payment_edit_rejects_future_receipt_date_without_partial_write(self):
+        future_date = (timezone.localdate() + timedelta(days=1)).isoformat()
+        response = self.client.post(
+            f'/api/subscriptions/{self.subscription.pk}/modify/',
+            {
+                'contract_changes': {},
+                'payment_changes': [{'id': self.payment.pk, 'payment_date': future_date}],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.received_at, timezone.localdate())
+        self.assertEqual(self.subscription.operations.count(), 0)
+
+    def test_payment_edit_rejects_duplicate_receipt_ids(self):
+        response = self.client.post(
+            f'/api/subscriptions/{self.subscription.pk}/modify/',
+            {
+                'contract_changes': {},
+                'payment_changes': [
+                    {'id': self.payment.pk, 'description': 'First'},
+                    {'id': self.payment.pk, 'description': 'Second'},
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.description, 'Original receipt')
+        self.assertEqual(self.subscription.operations.count(), 0)
+
+
 class SubscriptionDeviceCustomerAccessClosureTests(TestCase):
     """Removing a device from a contract must close access without rewriting history or ownership."""
 
@@ -1227,6 +1336,7 @@ class SubscriptionDeviceCustomerAccessClosureTests(TestCase):
             start_date=self.subscription.start_date,
             end_date=self.subscription.end_date,
         )
+        self.original_link_end_date = self.link.end_date
         self.access_started_at = timezone.now() - timedelta(days=2)
         self.access = DeviceCustomerAccessPeriod.objects.create(
             device=self.device,
@@ -1244,6 +1354,7 @@ class SubscriptionDeviceCustomerAccessClosureTests(TestCase):
 
         self.assertIsNotNone(self.link.unassigned_at)
         self.assertIsNotNone(self.link.removed_by_operation_id)
+        self.assertEqual(self.link.end_date, self.original_link_end_date)
         self.assertTrue(SubscriptionDevice.objects.filter(pk=self.link.pk).exists())
 
         self.assertIsNotNone(self.access.ended_at)
@@ -1259,6 +1370,57 @@ class SubscriptionDeviceCustomerAccessClosureTests(TestCase):
         self.assertIsNone(self.device.organization_id)
         self.assertEqual(self.device.management_status, 'installed')
 
+    def test_renew_rejects_non_string_date_without_server_error(self):
+        response = self.client.post(
+            f'/api/subscriptions/{self.subscription.pk}/renew/',
+            {'new_end_date': 12345},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.subscription.refresh_from_db()
+        self.assertEqual(self.subscription.end_date, timezone.localdate() + timedelta(days=90))
+
+    def test_modify_rejects_non_text_contract_notes(self):
+        response = self.client.post(
+            f'/api/subscriptions/{self.subscription.pk}/modify/',
+            {'contract_changes': {'notes': 123}},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.subscription.refresh_from_db()
+        self.assertEqual(self.subscription.notes, '')
+
+    def test_modify_rejects_empty_contract_date_without_server_error(self):
+        response = self.client.post(
+            f'/api/subscriptions/{self.subscription.pk}/modify/',
+            {'contract_changes': {'end_date': ''}},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.subscription.refresh_from_db()
+        self.assertEqual(self.subscription.end_date, timezone.localdate() + timedelta(days=90))
+
+    def test_modify_rejects_malformed_device_removal_ids(self):
+        response = self.client.post(
+            f'/api/subscriptions/{self.subscription.pk}/modify/',
+            {'contract_changes': {}, 'remove_device_ids': 'not-a-list'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertIsNone(self.link.unassigned_at)
+
+    def test_modify_rejects_malformed_add_device_payload(self):
+        response = self.client.post(
+            f'/api/subscriptions/{self.subscription.pk}/modify/',
+            {'contract_changes': {}, 'add_devices': ['not-an-object']},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(
+            self.subscription.subscription_devices.filter(unassigned_at__isnull=True).count(),
+            1,
+        )
+
     def test_renew_closes_access_when_device_is_removed(self):
         new_end_date = timezone.localdate() + timedelta(days=180)
         with patch('organizations.views.record_device_lifecycle_event'):
@@ -1271,6 +1433,25 @@ class SubscriptionDeviceCustomerAccessClosureTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         self._assert_access_closed_and_history_preserved()
         self.assertEqual(self.link.removed_by_operation.operation_type, 'renew')
+
+    def test_modify_can_shorten_contract_when_outgoing_device_is_removed(self):
+        new_end_date = timezone.localdate() + timedelta(days=10)
+        with patch('organizations.views.record_device_lifecycle_event'):
+            response = self.client.post(
+                f'/api/subscriptions/{self.subscription.pk}/modify/',
+                {
+                    'contract_changes': {'end_date': new_end_date.isoformat()},
+                    'remove_device_ids': [self.link.pk],
+                },
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.subscription.refresh_from_db()
+        self.link.refresh_from_db()
+        self.assertEqual(self.subscription.end_date, new_end_date)
+        self.assertEqual(self.link.end_date, self.original_link_end_date)
+        self.assertIsNotNone(self.link.unassigned_at)
 
     def test_modify_closes_access_when_device_is_removed(self):
         with patch('organizations.views.record_device_lifecycle_event'):
@@ -1363,3 +1544,346 @@ class BranchDeletionDataIntegrityTests(TestCase):
         response = self.client.delete(f'/api/branches/{self.branch.pk}/')
         self.assertEqual(response.status_code, 403)
         self.assertTrue(Branch.objects.filter(pk=self.branch.pk).exists())
+
+
+class SubscriptionCustomerProfileChangeTests(TestCase):
+    def setUp(self):
+        from organizations.views import _apply_customer_profile_changes
+
+        def apply_changes(*args, **kwargs):
+            with transaction.atomic():
+                return _apply_customer_profile_changes(*args, **kwargs)
+
+        self.apply_changes = apply_changes
+        today = timezone.localdate()
+        self.organization = Organization.objects.create(
+            name='Shared Customer Profile Org',
+            code='SHARED-CUSTOMER-PROFILE',
+            email='old@example.com',
+        )
+        self.user = User.objects.create_user(
+            username='shared-customer-profile-user',
+            password='test-password-123',
+            account_type='personal',
+            role='personal_user',
+            first_name='Old',
+            last_name='Customer',
+            mobile='09120000000',
+            address='Old address',
+        )
+        self.org_subscription = Subscription.objects.create(
+            contract_number='SHARED-CUSTOMER-ORG-CONTRACT',
+            customer_type='organization',
+            organization=self.organization,
+            start_date=today,
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        self.second_org_subscription = Subscription.objects.create(
+            contract_number='SHARED-CUSTOMER-ORG-CONTRACT-2',
+            customer_type='organization',
+            organization=self.organization,
+            start_date=today,
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        self.personal_subscription = Subscription.objects.create(
+            contract_number='SHARED-CUSTOMER-PERSONAL-CONTRACT',
+            customer_type='personal',
+            user=self.user,
+            start_date=today,
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        self.operation = SubscriptionOperation.objects.create(
+            subscription=self.org_subscription,
+            operation_type='modify',
+        )
+
+    def test_organization_profile_changes_are_validated_and_shared(self):
+        self.apply_changes(
+            self.org_subscription,
+            {'name': 'Updated Shared Org', 'email': 'new@example.com'},
+            self.operation,
+        )
+        self.organization.refresh_from_db()
+        self.assertEqual(self.organization.name, 'Updated Shared Org')
+        self.assertEqual(self.organization.email, 'new@example.com')
+        self.assertEqual(
+            set(self.operation.changes.values_list('field_name', flat=True)),
+            {'name', 'email'},
+        )
+        # A second contract references the same shared Organization row.
+        self.assertEqual(self.second_org_subscription.organization.name, 'Updated Shared Org')
+
+    def test_invalid_organization_email_does_not_partially_update_profile(self):
+        with self.assertRaises(ValidationError):
+            self.apply_changes(
+                self.org_subscription,
+                {'name': 'Must Roll Back', 'email': 'not-an-email'},
+                self.operation,
+            )
+        self.organization.refresh_from_db()
+        self.assertEqual(self.organization.name, 'Shared Customer Profile Org')
+        self.assertEqual(self.organization.email, 'old@example.com')
+        self.assertFalse(self.operation.changes.exists())
+
+    def test_duplicate_organization_code_is_rejected(self):
+        duplicate = Organization.objects.create(
+            name='Duplicate Code Org',
+            code='DUPLICATE-SHARED-CODE',
+        )
+        with self.assertRaises(ValidationError):
+            self.apply_changes(
+                self.org_subscription,
+                {'code': duplicate.code},
+                self.operation,
+            )
+        self.organization.refresh_from_db()
+        self.assertEqual(self.organization.code, 'SHARED-CUSTOMER-PROFILE')
+
+    def test_organization_max_length_is_enforced(self):
+        with self.assertRaises(ValidationError):
+            self.apply_changes(
+                self.org_subscription,
+                {'name': 'x' * 201},
+                self.operation,
+            )
+        self.organization.refresh_from_db()
+        self.assertEqual(self.organization.name, 'Shared Customer Profile Org')
+
+    def test_personal_customer_fields_are_validated(self):
+        personal_operation = SubscriptionOperation.objects.create(
+            subscription=self.personal_subscription,
+            operation_type='modify',
+        )
+        with self.assertRaises(ValidationError):
+            self.apply_changes(
+                self.personal_subscription,
+                {'mobile': '1' * 21},
+                personal_operation,
+            )
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.mobile, '09120000000')
+
+        self.apply_changes(
+            self.personal_subscription,
+            {'first_name': 'Updated', 'address': 'New address'},
+            personal_operation,
+        )
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.first_name, 'Updated')
+        self.assertEqual(self.user.address, 'New address')
+        self.assertEqual(
+            set(personal_operation.changes.values_list('field_name', flat=True)),
+            {'first_name', 'address'},
+        )
+
+    def test_non_object_customer_changes_are_rejected_even_when_empty(self):
+        with self.assertRaises(ValidationError):
+            self.apply_changes(self.org_subscription, [], self.operation)
+        self.organization.refresh_from_db()
+        self.assertEqual(self.organization.name, 'Shared Customer Profile Org')
+        self.assertFalse(self.operation.changes.exists())
+
+    def test_unknown_customer_fields_are_rejected(self):
+        with self.assertRaises(ValidationError):
+            self.apply_changes(
+                self.org_subscription,
+                {'is_superuser': True},
+                self.operation,
+            )
+        self.organization.refresh_from_db()
+        self.assertFalse(self.user.is_superuser)
+        self.assertFalse(self.operation.changes.exists())
+
+
+class SubscriptionActivationLifecycleTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin = User.objects.create_user(
+            username='subscription-lifecycle-admin',
+            password='test-password-123',
+            account_type='admin',
+            role='site_admin',
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.client.force_authenticate(user=self.admin)
+        today = timezone.localdate()
+        self.today = today
+
+    def make_contract(self, number, status, end_offset=30):
+        return Subscription.objects.create(
+            contract_number=number,
+            customer_type='personal',
+            user=User.objects.create_user(
+                username=f'{number.lower()}-user',
+                password='test-password-123',
+                account_type='personal',
+                role='personal_user',
+            ),
+            start_date=self.today - timedelta(days=2),
+            end_date=self.today + timedelta(days=end_offset),
+            status=status,
+        )
+
+    def test_cancelled_contract_cannot_be_reactivated(self):
+        contract = self.make_contract('ACTIVATE-CANCELLED', 'cancelled')
+        response = self.client.post(
+            f'/api/subscriptions/{contract.pk}/activate/', {}, format='json'
+        )
+        self.assertEqual(response.status_code, 409)
+        contract.refresh_from_db()
+        self.assertEqual(contract.status, 'cancelled')
+
+    def test_expired_contract_cannot_be_reactivated(self):
+        contract = self.make_contract('ACTIVATE-EXPIRED', 'expired', end_offset=-1)
+        response = self.client.post(
+            f'/api/subscriptions/{contract.pk}/activate/', {}, format='json'
+        )
+        self.assertEqual(response.status_code, 409)
+        contract.refresh_from_db()
+        self.assertEqual(contract.status, 'expired')
+
+    def test_effectively_expired_active_contract_cannot_be_suspended(self):
+        contract = self.make_contract('SUSPEND-COMPUTED-EXPIRED', 'active', end_offset=-1)
+        response = self.client.post(
+            f'/api/subscriptions/{contract.pk}/suspend/', {}, format='json'
+        )
+        self.assertEqual(response.status_code, 409)
+        contract.refresh_from_db()
+        self.assertEqual(contract.status, 'active')
+        self.assertEqual(contract.computed_status, 'expired')
+
+    def test_already_suspended_contract_cannot_create_duplicate_suspend_operation(self):
+        contract = self.make_contract('SUSPEND-ALREADY-SUSPENDED', 'suspended')
+        response = self.client.post(
+            f'/api/subscriptions/{contract.pk}/suspend/', {}, format='json'
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(contract.operations.count(), 0)
+
+    def test_suspended_unexpired_contract_can_be_reactivated(self):
+        contract = self.make_contract('ACTIVATE-SUSPENDED', 'suspended')
+        response = self.client.post(
+            f'/api/subscriptions/{contract.pk}/activate/', {}, format='json'
+        )
+        self.assertEqual(response.status_code, 200)
+        contract.refresh_from_db()
+        self.assertEqual(contract.status, 'active')
+
+
+class SubscriptionComputedStatusFilterTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin = User.objects.create_user(
+            username='computed-status-filter-admin',
+            password='test-password-123',
+            account_type='admin',
+            role='site_admin',
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.client.force_authenticate(user=self.admin)
+        today = timezone.localdate()
+        self.expired = self.make_contract(
+            'FILTER-COMPUTED-EXPIRED',
+            today - timedelta(days=5),
+            today - timedelta(days=1),
+        )
+        self.pending = self.make_contract(
+            'FILTER-COMPUTED-PENDING',
+            today + timedelta(days=1),
+            today + timedelta(days=10),
+        )
+        self.active = self.make_contract(
+            'FILTER-COMPUTED-ACTIVE',
+            today,
+            today + timedelta(days=10),
+        )
+
+    def make_contract(self, number, start_date, end_date):
+        user = User.objects.create_user(
+            username=f'{number.lower()}-user',
+            password='test-password-123',
+            account_type='personal',
+            role='personal_user',
+        )
+        return Subscription.objects.create(
+            contract_number=number,
+            customer_type='personal',
+            user=user,
+            start_date=start_date,
+            end_date=end_date,
+            status='active',
+        )
+
+    def get_contract_ids(self, status_filter):
+        response = self.client.get('/api/subscriptions/', {'status': status_filter})
+        self.assertEqual(response.status_code, 200, response.data)
+        results = response.data.get('results', response.data)
+        return {item['id'] for item in results}
+
+    def test_status_filters_use_effective_contract_dates(self):
+        self.assertIn(self.expired.pk, self.get_contract_ids('expired'))
+        self.assertIn(self.pending.pk, self.get_contract_ids('pending'))
+        self.assertIn(self.active.pk, self.get_contract_ids('active'))
+        self.assertNotIn(self.expired.pk, self.get_contract_ids('active'))
+        self.assertNotIn(self.pending.pk, self.get_contract_ids('active'))
+
+
+class SubscriptionActiveDeviceCountTests(TestCase):
+    def test_active_device_count_requires_active_contract_and_active_link_window(self):
+        today = timezone.localdate()
+        user = User.objects.create_user(
+            username='active-device-count-user',
+            password='test-password-123',
+            account_type='personal',
+            role='personal_user',
+        )
+        subscription = Subscription.objects.create(
+            contract_number='ACTIVE-DEVICE-COUNT',
+            customer_type='personal',
+            user=user,
+            start_date=today,
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        active_device = Device.objects.create(imei='860000000009953')
+        future_device = Device.objects.create(imei='860000000009954')
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=active_device,
+            start_date=today,
+            end_date=today + timedelta(days=30),
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=future_device,
+            start_date=today + timedelta(days=2),
+            end_date=today + timedelta(days=30),
+        )
+
+        from organizations.serializers import SubscriptionListSerializer, SubscriptionSerializer
+        self.assertEqual(subscription.active_device_count, 1)
+        self.assertEqual(
+            SubscriptionSerializer(subscription).data['active_device_count'],
+            1,
+        )
+        self.assertEqual(
+            SubscriptionListSerializer(subscription).data['active_device_count'],
+            1,
+        )
+
+        subscription.status = 'suspended'
+        subscription.save(update_fields=['status'])
+        self.assertEqual(
+            SubscriptionSerializer(subscription).data['active_device_count'],
+            0,
+        )
+        self.assertEqual(
+            SubscriptionListSerializer(subscription).data['active_device_count'],
+            0,
+        )
+        self.assertEqual(subscription.active_device_count, 0)

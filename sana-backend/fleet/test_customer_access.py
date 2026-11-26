@@ -70,17 +70,13 @@ class ContractBackedDeviceAccessTests(TestCase):
             start_date=authorized.start_date,
             end_date=authorized.end_date,
         )
-        newer_link = SubscriptionDevice.objects.bulk_create([
-            SubscriptionDevice(
-                subscription=newer,
-                device=device,
-                start_date=newer.start_date,
-                end_date=newer.end_date,
-            )
-        ])[0]
-        SubscriptionDevice.objects.filter(
-            pk__in=[authorized_link.pk, newer_link.pk]
-        ).update(unassigned_at=None)
+        newer_link = SubscriptionDevice.objects.create(
+            subscription=newer,
+            device=device,
+            start_date=newer.start_date,
+            end_date=newer.end_date,
+            unassigned_at=now - timedelta(minutes=1),
+        )
         SubscriptionDevice.objects.filter(pk=authorized_link.pk).update(
             assigned_at=now - timedelta(days=2)
         )
@@ -107,7 +103,7 @@ class ContractBackedDeviceAccessTests(TestCase):
         )
 
 
-    def test_organization_device_detail_uses_valid_link_when_newer_duplicate_is_future(self):
+    def test_organization_device_detail_does_not_treat_future_assignment_as_active(self):
         organization = Organization.objects.create(
             name='Future Duplicate Detail Organization',
             code='FUTURE-DUPLICATE-DETAIL-ORG',
@@ -134,30 +130,15 @@ class ContractBackedDeviceAccessTests(TestCase):
             end_date=today + timedelta(days=20),
             status='active',
         )
-        valid_link = SubscriptionDevice.objects.create(
+        future_link = SubscriptionDevice.objects.create(
             subscription=subscription,
             device=device,
             start_date=subscription.start_date,
             end_date=subscription.end_date,
         )
-        future_link = SubscriptionDevice.objects.bulk_create([
-            SubscriptionDevice(
-                subscription=subscription,
-                device=device,
-                start_date=subscription.start_date,
-                end_date=subscription.end_date,
-            )
-        ])[0]
-        SubscriptionDevice.objects.filter(
-            pk__in=[valid_link.pk, future_link.pk]
-        ).update(unassigned_at=None)
-        SubscriptionDevice.objects.filter(pk=valid_link.pk).update(
-            assigned_at=now - timedelta(days=2)
-        )
         SubscriptionDevice.objects.filter(pk=future_link.pk).update(
             assigned_at=now + timedelta(minutes=10)
         )
-        valid_link.refresh_from_db()
         future_link.refresh_from_db()
         period = DeviceCustomerAccessPeriod.objects.create(
             device=device,
@@ -166,10 +147,10 @@ class ContractBackedDeviceAccessTests(TestCase):
             started_at=now - timedelta(days=3),
         )
         device._active_customer_access_periods = [period]
-        device._prefetched_subscription_links = [future_link, valid_link]
+        device._prefetched_subscription_links = [future_link]
 
         request = SimpleNamespace(user=main_user)
-        self.assertTrue(
+        self.assertFalse(
             DeviceSerializer(context={'request': request}).get_data_active(device)
         )
 
@@ -345,19 +326,13 @@ class ContractBackedDeviceAccessTests(TestCase):
             start_date=valid_subscription.start_date,
             end_date=valid_subscription.end_date,
         )
-        future_link = SubscriptionDevice.objects.bulk_create([
-            SubscriptionDevice(
-                subscription=future_subscription,
-                device=device,
-                start_date=future_subscription.start_date,
-                end_date=future_subscription.end_date,
-            )
-        ])[0]
-        # Model.save() normally closes the previous assignment. Re-open both
-        # rows to reproduce legacy overlapping data with a future-dated link.
-        SubscriptionDevice.objects.filter(
-            pk__in=[valid_link.pk, future_link.pk]
-        ).update(unassigned_at=None)
+        future_link = SubscriptionDevice.objects.create(
+            subscription=future_subscription,
+            device=device,
+            start_date=future_subscription.start_date,
+            end_date=future_subscription.end_date,
+            unassigned_at=now + timedelta(minutes=30),
+        )
         SubscriptionDevice.objects.filter(pk=valid_link.pk).update(
             assigned_at=now - timedelta(days=2)
         )
@@ -598,18 +573,13 @@ class ContractBackedDeviceAccessTests(TestCase):
             start_date=older_subscription.start_date,
             end_date=older_subscription.end_date,
         )
-        newer_link = SubscriptionDevice.objects.bulk_create([
-            SubscriptionDevice(
-                subscription=newer_subscription,
-                device=device,
-                start_date=newer_subscription.start_date,
-                end_date=newer_subscription.end_date,
-            )
-        ])[0]
-        # Reproduce inconsistent legacy rows: both assignments remain open.
-        SubscriptionDevice.objects.filter(
-            pk__in=[older_link.pk, newer_link.pk]
-        ).update(unassigned_at=None)
+        newer_link = SubscriptionDevice.objects.create(
+            subscription=newer_subscription,
+            device=device,
+            start_date=newer_subscription.start_date,
+            end_date=newer_subscription.end_date,
+            unassigned_at=now - timedelta(minutes=1),
+        )
         SubscriptionDevice.objects.filter(pk=older_link.pk).update(
             assigned_at=now - timedelta(days=3)
         )
@@ -706,17 +676,13 @@ class DeviceActiveAssignmentSelectionTests(TestCase):
             start_date=current_subscription.start_date,
             end_date=current_subscription.end_date,
         )
-        future_link = SubscriptionDevice.objects.bulk_create([
-            SubscriptionDevice(
-                subscription=future_subscription,
-                device=device,
-                start_date=future_subscription.start_date,
-                end_date=future_subscription.end_date,
-            )
-        ])[0]
-        SubscriptionDevice.objects.filter(
-            pk__in=[current_link.pk, future_link.pk]
-        ).update(unassigned_at=None)
+        future_link = SubscriptionDevice.objects.create(
+            subscription=future_subscription,
+            device=device,
+            start_date=future_subscription.start_date,
+            end_date=future_subscription.end_date,
+            unassigned_at=now + timedelta(minutes=30),
+        )
         SubscriptionDevice.objects.filter(pk=current_link.pk).update(
             assigned_at=now - timedelta(days=2)
         )
@@ -724,9 +690,8 @@ class DeviceActiveAssignmentSelectionTests(TestCase):
             assigned_at=now + timedelta(minutes=10)
         )
 
-        # The open-link property still reports the future reservation, but
-        # service state must use the latest assignment that has started.
-        self.assertEqual(device.active_subscription_link.pk, future_link.pk)
+        # A future-dated history row cannot displace the only open assignment.
+        self.assertEqual(device.active_subscription_link.pk, current_link.pk)
         self.assertTrue(device.is_data_active)
 
     def test_newer_ended_assignment_blocks_older_legacy_open_link(self):
@@ -758,20 +723,17 @@ class DeviceActiveAssignmentSelectionTests(TestCase):
             start_date=subscriptions[0].start_date,
             end_date=subscriptions[0].end_date,
         )
-        newer_link = SubscriptionDevice.objects.bulk_create([
-            SubscriptionDevice(
-                subscription=subscriptions[1],
-                device=device,
-                start_date=subscriptions[1].start_date,
-                end_date=subscriptions[1].end_date,
-            )
-        ])[0]
+        newer_link = SubscriptionDevice.objects.create(
+            subscription=subscriptions[1],
+            device=device,
+            start_date=subscriptions[1].start_date,
+            end_date=subscriptions[1].end_date,
+            unassigned_at=now - timedelta(seconds=1),
+        )
         SubscriptionDevice.objects.filter(pk=older_link.pk).update(
-            unassigned_at=None,
             assigned_at=now - timedelta(days=3),
         )
         SubscriptionDevice.objects.filter(pk=newer_link.pk).update(
-            unassigned_at=now - timedelta(seconds=1),
             assigned_at=now - timedelta(days=1),
         )
 
@@ -878,7 +840,7 @@ class DispositionCustomerAccessTests(TestCase):
         )
 
 class CustomerAccessTimelineAndContractTests(TestCase):
-    def test_closing_device_assignment_closes_all_legacy_open_contract_links(self):
+    def test_closing_device_assignment_closes_current_link_and_preserves_closed_history(self):
         organization = Organization.objects.create(
             name='Legacy Open Links Organization',
             code='LEGACY-OPEN-LINKS',
@@ -899,19 +861,21 @@ class CustomerAccessTimelineAndContractTests(TestCase):
             )
             for index in (1, 2)
         ]
-        links = SubscriptionDevice.objects.bulk_create([
-            SubscriptionDevice(
-                subscription=subscription,
+        links = [
+            SubscriptionDevice.objects.create(
+                subscription=subscriptions[0],
                 device=device,
-                start_date=subscription.start_date,
-                end_date=subscription.end_date,
-            )
-            for subscription in subscriptions
-        ])
-        # Simulate legacy inconsistency: both historical assignments remain open.
-        SubscriptionDevice.objects.filter(
-            pk__in=[link.pk for link in links]
-        ).update(unassigned_at=None)
+                start_date=subscriptions[0].start_date,
+                end_date=subscriptions[0].end_date,
+            ),
+            SubscriptionDevice.objects.create(
+                subscription=subscriptions[1],
+                device=device,
+                start_date=subscriptions[1].start_date,
+                end_date=subscriptions[1].end_date,
+                unassigned_at=timezone.now() - timedelta(minutes=1),
+            ),
+        ]
 
         _close_active_link(device, operation=None)
 
@@ -1146,14 +1110,8 @@ class CustomerAccessTimelineAndContractTests(TestCase):
             branch=second_branch,
             reason='branch_transfer',
         )
-        # Simulate a stale duplicate period left by older inconsistent data.
-        stale_period = DeviceCustomerAccessPeriod.objects.create(
-            device=device,
-            organization=organization,
-            branch=first_branch,
-            subscription=subscription,
-            started_at=second_period.started_at - timedelta(days=1),
-        )
+        # The previous branch period is closed and remains historical.
+        stale_period = first_period
         self.assertFalse(
             active_customer_access_periods(
                 organization_id=organization.pk,
@@ -1366,3 +1324,46 @@ class CustomerAccessTimelineAndContractTests(TestCase):
         self.assertEqual(subscription.computed_status, 'expired')
         self.assertFalse(subscription.is_active)
         self.assertFalse(device.is_data_active)
+
+
+class ArchivedOrganizationCustomerAccessTests(TestCase):
+    def test_archived_organization_cannot_keep_active_customer_access(self):
+        today = timezone.localdate()
+        organization = Organization.objects.create(
+            name='Archived Access Organization',
+            code='ARCHIVED-ACCESS-ORG',
+            status='archived',
+        )
+        branch = Branch.objects.create(
+            organization=organization,
+            name='Archived Access Branch',
+            code='ARCHIVED-ACCESS-BR',
+        )
+        device = Device.objects.create(imei='860000000009952')
+        subscription = Subscription.objects.create(
+            contract_number='ARCHIVED-ACCESS-CONTRACT',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=1),
+            end_date=today + timedelta(days=10),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            branch=branch,
+            subscription=subscription,
+        )
+
+        self.assertFalse(
+            active_customer_access_periods(
+                organization_id=organization.pk,
+                branch_id=branch.pk,
+            ).filter(device=device).exists()
+        )

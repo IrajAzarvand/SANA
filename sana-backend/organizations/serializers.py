@@ -8,6 +8,7 @@ from fleet.lifecycle import record_device_lifecycle_event
 from fleet.device_operations import _open_customer_access, _open_ownership, _validate_device_customer_assignment
 from fleet.customer_access import active_customer_access_periods
 from fleet.models import DeviceCustomerAccessPeriod
+from accounts.models import User
 from .models import (
     Organization,
     Branch,
@@ -51,6 +52,25 @@ class OrganizationSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'archived_at', 'archived_by', 'archived_from_status', 'created_at', 'updated_at']
+
+
+class SubscriptionOrganizationCustomerChangeSerializer(serializers.ModelSerializer):
+    """Validated edits to the shared organization profile referenced by contracts."""
+
+    class Meta:
+        model = Organization
+        fields = (
+            'name', 'code', 'registration_number', 'economy_code',
+            'phone', 'email', 'address', 'website',
+        )
+
+
+class SubscriptionPersonalCustomerChangeSerializer(serializers.ModelSerializer):
+    """Validated edits to the shared personal user profile referenced by contracts."""
+
+    class Meta:
+        model = User
+        fields = ('first_name', 'last_name', 'mobile', 'national_id', 'address')
 
 
 class OrganizationSettingsSerializer(serializers.ModelSerializer):
@@ -588,10 +608,7 @@ class SubscriptionSerializer(serializers.ModelSerializer):
         return obj.subscription_devices.filter(unassigned_at__isnull=True).count()
 
     def get_active_device_count(self, obj):
-        return sum(
-            1 for link in obj.subscription_devices.filter(unassigned_at__isnull=True)
-            if link.is_active
-        )
+        return obj.active_device_count
 
     def get_total_payment_amount(self, obj):
         return sum((payment.amount or 0) for payment in obj.payments.all())
@@ -685,12 +702,7 @@ class SubscriptionListSerializer(serializers.ModelSerializer):
         return obj.subscription_devices.filter(unassigned_at__isnull=True).count()
 
     def get_active_device_count(self, obj):
-        today = timezone.now().date()
-        return obj.subscription_devices.filter(
-            unassigned_at__isnull=True,
-            start_date__lte=today,
-            end_date__gte=today,
-        ).count()
+        return obj.active_device_count
 
     def get_total_payment_amount(self, obj):
         return sum((payment.amount or 0) for payment in obj.payments.all())
