@@ -1120,10 +1120,13 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     )),
                     link.assigned_at,
                 )
-                range_end = timezone.make_aware(datetime.combine(
-                    min(link.end_date, link.subscription.end_date),
-                    datetime_time.max,
-                ))
+                range_end = min(
+                    timezone.make_aware(datetime.combine(
+                        min(link.end_date, link.subscription.end_date),
+                        datetime_time.max,
+                    )),
+                    timezone.make_aware(datetime.combine(today, datetime_time.max)),
+                )
             else:
                 if request.user.is_branch_manager:
                     # Legacy branch-manager accounts may have organization_id=NULL;
@@ -1176,6 +1179,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 contract_end = timezone.make_aware(datetime.combine(end_date, datetime_time.max))
                 range_start = max(contract_start, access.started_at, link.assigned_at)
                 range_end = min(contract_end, access.ended_at) if access.ended_at else contract_end
+                today_end = timezone.make_aware(datetime.combine(today, datetime_time.max))
+                range_end = min(range_end, today_end)
 
         if request.query_params.get('metadata') == 'true':
             return Response({
