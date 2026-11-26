@@ -1501,7 +1501,7 @@ class SubscriptionCustomerProfileChangeTests(TestCase):
         with self.assertRaises(ValidationError):
             self.apply_changes(
                 self.personal_subscription,
-                {'mobile': '1' * 16},
+                {'mobile': '1' * 21},
                 personal_operation,
             )
         self.user.refresh_from_db()
