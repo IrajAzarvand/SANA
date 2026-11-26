@@ -668,6 +668,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
 
         subscription = self.get_object()
         with transaction.atomic():
+            subscription = Subscription.objects.select_for_update().get(pk=subscription.pk)
             operation = SubscriptionOperation.objects.create(
                 subscription=subscription,
                 operation_type='modify',
