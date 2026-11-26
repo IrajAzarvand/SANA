@@ -541,21 +541,44 @@ class SubscriptionOperationSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'performed_at', 'performed_by']
 
     def _serialize_device_links(self, links):
-        return [
-            {
+        request = self.context.get('request')
+        user = request.user if request else None
+        if user and getattr(user, 'is_site_admin', False):
+            visible_device_ids = None
+        elif user and getattr(user, 'is_authenticated', False):
+            from fleet.customer_access import authorized_devices_for_user
+            visible_device_ids = set(
+                authorized_devices_for_user(user).values_list('pk', flat=True)
+            )
+        else:
+            visible_device_ids = set()
+
+        serialized = []
+        for link in links.select_related('device__device_model', 'device__vehicle').all():
+            device = link.device
+            can_view_current_details = (
+                visible_device_ids is None
+                or device.pk in visible_device_ids
+            )
+            serialized.append({
                 'id': link.id,
                 'device_id': link.device_id,
-                'device_imei': link.device.imei,
-                'device_model': link.device.device_model.name if link.device.device_model else None,
-                'device_sim': link.device.sim_number,
-                'vehicle_plate': link.device.vehicle.plate if link.device.vehicle else None,
+                'device_imei': device.imei if can_view_current_details else None,
+                'device_model': (
+                    device.device_model.name
+                    if can_view_current_details and device.device_model else None
+                ),
+                'device_sim': device.sim_number if can_view_current_details else None,
+                'vehicle_plate': (
+                    device.vehicle.plate
+                    if can_view_current_details and device.vehicle else None
+                ),
                 'start_date': link.start_date,
                 'end_date': link.end_date,
                 'assigned_at': link.assigned_at,
                 'unassigned_at': link.unassigned_at,
-            }
-            for link in links.select_related('device__device_model', 'device__vehicle').all()
-        ]
+            })
+        return serialized
 
     def get_added_devices(self, obj):
         return self._serialize_device_links(obj.added_devices)
