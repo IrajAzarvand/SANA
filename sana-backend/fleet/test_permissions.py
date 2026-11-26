@@ -976,3 +976,104 @@ class DeviceModelCountTenantScopeTests(TestCase):
         payload = response.data['results'] if isinstance(response.data, dict) else response.data
         row = next(item for item in payload if item['id'] == model.pk)
         self.assertEqual(row['devices_count'], 1)
+
+
+class ReportHistoryDateUpperBoundTests(TestCase):
+    def test_personal_report_history_is_capped_at_today(self):
+        from datetime import timedelta, datetime, time
+        from django.utils import timezone
+        from rest_framework.test import APIClient
+        from accounts.models import User
+        from fleet.models import Device
+        from organizations.models import Subscription, SubscriptionDevice
+
+        today = timezone.localdate()
+        user = User.objects.create_user(
+            username='personal_report_today_cap', password='test-password',
+            role='personal_user', account_type='personal',
+        )
+        device = Device.objects.create(imei='860000000009931')
+        contract = Subscription.objects.create(
+            contract_number='PERSONAL-REPORT-TODAY-CAP', customer_type='personal',
+            user=user, start_date=today-timedelta(days=5),
+            end_date=today+timedelta(days=30), status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=contract, device=device,
+            start_date=contract.start_date, end_date=contract.end_date,
+        )
+        client = APIClient()
+        client.force_authenticate(user=user)
+
+        metadata = client.get(
+            '/api/devices/report-history/',
+            {'device_id': device.pk, 'metadata': 'true'},
+        )
+        self.assertEqual(metadata.status_code, 200, metadata.data)
+        self.assertEqual(
+            timezone.localtime(datetime.fromisoformat(metadata.data['range_end'])).date(),
+            today,
+        )
+
+        future_start = timezone.now() + timedelta(minutes=1)
+        future_end = timezone.make_aware(
+            datetime.combine(today + timedelta(days=1), time.max)
+        )
+        response = client.get('/api/devices/report-history/', {
+            'device_id': device.pk,
+            'from': future_start.isoformat(),
+            'to': future_end.isoformat(),
+        })
+        self.assertEqual(response.status_code, 403)
+
+    def test_company_report_history_is_capped_at_today(self):
+        from datetime import timedelta, datetime, time
+        from django.utils import timezone
+        from rest_framework.test import APIClient
+        from accounts.models import User
+        from fleet.models import Device, DeviceCustomerAccessPeriod
+        from organizations.models import Organization, Subscription, SubscriptionDevice
+
+        today = timezone.localdate()
+        organization = Organization.objects.create(
+            name='Company Report Today Cap', code='COMPANY-REPORT-TODAY-CAP',
+        )
+        manager = User.objects.create_user(
+            username='company_report_today_cap', password='test-password',
+            role='main_user', account_type='organization', organization=organization,
+        )
+        device = Device.objects.create(imei='860000000009932', organization=organization)
+        contract = Subscription.objects.create(
+            contract_number='COMPANY-REPORT-TODAY-CAP', customer_type='organization',
+            organization=organization, start_date=today-timedelta(days=5),
+            end_date=today+timedelta(days=30), status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=contract, device=device,
+            start_date=contract.start_date, end_date=contract.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device, organization=organization, subscription=contract,
+            started_at=timezone.now()-timedelta(days=1),
+        )
+        client = APIClient()
+        client.force_authenticate(user=manager)
+
+        metadata = client.get(
+            '/api/devices/report-history/',
+            {'device_id': device.pk, 'metadata': 'true'},
+        )
+        self.assertEqual(metadata.status_code, 200, metadata.data)
+        self.assertEqual(
+            timezone.localtime(datetime.fromisoformat(metadata.data['range_end'])).date(),
+            today,
+        )
+
+        future_start = timezone.now() + timedelta(minutes=1)
+        future_end = timezone.make_aware(datetime.combine(today + timedelta(days=1), time.max))
+        response = client.get('/api/devices/report-history/', {
+            'device_id': device.pk,
+            'from': future_start.isoformat(),
+            'to': future_end.isoformat(),
+        })
+        self.assertEqual(response.status_code, 403)
