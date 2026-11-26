@@ -676,11 +676,21 @@ class DeviceActiveAssignmentSelectionTests(TestCase):
             start_date=current_subscription.start_date,
             end_date=current_subscription.end_date,
         )
+        future_link = SubscriptionDevice.objects.create(
+            subscription=future_subscription,
+            device=device,
+            start_date=future_subscription.start_date,
+            end_date=future_subscription.end_date,
+            unassigned_at=now + timedelta(minutes=30),
+        )
         SubscriptionDevice.objects.filter(pk=current_link.pk).update(
             assigned_at=now - timedelta(days=2)
         )
+        SubscriptionDevice.objects.filter(pk=future_link.pk).update(
+            assigned_at=now + timedelta(minutes=10)
+        )
 
-        # A device can have only one open assignment; its current link remains authoritative.
+        # A future-dated history row cannot displace the only open assignment.
         self.assertEqual(device.active_subscription_link.pk, current_link.pk)
         self.assertTrue(device.is_data_active)
 
@@ -830,7 +840,7 @@ class DispositionCustomerAccessTests(TestCase):
         )
 
 class CustomerAccessTimelineAndContractTests(TestCase):
-    def test_closing_device_assignment_closes_all_legacy_open_contract_links(self):
+    def test_closing_device_assignment_closes_current_link_and_preserves_closed_history(self):
         organization = Organization.objects.create(
             name='Legacy Open Links Organization',
             code='LEGACY-OPEN-LINKS',
