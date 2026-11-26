@@ -7,6 +7,26 @@ from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DriverVeh
 
 
 
+
+def _device_vehicle_visible_to_user(device, user):
+    """Whether the vehicle's identifying details belong to the caller's tenant."""
+    if not user or getattr(user, 'is_site_admin', False):
+        return True
+    vehicle = device.vehicle if device.vehicle_id else None
+    if vehicle is None:
+        return False
+    if getattr(user, 'is_personal_user', False):
+        return vehicle.owner_user_id == user.pk
+    if getattr(user, 'is_branch_manager', False) and user.branch_id:
+        return bool(
+            vehicle.organization_id == user.branch.organization_id
+            and vehicle.branch_id == user.branch_id
+        )
+    if getattr(user, 'is_main_user', False) and user.organization_id:
+        return vehicle.organization_id == user.organization_id
+    return False
+
+
 def _redact_unrelated_device_party_fields(data, device, user):
     """Hide legal-owner, holder, branch, and vehicle details outside the caller's tenant."""
     if not user or getattr(user, 'is_site_admin', False):
@@ -65,16 +85,7 @@ def _redact_unrelated_device_party_fields(data, device, user):
             if field in data:
                 data[field] = None
 
-    vehicle = device.vehicle
-    if getattr(user, 'is_personal_user', False):
-        vehicle_visible = bool(vehicle and vehicle.owner_user_id == user.pk)
-    else:
-        vehicle_visible = bool(
-            vehicle
-            and organization_id
-            and vehicle.organization_id == organization_id
-            and (branch_id is None or vehicle.branch_id == branch_id)
-        )
+    vehicle_visible = _device_vehicle_visible_to_user(device, user)
     if not vehicle_visible:
         for field in ('vehicle', 'vehicle_plate'):
             if field in data:
