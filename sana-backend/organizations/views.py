@@ -32,11 +32,74 @@ from .serializers import (
     SubscriptionDeviceSerializer,
     SubscriptionPaymentSerializer,
     SubscriptionOperationSerializer,
+    SubscriptionOrganizationCustomerChangeSerializer,
+    SubscriptionPersonalCustomerChangeSerializer,
 )
 from accounts.permissions import IsSiteAdmin, IsMainUserOrSiteAdmin
 from fleet.lifecycle import record_device_lifecycle_event
+from fleet.models import Device
 from fleet.device_operations import _close_customer_access
 from fleet.customer_access import active_customer_access_periods, active_personal_contract_links, active_subscription_links
+
+
+def _lock_subscription_devices(subscription, add_devices=()):
+    """Lock device rows in stable order before locking their parent contract."""
+    device_ids = set(
+        subscription.subscription_devices.filter(
+            unassigned_at__isnull=True
+        ).values_list('device_id', flat=True)
+    )
+    for item in add_devices or ():
+        device_id = item.get('device_id') if isinstance(item, dict) else None
+        if device_id:
+            device_ids.add(int(device_id))
+    if device_ids:
+        list(
+            Device.objects.select_for_update()
+            .filter(pk__in=device_ids)
+            .order_by('pk')
+            .values_list('pk', flat=True)
+        )
+
+
+def _apply_customer_profile_changes(subscription, customer_changes, operation):
+    """Validate and persist shared customer data, with a contract audit trail."""
+    if not customer_changes:
+        return
+    if not isinstance(customer_changes, dict):
+        raise serializers.ValidationError({
+            'customer_changes': 'اطلاعات مشتری باید به‌صورت یک شیء ارسال شود.'
+        })
+
+    if subscription.customer_type == 'organization':
+        target = subscription.organization
+        change_serializer_class = SubscriptionOrganizationCustomerChangeSerializer
+        entity_type = 'Organization'
+    else:
+        target = subscription.user
+        change_serializer_class = SubscriptionPersonalCustomerChangeSerializer
+        entity_type = 'User'
+
+    if target is None:
+        raise serializers.ValidationError({'customer_changes': 'مشتری قرارداد یافت نشد'})
+
+    change_serializer = change_serializer_class(
+        target, data=customer_changes, partial=True
+    )
+    change_serializer.is_valid(raise_exception=True)
+
+    for field, new_value in change_serializer.validated_data.items():
+        old_value = getattr(target, field)
+        if str(old_value) == str(new_value):
+            continue
+        SubscriptionOperationChange.objects.create(
+            operation=operation,
+            entity_type=entity_type,
+            field_name=field,
+            old_value='' if old_value is None else str(old_value),
+            new_value='' if new_value is None else str(new_value),
+        )
+    change_serializer.save()
 
 
 # ═══════════════════════════════════════════════
@@ -361,6 +424,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             )
 
         with transaction.atomic():
+            _lock_subscription_devices(subscription, request.data.get('add_devices', []))
             subscription = Subscription.objects.select_for_update().get(pk=subscription.pk)
             if new_end_date <= timezone.localdate() or new_end_date <= subscription.end_date:
                 raise serializers.ValidationError({
@@ -440,35 +504,11 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                 payment = payment_serializer.save()
                 allocate_payment(payment)
 
-            # تغییر اطلاعات مشتری
-            customer_changes = request.data.get('customer_changes', {})
-            if customer_changes:
-                target = subscription.organization if subscription.customer_type == 'organization' else subscription.user
-                if target is None:
-                    raise serializers.ValidationError({'customer_changes': 'مشتری قرارداد یافت نشد'})
-
-                allowed = {
-                    'organization': {'name', 'code', 'registration_number', 'economy_code', 'phone', 'email', 'address', 'website'},
-                    'personal': {'first_name', 'last_name', 'mobile', 'national_id', 'address'},
-                }[subscription.customer_type]
-
-                for field, new_value in customer_changes.items():
-                    if field not in allowed or not hasattr(target, field):
-                        raise serializers.ValidationError(
-                            {'customer_changes': f'فیلد {field} قابل تغییر نیست'}
-                        )
-                    old_value = getattr(target, field)
-                    if str(old_value) == str(new_value):
-                        continue
-                    SubscriptionOperationChange.objects.create(
-                        operation=operation,
-                        entity_type=target.__class__.__name__,
-                        field_name=field,
-                        old_value='' if old_value is None else str(old_value),
-                        new_value='' if new_value is None else str(new_value),
-                    )
-                    setattr(target, field, new_value)
-                target.save()
+            _apply_customer_profile_changes(
+                subscription,
+                request.data.get('customer_changes', {}),
+                operation,
+            )
 
         return Response(SubscriptionSerializer(subscription).data)
 
@@ -504,13 +544,6 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         if new_start > new_end:
             raise serializers.ValidationError({'contract_changes': 'تاریخ شروع قرارداد باید قبل از تاریخ پایان باشد'})
 
-        allowed_customer = {
-            'organization': {'name', 'code', 'registration_number', 'economy_code', 'phone', 'email', 'address', 'website'},
-            'personal': {'first_name', 'last_name', 'mobile', 'national_id', 'address'},
-        }[subscription.customer_type]
-        if any(field not in allowed_customer for field in customer_changes):
-            raise serializers.ValidationError({'customer_changes': 'فیلد اطلاعات مشتری قابل ویرایش نیست'})
-
         payment_objects = {}
         for item in payment_changes:
             payment_id = item.get('id')
@@ -522,6 +555,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             payment_objects[payment_id] = (payment, item)
 
         with transaction.atomic():
+            _lock_subscription_devices(subscription, add_devices)
             subscription = Subscription.objects.select_for_update().get(pk=subscription.pk)
             # Re-evaluate date bounds against the locked, current contract row.
             new_start = parsed_contract.get('start_date', subscription.start_date)
@@ -606,24 +640,9 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                     description=f'دستگاه از قرارداد {subscription.contract_number} خارج شد؛ مالکیت دستگاه حفظ شد.',
                 )
 
-            # تغییر اطلاعات مشتری
-            if customer_changes:
-                target = subscription.organization if subscription.customer_type == 'organization' else subscription.user
-                if target is None:
-                    raise serializers.ValidationError({'customer_changes': 'مشتری قرارداد یافت نشد'})
-                for field, new_value in customer_changes.items():
-                    old_value = getattr(target, field)
-                    if str(old_value) == str(new_value):
-                        continue
-                    SubscriptionOperationChange.objects.create(
-                        operation=operation,
-                        entity_type=target.__class__.__name__,
-                        field_name=field,
-                        old_value='' if old_value is None else str(old_value),
-                        new_value='' if new_value is None else str(new_value),
-                    )
-                    setattr(target, field, new_value)
-                target.save()
+            _apply_customer_profile_changes(
+                subscription, customer_changes, operation
+            )
 
             # دریافتی‌ای که تخصیص مالی دارد قابل ویرایش مستقیم نیست؛
             # برای اصلاح آن باید در جریان مالی جداگانه برگشت/اصلاح ثبت شود.
@@ -754,6 +773,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         """لغو قرارداد و پایان‌دادن به تخصیص دستگاه‌های فعال آن."""
         subscription = self.get_object()
         with transaction.atomic():
+            _lock_subscription_devices(subscription)
             subscription = Subscription.objects.select_for_update().get(pk=subscription.pk)
             if subscription.status == 'cancelled':
                 return Response(
