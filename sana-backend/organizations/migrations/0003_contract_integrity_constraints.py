@@ -3,14 +3,15 @@ from django.db.models import Count, Q
 
 
 def validate_contract_integrity(apps, schema_editor):
+    db_alias = schema_editor.connection.alias
     Subscription = apps.get_model('organizations', 'Subscription')
     SubscriptionDevice = apps.get_model('organizations', 'SubscriptionDevice')
-    invalid_subscription_dates = Subscription.objects.filter(end_date__lt=models.F('start_date')).count()
-    malformed = Subscription.objects.exclude(
+    invalid_subscription_dates = Subscription.objects.using(db_alias).filter(end_date__lt=models.F('start_date')).count()
+    malformed = Subscription.objects.using(db_alias).exclude(
         Q(customer_type='organization', organization__isnull=False, user__isnull=True)
         | Q(customer_type='personal', organization__isnull=True, user__isnull=False)
     ).count()
-    invalid_link_dates = SubscriptionDevice.objects.filter(end_date__lt=models.F('start_date')).count()
+    invalid_link_dates = SubscriptionDevice.objects.using(db_alias).filter(end_date__lt=models.F('start_date')).count()
     duplicate_open_links = SubscriptionDevice.objects.filter(unassigned_at__isnull=True).values(
         'device_id'
     ).annotate(total=Count('id')).filter(total__gt=1).count()
