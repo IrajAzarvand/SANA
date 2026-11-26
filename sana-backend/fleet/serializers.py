@@ -12,12 +12,17 @@ def _redact_unrelated_device_party_fields(data, device, user):
     if not user or getattr(user, 'is_site_admin', False):
         return data
 
-    organization_id = (
-        user.organization_id
-        if getattr(user, 'is_main_user', False) or getattr(user, 'is_branch_manager', False)
-        else None
-    )
-    branch_id = user.branch_id if getattr(user, 'is_branch_manager', False) else None
+    if getattr(user, 'is_branch_manager', False) and user.branch_id:
+        # Legacy branch-manager accounts may not have organization_id set;
+        # the selected branch's organization is the authoritative tenant.
+        organization_id = user.branch.organization_id
+        branch_id = user.branch_id
+    elif getattr(user, 'is_main_user', False):
+        organization_id = user.organization_id
+        branch_id = None
+    else:
+        organization_id = None
+        branch_id = None
 
     if device.organization_id != organization_id:
         for field in ('organization', 'organization_name'):
