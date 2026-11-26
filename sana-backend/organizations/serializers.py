@@ -614,7 +614,9 @@ class SubscriptionSerializer(serializers.ModelSerializer):
                 'device__replacement_relations_as_replacement__source_device__device_model',
             )
         )
-        return SubscriptionDeviceSerializer(active_links, many=True).data
+        return SubscriptionDeviceSerializer(
+            active_links, many=True, context=self.context
+        ).data
 
     def get_device_count(self, obj):
         return obj.subscription_devices.filter(unassigned_at__isnull=True).count()
