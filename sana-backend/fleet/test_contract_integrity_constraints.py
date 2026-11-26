@@ -491,9 +491,12 @@ class DeviceAssignmentValidationTests(TestCase):
     def test_device_held_by_another_customer_cannot_be_added_to_contract(self):
         device = Device.objects.create(
             imei='860000000009955',
-            current_holder_user=self.personal_user,
             management_status='installed',
         )
+        Device.objects.filter(pk=device.pk).update(
+            current_holder_user=self.personal_user
+        )
+        device.refresh_from_db()
         with transaction.atomic():
             with self.assertRaises(ValidationError):
                 _add_to_subscription(device, self.subscription, operation=None)
