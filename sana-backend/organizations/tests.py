@@ -1628,6 +1628,24 @@ class SubscriptionActivationLifecycleTests(TestCase):
         contract.refresh_from_db()
         self.assertEqual(contract.status, 'expired')
 
+    def test_effectively_expired_active_contract_cannot_be_suspended(self):
+        contract = self.make_contract('SUSPEND-COMPUTED-EXPIRED', 'active', end_offset=-1)
+        response = self.client.post(
+            f'/api/subscriptions/{contract.pk}/suspend/', {}, format='json'
+        )
+        self.assertEqual(response.status_code, 409)
+        contract.refresh_from_db()
+        self.assertEqual(contract.status, 'active')
+        self.assertEqual(contract.computed_status, 'expired')
+
+    def test_already_suspended_contract_cannot_create_duplicate_suspend_operation(self):
+        contract = self.make_contract('SUSPEND-ALREADY-SUSPENDED', 'suspended')
+        response = self.client.post(
+            f'/api/subscriptions/{contract.pk}/suspend/', {}, format='json'
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(contract.operations.count(), 0)
+
     def test_suspended_unexpired_contract_can_be_reactivated(self):
         contract = self.make_contract('ACTIVATE-SUSPENDED', 'suspended')
         response = self.client.post(
