@@ -1367,3 +1367,148 @@ class ArchivedOrganizationCustomerAccessTests(TestCase):
                 branch_id=branch.pk,
             ).filter(device=device).exists()
         )
+
+
+class VehiclePlateDisclosureAcrossDeviceEndpointsTests(TestCase):
+    def setUp(self):
+        self.organization = Organization.objects.create(
+            name='Vehicle Plate Access Customer',
+            code='VEH-PLATE-ACCESS-CUSTOMER',
+        )
+        self.foreign_organization = Organization.objects.create(
+            name='Vehicle Plate Legal Owner',
+            code='VEH-PLATE-LEGAL-OWNER',
+        )
+        self.manager = User.objects.create_user(
+            username='vehicle_plate_access_manager',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=self.organization,
+        )
+        from fleet.models import Vehicle
+        self.vehicle = Vehicle.objects.create(
+            plate='33ک333',
+            organization=self.foreign_organization,
+        )
+        self.device = Device.objects.create(
+            imei='860000000009971',
+            organization=self.organization,
+            vehicle=self.vehicle,
+        )
+        today = timezone.localdate()
+        self.contract = Subscription.objects.create(
+            contract_number='VEH-PLATE-ACCESS-CONTRACT',
+            customer_type='organization',
+            organization=self.organization,
+            start_date=today - timedelta(days=3),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        link = SubscriptionDevice.objects.create(
+            subscription=self.contract,
+            device=self.device,
+            start_date=self.contract.start_date,
+            end_date=self.contract.end_date,
+        )
+        # The event below predates the request, so make the assignment window
+        # explicitly begin before that event instead of using the model's
+        # default assigned_at timestamp (which is set to test setup time).
+        SubscriptionDevice.objects.filter(pk=link.pk).update(
+            assigned_at=timezone.now() - timedelta(days=2)
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=self.device,
+            organization=self.organization,
+            subscription=self.contract,
+            started_at=timezone.now() - timedelta(days=1),
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.manager)
+
+    def test_live_map_hides_vehicle_plate_outside_customer_tenant(self):
+        with patch('fleet.views.traccar_devices', return_value=[]), patch(
+            'fleet.views.traccar_current_positions', return_value=[],
+        ):
+            response = self.client.get('/api/devices/map-positions/')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        row = next(item for item in response.data if item['device_id'] == self.device.pk)
+        self.assertIsNone(row['vehicle_plate'])
+
+    def test_alerts_hide_vehicle_plate_outside_customer_tenant(self):
+        event_time = timezone.now() - timedelta(minutes=5)
+        with patch('fleet.views.traccar_devices', return_value=[{
+            'id': 9971,
+            'uniqueId': self.device.imei,
+        }]), patch('fleet.views.traccar_device_events', return_value=[{
+            'id': 'vehicle-plate-event-9971',
+            'deviceId': 9971,
+            'type': 'alarm',
+            'eventTime': event_time.isoformat(),
+            'attributes': {},
+        }]):
+            response = self.client.get('/api/devices/alerts/')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        row = next(
+            item for item in response.data['results']
+            if item['device_id'] == self.device.pk
+        )
+        self.assertIsNone(row['vehicle_plate'])
+class InactiveBranchCustomerAccessTests(TestCase):
+    def test_inactive_branch_cannot_access_device_through_open_contract_period(self):
+        organization = Organization.objects.create(
+            name='Inactive Branch Access Organization',
+            code='INACTIVE-BRANCH-ACCESS-ORG',
+        )
+        branch = Branch.objects.create(
+            organization=organization,
+            name='Inactive Access Branch',
+            code='INACTIVE-ACCESS-BR',
+            status='inactive',
+        )
+        manager = User.objects.create_user(
+            username='inactive_branch_access_manager',
+            password='test-password',
+            role='branch_manager',
+            account_type='organization',
+            organization=organization,
+            branch=branch,
+        )
+        device = Device.objects.create(
+            imei='860000000009951',
+            organization=organization,
+            branch=branch,
+        )
+        today = timezone.localdate()
+        contract = Subscription.objects.create(
+            contract_number='INACTIVE-BRANCH-ACCESS-CONTRACT',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=2),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=contract,
+            device=device,
+            start_date=contract.start_date,
+            end_date=contract.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            branch=branch,
+            subscription=contract,
+            started_at=timezone.now() - timedelta(days=1),
+        )
+
+        self.assertFalse(
+            active_customer_access_periods(
+                organization_id=organization.pk,
+                branch_id=branch.pk,
+            ).filter(device=device).exists()
+        )
+        from fleet.customer_access import authorized_devices_for_user
+        self.assertFalse(authorized_devices_for_user(manager).filter(pk=device.pk).exists())
