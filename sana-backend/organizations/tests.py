@@ -1976,3 +1976,48 @@ class PersonalSubscriptionReplacementDisclosureTests(TestCase):
             if item['device'] == first.pk
         )
         self.assertEqual(relation['related_device_imei'], second.imei)
+
+ 
+class HistoricalSubscriptionDeviceRedactionTests(TestCase):
+    def test_expired_contract_keeps_own_history_but_redacts_current_device_identifiers(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from rest_framework.test import APIClient
+        from accounts.models import User
+        from fleet.models import Device, Vehicle
+        from organizations.models import Subscription, SubscriptionDevice
+
+        user = User.objects.create_user(
+            username='historical_device_redaction', password='test-password',
+            role='personal_user', account_type='personal',
+        )
+        today = timezone.localdate()
+        contract = Subscription.objects.create(
+            contract_number='HISTORICAL-DEVICE-REDACTION', customer_type='personal', user=user,
+            start_date=today-timedelta(days=40), end_date=today-timedelta(days=10),
+            status='active',
+        )
+        vehicle = Vehicle.objects.create(plate='99ج999', owner_user=user)
+        device = Device.objects.create(
+            imei='860000000009901', sim_number='09128887766',
+            vehicle=vehicle, management_status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=contract, device=device,
+            start_date=contract.start_date, end_date=contract.end_date,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.get(f'/api/subscriptions/{contract.pk}/')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(len(response.data['devices']), 1)
+        historical_link = response.data['devices'][0]
+        self.assertEqual(historical_link['device'], device.pk)
+        self.assertIsNone(historical_link['device_imei'])
+        self.assertIsNone(historical_link['device_sim'])
+        self.assertIsNone(historical_link['vehicle_plate'])
+        self.assertIsNone(historical_link['replacement_relation'])
+        self.assertNotIn(device.imei, str(response.data))
+        self.assertNotIn(device.sim_number, str(response.data))
