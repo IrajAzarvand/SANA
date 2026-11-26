@@ -1561,6 +1561,13 @@ class SubscriptionCustomerProfileChangeTests(TestCase):
             {'first_name', 'address'},
         )
 
+    def test_non_object_customer_changes_are_rejected_even_when_empty(self):
+        with self.assertRaises(ValidationError):
+            self.apply_changes(self.org_subscription, [], self.operation)
+        self.organization.refresh_from_db()
+        self.assertEqual(self.organization.name, 'Shared Customer Profile Org')
+        self.assertFalse(self.operation.changes.exists())
+
     def test_unknown_customer_fields_are_rejected(self):
         with self.assertRaises(ValidationError):
             self.apply_changes(
