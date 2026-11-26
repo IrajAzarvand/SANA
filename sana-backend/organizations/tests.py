@@ -1363,3 +1363,141 @@ class BranchDeletionDataIntegrityTests(TestCase):
         response = self.client.delete(f'/api/branches/{self.branch.pk}/')
         self.assertEqual(response.status_code, 403)
         self.assertTrue(Branch.objects.filter(pk=self.branch.pk).exists())
+
+
+class SubscriptionCustomerProfileChangeTests(TestCase):
+    def setUp(self):
+        from organizations.views import _apply_customer_profile_changes
+
+        self.apply_changes = _apply_customer_profile_changes
+        today = timezone.localdate()
+        self.organization = Organization.objects.create(
+            name='Shared Customer Profile Org',
+            code='SHARED-CUSTOMER-PROFILE',
+            email='old@example.com',
+        )
+        self.user = User.objects.create_user(
+            username='shared-customer-profile-user',
+            password='test-password-123',
+            account_type='personal',
+            role='personal_user',
+            first_name='Old',
+            last_name='Customer',
+            mobile='09120000000',
+            address='Old address',
+        )
+        self.org_subscription = Subscription.objects.create(
+            contract_number='SHARED-CUSTOMER-ORG-CONTRACT',
+            customer_type='organization',
+            organization=self.organization,
+            start_date=today,
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        self.personal_subscription = Subscription.objects.create(
+            contract_number='SHARED-CUSTOMER-PERSONAL-CONTRACT',
+            customer_type='personal',
+            user=self.user,
+            start_date=today,
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        self.operation = SubscriptionOperation.objects.create(
+            subscription=self.org_subscription,
+            operation_type='modify',
+        )
+
+    def test_organization_profile_changes_are_validated_and_shared(self):
+        self.apply_changes(
+            self.org_subscription,
+            {'name': 'Updated Shared Org', 'email': 'new@example.com'},
+            self.operation,
+        )
+        self.organization.refresh_from_db()
+        self.assertEqual(self.organization.name, 'Updated Shared Org')
+        self.assertEqual(self.organization.email, 'new@example.com')
+        self.assertEqual(
+            set(self.operation.changes.values_list('field_name', flat=True)),
+            {'name', 'email'},
+        )
+        # Every contract references the same Organization row.
+        self.assertEqual(
+            self.org_subscription.organization.name,
+            self.personal_subscription.organization.name
+            if self.personal_subscription.organization_id
+            else self.organization.name,
+        )
+
+    def test_invalid_organization_email_does_not_partially_update_profile(self):
+        with self.assertRaises(Exception):
+            self.apply_changes(
+                self.org_subscription,
+                {'name': 'Must Roll Back', 'email': 'not-an-email'},
+                self.operation,
+            )
+        self.organization.refresh_from_db()
+        self.assertEqual(self.organization.name, 'Shared Customer Profile Org')
+        self.assertEqual(self.organization.email, 'old@example.com')
+        self.assertFalse(self.operation.changes.exists())
+
+    def test_duplicate_organization_code_is_rejected(self):
+        duplicate = Organization.objects.create(
+            name='Duplicate Code Org',
+            code='DUPLICATE-SHARED-CODE',
+        )
+        with self.assertRaises(Exception):
+            self.apply_changes(
+                self.org_subscription,
+                {'code': duplicate.code},
+                self.operation,
+            )
+        self.organization.refresh_from_db()
+        self.assertEqual(self.organization.code, 'SHARED-CUSTOMER-PROFILE')
+
+    def test_organization_max_length_is_enforced(self):
+        with self.assertRaises(Exception):
+            self.apply_changes(
+                self.org_subscription,
+                {'name': 'x' * 201},
+                self.operation,
+            )
+        self.organization.refresh_from_db()
+        self.assertEqual(self.organization.name, 'Shared Customer Profile Org')
+
+    def test_personal_customer_fields_are_validated(self):
+        personal_operation = SubscriptionOperation.objects.create(
+            subscription=self.personal_subscription,
+            operation_type='modify',
+        )
+        with self.assertRaises(Exception):
+            self.apply_changes(
+                self.personal_subscription,
+                {'mobile': '1' * 16},
+                personal_operation,
+            )
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.mobile, '09120000000')
+
+        self.apply_changes(
+            self.personal_subscription,
+            {'first_name': 'Updated', 'address': 'New address'},
+            personal_operation,
+        )
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.first_name, 'Updated')
+        self.assertEqual(self.user.address, 'New address')
+        self.assertEqual(
+            set(personal_operation.changes.values_list('field_name', flat=True)),
+            {'first_name', 'address'},
+        )
+
+    def test_unknown_customer_fields_are_rejected(self):
+        with self.assertRaises(Exception):
+            self.apply_changes(
+                self.org_subscription,
+                {'is_superuser': True},
+                self.operation,
+            )
+        self.organization.refresh_from_db()
+        self.assertFalse(self.user.is_superuser)
+        self.assertFalse(self.operation.changes.exists())
