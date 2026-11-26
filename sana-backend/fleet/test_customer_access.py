@@ -1366,3 +1366,46 @@ class CustomerAccessTimelineAndContractTests(TestCase):
         self.assertEqual(subscription.computed_status, 'expired')
         self.assertFalse(subscription.is_active)
         self.assertFalse(device.is_data_active)
+
+
+class ArchivedOrganizationCustomerAccessTests(TestCase):
+    def test_archived_organization_cannot_keep_active_customer_access(self):
+        today = timezone.localdate()
+        organization = Organization.objects.create(
+            name='Archived Access Organization',
+            code='ARCHIVED-ACCESS-ORG',
+            status='archived',
+        )
+        branch = Branch.objects.create(
+            organization=organization,
+            name='Archived Access Branch',
+            code='ARCHIVED-ACCESS-BR',
+        )
+        device = Device.objects.create(imei='860000000009952')
+        subscription = Subscription.objects.create(
+            contract_number='ARCHIVED-ACCESS-CONTRACT',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=1),
+            end_date=today + timedelta(days=10),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            branch=branch,
+            subscription=subscription,
+        )
+
+        self.assertFalse(
+            active_customer_access_periods(
+                organization_id=organization.pk,
+                branch_id=branch.pk,
+            ).filter(device=device).exists()
+        )
