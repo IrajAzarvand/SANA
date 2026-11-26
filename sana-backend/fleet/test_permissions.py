@@ -667,6 +667,7 @@ class PersonalReplacementHistoryFutureAssignmentTests(TestCase):
 class VehicleDeviceDisclosureScopeTests(TestCase):
     def test_company_vehicle_detail_hides_device_without_current_customer_access(self):
         from datetime import timedelta
+        from django.utils import timezone
         from rest_framework.test import APIClient
         from accounts.models import User
         from fleet.models import Device, Vehicle
@@ -714,6 +715,7 @@ class VehicleDeviceDisclosureScopeTests(TestCase):
 
     def test_company_vehicle_detail_shows_device_with_current_customer_access(self):
         from datetime import timedelta
+        from django.utils import timezone
         from rest_framework.test import APIClient
         from accounts.models import User
         from fleet.models import Device, DeviceCustomerAccessPeriod, Vehicle
