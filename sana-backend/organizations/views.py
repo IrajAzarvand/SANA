@@ -49,8 +49,6 @@ def _lock_subscription_devices(subscription, add_devices=()):
             unassigned_at__isnull=True
         ).values_list('device_id', flat=True)
     )
-    if add_devices is None:
-        add_devices = []
     if not isinstance(add_devices, list):
         raise serializers.ValidationError({
             'add_devices': 'فهرست دستگاه‌های جدید باید آرایه باشد.'
@@ -83,6 +81,30 @@ def _lock_subscription_devices(subscription, add_devices=()):
             .order_by('pk')
             .values_list('pk', flat=True)
         )
+
+
+
+def _validated_positive_id_list(value, field_name):
+    if value is None:
+        return []
+    if not isinstance(value, list):
+        raise serializers.ValidationError({
+            field_name: 'مقدار باید فهرستی از شناسه‌های معتبر باشد.'
+        })
+    normalized = []
+    for raw_id in value:
+        if isinstance(raw_id, bool):
+            raise serializers.ValidationError({field_name: 'شناسه نامعتبر است.'})
+        try:
+            item_id = int(raw_id)
+        except (TypeError, ValueError):
+            raise serializers.ValidationError({field_name: 'شناسه نامعتبر است.'})
+        if item_id <= 0:
+            raise serializers.ValidationError({field_name: 'شناسه باید عدد صحیح مثبت باشد.'})
+        if item_id in normalized:
+            raise serializers.ValidationError({field_name: 'شناسه تکراری مجاز نیست.'})
+        normalized.append(item_id)
+    return normalized
 
 
 def _apply_customer_profile_changes(subscription, customer_changes, operation):
@@ -438,6 +460,12 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         subscription = self.get_object()
         new_end_date = request.data.get('new_end_date')
         notes = request.data.get('notes', '')
+        remove_ids = _validated_positive_id_list(
+            request.data.get('remove_device_ids', []), 'remove_device_ids'
+        )
+        payments = request.data.get('payments', [])
+        if not isinstance(payments, list) or any(not isinstance(item, dict) for item in payments):
+            raise serializers.ValidationError({'payments': 'فهرست پرداخت‌ها نامعتبر است.'})
         if not new_end_date:
             return Response({'new_end_date': 'این فیلد الزامی است'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -477,7 +505,6 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             # تمدید قرارداد باید وضعیت فعلی دستگاه‌های متصل را هم به پایان جدید منتقل کند.
             # چون end_date قرارداد از آخرین دستگاه فعال نیز محاسبه می‌شود،
             # اگر این کار انجام نشود، با ذخیره/تغییر بعدی ممکن است تاریخ تمدیدشده دوباره به تاریخ قبلی برگردد.
-            remove_ids = request.data.get('remove_device_ids', [])
             subscription.subscription_devices.filter(
                 unassigned_at__isnull=True
             ).exclude(id__in=remove_ids).update(end_date=new_end_date)
@@ -527,7 +554,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                 )
 
             # پرداخت‌های مربوط به همین تمدید
-            for item in request.data.get('payments', []):
+            for item in payments:
                 payment_serializer = SubscriptionPaymentSerializer(
                     data={**item, 'subscription': subscription.id, 'operation': operation.id}
                 )
@@ -552,8 +579,20 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         customer_changes = request.data.get('customer_changes', {})
         payment_changes = request.data.get('payment_changes', [])
         add_devices = request.data.get('add_devices', [])
-        remove_device_ids = request.data.get('remove_device_ids', [])
+        remove_device_ids = _validated_positive_id_list(
+            request.data.get('remove_device_ids', []), 'remove_device_ids'
+        )
         notes = request.data.get('notes', '')
+        if not isinstance(contract_changes, dict):
+            raise serializers.ValidationError({
+                'contract_changes': 'تغییرات قرارداد باید به‌صورت یک شیء ارسال شود.'
+            })
+        if not isinstance(payment_changes, list) or any(
+            not isinstance(item, dict) for item in payment_changes
+        ):
+            raise serializers.ValidationError({
+                'payment_changes': 'فهرست تغییرات پرداخت نامعتبر است.'
+            })
 
         allowed_contract = {'start_date', 'end_date', 'notes'}
         if any(field not in allowed_contract for field in contract_changes):
