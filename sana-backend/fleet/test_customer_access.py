@@ -103,7 +103,7 @@ class ContractBackedDeviceAccessTests(TestCase):
         )
 
 
-    def test_organization_device_detail_uses_valid_link_when_newer_duplicate_is_future(self):
+    def test_organization_device_detail_does_not_treat_future_assignment_as_active(self):
         organization = Organization.objects.create(
             name='Future Duplicate Detail Organization',
             code='FUTURE-DUPLICATE-DETAIL-ORG',
@@ -139,7 +139,6 @@ class ContractBackedDeviceAccessTests(TestCase):
         SubscriptionDevice.objects.filter(pk=future_link.pk).update(
             assigned_at=now + timedelta(minutes=10)
         )
-        valid_link.refresh_from_db()
         future_link.refresh_from_db()
         period = DeviceCustomerAccessPeriod.objects.create(
             device=device,
@@ -148,10 +147,10 @@ class ContractBackedDeviceAccessTests(TestCase):
             started_at=now - timedelta(days=3),
         )
         device._active_customer_access_periods = [period]
-        device._prefetched_subscription_links = [future_link, valid_link]
+        device._prefetched_subscription_links = [future_link]
 
         request = SimpleNamespace(user=main_user)
-        self.assertTrue(
+        self.assertFalse(
             DeviceSerializer(context={'request': request}).get_data_active(device)
         )
 
