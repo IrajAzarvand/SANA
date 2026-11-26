@@ -12,7 +12,7 @@ def validate_contract_integrity(apps, schema_editor):
         | Q(customer_type='personal', organization__isnull=True, user__isnull=False)
     ).count()
     invalid_link_dates = SubscriptionDevice.objects.using(db_alias).filter(end_date__lt=models.F('start_date')).count()
-    duplicate_open_links = SubscriptionDevice.objects.filter(unassigned_at__isnull=True).values(
+    duplicate_open_links = SubscriptionDevice.objects.using(db_alias).filter(unassigned_at__isnull=True).values(
         'device_id'
     ).annotate(total=Count('id')).filter(total__gt=1).count()
     if malformed or invalid_subscription_dates or invalid_link_dates or duplicate_open_links:
