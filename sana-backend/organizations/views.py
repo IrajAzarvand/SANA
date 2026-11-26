@@ -824,9 +824,14 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         subscription = self.get_object()
         with transaction.atomic():
             subscription = Subscription.objects.select_for_update().get(pk=subscription.pk)
-            if subscription.status in {'cancelled', 'expired'}:
+            if subscription.status in {'cancelled', 'expired'} or subscription.end_date < timezone.localdate():
                 return Response(
                     {'detail': 'قرارداد لغوشده یا منقضی‌شده قابل تعلیق نیست.'},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            if subscription.status == 'suspended':
+                return Response(
+                    {'detail': 'این قرارداد از قبل در وضعیت تعلیق قرار دارد.'},
                     status=status.HTTP_409_CONFLICT,
                 )
             operation = SubscriptionOperation.objects.create(
