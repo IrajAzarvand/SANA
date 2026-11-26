@@ -210,7 +210,7 @@ class VehicleListSerializer(serializers.ModelSerializer):
         device = devices.order_by('-updated_at', '-id').first()
         if not device:
             return 'none'
-        return 'active' if device.is_data_active else 'offline'
+        return 'active' if _device_data_active_for_request(device, request) else 'offline'
 
 
 class DeviceModelSerializer(serializers.ModelSerializer):
