@@ -63,12 +63,14 @@ def _lock_subscription_devices(subscription, add_devices=()):
             raise serializers.ValidationError({
                 'add_devices': 'شناسه دستگاه الزامی و باید عدد صحیح مثبت باشد.'
             })
-        try:
-            normalized_device_id = int(device_id)
-        except (TypeError, ValueError):
+        if not (
+            (isinstance(device_id, int) and not isinstance(device_id, bool))
+            or (isinstance(device_id, str) and device_id.isdecimal())
+        ):
             raise serializers.ValidationError({
                 'add_devices': 'شناسه دستگاه نامعتبر است.'
             })
+        normalized_device_id = int(device_id)
         if normalized_device_id <= 0:
             raise serializers.ValidationError({
                 'add_devices': 'شناسه دستگاه باید عدد صحیح مثبت باشد.'
@@ -95,10 +97,12 @@ def _validated_positive_id_list(value, field_name):
     for raw_id in value:
         if isinstance(raw_id, bool):
             raise serializers.ValidationError({field_name: 'شناسه نامعتبر است.'})
-        try:
-            item_id = int(raw_id)
-        except (TypeError, ValueError):
+        if not (
+            (isinstance(raw_id, int) and not isinstance(raw_id, bool))
+            or (isinstance(raw_id, str) and raw_id.isdecimal())
+        ):
             raise serializers.ValidationError({field_name: 'شناسه نامعتبر است.'})
+        item_id = int(raw_id)
         if item_id <= 0:
             raise serializers.ValidationError({field_name: 'شناسه باید عدد صحیح مثبت باشد.'})
         if item_id in normalized:
@@ -460,6 +464,10 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         subscription = self.get_object()
         new_end_date = request.data.get('new_end_date')
         notes = request.data.get('notes', '')
+        if notes is None:
+            notes = ''
+        if not isinstance(notes, str):
+            raise serializers.ValidationError({'notes': 'یادداشت باید متن باشد.'})
         remove_ids = _validated_positive_id_list(
             request.data.get('remove_device_ids', []), 'remove_device_ids'
         )
@@ -583,6 +591,10 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             request.data.get('remove_device_ids', []), 'remove_device_ids'
         )
         notes = request.data.get('notes', '')
+        if notes is None:
+            notes = ''
+        if not isinstance(notes, str):
+            raise serializers.ValidationError({'notes': 'یادداشت باید متن باشد.'})
         if not isinstance(contract_changes, dict):
             raise serializers.ValidationError({
                 'contract_changes': 'تغییرات قرارداد باید به‌صورت یک شیء ارسال شود.'
@@ -602,8 +614,10 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         parsed_contract = {}
         for field, value in contract_changes.items():
             if field in {'start_date', 'end_date'}:
+                if not isinstance(value, str) or not value:
+                    raise serializers.ValidationError({field: 'تاریخ الزامی و فرمت آن نامعتبر است'})
                 try:
-                    parsed_contract[field] = date.fromisoformat(value) if value else None
+                    parsed_contract[field] = date.fromisoformat(value)
                 except (TypeError, ValueError):
                     raise serializers.ValidationError({field: 'فرمت تاریخ نامعتبر است'})
             else:
