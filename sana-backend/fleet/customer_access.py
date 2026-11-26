@@ -92,7 +92,9 @@ def active_customer_access_periods(*, organization_id=None, user_id=None, branch
         )
 
     if branch_id is not None:
-        periods = periods.filter(branch_id=branch_id)
+        # A branch manager's authority ends immediately when their branch is
+        # deactivated, even if legacy access-period rows remain open.
+        periods = periods.filter(branch_id=branch_id, branch__status='active')
 
     if user_id:
         # A personal access period is valid only while its contract-device
