@@ -355,6 +355,11 @@ class SubscriptionDevice(models.Model):
                 condition=models.Q(end_date__gte=models.F('start_date')),
                 name='sub_device_valid_dates',
             ),
+            models.UniqueConstraint(
+                fields=['device'],
+                condition=models.Q(unassigned_at__isnull=True),
+                name='sub_device_one_open_link',
+            ),
         ]
 
     def __str__(self):
