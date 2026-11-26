@@ -752,3 +752,113 @@ class VehicleDeviceDisclosureScopeTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['device_imei'], device.imei)
+
+
+class DevicePartyMetadataDisclosureTests(TestCase):
+    def test_company_customer_cannot_see_foreign_legal_owner_or_vehicle(self):
+        from datetime import timedelta
+        from unittest.mock import patch
+        from rest_framework.test import APIClient
+        from accounts.models import User
+        from fleet.models import Device, DeviceCustomerAccessPeriod, Vehicle
+        from organizations.models import Organization, Subscription, SubscriptionDevice
+
+        today = timezone.localdate()
+        own_org = Organization.objects.create(name='Device Holder Org', code='DEVICE-HOLDER-ORG')
+        legal_owner = Organization.objects.create(name='Device Legal Owner Org', code='DEVICE-LEGAL-OWNER')
+        manager = User.objects.create_user(
+            username='device_party_company_manager', password='test-password',
+            role='main_user', account_type='organization', organization=own_org,
+        )
+        foreign_vehicle = Vehicle.objects.create(
+            plate='66د666', organization=legal_owner,
+        )
+        device = Device.objects.create(
+            imei='860000000009911', organization=legal_owner,
+            current_holder_organization=own_org, vehicle=foreign_vehicle,
+            management_status='active',
+        )
+        contract = Subscription.objects.create(
+            contract_number='DEVICE-PARTY-CURRENT', customer_type='organization',
+            organization=own_org, start_date=today-timedelta(days=3),
+            end_date=today+timedelta(days=20), status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=contract, device=device,
+            start_date=contract.start_date, end_date=contract.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device, organization=own_org, subscription=contract,
+            started_at=timezone.now()-timedelta(days=1),
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=manager)
+        detail = client.get(f'/api/devices/{device.pk}/')
+        with patch('fleet.views.traccar_devices', return_value=[]), patch(
+            'fleet.views.traccar_current_positions', return_value=[],
+        ):
+            listing = client.get('/api/devices/')
+
+        self.assertEqual(detail.status_code, 200, detail.data)
+        self.assertIsNone(detail.data['organization'])
+        self.assertIsNone(detail.data['organization_name'])
+        self.assertIsNone(detail.data['owner_user'])
+        self.assertIsNone(detail.data['owner_name'])
+        self.assertIsNone(detail.data['vehicle'])
+        self.assertIsNone(detail.data['vehicle_plate'])
+        self.assertEqual(detail.data['current_holder_organization'], own_org.pk)
+        self.assertEqual(detail.data['current_holder_organization_name'], own_org.name)
+
+        self.assertEqual(listing.status_code, 200, listing.data)
+        rows = listing.data['results'] if isinstance(listing.data, dict) else listing.data
+        self.assertEqual(len(rows), 1)
+        self.assertIsNone(rows[0]['organization'])
+        self.assertIsNone(rows[0]['organization_name'])
+        self.assertIsNone(rows[0]['owner_user'])
+        self.assertIsNone(rows[0]['owner_name'])
+        self.assertIsNone(rows[0]['vehicle_plate'])
+
+    def test_personal_customer_cannot_see_another_persons_legal_ownership(self):
+        from datetime import timedelta
+        from rest_framework.test import APIClient
+        from accounts.models import User
+        from fleet.models import Device, Vehicle
+        from organizations.models import Subscription, SubscriptionDevice
+
+        user = User.objects.create_user(
+            username='device_party_personal_customer', password='test-password',
+            role='personal_user', account_type='personal', full_name='Personal Customer',
+        )
+        other_owner = User.objects.create_user(
+            username='device_party_other_owner', password='test-password',
+            role='personal_user', account_type='personal', full_name='Other Owner',
+        )
+        today = timezone.localdate()
+        foreign_vehicle = Vehicle.objects.create(plate='55ه555', owner_user=other_owner)
+        device = Device.objects.create(
+            imei='860000000009912', owner_user=other_owner,
+            current_holder_user=user, vehicle=foreign_vehicle,
+            management_status='active',
+        )
+        contract = Subscription.objects.create(
+            contract_number='DEVICE-PARTY-PERSONAL', customer_type='personal',
+            user=user, start_date=today-timedelta(days=3),
+            end_date=today+timedelta(days=20), status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=contract, device=device,
+            start_date=contract.start_date, end_date=contract.end_date,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.get(f'/api/devices/{device.pk}/')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertIsNone(response.data['owner_user'])
+        self.assertIsNone(response.data['owner_name'])
+        self.assertIsNone(response.data['vehicle'])
+        self.assertIsNone(response.data['vehicle_plate'])
+        self.assertEqual(response.data['current_holder_user'], user.pk)
+        self.assertEqual(response.data['current_holder_user_name'], user.full_name)
