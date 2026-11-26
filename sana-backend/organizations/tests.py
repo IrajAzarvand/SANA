@@ -1224,6 +1224,31 @@ class SubscriptionPaymentMutationValidationTests(TestCase):
             description='Original receipt',
         )
 
+    def test_valid_payment_edit_is_saved_and_audited(self):
+        response = self.client.post(
+            f'/api/subscriptions/{self.subscription.pk}/modify/',
+            {
+                'contract_changes': {},
+                'payment_changes': [
+                    {
+                        'id': self.payment.pk,
+                        'amount': 600,
+                        'description': 'Updated receipt',
+                    }
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.amount, 600)
+        self.assertEqual(self.payment.description, 'Updated receipt')
+        operation = self.subscription.operations.get(operation_type='modify')
+        self.assertEqual(
+            set(operation.changes.values_list('field_name', flat=True)),
+            {'amount', 'description'},
+        )
+
     def test_payment_edit_rejects_non_positive_amount_without_partial_write(self):
         response = self.client.post(
             f'/api/subscriptions/{self.subscription.pk}/modify/',
