@@ -6,7 +6,7 @@ from django.utils import timezone
 from django.db.models import Q, Sum
 from fleet.lifecycle import record_device_lifecycle_event
 from fleet.device_operations import _open_customer_access, _open_ownership, _validate_device_customer_assignment
-from fleet.customer_access import active_customer_access_periods
+from fleet.customer_access import active_customer_access_periods, authorized_devices_for_user
 from fleet.models import DeviceCustomerAccessPeriod
 from accounts.models import User
 from .models import (
@@ -262,12 +262,23 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
 
     def get_replacement_relation(self, obj):
         device = obj.device
+        request = self.context.get('request')
         is_admin = self._is_site_admin()
 
+        def related_is_visible(related_device):
+            if is_admin:
+                return True
+            if not request:
+                return False
+            return authorized_devices_for_user(request.user).filter(
+                pk=related_device.pk
+            ).exists()
+
         source_relations = list(device.replacement_relations_as_source.all())
-        if source_relations:
-            relation = source_relations[0]
+        for relation in source_relations:
             related = relation.replacement_device
+            if not related_is_visible(related):
+                continue
             return {
                 'direction': 'replaced',
                 'label': 'جایگزین شده',
@@ -282,9 +293,10 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
             }
 
         replacement_relations = list(device.replacement_relations_as_replacement.all())
-        if replacement_relations:
-            relation = replacement_relations[0]
+        for relation in replacement_relations:
             related = relation.source_device
+            if not related_is_visible(related):
+                continue
             label = (
                 'جایگزین موقت'
                 if relation.replacement_type == 'temporary_repair'
