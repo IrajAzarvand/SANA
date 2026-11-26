@@ -1474,7 +1474,7 @@ class SubscriptionCustomerProfileChangeTests(TestCase):
             name='Duplicate Code Org',
             code='DUPLICATE-SHARED-CODE',
         )
-        with self.assertRaises(Exception):
+        with self.assertRaises(ValidationError):
             self.apply_changes(
                 self.org_subscription,
                 {'code': duplicate.code},
@@ -1484,7 +1484,7 @@ class SubscriptionCustomerProfileChangeTests(TestCase):
         self.assertEqual(self.organization.code, 'SHARED-CUSTOMER-PROFILE')
 
     def test_organization_max_length_is_enforced(self):
-        with self.assertRaises(Exception):
+        with self.assertRaises(ValidationError):
             self.apply_changes(
                 self.org_subscription,
                 {'name': 'x' * 201},
@@ -1498,7 +1498,7 @@ class SubscriptionCustomerProfileChangeTests(TestCase):
             subscription=self.personal_subscription,
             operation_type='modify',
         )
-        with self.assertRaises(Exception):
+        with self.assertRaises(ValidationError):
             self.apply_changes(
                 self.personal_subscription,
                 {'mobile': '1' * 16},
@@ -1521,7 +1521,7 @@ class SubscriptionCustomerProfileChangeTests(TestCase):
         )
 
     def test_unknown_customer_fields_are_rejected(self):
-        with self.assertRaises(Exception):
+        with self.assertRaises(ValidationError):
             self.apply_changes(
                 self.org_subscription,
                 {'is_superuser': True},
