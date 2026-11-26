@@ -3,10 +3,11 @@ from django.db.models import Count
 
 
 def validate_open_period_integrity(apps, schema_editor):
+    db_alias = schema_editor.connection.alias
     AccessPeriod = apps.get_model('fleet', 'DeviceCustomerAccessPeriod')
     OwnershipHistory = apps.get_model('fleet', 'DeviceOwnershipHistory')
-    invalid_access_dates = AccessPeriod.objects.filter(ended_at__lt=models.F('started_at')).count()
-    invalid_ownership_dates = OwnershipHistory.objects.filter(ended_at__lt=models.F('started_at')).count()
+    invalid_access_dates = AccessPeriod.objects.using(db_alias).filter(ended_at__lt=models.F('started_at')).count()
+    invalid_ownership_dates = OwnershipHistory.objects.using(db_alias).filter(ended_at__lt=models.F('started_at')).count()
     duplicate_access = AccessPeriod.objects.filter(ended_at__isnull=True).values(
         'device_id'
     ).annotate(total=Count('id')).filter(total__gt=1).count()
