@@ -218,10 +218,14 @@ class Subscription(models.Model):
         """تعداد دستگاه‌هایی که قرارداد و بازه اتصالشان اکنون فعال است."""
         if not self.is_active:
             return 0
-        return sum(
-            1 for link in self.subscription_devices.filter(unassigned_at__isnull=True)
-            if link.is_active
-        )
+        now = timezone.now()
+        today = timezone.localdate(now)
+        return self.subscription_devices.filter(
+            unassigned_at__isnull=True,
+            assigned_at__lte=now,
+            start_date__lte=today,
+            end_date__gte=today,
+        ).count()
 
     def recalculate_end_date(self):
         """محاسبه‌ی مجدد end_date از آخرین دستگاه فعال"""
