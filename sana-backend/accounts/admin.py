@@ -120,6 +120,11 @@ class UserAdmin(BaseUserAdmin):
         }),
     )
 
+    def has_delete_permission(self, request, obj=None):
+        # Account deletion must go through the archive lifecycle so historical
+        # contracts, ownership, and audit references remain intact.
+        return False
+
 @admin.register(UserSession)
 class UserSessionAdmin(admin.ModelAdmin):
     list_display = ['user', 'created_at', 'last_activity_at', 'expires_at', 'revoked_at', 'ip_address']
