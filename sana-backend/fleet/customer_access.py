@@ -81,6 +81,7 @@ def active_customer_access_periods(*, organization_id=None, user_id=None, branch
         periods = periods.filter(
             organization_id=organization_id,
             subscription__organization_id=organization_id,
+            subscription__organization__status='active',
             subscription__customer_type='organization',
         )
     else:
