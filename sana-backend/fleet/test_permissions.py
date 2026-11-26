@@ -864,3 +864,61 @@ class DevicePartyMetadataDisclosureTests(TestCase):
         self.assertIsNone(response.data['vehicle_plate'])
         self.assertEqual(response.data['current_holder_user'], user.pk)
         self.assertEqual(response.data['current_holder_user_name'], user.full_name)
+
+
+class LegacyBranchManagerDeviceMetadataTests(TestCase):
+    def test_legacy_branch_manager_keeps_own_branch_and_vehicle_labels(self):
+        from datetime import timedelta
+        from unittest.mock import patch
+        from django.utils import timezone
+        from rest_framework.test import APIClient
+        from accounts.models import User
+        from fleet.models import Device, DeviceCustomerAccessPeriod, Vehicle
+        from organizations.models import Branch, Organization, Subscription, SubscriptionDevice
+
+        today = timezone.localdate()
+        organization = Organization.objects.create(
+            name='Legacy Branch Device Metadata', code='LEGACY-BR-DEVICE-META',
+        )
+        branch = Branch.objects.create(
+            organization=organization, name='Legacy Metadata Branch',
+            code='LEGACY-META-BR',
+        )
+        manager = User.objects.create_user(
+            username='legacy_branch_device_metadata', password='test-password',
+            role='branch_manager', account_type='organization', branch=branch,
+        )
+        vehicle = Vehicle.objects.create(
+            plate='44ز444', organization=organization, branch=branch,
+        )
+        device = Device.objects.create(
+            imei='860000000009941', organization=organization, branch=branch,
+            vehicle=vehicle, current_holder_organization=organization,
+            management_status='active',
+        )
+        contract = Subscription.objects.create(
+            contract_number='LEGACY-BR-DEVICE-META', customer_type='organization',
+            organization=organization, start_date=today-timedelta(days=3),
+            end_date=today+timedelta(days=20), status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=contract, device=device,
+            start_date=contract.start_date, end_date=contract.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device, organization=organization, branch=branch,
+            subscription=contract, started_at=timezone.now()-timedelta(days=1),
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=manager)
+        with patch('fleet.views.traccar_devices', return_value=[]), patch(
+            'fleet.views.traccar_current_positions', return_value=[],
+        ):
+            response = client.get('/api/devices/')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        rows = response.data['results'] if isinstance(response.data, dict) else response.data
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['branch_name'], branch.name)
+        self.assertEqual(rows[0]['vehicle_plate'], vehicle.plate)
