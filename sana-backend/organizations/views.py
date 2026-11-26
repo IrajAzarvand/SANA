@@ -49,15 +49,33 @@ def _lock_subscription_devices(subscription, add_devices=()):
             unassigned_at__isnull=True
         ).values_list('device_id', flat=True)
     )
-    for item in add_devices or ():
-        device_id = item.get('device_id') if isinstance(item, dict) else None
-        if device_id:
-            try:
-                device_ids.add(int(device_id))
-            except (TypeError, ValueError):
-                raise serializers.ValidationError({
-                    'add_devices': 'شناسه دستگاه نامعتبر است.'
-                })
+    if add_devices is None:
+        add_devices = []
+    if not isinstance(add_devices, list):
+        raise serializers.ValidationError({
+            'add_devices': 'فهرست دستگاه‌های جدید باید آرایه باشد.'
+        })
+    for item in add_devices:
+        if not isinstance(item, dict):
+            raise serializers.ValidationError({
+                'add_devices': 'هر دستگاه باید به‌صورت یک شیء معتبر ارسال شود.'
+            })
+        device_id = item.get('device_id')
+        if isinstance(device_id, bool) or device_id in (None, ''):
+            raise serializers.ValidationError({
+                'add_devices': 'شناسه دستگاه الزامی و باید عدد صحیح مثبت باشد.'
+            })
+        try:
+            normalized_device_id = int(device_id)
+        except (TypeError, ValueError):
+            raise serializers.ValidationError({
+                'add_devices': 'شناسه دستگاه نامعتبر است.'
+            })
+        if normalized_device_id <= 0:
+            raise serializers.ValidationError({
+                'add_devices': 'شناسه دستگاه باید عدد صحیح مثبت باشد.'
+            })
+        device_ids.add(normalized_device_id)
     if device_ids:
         list(
             Device.objects.select_for_update()
@@ -373,7 +391,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
 
         expiring = self.request.query_params.get('expiring')
         if expiring == 'true':
-            today = timezone.now().date()
+            today = timezone.localdate()
             thirty_days = today + timedelta(days=30)
             qs = qs.filter(
                 status='active',
@@ -427,10 +445,10 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         from .financial import allocate_payment
         try:
             new_end_date = date.fromisoformat(new_end_date)
-        except ValueError:
+        except (TypeError, ValueError):
             return Response({'new_end_date': 'فرمت تاریخ نامعتبر است'}, status=status.HTTP_400_BAD_REQUEST)
 
-        if new_end_date <= timezone.now().date() or new_end_date <= subscription.end_date:
+        if new_end_date <= timezone.localdate() or new_end_date <= subscription.end_date:
             return Response(
                 {'new_end_date': 'تاریخ پایان جدید باید بعد از تاریخ پایان فعلی و در آینده باشد'},
                 status=status.HTTP_400_BAD_REQUEST
