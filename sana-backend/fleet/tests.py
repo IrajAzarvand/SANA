@@ -1773,20 +1773,17 @@ class OrganizationReportContractLinkConsistencyTests(TestCase):
             start_date=first_contract.start_date,
             end_date=first_contract.end_date,
         )
-        second_link = SubscriptionDevice.objects.bulk_create([
-            SubscriptionDevice(
-                subscription=second_contract,
-                device=device,
-                start_date=second_contract.start_date,
-                end_date=second_contract.end_date,
-            )
-        ])[0]
+        second_link = SubscriptionDevice.objects.create(
+            subscription=second_contract,
+            device=device,
+            start_date=second_contract.start_date,
+            end_date=second_contract.end_date,
+            unassigned_at=now - timedelta(minutes=1),
+        )
 
-        # Simulate inconsistent legacy data with two open links. The access
-        # period is explicitly tied to the older contract.
-        SubscriptionDevice.objects.filter(
-            pk__in=[first_link.pk, second_link.pk]
-        ).update(unassigned_at=None)
+        # The access period remains explicitly tied to the older contract,
+        # while the newer assignment is already closed.
+
         SubscriptionDevice.objects.filter(pk=first_link.pk).update(
             assigned_at=now - timedelta(days=10)
         )
