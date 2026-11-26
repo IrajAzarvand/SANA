@@ -1504,3 +1504,61 @@ class SubscriptionCustomerProfileChangeTests(TestCase):
         self.organization.refresh_from_db()
         self.assertFalse(self.user.is_superuser)
         self.assertFalse(self.operation.changes.exists())
+
+
+class SubscriptionActivationLifecycleTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin = User.objects.create_user(
+            username='subscription-lifecycle-admin',
+            password='test-password-123',
+            account_type='admin',
+            role='site_admin',
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.client.force_authenticate(user=self.admin)
+        today = timezone.localdate()
+        self.today = today
+
+    def make_contract(self, number, status, end_offset=30):
+        return Subscription.objects.create(
+            contract_number=number,
+            customer_type='personal',
+            user=User.objects.create_user(
+                username=f'{number.lower()}-user',
+                password='test-password-123',
+                account_type='personal',
+                role='personal_user',
+            ),
+            start_date=self.today - timedelta(days=2),
+            end_date=self.today + timedelta(days=end_offset),
+            status=status,
+        )
+
+    def test_cancelled_contract_cannot_be_reactivated(self):
+        contract = self.make_contract('ACTIVATE-CANCELLED', 'cancelled')
+        response = self.client.post(
+            f'/api/subscriptions/{contract.pk}/activate/', {}, format='json'
+        )
+        self.assertEqual(response.status_code, 409)
+        contract.refresh_from_db()
+        self.assertEqual(contract.status, 'cancelled')
+
+    def test_expired_contract_cannot_be_reactivated(self):
+        contract = self.make_contract('ACTIVATE-EXPIRED', 'expired', end_offset=-1)
+        response = self.client.post(
+            f'/api/subscriptions/{contract.pk}/activate/', {}, format='json'
+        )
+        self.assertEqual(response.status_code, 409)
+        contract.refresh_from_db()
+        self.assertEqual(contract.status, 'expired')
+
+    def test_suspended_unexpired_contract_can_be_reactivated(self):
+        contract = self.make_contract('ACTIVATE-SUSPENDED', 'suspended')
+        response = self.client.post(
+            f'/api/subscriptions/{contract.pk}/activate/', {}, format='json'
+        )
+        self.assertEqual(response.status_code, 200)
+        contract.refresh_from_db()
+        self.assertEqual(contract.status, 'active')
