@@ -12,6 +12,7 @@ from organizations.financial import create_installment_plan, allocate_payment, r
 from rest_framework.exceptions import ValidationError
 from django.utils import timezone
 from datetime import timedelta
+from django.db import transaction
 from django.db.models import Sum
 from .serializers import SubscriptionWizardSerializer, SubscriptionPaymentSerializer
 
@@ -1390,7 +1391,11 @@ class SubscriptionCustomerProfileChangeTests(TestCase):
     def setUp(self):
         from organizations.views import _apply_customer_profile_changes
 
-        self.apply_changes = _apply_customer_profile_changes
+        def apply_changes(*args, **kwargs):
+            with transaction.atomic():
+                return _apply_customer_profile_changes(*args, **kwargs)
+
+        self.apply_changes = apply_changes
         today = timezone.localdate()
         self.organization = Organization.objects.create(
             name='Shared Customer Profile Org',
