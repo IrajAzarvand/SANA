@@ -1405,11 +1405,17 @@ class VehiclePlateDisclosureAcrossDeviceEndpointsTests(TestCase):
             end_date=today + timedelta(days=20),
             status='active',
         )
-        SubscriptionDevice.objects.create(
+        link = SubscriptionDevice.objects.create(
             subscription=self.contract,
             device=self.device,
             start_date=self.contract.start_date,
             end_date=self.contract.end_date,
+        )
+        # The event below predates the request, so make the assignment window
+        # explicitly begin before that event instead of using the model's
+        # default assigned_at timestamp (which is set to test setup time).
+        SubscriptionDevice.objects.filter(pk=link.pk).update(
+            assigned_at=timezone.now() - timedelta(days=2)
         )
         DeviceCustomerAccessPeriod.objects.create(
             device=self.device,
