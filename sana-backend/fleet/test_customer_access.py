@@ -1367,3 +1367,67 @@ class ArchivedOrganizationCustomerAccessTests(TestCase):
                 branch_id=branch.pk,
             ).filter(device=device).exists()
         )
+
+
+class ReportHistoryVehiclePlateDisclosureTests(TestCase):
+    def test_report_history_metadata_hides_vehicle_plate_outside_customer_tenant(self):
+        from fleet.models import Vehicle
+
+        organization = Organization.objects.create(
+            name='Report Plate Access Customer',
+            code='REPORT-PLATE-ACCESS-CUSTOMER',
+        )
+        foreign_organization = Organization.objects.create(
+            name='Report Plate Legal Owner',
+            code='REPORT-PLATE-LEGAL-OWNER',
+        )
+        manager = User.objects.create_user(
+            username='report_plate_access_manager',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=organization,
+        )
+        vehicle = Vehicle.objects.create(
+            plate='22م222',
+            organization=foreign_organization,
+        )
+        device = Device.objects.create(
+            imei='860000000009981',
+            sim_number='09120009981',
+            organization=organization,
+            vehicle=vehicle,
+        )
+        today = timezone.localdate()
+        contract = Subscription.objects.create(
+            contract_number='REPORT-PLATE-ACCESS-CONTRACT',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=3),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=contract,
+            device=device,
+            start_date=contract.start_date,
+            end_date=contract.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            subscription=contract,
+            started_at=timezone.now() - timedelta(days=1),
+        )
+        client = APIClient()
+        client.force_authenticate(user=manager)
+
+        response = client.get('/api/devices/report-history/', {
+            'device_id': device.pk,
+            'metadata': 'true',
+        })
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['device']['imei'], device.imei)
+        self.assertEqual(response.data['device']['sim_number'], device.sim_number)
+        self.assertIsNone(response.data['device']['vehicle_plate'])
