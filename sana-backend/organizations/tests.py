@@ -1583,3 +1583,108 @@ class SubscriptionActivationLifecycleTests(TestCase):
         self.assertEqual(response.status_code, 200)
         contract.refresh_from_db()
         self.assertEqual(contract.status, 'active')
+
+
+class SubscriptionComputedStatusFilterTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin = User.objects.create_user(
+            username='computed-status-filter-admin',
+            password='test-password-123',
+            account_type='admin',
+            role='site_admin',
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.client.force_authenticate(user=self.admin)
+        today = timezone.localdate()
+        self.expired = self.make_contract(
+            'FILTER-COMPUTED-EXPIRED',
+            today - timedelta(days=5),
+            today - timedelta(days=1),
+        )
+        self.pending = self.make_contract(
+            'FILTER-COMPUTED-PENDING',
+            today + timedelta(days=1),
+            today + timedelta(days=10),
+        )
+        self.active = self.make_contract(
+            'FILTER-COMPUTED-ACTIVE',
+            today,
+            today + timedelta(days=10),
+        )
+
+    def make_contract(self, number, start_date, end_date):
+        user = User.objects.create_user(
+            username=f'{number.lower()}-user',
+            password='test-password-123',
+            account_type='personal',
+            role='personal_user',
+        )
+        return Subscription.objects.create(
+            contract_number=number,
+            customer_type='personal',
+            user=user,
+            start_date=start_date,
+            end_date=end_date,
+            status='active',
+        )
+
+    def get_contract_ids(self, status_filter):
+        response = self.client.get('/api/subscriptions/', {'status': status_filter})
+        self.assertEqual(response.status_code, 200, response.data)
+        results = response.data.get('results', response.data)
+        return {item['id'] for item in results}
+
+    def test_status_filters_use_effective_contract_dates(self):
+        self.assertIn(self.expired.pk, self.get_contract_ids('expired'))
+        self.assertIn(self.pending.pk, self.get_contract_ids('pending'))
+        self.assertIn(self.active.pk, self.get_contract_ids('active'))
+        self.assertNotIn(self.expired.pk, self.get_contract_ids('active'))
+        self.assertNotIn(self.pending.pk, self.get_contract_ids('active'))
+
+
+class SubscriptionActiveDeviceCountTests(TestCase):
+    def test_active_device_count_requires_active_contract_and_active_link_window(self):
+        today = timezone.localdate()
+        user = User.objects.create_user(
+            username='active-device-count-user',
+            password='test-password-123',
+            account_type='personal',
+            role='personal_user',
+        )
+        subscription = Subscription.objects.create(
+            contract_number='ACTIVE-DEVICE-COUNT',
+            customer_type='personal',
+            user=user,
+            start_date=today,
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        active_device = Device.objects.create(imei='860000000009953')
+        future_device = Device.objects.create(imei='860000000009954')
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=active_device,
+            start_date=today,
+            end_date=today + timedelta(days=30),
+        )
+        SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=future_device,
+            start_date=today + timedelta(days=2),
+            end_date=today + timedelta(days=30),
+        )
+
+        from organizations.serializers import SubscriptionSerializer
+        self.assertEqual(
+            SubscriptionSerializer(subscription).data['active_device_count'],
+            1,
+        )
+
+        subscription.status = 'suspended'
+        subscription.save(update_fields=['status'])
+        self.assertEqual(
+            SubscriptionSerializer(subscription).data['active_device_count'],
+            0,
+        )
