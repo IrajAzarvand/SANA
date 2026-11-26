@@ -410,3 +410,55 @@ class ContractIntegrityDatabaseConstraintTests(TestCase):
             .filter(device=device)
             .exists()
         )
+
+
+class SingleOpenDeviceRelationshipTests(TestCase):
+    def setUp(self):
+        today = timezone.localdate()
+        self.organization = Organization.objects.create(
+            name='Single Open Relationship Org',
+            code='SINGLE-OPEN-REL-ORG',
+        )
+        self.subscription = Subscription.objects.create(
+            contract_number='SINGLE-OPEN-REL-CONTRACT-1',
+            customer_type='organization',
+            organization=self.organization,
+            start_date=today,
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        self.second_subscription = Subscription.objects.create(
+            contract_number='SINGLE-OPEN-REL-CONTRACT-2',
+            customer_type='organization',
+            organization=self.organization,
+            start_date=today,
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        self.device = Device.objects.create(imei='860000000009951')
+
+    def test_device_cannot_have_two_open_contract_links(self):
+        SubscriptionDevice.objects.create(
+            subscription=self.subscription,
+            device=self.device,
+            start_date=self.subscription.start_date,
+            end_date=self.subscription.end_date,
+        )
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            SubscriptionDevice.objects.create(
+                subscription=self.second_subscription,
+                device=self.device,
+                start_date=self.second_subscription.start_date,
+                end_date=self.second_subscription.end_date,
+            )
+
+    def test_device_cannot_have_two_open_customer_access_periods(self):
+        DeviceCustomerAccessPeriod.objects.create(
+            device=self.device,
+            organization=self.organization,
+        )
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            DeviceCustomerAccessPeriod.objects.create(
+                device=self.device,
+                organization=self.organization,
+            )
