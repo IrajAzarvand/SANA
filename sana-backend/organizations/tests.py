@@ -1723,6 +1723,7 @@ class SubscriptionActiveDeviceCountTests(TestCase):
         )
 
         from organizations.serializers import SubscriptionListSerializer, SubscriptionSerializer
+        self.assertEqual(subscription.active_device_count, 1)
         self.assertEqual(
             SubscriptionSerializer(subscription).data['active_device_count'],
             1,
@@ -1742,3 +1743,4 @@ class SubscriptionActiveDeviceCountTests(TestCase):
             SubscriptionListSerializer(subscription).data['active_device_count'],
             0,
         )
+        self.assertEqual(subscription.active_device_count, 0)
