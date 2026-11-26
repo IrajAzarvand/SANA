@@ -86,6 +86,11 @@ def _apply_customer_profile_changes(subscription, customer_changes, operation):
     change_serializer = change_serializer_class(
         target, data=customer_changes, partial=True
     )
+    unknown_fields = set(customer_changes) - set(change_serializer.fields)
+    if unknown_fields:
+        raise serializers.ValidationError({
+            'customer_changes': f'فیلدهای غیرمجاز: {", ".join(sorted(unknown_fields))}'
+        })
     change_serializer.is_valid(raise_exception=True)
 
     for field, new_value in change_serializer.validated_data.items():
