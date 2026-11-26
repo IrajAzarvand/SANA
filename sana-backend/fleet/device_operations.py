@@ -472,12 +472,37 @@ def execute_device_operation(
     requested_device_ids = {device.pk}
     if replacement_device:
         requested_device_ids.add(replacement_device.pk)
+    # Temporary loaners may also be returned during this operation. Include
+    # their rows in the same ordered lock set rather than locking them later
+    # in relation order.
+    temporary_loaner_ids = set(
+        DeviceReplacementRelation.objects.filter(
+            source_device_id=device.pk,
+            replacement_type='temporary_repair',
+            returned_at__isnull=True,
+        ).values_list('replacement_device_id', flat=True)
+    )
+    requested_device_ids.update(temporary_loaner_ids)
     locked_devices = {
         locked.pk: locked
         for locked in Device.objects.select_for_update()
         .filter(pk__in=requested_device_ids)
         .order_by('pk')
     }
+    # A relation may have been created between the pre-read and acquiring the
+    # source lock. Abort and retry rather than acquiring a newly discovered
+    # device out of global primary-key order.
+    current_loaner_ids = set(
+        DeviceReplacementRelation.objects.filter(
+            source_device_id=device.pk,
+            replacement_type='temporary_repair',
+            returned_at__isnull=True,
+        ).values_list('replacement_device_id', flat=True)
+    )
+    if not current_loaner_ids.issubset(requested_device_ids):
+        raise ValidationError({
+            'device': 'سوابق جایگزینی دستگاه هم‌زمان تغییر کرده است؛ عملیات را دوباره انجام دهید.'
+        })
     device = locked_devices[device.pk]
     if replacement_device:
         replacement_device = locked_devices[replacement_device.pk]
