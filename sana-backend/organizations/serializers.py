@@ -710,12 +710,14 @@ class SubscriptionListSerializer(serializers.ModelSerializer):
         return obj.subscription_devices.filter(unassigned_at__isnull=True).count()
 
     def get_active_device_count(self, obj):
-        today = timezone.now().date()
-        return obj.subscription_devices.filter(
-            unassigned_at__isnull=True,
-            start_date__lte=today,
-            end_date__gte=today,
-        ).count()
+        # Keep list and detail counts consistent: both the contract and each
+        # device assignment must be active at the current local date/time.
+        if not obj.is_active:
+            return 0
+        return sum(
+            1 for link in obj.subscription_devices.filter(unassigned_at__isnull=True)
+            if link.is_active
+        )
 
     def get_total_payment_amount(self, obj):
         return sum((payment.amount or 0) for payment in obj.payments.all())
