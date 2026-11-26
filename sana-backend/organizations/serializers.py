@@ -224,11 +224,11 @@ class BranchListSerializer(serializers.ModelSerializer):
 # ═══════════════════════════════════════════════
 
 class SubscriptionDeviceSerializer(serializers.ModelSerializer):
-    device_imei = serializers.CharField(source='device.imei', read_only=True)
-    device_model = serializers.CharField(source='device.device_model.name', read_only=True, allow_null=True)
-    device_model_manufacturer = serializers.CharField(source='device.device_model.manufacturer', read_only=True, allow_null=True)
-    device_sim = serializers.CharField(source='device.sim_number', read_only=True)
-    vehicle_plate = serializers.CharField(source='device.vehicle.plate', read_only=True)
+    device_imei = serializers.SerializerMethodField()
+    device_model = serializers.SerializerMethodField()
+    device_model_manufacturer = serializers.SerializerMethodField()
+    device_sim = serializers.SerializerMethodField()
+    vehicle_plate = serializers.SerializerMethodField()
     management_status = serializers.SerializerMethodField()
     management_status_display = serializers.SerializerMethodField()
     replacement_relation = serializers.SerializerMethodField()
@@ -254,6 +254,35 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         return bool(request and getattr(request.user, 'is_site_admin', False))
 
+    def _can_view_device_details(self, obj):
+        request = self.context.get('request')
+        if not request:
+            return False
+        if self._is_site_admin():
+            return True
+        return authorized_devices_for_user(request.user).filter(
+            pk=obj.device_id
+        ).exists()
+
+    def get_device_imei(self, obj):
+        return obj.device.imei if self._can_view_device_details(obj) else None
+
+    def get_device_model(self, obj):
+        if not self._can_view_device_details(obj):
+            return None
+        return obj.device.device_model.name if obj.device.device_model else None
+
+    def get_device_model_manufacturer(self, obj):
+        if not self._can_view_device_details(obj):
+            return None
+        return obj.device.device_model.manufacturer if obj.device.device_model else None
+
+    def get_device_sim(self, obj):
+        return obj.device.sim_number if self._can_view_device_details(obj) else None
+
+    def get_vehicle_plate(self, obj):
+        return obj.device.vehicle.plate if self._can_view_device_details(obj) and obj.device.vehicle else None
+
     def get_management_status(self, obj):
         return obj.device.management_status if self._is_site_admin() else None
 
@@ -264,6 +293,8 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
         device = obj.device
         request = self.context.get('request')
         is_admin = self._is_site_admin()
+        if not self._can_view_device_details(obj):
+            return None
 
         def related_is_visible(related_device):
             if is_admin:
