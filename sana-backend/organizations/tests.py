@@ -1227,6 +1227,7 @@ class SubscriptionDeviceCustomerAccessClosureTests(TestCase):
             start_date=self.subscription.start_date,
             end_date=self.subscription.end_date,
         )
+        self.original_link_end_date = self.link.end_date
         self.access_started_at = timezone.now() - timedelta(days=2)
         self.access = DeviceCustomerAccessPeriod.objects.create(
             device=self.device,
@@ -1244,6 +1245,7 @@ class SubscriptionDeviceCustomerAccessClosureTests(TestCase):
 
         self.assertIsNotNone(self.link.unassigned_at)
         self.assertIsNotNone(self.link.removed_by_operation_id)
+        self.assertEqual(self.link.end_date, self.original_link_end_date)
         self.assertTrue(SubscriptionDevice.objects.filter(pk=self.link.pk).exists())
 
         self.assertIsNotNone(self.access.ended_at)
@@ -1271,6 +1273,25 @@ class SubscriptionDeviceCustomerAccessClosureTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         self._assert_access_closed_and_history_preserved()
         self.assertEqual(self.link.removed_by_operation.operation_type, 'renew')
+
+    def test_modify_can_shorten_contract_when_outgoing_device_is_removed(self):
+        new_end_date = timezone.localdate() + timedelta(days=10)
+        with patch('organizations.views.record_device_lifecycle_event'):
+            response = self.client.post(
+                f'/api/subscriptions/{self.subscription.pk}/modify/',
+                {
+                    'contract_changes': {'end_date': new_end_date.isoformat()},
+                    'remove_device_ids': [self.link.pk],
+                },
+                format='json',
+            )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.subscription.refresh_from_db()
+        self.link.refresh_from_db()
+        self.assertEqual(self.subscription.end_date, new_end_date)
+        self.assertEqual(self.link.end_date, self.original_link_end_date)
+        self.assertIsNotNone(self.link.unassigned_at)
 
     def test_modify_closes_access_when_device_is_removed(self):
         with patch('organizations.views.record_device_lifecycle_event'):
