@@ -6,6 +6,78 @@ from organizations.models import SubscriptionDevice
 from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DriverVehicleAssignment, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation, DeviceCustomerAccessPeriod
 
 
+
+def _redact_unrelated_device_party_fields(data, device, user):
+    """Hide legal-owner, holder, branch, and vehicle details outside the caller's tenant."""
+    if not user or getattr(user, 'is_site_admin', False):
+        return data
+
+    organization_id = (
+        user.organization_id
+        if getattr(user, 'is_main_user', False) or getattr(user, 'is_branch_manager', False)
+        else None
+    )
+    branch_id = user.branch_id if getattr(user, 'is_branch_manager', False) else None
+
+    if device.organization_id != organization_id:
+        for field in ('organization', 'organization_name'):
+            if field in data:
+                data[field] = None
+
+    if device.owner_user_id != user.pk:
+        for field in ('owner_user', 'owner_name'):
+            if field in data:
+                data[field] = None
+
+    holder_org_visible = bool(
+        organization_id and device.current_holder_organization_id == organization_id
+    )
+    if not holder_org_visible:
+        for field in ('current_holder_organization', 'current_holder_organization_name'):
+            if field in data:
+                data[field] = None
+
+    holder_user = device.current_holder_user
+    holder_user_visible = bool(
+        holder_user and (
+            holder_user.pk == user.pk
+            or (organization_id and holder_user.organization_id == organization_id)
+        )
+    )
+    if not holder_user_visible:
+        for field in ('current_holder_user', 'current_holder_user_name'):
+            if field in data:
+                data[field] = None
+
+    branch_visible = bool(
+        organization_id
+        and device.branch_id
+        and device.branch.organization_id == organization_id
+        and (branch_id is None or device.branch_id == branch_id)
+    )
+    if not branch_visible:
+        for field in ('branch', 'branch_name'):
+            if field in data:
+                data[field] = None
+
+    vehicle = device.vehicle
+    if getattr(user, 'is_personal_user', False):
+        vehicle_visible = bool(vehicle and vehicle.owner_user_id == user.pk)
+    else:
+        vehicle_visible = bool(
+            vehicle
+            and organization_id
+            and vehicle.organization_id == organization_id
+            and (branch_id is None or vehicle.branch_id == branch_id)
+        )
+    if not vehicle_visible:
+        for field in ('vehicle', 'vehicle_plate'):
+            if field in data:
+                data[field] = None
+
+    return data
+
+
 def _device_data_active_for_request(device, request):
     """Evaluate service status against the exact contract granting this user access."""
     if not request or getattr(request.user, 'is_site_admin', False):
@@ -255,6 +327,13 @@ class DeviceSerializer(serializers.ModelSerializer):
     def get_data_active(self, obj):
         return _device_data_active_for_request(obj, self.context.get('request'))
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        return _redact_unrelated_device_party_fields(
+            data, instance, request.user if request else None
+        )
+
     class Meta:
         model = Device
         fields = [
@@ -392,6 +471,13 @@ class BranchManagerDeviceSerializer(serializers.ModelSerializer):
 
     def get_data_active(self, obj):
         return _device_data_active_for_request(obj, self.context.get('request'))
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        return _redact_unrelated_device_party_fields(
+            data, instance, request.user if request else None
+        )
 
     class Meta:
         model = Device
@@ -534,6 +620,13 @@ class DeviceListSerializer(serializers.ModelSerializer):
         return (
             obj.management_status == 'warehouse'
             and self._active_subscription_link(obj) is None
+        )
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        return _redact_unrelated_device_party_fields(
+            data, instance, request.user if request else None
         )
 
     def get_is_in_warehouse(self, obj):
