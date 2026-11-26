@@ -424,8 +424,8 @@ def _add_to_subscription(device, subscription, operation, start_date=None, end_d
 
     # Re-read and lock the contract while the enclosing device operation is
     # atomic. This prevents a concurrent suspend/cancel from racing assignment.
-    subscription = subscription.__class__.objects.select_for_update().select_related(
-        'organization', 'user'
+    subscription = subscription.__class__.objects.select_for_update(
+        of=('self',)
     ).get(pk=subscription.pk)
     if subscription.status != 'active' or subscription.end_date < timezone.localdate():
         raise ValidationError({'target_subscription': 'افزودن دستگاه به قرارداد غیرفعال یا منقضی مجاز نیست.'})
