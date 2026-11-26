@@ -1703,9 +1703,13 @@ class SubscriptionActiveDeviceCountTests(TestCase):
             end_date=today + timedelta(days=30),
         )
 
-        from organizations.serializers import SubscriptionSerializer
+        from organizations.serializers import SubscriptionListSerializer, SubscriptionSerializer
         self.assertEqual(
             SubscriptionSerializer(subscription).data['active_device_count'],
+            1,
+        )
+        self.assertEqual(
+            SubscriptionListSerializer(subscription).data['active_device_count'],
             1,
         )
 
@@ -1713,5 +1717,9 @@ class SubscriptionActiveDeviceCountTests(TestCase):
         subscription.save(update_fields=['status'])
         self.assertEqual(
             SubscriptionSerializer(subscription).data['active_device_count'],
+            0,
+        )
+        self.assertEqual(
+            SubscriptionListSerializer(subscription).data['active_device_count'],
             0,
         )
