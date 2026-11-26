@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { User as UserIcon, ChevronDown, Check, X } from 'lucide-react';
 import { usersAPI } from '../api/services/fleet';
+import { fetchAllPages } from '../utils/fetchAllPages';
 
 /**
  * ComboBox انتخاب کاربر
@@ -52,10 +53,9 @@ export default function UserComboBox({
     const fetchUsers = async () => {
       setLoading(true);
       try {
-        const result = await usersAPI.list({
+        const list = await fetchAllPages(usersAPI.list, {
           account_type: accountType,
         });
-        const list = Array.isArray(result) ? result : result.results || [];
         if (!cancelled) setAllUsers(list);
       } catch (e) {
         console.error('Error fetching users:', e);
@@ -147,8 +147,6 @@ export default function UserComboBox({
   }, [open]);
 
   const handleSelect = (user) => {
-    console.log('Selected user:', user);
-    console.log('Organization data:', user.organization_data);
     setSearch(user.username);
     onChange(user.username);
     if (onSelectUser) onSelectUser(user);

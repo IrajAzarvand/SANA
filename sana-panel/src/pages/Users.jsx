@@ -13,6 +13,7 @@ import { useAuth } from '../context/AuthContext';
 import { usersAPI } from '../api/services/fleet';
 import { organizationsAPI, branchesAPI } from '../api/services/organizations';
 import { useApi } from '../hooks/useApi';
+import { fetchAllPages } from '../utils/fetchAllPages';
 
 const roleMap = {
   site_admin:     { label: 'ادمین کل سایت', variant: 'danger' },
@@ -36,29 +37,24 @@ export default function Users() {
   const canManageUsers = isSiteAdmin || isMainUser;
 
   // دریافت کاربران از API
-  const fetchUsers = useCallback(async () => {
-    const result = await usersAPI.list(showArchived ? { archived: true } : { archived: false });
-    // DRF pagination ممکنه برگردونه { count, next, previous, results }
-    return Array.isArray(result) ? result : result.results || [];
-  }, [showArchived]);
+  const fetchUsers = useCallback(
+    () => fetchAllPages(usersAPI.list, showArchived ? { archived: true } : { archived: false }),
+    [showArchived],
+  );
 
-  const fetchOrgs = useCallback(async () => {
-    try {
-      const result = await organizationsAPI.list();
-      return Array.isArray(result) ? result : result.results || [];
-    } catch {
-      return [];
-    }
-  }, []);
+  const fetchOrgs = useCallback(
+    () => fetchAllPages(organizationsAPI.list),
+    [],
+  );
 
   const { data: users, loading: usersLoading, error: usersError, refetch: refetchUsers } =
     useApi(fetchUsers, [showArchived]);
 
   const { data: organizations } = useApi(fetchOrgs, []);
-  const fetchBranches = useCallback(async () => {
-    const result = await branchesAPI.list();
-    return Array.isArray(result) ? result : result.results || [];
-  }, []);
+  const fetchBranches = useCallback(
+    () => fetchAllPages(branchesAPI.list),
+    [],
+  );
   const { data: branches } = useApi(fetchBranches, []);
 
   // گروه‌بندی کاربران سازمانی بر اساس organization

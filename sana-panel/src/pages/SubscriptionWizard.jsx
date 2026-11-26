@@ -20,6 +20,7 @@ import { organizationsAPI } from '../api/services/organizations';
 import JalaliDatePicker from '../components/JalaliDatePicker';
 import { toJalali, todayGregorian } from '../utils/dateUtils';
 import UserComboBox from '../components/UserComboBox';
+import { fetchAllPages } from '../utils/fetchAllPages';
 
 
 const STEPS = [
@@ -563,8 +564,7 @@ function Step2({ form, updateForm, setForm, onUsernameAvailabilityChange }) {
     const loadOrganizations = async () => {
       setOrganizationsLoading(true);
       try {
-        const result = await organizationsAPI.list();
-        const list = Array.isArray(result) ? result : result.results || [];
+        const list = await fetchAllPages(organizationsAPI.list);
         if (!cancelled) setOrganizations(list);
       } catch (err) {
         console.error('Error loading organizations:', err);
