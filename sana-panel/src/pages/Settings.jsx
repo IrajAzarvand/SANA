@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Plus, Pencil, Trash2, Camera, Mail, Phone,
   Shield, Smartphone, Building2, MapPin, Globe,
-  UserX, Globe as GlobeIcon, Database, Server, Copy,
+  Globe as GlobeIcon, Database, Server, Copy,
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import Card from '../components/Card';
@@ -18,12 +18,7 @@ import { organizationsAPI } from '../api/services/organizations';
 import { alertsAPI } from '../api/services/fleet';
 import apiClient, { getAuthToken } from '../api/client';
 import { MAP_PROVIDERS } from '../../../sana-map/src/config';
-import {
-  branchesList,
-  usersList,
-  roleMap,
-  userStatusMap,
-} from '../data/settingsData';
+import { branchesList } from '../data/settingsData';
 
 export default function Settings() {
   const [section, setSection] = useState('profile');
@@ -38,7 +33,7 @@ export default function Settings() {
           isSiteAdmin
             ? 'مدیریت پروفایل، سازمان‌ها و تنظیمات سامانه'
             : isMainUser
-              ? 'مدیریت پروفایل، سازمان و کاربران'
+              ? 'مدیریت پروفایل و تنظیمات سازمان'
               : 'مدیریت پروفایل و اعلان‌ها'
         }
       />
@@ -52,7 +47,6 @@ export default function Settings() {
           {section === 'security'       && <SecuritySection />}
           {section === 'organization'   && <OrganizationSection />}
           {section === 'branches'       && <BranchesSection />}
-          {section === 'users'          && <UsersSection />}
           {section === 'notifications'  && <NotificationsSection />}
           {section === 'system'         && <SystemSection />}
         </div>
@@ -612,115 +606,6 @@ function BranchesSection() {
           <Input label="کد شعبه" placeholder="مثلاً MHD-01" />
           <Input label="تلفن" icon={Phone} placeholder="۰۵۱-xxxxxxxx" />
           <Input label="آدرس" icon={MapPin} placeholder="آدرس کامل شعبه" />
-        </div>
-      </Modal>
-    </>
-  );
-}
-
-/* ============ کاربران ============ */
-
-function UsersSection() {
-  const [modalOpen, setModalOpen] = useState(false);
-
-  const getUserMenu = (u) => [
-    { label: 'ویرایش', icon: Pencil, onClick: () => console.log('Edit:', u.id) },
-    { label: 'غیرفعال', icon: UserX, onClick: () => console.log('Disable:', u.id) },
-    { label: 'حذف', icon: Trash2, variant: 'danger', onClick: () => console.log('Delete:', u.id) },
-  ];
-
-  return (
-    <>
-      <Card
-        title="کاربران سازمان"
-        subtitle={`${usersList.length} کاربر`}
-        action={
-          <Button size="sm" icon={Plus} onClick={() => setModalOpen(true)}>
-            افزودن کاربر
-          </Button>
-        }
-      >
-        <div className="overflow-x-auto -m-5">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border-base">
-                <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">نام</th>
-                <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">ایمیل</th>
-                <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">نقش</th>
-                <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">شعبه</th>
-                <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">آخرین ورود</th>
-                <th className="text-right py-3 px-4 text-xs font-medium text-text-muted">وضعیت</th>
-                <th className="w-12"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {usersList.map((u) => {
-                const role = roleMap[u.role];
-                const status = userStatusMap[u.status];
-                return (
-                  <tr key={u.id} className="border-b border-border-base last:border-0 hover:bg-bg-hover transition-colors">
-                    <td className="py-3 px-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-full bg-brand-900/40 flex items-center justify-center text-brand-400 font-bold text-xs flex-shrink-0">
-                          {u.firstName[0]}
-                        </div>
-                        <div>
-                          <div className="font-medium text-text-primary text-xs">{u.firstName} {u.lastName}</div>
-                          <div className="text-[10px] text-text-muted font-mono">{u.mobile}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 text-text-secondary text-xs font-mono">{u.email}</td>
-                    <td className="py-3 px-4"><Badge variant={role.variant}>{role.label}</Badge></td>
-                    <td className="py-3 px-4 text-text-secondary text-xs">
-                      {u.branch || <span className="text-text-muted">—</span>}
-                    </td>
-                    <td className="py-3 px-4 text-text-muted text-xs font-mono">{u.lastLogin}</td>
-                    <td className="py-3 px-4"><Badge variant={status.variant}>{status.label}</Badge></td>
-                    <td className="py-3 px-2">
-                      <ActionMenu items={getUserMenu(u)} />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
-      <Modal
-        open={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title="افزودن کاربر"
-        size="lg"
-        footer={
-          <>
-            <Button variant="secondary" onClick={() => setModalOpen(false)}>انصراف</Button>
-            <Button>ذخیره</Button>
-          </>
-        }
-      >
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Input label="نام" />
-          <Input label="نام خانوادگی" />
-          <Input label="ایمیل" icon={Mail} />
-          <Input label="موبایل" icon={Phone} />
-          <Input label="رمز عبور موقت" icon={Shield} />
-          <div>
-            <label className="block text-sm text-text-secondary mb-2">نقش</label>
-            <select className="w-full bg-bg-base border border-border-base rounded-field px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-brand-500">
-              <option value="branch_manager">مدیر شعبه</option>
-            </select>
-          </div>
-          <div className="md:col-span-2">
-            <label className="block text-sm text-text-secondary mb-2">شعبه</label>
-            <select className="w-full bg-bg-base border border-border-base rounded-field px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-brand-500">
-              <option value="">انتخاب کنید...</option>
-              {branchesList.map((b) => (
-                <option key={b.id} value={b.name}>{b.name}</option>
-              ))}
-            </select>
-          </div>
         </div>
       </Modal>
     </>
