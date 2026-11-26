@@ -215,8 +215,13 @@ class Subscription(models.Model):
         return 1 <= self.days_until_expiry <= 30
     @property
     def active_device_count(self):
-        """تعداد دستگاه‌های فعال این قرارداد"""
-        return self.subscription_devices.filter(unassigned_at__isnull=True).count()
+        """تعداد دستگاه‌هایی که قرارداد و بازه اتصالشان اکنون فعال است."""
+        if not self.is_active:
+            return 0
+        return sum(
+            1 for link in self.subscription_devices.filter(unassigned_at__isnull=True)
+            if link.is_active
+        )
 
     def recalculate_end_date(self):
         """محاسبه‌ی مجدد end_date از آخرین دستگاه فعال"""
