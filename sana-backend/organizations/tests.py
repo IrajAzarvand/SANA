@@ -1394,6 +1394,14 @@ class SubscriptionCustomerProfileChangeTests(TestCase):
             end_date=today + timedelta(days=30),
             status='active',
         )
+        self.second_org_subscription = Subscription.objects.create(
+            contract_number='SHARED-CUSTOMER-ORG-CONTRACT-2',
+            customer_type='organization',
+            organization=self.organization,
+            start_date=today,
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
         self.personal_subscription = Subscription.objects.create(
             contract_number='SHARED-CUSTOMER-PERSONAL-CONTRACT',
             customer_type='personal',
@@ -1420,16 +1428,11 @@ class SubscriptionCustomerProfileChangeTests(TestCase):
             set(self.operation.changes.values_list('field_name', flat=True)),
             {'name', 'email'},
         )
-        # Every contract references the same Organization row.
-        self.assertEqual(
-            self.org_subscription.organization.name,
-            self.personal_subscription.organization.name
-            if self.personal_subscription.organization_id
-            else self.organization.name,
-        )
+        # A second contract references the same shared Organization row.
+        self.assertEqual(self.second_org_subscription.organization.name, 'Updated Shared Org')
 
     def test_invalid_organization_email_does_not_partially_update_profile(self):
-        with self.assertRaises(Exception):
+        with self.assertRaises(ValidationError):
             self.apply_changes(
                 self.org_subscription,
                 {'name': 'Must Roll Back', 'email': 'not-an-email'},
