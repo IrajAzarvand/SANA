@@ -268,7 +268,24 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         # فیلترها
         status_filter = self.request.query_params.get('status')
         if status_filter:
-            qs = qs.filter(status=status_filter)
+            today = timezone.localdate()
+            if status_filter == 'expired':
+                qs = qs.filter(
+                    Q(status='expired')
+                    | Q(status='active', end_date__lt=today)
+                )
+            elif status_filter == 'pending':
+                qs = qs.filter(status='active', start_date__gt=today, end_date__gte=today)
+            elif status_filter == 'active':
+                qs = qs.filter(
+                    status='active',
+                    start_date__lte=today,
+                    end_date__gte=today,
+                )
+            elif status_filter in {'suspended', 'cancelled'}:
+                qs = qs.filter(status=status_filter)
+            else:
+                qs = qs.none()
 
         customer_type = self.request.query_params.get('customer_type')
         if customer_type:
@@ -284,6 +301,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             thirty_days = today + timedelta(days=30)
             qs = qs.filter(
                 status='active',
+                start_date__lte=today,
                 end_date__gte=today,
                 end_date__lte=thirty_days,
             )
@@ -343,6 +361,11 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             )
 
         with transaction.atomic():
+            subscription = Subscription.objects.select_for_update().get(pk=subscription.pk)
+            if new_end_date <= timezone.localdate() or new_end_date <= subscription.end_date:
+                raise serializers.ValidationError({
+                    'new_end_date': 'تاریخ پایان جدید باید بعد از تاریخ پایان فعلی و در آینده باشد'
+                })
             operation = SubscriptionOperation.objects.create(
                 subscription=subscription,
                 operation_type='renew',
@@ -359,9 +382,10 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             # تمدید قرارداد باید وضعیت فعلی دستگاه‌های متصل را هم به پایان جدید منتقل کند.
             # چون end_date قرارداد از آخرین دستگاه فعال نیز محاسبه می‌شود،
             # اگر این کار انجام نشود، با ذخیره/تغییر بعدی ممکن است تاریخ تمدیدشده دوباره به تاریخ قبلی برگردد.
+            remove_ids = request.data.get('remove_device_ids', [])
             subscription.subscription_devices.filter(
                 unassigned_at__isnull=True
-            ).update(end_date=new_end_date)
+            ).exclude(id__in=remove_ids).update(end_date=new_end_date)
 
             subscription.end_date = new_end_date
             subscription.save(update_fields=['end_date', 'updated_at'])
@@ -498,6 +522,12 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             payment_objects[payment_id] = (payment, item)
 
         with transaction.atomic():
+            subscription = Subscription.objects.select_for_update().get(pk=subscription.pk)
+            # Re-evaluate date bounds against the locked, current contract row.
+            new_start = parsed_contract.get('start_date', subscription.start_date)
+            new_end = parsed_contract.get('end_date', subscription.end_date)
+            if new_start > new_end:
+                raise serializers.ValidationError({'contract_changes': 'تاریخ شروع قرارداد باید قبل از تاریخ پایان باشد'})
             operation = SubscriptionOperation.objects.create(
                 subscription=subscription,
                 operation_type='modify',
@@ -525,7 +555,9 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                     setattr(subscription, field, new_value)
 
             # اگر بازه قرارداد تغییر کرده، دستگاه‌های فعال باید همچنان داخل آن باشند.
-            for link in subscription.subscription_devices.filter(unassigned_at__isnull=True):
+            for link in subscription.subscription_devices.filter(unassigned_at__isnull=True).exclude(
+                id__in=remove_device_ids
+            ):
                 if link.start_date < new_start or link.end_date > new_end:
                     raise serializers.ValidationError({
                         'contract_changes': 'بازه جدید قرارداد با تاریخ یکی از دستگاه‌های فعال سازگار نیست'
@@ -678,6 +710,12 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         """تعلیق قرارداد"""
         subscription = self.get_object()
         with transaction.atomic():
+            subscription = Subscription.objects.select_for_update().get(pk=subscription.pk)
+            if subscription.status in {'cancelled', 'expired'}:
+                return Response(
+                    {'detail': 'قرارداد لغوشده یا منقضی‌شده قابل تعلیق نیست.'},
+                    status=status.HTTP_409_CONFLICT,
+                )
             operation = SubscriptionOperation.objects.create(
                 subscription=subscription, operation_type='suspend',
                 performed_by=request.user, old_status=subscription.status, new_status='suspended'
@@ -691,6 +729,17 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         """فعال‌سازی مجدد قرارداد"""
         subscription = self.get_object()
         with transaction.atomic():
+            subscription = Subscription.objects.select_for_update().get(pk=subscription.pk)
+            if subscription.status != 'suspended':
+                return Response(
+                    {'detail': 'فقط قرارداد تعلیق‌شده از این مسیر قابل فعال‌سازی است؛ قرارداد لغوشده یا منقضی نیازمند تمدید/فرآیند مستقل است.'},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            if subscription.end_date < timezone.localdate():
+                return Response(
+                    {'detail': 'قرارداد منقضی‌شده از مسیر فعال‌سازی عادی قابل بازگشت نیست.'},
+                    status=status.HTTP_409_CONFLICT,
+                )
             operation = SubscriptionOperation.objects.create(
                 subscription=subscription, operation_type='activate',
                 performed_by=request.user, old_status=subscription.status, new_status='active'
@@ -704,6 +753,12 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         """لغو قرارداد و پایان‌دادن به تخصیص دستگاه‌های فعال آن."""
         subscription = self.get_object()
         with transaction.atomic():
+            subscription = Subscription.objects.select_for_update().get(pk=subscription.pk)
+            if subscription.status == 'cancelled':
+                return Response(
+                    {'detail': 'این قرارداد قبلاً لغو شده است.'},
+                    status=status.HTTP_409_CONFLICT,
+                )
             operation = SubscriptionOperation.objects.create(
                 subscription=subscription, operation_type='cancel',
                 performed_by=request.user, old_status=subscription.status, new_status='cancelled'
