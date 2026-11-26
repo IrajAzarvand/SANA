@@ -291,13 +291,20 @@ class VehicleListSerializer(serializers.ModelSerializer):
 
 
 class DeviceModelSerializer(serializers.ModelSerializer):
-    devices_count = serializers.IntegerField(source='devices.count', read_only=True)
+    devices_count = serializers.SerializerMethodField()
+
+    def get_devices_count(self, obj):
+        request = self.context.get('request')
+        if not request:
+            return 0
+        return authorized_devices_for_user(request.user).filter(
+            device_model=obj
+        ).count()
 
     class Meta:
         model = DeviceModel
         fields = ['id', 'manufacturer', 'name', 'code', 'protocol', 'port', 'traccar_version', 'source_url', 'is_verified', 'devices_count', 'created_at']
         read_only_fields = ['id', 'created_at']
-
 class DeviceSerializer(serializers.ModelSerializer):
     def validate_device_model(self, value):
         if value and not value.is_verified:
