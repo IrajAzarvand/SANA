@@ -14,6 +14,7 @@ import { useAuth } from '../context/AuthContext';
 import { subscriptionsAPI } from '../api/services/subscriptions';
 import { useApi } from '../hooks/useApi';
 import { toJalali } from '../utils/dateUtils';
+import { fetchAllPages } from '../utils/fetchAllPages';
 
 const statusMap = {
   active:    { label: 'فعال',          variant: 'success' },
@@ -31,8 +32,7 @@ export default function Subscriptions() {
   const { isSiteAdmin } = useAuth();
 
   const fetchSubscriptions = useCallback(async () => {
-    const result = await subscriptionsAPI.list();
-    return Array.isArray(result) ? result : result.results || [];
+    return fetchAllPages((params) => subscriptionsAPI.list(params));
   }, []);
 
   const { data: subscriptions, loading, error, refetch } = useApi(fetchSubscriptions, []);
