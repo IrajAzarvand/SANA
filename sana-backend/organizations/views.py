@@ -637,19 +637,37 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         if new_start > new_end:
             raise serializers.ValidationError({'contract_changes': 'تاریخ شروع قرارداد باید قبل از تاریخ پایان باشد'})
 
-        payment_objects = {}
+        payment_ids = _validated_positive_id_list(
+            [item.get('id') for item in payment_changes], 'payment_changes'
+        )
+        allowed_payment_fields = {'id', 'amount', 'payment_date', 'description'}
         for item in payment_changes:
-            payment_id = item.get('id')
-            if not payment_id:
-                raise serializers.ValidationError({'payment_changes': 'شناسه پرداخت الزامی است'})
-            payment = subscription.payments.filter(id=payment_id).first()
-            if not payment:
-                raise serializers.ValidationError({'payment_changes': f'پرداخت {payment_id} یافت نشد'})
-            payment_objects[payment_id] = (payment, item)
+            unknown_fields = set(item) - allowed_payment_fields
+            if unknown_fields:
+                raise serializers.ValidationError({
+                    'payment_changes': f'فیلدهای غیرمجاز: {", ".join(sorted(unknown_fields))}'
+                })
+        payment_items = dict(zip(payment_ids, payment_changes))
 
         with transaction.atomic():
             _lock_subscription_devices(subscription, add_devices)
             subscription = Subscription.objects.select_for_update().get(pk=subscription.pk)
+            # Payment rows are locked after the contract, in stable order. This
+            # serializes edits against the allocation endpoint, which locks the
+            # receipt before creating allocations.
+            locked_payments = list(
+                SubscriptionPayment.objects.select_for_update()
+                .filter(subscription=subscription, pk__in=payment_ids)
+                .order_by('pk')
+            )
+            if len(locked_payments) != len(payment_ids):
+                raise serializers.ValidationError({
+                    'payment_changes': 'یک یا چند دریافتی متعلق به این قرارداد نیست یا یافت نشد.'
+                })
+            payment_objects = {
+                payment.pk: (payment, payment_items[payment.pk])
+                for payment in locked_payments
+            }
             # Re-evaluate date bounds against the locked, current contract row.
             new_start = parsed_contract.get('start_date', subscription.start_date)
             new_end = parsed_contract.get('end_date', subscription.end_date)
@@ -739,37 +757,34 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
 
             # دریافتی‌ای که تخصیص مالی دارد قابل ویرایش مستقیم نیست؛
             # برای اصلاح آن باید در جریان مالی جداگانه برگشت/اصلاح ثبت شود.
-            payment_fields = {'amount', 'payment_date', 'description'}
             for payment, item in payment_objects.values():
                 if payment.allocations.exists():
                     raise serializers.ValidationError({
                         'payment_changes': f'دریافتی {payment.id} تخصیص مالی دارد و قابل ویرایش مستقیم نیست'
                     })
-                for field in payment_fields:
-                    if field not in item:
-                        continue
-                    new_value = item[field]
-                    if field == 'amount':
-                        new_value = int(new_value)
-                    model_field = field
-                    if field == 'payment_date':
-                        try:
-                            new_value = date.fromisoformat(new_value)
-                        except (TypeError, ValueError):
-                            raise serializers.ValidationError({'payment_changes': 'فرمت تاریخ دریافت وجه نامعتبر است'})
-                        model_field = 'received_at'
-                    old_value = getattr(payment, model_field)
+                update_data = {
+                    field: item[field]
+                    for field in ('amount', 'payment_date', 'description')
+                    if field in item
+                }
+                if not update_data:
+                    continue
+                payment_serializer = SubscriptionPaymentSerializer(
+                    payment, data=update_data, partial=True
+                )
+                payment_serializer.is_valid(raise_exception=True)
+                for field, new_value in payment_serializer.validated_data.items():
+                    old_value = getattr(payment, field)
                     if str(old_value) == str(new_value):
                         continue
                     SubscriptionOperationChange.objects.create(
                         operation=operation,
                         entity_type='SubscriptionPayment',
-                        field_name=model_field,
+                        field_name=field,
                         old_value='' if old_value is None else str(old_value),
                         new_value='' if new_value is None else str(new_value),
                     )
-                    setattr(payment, model_field, new_value)
-                payment.save()
+                payment_serializer.save()
 
         return Response(SubscriptionSerializer(subscription).data)
 
