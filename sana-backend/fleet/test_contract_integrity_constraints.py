@@ -6,6 +6,8 @@ from django.utils import timezone
 
 from accounts.models import User
 from fleet.models import Device, DeviceCustomerAccessPeriod, DeviceOwnershipHistory
+from fleet.device_operations import _add_to_subscription
+from rest_framework.exceptions import ValidationError
 from organizations.models import Organization, Subscription, SubscriptionDevice
 
 
@@ -462,3 +464,48 @@ class SingleOpenDeviceRelationshipTests(TestCase):
                 device=self.device,
                 organization=self.organization,
             )
+
+
+class DeviceAssignmentValidationTests(TestCase):
+    def setUp(self):
+        today = timezone.localdate()
+        self.organization = Organization.objects.create(
+            name='Assignment Validation Org',
+            code='ASSIGNMENT-VALIDATION-ORG',
+        )
+        self.subscription = Subscription.objects.create(
+            contract_number='ASSIGNMENT-VALIDATION-CONTRACT',
+            customer_type='organization',
+            organization=self.organization,
+            start_date=today,
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        self.personal_user = User.objects.create_user(
+            username='assignment-validation-personal',
+            password='test-password',
+            account_type='personal',
+            role='personal_user',
+        )
+
+    def test_device_held_by_another_customer_cannot_be_added_to_contract(self):
+        device = Device.objects.create(
+            imei='860000000009955',
+            current_holder_user=self.personal_user,
+            management_status='installed',
+        )
+        with transaction.atomic():
+            with self.assertRaises(ValidationError):
+                _add_to_subscription(device, self.subscription, operation=None)
+
+    def test_device_assignment_window_must_fit_inside_contract(self):
+        device = Device.objects.create(imei='860000000009956')
+        with transaction.atomic():
+            with self.assertRaises(ValidationError):
+                _add_to_subscription(
+                    device,
+                    self.subscription,
+                    operation=None,
+                    start_date=self.subscription.start_date - timedelta(days=1),
+                    end_date=self.subscription.end_date,
+                )
