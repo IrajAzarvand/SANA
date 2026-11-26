@@ -917,6 +917,24 @@ class SubscriptionDeviceViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         subscription = serializer.validated_data['subscription']
         with transaction.atomic():
+            device = Device.objects.select_for_update().get(
+                pk=serializer.validated_data['device'].pk
+            )
+            subscription = Subscription.objects.select_for_update().get(
+                pk=subscription.pk
+            )
+            from fleet.device_operations import _validate_device_customer_assignment
+            _validate_device_customer_assignment(device, subscription)
+            start_date = serializer.validated_data['start_date']
+            end_date = serializer.validated_data['end_date']
+            if (
+                start_date < subscription.start_date
+                or end_date > subscription.end_date
+                or start_date > end_date
+            ):
+                raise serializers.ValidationError({
+                    'non_field_errors': 'بازه اتصال دستگاه باید کاملاً داخل بازه قرارداد باشد.'
+                })
             operation = SubscriptionOperation.objects.create(
                 subscription=subscription,
                 operation_type='add_device',
@@ -924,7 +942,11 @@ class SubscriptionDeviceViewSet(viewsets.ModelViewSet):
                 old_end_date=subscription.end_date,
                 new_end_date=subscription.end_date,
             )
-            instance = serializer.save(added_by_operation=operation)
+            instance = serializer.save(
+                device=device,
+                subscription=subscription,
+                added_by_operation=operation,
+            )
         return Response(self.get_serializer(instance).data, status=status.HTTP_201_CREATED)
 
     def destroy(self, request, *args, **kwargs):
