@@ -2067,7 +2067,7 @@ class HistoricalSubscriptionOperationDeviceDisclosureTests(TestCase):
             start_date=old_contract.start_date,
             end_date=old_contract.end_date,
             unassigned_at=timezone.now() - timedelta(days=2),
-            added_by_operation=operation,
+            removed_by_operation=operation,
         )
 
         new_contract = Subscription.objects.create(
@@ -2092,11 +2092,10 @@ class HistoricalSubscriptionOperationDeviceDisclosureTests(TestCase):
         )
 
         serializer = SubscriptionOperationSerializer(
+            operation,
             context={'request': type('Request', (), {'user': old_manager})()}
         )
-        rows = serializer._serialize_device_links(
-            SubscriptionDevice.objects.filter(pk=old_link.pk)
-        )
+        rows = serializer.get_removed_devices(operation)
 
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['device_id'], device.pk)
