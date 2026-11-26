@@ -10,16 +10,45 @@ class UserManager(BaseUserManager):
     def create_user(self, username, password=None, **extra_fields):
         if not username:
             raise ValueError('نام کاربری الزامی است')
+        # Keep role/account type and Django's independent admin flags aligned
+        # across every user-creation path, not only API serializers.
+        role_account_types = {
+            'site_admin': 'admin',
+            'main_user': 'organization',
+            'branch_manager': 'organization',
+            'personal_user': 'personal',
+        }
+        role = extra_fields.get('role', 'personal_user')
+        expected_account_type = role_account_types.get(role)
+        if expected_account_type is None:
+            raise ValueError('Invalid user role')
+        if expected_account_type:
+            account_type = extra_fields.get('account_type', expected_account_type)
+            if account_type != expected_account_type:
+                raise ValueError('Account type does not match the application role')
+            extra_fields['account_type'] = expected_account_type
+
+        is_site_admin = role == 'site_admin'
+        extra_fields['is_staff'] = is_site_admin
+        extra_fields['is_superuser'] = is_site_admin
         user = self.model(username=username, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
         return user
 
     def create_superuser(self, username, password=None, **extra_fields):
-        extra_fields.setdefault('is_staff', True)
-        extra_fields.setdefault('is_superuser', True)
-        extra_fields.setdefault('role', 'site_admin')
-        extra_fields.setdefault('account_type', 'admin')
+        if extra_fields.get('role', 'site_admin') != 'site_admin':
+            raise ValueError('Superusers must have the site_admin role')
+        if extra_fields.get('account_type', 'admin') != 'admin':
+            raise ValueError('Superusers must have the admin account type')
+        if extra_fields.get('is_staff', True) is not True:
+            raise ValueError('Superusers must have is_staff=True')
+        if extra_fields.get('is_superuser', True) is not True:
+            raise ValueError('Superusers must have is_superuser=True')
+        extra_fields['is_staff'] = True
+        extra_fields['is_superuser'] = True
+        extra_fields['role'] = 'site_admin'
+        extra_fields['account_type'] = 'admin'
         return self.create_user(username, password, **extra_fields)
 
 
@@ -179,7 +208,7 @@ class User(AbstractBaseUser, PermissionsMixin):
         2. Organization.status (اگه سازمانی)
         3. قرارداد فعال
         """
-        if not self.is_active:
+        if not self.is_active or self.archived_at is not None:
             return False
 
         if self.is_site_admin:

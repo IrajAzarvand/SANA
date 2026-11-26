@@ -120,14 +120,15 @@ class UserCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'branch': 'مدیر شرکت نباید به یک شعبه خاص متصل باشد.'})
         if role in {'site_admin', 'personal_user'} and (organization or branch):
             raise serializers.ValidationError('ادمین سایت و کاربر شخصی نباید به شرکت یا شعبه سازمانی متصل باشند.')
-        if self.instance and self.instance.archived_at and attrs.get('is_active') is True:
-            raise serializers.ValidationError({'is_active': 'برای فعال‌سازی حساب بایگانی‌شده ابتدا آن را بازیابی کنید.'})
         return attrs
 
     def create(self, validated_data):
         password = validated_data.pop('password')
         user = User(**validated_data)
         user.set_password(password)
+        # Keep Django admin access aligned when a site administrator is created.
+        user.is_staff = user.role == 'site_admin'
+        user.is_superuser = user.role == 'site_admin'
         user.save()
         return user
 
@@ -193,7 +194,45 @@ class UserUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'organization': 'برای مدیر شرکت، انتخاب شرکت الزامی است.'})
         if role in {'site_admin', 'personal_user'} and (organization or branch):
             raise serializers.ValidationError('ادمین سایت و کاربر شخصی نباید به شرکت یا شعبه سازمانی متصل باشند.')
+        if self.instance and self.instance.archived_at and attrs.get('is_active') is True:
+            raise serializers.ValidationError({
+                'is_active': 'برای فعال‌سازی حساب بایگانی‌شده ابتدا آن را بازیابی کنید.'
+            })
+
+        if self.instance and actor:
+            resulting_active = attrs.get('is_active', self.instance.is_active)
+            if self.instance.pk == actor.pk and (
+                role != 'site_admin' or not resulting_active
+            ):
+                raise serializers.ValidationError(
+                    'امکان تنزل نقش یا غیرفعال‌سازی حساب مدیر سایتِ واردشده وجود ندارد.'
+                )
         return attrs
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        resulting_role = validated_data.get('role', instance.role)
+        resulting_active = validated_data.get('is_active', instance.is_active)
+
+        if instance.role == 'site_admin' and (
+            resulting_role != 'site_admin' or not resulting_active
+        ):
+            # Lock all active administrators to prevent concurrent changes from
+            # removing the final active site-admin account.
+            active_admin_ids = list(
+                User.objects.select_for_update().filter(
+                    role='site_admin', is_active=True
+                ).order_by('pk').values_list('pk', flat=True)
+            )
+            if instance.pk in active_admin_ids and len(active_admin_ids) <= 1:
+                raise serializers.ValidationError(
+                    'حداقل یک مدیر سایت فعال باید در سامانه باقی بماند.'
+                )
+
+        # Application role is authoritative for Django admin permissions.
+        validated_data['is_staff'] = resulting_role == 'site_admin'
+        validated_data['is_superuser'] = resulting_role == 'site_admin'
+        return super().update(instance, validated_data)
 
 
 class UserProfileUpdateSerializer(serializers.ModelSerializer):

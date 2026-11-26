@@ -7,6 +7,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from django.utils import timezone
+from django.db import transaction
 from django.db.models import Exists, OuterRef, Q, Sum, Value, DecimalField
 from django.db.models.functions import Coalesce
 from datetime import datetime, timedelta
@@ -137,18 +138,53 @@ class UserViewSet(viewsets.ModelViewSet):
             qs = qs.filter(archived_at__isnull=True)
         return qs.select_related('organization', 'branch', 'archived_by')
 
+    @transaction.atomic
     def perform_update(self, serializer):
+        previous = serializer.instance
+        previous_access_state = (
+            previous.role,
+            previous.account_type,
+            previous.organization_id,
+            previous.branch_id,
+            previous.is_active,
+        )
         instance = serializer.save()
-        if not instance.is_active:
-            UserSession.objects.filter(user=instance, revoked_at__isnull=True).update(revoked_at=timezone.now())
+        current_access_state = (
+            instance.role,
+            instance.account_type,
+            instance.organization_id,
+            instance.branch_id,
+            instance.is_active,
+        )
+        if current_access_state != previous_access_state:
+            # Role, tenant, branch, or active-state changes invalidate old JWT
+            # claims and must revoke every session so the user signs in again.
+            UserSession.objects.filter(
+                user=instance,
+                revoked_at__isnull=True,
+            ).update(revoked_at=timezone.now())
 
     def perform_destroy(self, instance):
         self._archive_user(instance)
 
+    @transaction.atomic
     def _archive_user(self, instance):
         if instance.pk == self.request.user.pk:
             from rest_framework.exceptions import ValidationError
             raise ValidationError('امکان بایگانی حساب کاربری خودتان وجود ندارد.')
+
+        if instance.role == 'site_admin' and instance.is_active:
+            # Serialize administrator archival with role changes. This prevents
+            # two concurrent administrators from archiving each other.
+            active_admin_ids = list(
+                User.objects.select_for_update().filter(
+                    role='site_admin', is_active=True
+                ).order_by('pk').values_list('pk', flat=True)
+            )
+            if instance.pk in active_admin_ids and len(active_admin_ids) <= 1:
+                from rest_framework.exceptions import ValidationError
+                raise ValidationError('حداقل یک مدیر سایت فعال باید در سامانه باقی بماند.')
+
         now = timezone.now()
         if instance.archived_at is None:
             instance.archived_was_active = instance.is_active
@@ -172,7 +208,12 @@ class UserViewSet(viewsets.ModelViewSet):
         user.is_active = user.archived_was_active
         user.archived_at = None
         user.archived_by = None
-        user.save(update_fields=['is_active', 'archived_at', 'archived_by', 'updated_at'])
+        user.is_staff = user.role == 'site_admin'
+        user.is_superuser = user.role == 'site_admin'
+        user.save(update_fields=[
+            'is_active', 'archived_at', 'archived_by',
+            'is_staff', 'is_superuser', 'updated_at',
+        ])
         return Response(UserSerializer(user).data)
 
     @action(detail=False, methods=['get'], url_path='username-availability')

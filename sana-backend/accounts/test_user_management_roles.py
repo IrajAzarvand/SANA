@@ -1,10 +1,13 @@
 from datetime import timedelta
 
-from django.test import TestCase
+from django.test import TestCase, RequestFactory
+from django.contrib import admin as django_admin
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from accounts.models import User, UserSession
+from accounts.admin import UserAdmin
 from organizations.models import Organization, Branch
 
 
@@ -255,3 +258,363 @@ class UserManagementRoleBoundaryTests(TestCase):
         self.client.force_authenticate(self.company_manager)
         response = self.client.post(f'/api/users/{foreign.id}/archive/', {}, format='json')
         self.assertEqual(response.status_code, 404)
+
+
+    def test_api_created_site_admin_gets_django_admin_permissions(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.post('/api/users/', {
+            'username': 'new-site-admin',
+            'password': 'test-password-123',
+            'account_type': 'admin',
+            'role': 'site_admin',
+        }, format='json')
+        self.assertEqual(response.status_code, 201)
+        created = User.objects.get(username='new-site-admin')
+        self.assertTrue(created.is_staff)
+        self.assertTrue(created.is_superuser)
+
+    def test_demoting_site_admin_revokes_django_admin_permissions(self):
+        second_admin = User.objects.create_user(
+            username='second-site-admin', password='test-password-123',
+            role='site_admin', account_type='admin', is_staff=True, is_superuser=True,
+        )
+        self.client.force_authenticate(self.admin)
+        response = self.client.patch(
+            f'/api/users/{second_admin.id}/',
+            {'role': 'personal_user', 'account_type': 'personal'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        second_admin.refresh_from_db()
+        self.assertEqual(second_admin.role, 'personal_user')
+        self.assertFalse(second_admin.is_staff)
+        self.assertFalse(second_admin.is_superuser)
+
+    def test_site_admin_cannot_demote_or_deactivate_own_account(self):
+        self.client.force_authenticate(self.admin)
+        demote = self.client.patch(
+            f'/api/users/{self.admin.id}/',
+            {'role': 'personal_user', 'account_type': 'personal'},
+            format='json',
+        )
+        deactivate = self.client.patch(
+            f'/api/users/{self.admin.id}/',
+            {'is_active': False},
+            format='json',
+        )
+        self.assertEqual(demote.status_code, 400)
+        self.assertEqual(deactivate.status_code, 400)
+        self.admin.refresh_from_db()
+        self.assertEqual(self.admin.role, 'site_admin')
+        self.assertTrue(self.admin.is_active)
+        self.assertTrue(self.admin.is_staff)
+        self.assertTrue(self.admin.is_superuser)
+
+
+    def test_archiving_site_admin_revokes_sessions_without_removing_last_admin(self):
+        second_admin = User.objects.create_user(
+            username='archived-site-admin', password='test-password-123',
+            role='site_admin', account_type='admin', is_staff=True, is_superuser=True,
+        )
+        session = UserSession.objects.create(
+            user=second_admin, expires_at=timezone.now() + timedelta(hours=2),
+        )
+        self.client.force_authenticate(self.admin)
+        response = self.client.post(f'/api/users/{second_admin.id}/archive/', {}, format='json')
+        self.assertEqual(response.status_code, 200)
+        second_admin.refresh_from_db()
+        session.refresh_from_db()
+        self.assertIsNotNone(second_admin.archived_at)
+        self.assertFalse(second_admin.is_active)
+        self.assertIsNotNone(session.revoked_at)
+        self.assertTrue(User.objects.filter(role='site_admin', is_active=True).exists())
+
+    def test_restoring_site_admin_restores_django_admin_permissions(self):
+        target = User.objects.create_user(
+            username='restore-site-admin', password='test-password-123',
+            role='site_admin', account_type='admin',
+        )
+        # Simulate a legacy row whose Django admin flags drifted from its role.
+        target.is_staff = False
+        target.is_superuser = False
+        target.save(update_fields=['is_staff', 'is_superuser'])
+        self.client.force_authenticate(self.admin)
+        archived = self.client.post(f'/api/users/{target.id}/archive/', {}, format='json')
+        self.assertEqual(archived.status_code, 200)
+        restored = self.client.post(f'/api/users/{target.id}/restore/', {}, format='json')
+        self.assertEqual(restored.status_code, 200)
+        target.refresh_from_db()
+        self.assertTrue(target.is_staff)
+        self.assertTrue(target.is_superuser)
+
+
+    def test_django_admin_save_model_synchronizes_role_permissions(self):
+        request = RequestFactory().post('/admin/accounts/user/')
+        request.user = self.admin
+        model_admin = UserAdmin(User, django_admin.site)
+        target = User.objects.create_user(
+            username='admin-ui-target', password='test-password-123',
+            role='site_admin', account_type='admin', is_staff=True, is_superuser=True,
+        )
+        target.role = 'personal_user'
+        target.account_type = 'personal'
+        model_admin.save_model(request, target, form=None, change=True)
+        target.refresh_from_db()
+        self.assertFalse(target.is_staff)
+        self.assertFalse(target.is_superuser)
+
+    def test_django_admin_cannot_demote_or_deactivate_own_account(self):
+        request = RequestFactory().post('/admin/accounts/user/')
+        request.user = self.admin
+        model_admin = UserAdmin(User, django_admin.site)
+        self.admin.role = 'personal_user'
+        self.admin.account_type = 'personal'
+        with self.assertRaises(DjangoValidationError):
+            model_admin.save_model(request, self.admin, form=None, change=True)
+        self.admin.refresh_from_db()
+        self.assertEqual(self.admin.role, 'site_admin')
+        self.assertTrue(self.admin.is_active)
+
+
+    def test_user_manager_keeps_site_admin_role_and_permissions_consistent(self):
+        admin_user = User.objects.create_user(
+            username='manager-created-admin', password='test-password-123',
+            role='site_admin', account_type='admin',
+        )
+        ordinary_user = User.objects.create_user(
+            username='manager-created-ordinary', password='test-password-123',
+            role='personal_user', account_type='personal', is_staff=True, is_superuser=True,
+        )
+        self.assertTrue(admin_user.is_staff)
+        self.assertTrue(admin_user.is_superuser)
+        self.assertFalse(ordinary_user.is_staff)
+        self.assertFalse(ordinary_user.is_superuser)
+
+    def test_create_superuser_rejects_non_admin_application_role(self):
+        with self.assertRaises(ValueError):
+            User.objects.create_superuser(
+                username='invalid-superuser-role', password='test-password-123',
+                role='main_user', account_type='organization',
+            )
+
+
+    def test_site_admin_role_change_revokes_all_existing_sessions(self):
+        target = User.objects.create_user(
+            username='role-change-session-target', password='test-password-123',
+            role='site_admin', account_type='admin',
+        )
+        session = UserSession.objects.create(
+            user=target, expires_at=timezone.now() + timedelta(hours=2),
+        )
+        self.client.force_authenticate(self.admin)
+        response = self.client.patch(
+            f'/api/users/{target.id}/',
+            {'role': 'personal_user', 'account_type': 'personal'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        session.refresh_from_db()
+        self.assertIsNotNone(session.revoked_at)
+
+    def test_company_manager_branch_transfer_revokes_user_sessions(self):
+        other_branch = Branch.objects.create(
+            organization=self.organization, name='Second Branch', code='ROLE-BRANCH-3'
+        )
+        target = User.objects.create_user(
+            username='branch-transfer-session-target', password='test-password-123',
+            role='branch_manager', account_type='organization',
+            organization=self.organization, branch=self.branch,
+        )
+        session = UserSession.objects.create(
+            user=target, expires_at=timezone.now() + timedelta(hours=2),
+        )
+        self.client.force_authenticate(self.company_manager)
+        response = self.client.patch(
+            f'/api/users/{target.id}/',
+            {'branch': other_branch.id},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        session.refresh_from_db()
+        self.assertIsNotNone(session.revoked_at)
+
+
+    def test_django_admin_access_scope_change_revokes_sessions(self):
+        request = RequestFactory().post('/admin/accounts/user/')
+        request.user = self.admin
+        model_admin = UserAdmin(User, django_admin.site)
+        target = User.objects.create_user(
+            username='admin-ui-branch-transfer', password='test-password-123',
+            role='branch_manager', account_type='organization',
+            organization=self.organization, branch=self.branch,
+        )
+        other_branch = Branch.objects.create(
+            organization=self.organization, name='Admin UI Second Branch', code='ROLE-BRANCH-4'
+        )
+        session = UserSession.objects.create(
+            user=target, expires_at=timezone.now() + timedelta(hours=2),
+        )
+        target.branch = other_branch
+        model_admin.save_model(request, target, form=None, change=True)
+        session.refresh_from_db()
+        self.assertIsNotNone(session.revoked_at)
+
+
+    def test_django_admin_rejects_role_account_type_mismatch(self):
+        request = RequestFactory().post('/admin/accounts/user/')
+        request.user = self.admin
+        model_admin = UserAdmin(User, django_admin.site)
+        target = User(
+            username='invalid-admin-account-type',
+            role='site_admin',
+            account_type='personal',
+        )
+        with self.assertRaises(DjangoValidationError):
+            model_admin.save_model(request, target, form=None, change=False)
+
+    def test_django_admin_rejects_branch_from_another_organization(self):
+        request = RequestFactory().post('/admin/accounts/user/')
+        request.user = self.admin
+        model_admin = UserAdmin(User, django_admin.site)
+        target = User(
+            username='invalid-admin-branch-link',
+            role='branch_manager',
+            account_type='organization',
+            organization=self.organization,
+            branch=self.other_branch,
+        )
+        with self.assertRaises(DjangoValidationError):
+            model_admin.save_model(request, target, form=None, change=False)
+
+
+    def test_user_manager_defaults_account_type_from_role_and_rejects_mismatch(self):
+        site_admin = User.objects.create_user(
+            username='manager-admin-default-type', password='test-password-123',
+            role='site_admin',
+        )
+        self.assertEqual(site_admin.account_type, 'admin')
+        self.assertTrue(site_admin.is_staff)
+        self.assertTrue(site_admin.is_superuser)
+        with self.assertRaises(ValueError):
+            User.objects.create_user(
+                username='manager-role-type-mismatch', password='test-password-123',
+                role='branch_manager', account_type='personal',
+            )
+
+
+    def test_user_manager_rejects_unknown_application_role(self):
+        with self.assertRaises(ValueError):
+            User.objects.create_user(
+                username='manager-invalid-role', password='test-password-123',
+                role='unknown_role',
+            )
+
+
+    def test_django_admin_cannot_reactivate_archived_user_without_restore(self):
+        request = RequestFactory().post('/admin/accounts/user/')
+        request.user = self.admin
+        model_admin = UserAdmin(User, django_admin.site)
+        target = User.objects.create_user(
+            username='archived-admin-ui-target', password='test-password-123',
+            role='branch_manager', account_type='organization',
+            organization=self.organization, branch=self.branch,
+        )
+        target.is_active = False
+        target.archived_at = timezone.now()
+        target.archived_was_active = True
+        target.save(update_fields=['is_active', 'archived_at', 'archived_was_active'])
+        target.is_active = True
+        with self.assertRaises(DjangoValidationError):
+            model_admin.save_model(request, target, form=None, change=True)
+        target.refresh_from_db()
+        self.assertFalse(target.is_active)
+        self.assertIsNotNone(target.archived_at)
+
+
+    def test_archived_user_cannot_be_reactivated_through_update_api(self):
+        target = User.objects.create_user(
+            username='archived-api-reactivation-target', password='test-password-123',
+            role='branch_manager', account_type='organization',
+            organization=self.organization, branch=self.branch,
+        )
+        target.is_active = False
+        target.archived_at = timezone.now()
+        target.archived_was_active = True
+        target.save(update_fields=['is_active', 'archived_at', 'archived_was_active'])
+        self.client.force_authenticate(self.admin)
+        response = self.client.patch(
+            f'/api/users/{target.id}/?archived=true',
+            {'is_active': True},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        target.refresh_from_db()
+        self.assertFalse(target.is_active)
+        self.assertIsNotNone(target.archived_at)
+
+
+    def test_personal_user_can_only_read_own_user_record(self):
+        personal = User.objects.create_user(
+            username='role-personal-user', password='test-password-123',
+            role='personal_user', account_type='personal',
+        )
+        another = User.objects.create_user(
+            username='another-role-personal-user', password='test-password-123',
+            role='personal_user', account_type='personal',
+        )
+        self.client.force_authenticate(personal)
+        listing = self.client.get('/api/users/')
+        self.assertEqual(listing.status_code, 200)
+        payload = listing.data['results'] if isinstance(listing.data, dict) else listing.data
+        self.assertEqual([item['id'] for item in payload], [personal.id])
+        own_detail = self.client.get(f'/api/users/{personal.id}/')
+        other_detail = self.client.get(f'/api/users/{another.id}/')
+        self.assertEqual(own_detail.status_code, 200)
+        self.assertEqual(other_detail.status_code, 404)
+
+    def test_branch_manager_cannot_read_another_user_detail(self):
+        another = User.objects.create_user(
+            username='other-branch-user-detail', password='test-password-123',
+            role='branch_manager', account_type='organization',
+            organization=self.organization, branch=self.branch,
+        )
+        self.client.force_authenticate(self.branch_manager)
+        response = self.client.get(f'/api/users/{another.id}/')
+        self.assertEqual(response.status_code, 404)
+
+    def test_company_manager_cannot_update_or_restore_foreign_user(self):
+        foreign = User.objects.create_user(
+            username='foreign-user-management-target', password='test-password-123',
+            role='branch_manager', account_type='organization',
+            organization=self.other_organization, branch=self.other_branch,
+        )
+        foreign.is_active = False
+        foreign.archived_at = timezone.now()
+        foreign.archived_was_active = True
+        foreign.save(update_fields=['is_active', 'archived_at', 'archived_was_active'])
+
+        self.client.force_authenticate(self.company_manager)
+        update_response = self.client.patch(
+            f'/api/users/{foreign.id}/?archived=true',
+            {'mobile': '09129999999'},
+            format='json',
+        )
+        restore_response = self.client.post(
+            f'/api/users/{foreign.id}/restore/', {}, format='json',
+        )
+        self.assertEqual(update_response.status_code, 404)
+        self.assertEqual(restore_response.status_code, 404)
+        foreign.refresh_from_db()
+        self.assertIsNotNone(foreign.archived_at)
+        self.assertFalse(foreign.is_active)
+
+
+    def test_archived_user_cannot_login_if_legacy_active_flag_is_inconsistent(self):
+        archived_user = User.objects.create_user(
+            username='archived-but-active-legacy-user', password='test-password-123',
+            role='site_admin', account_type='admin',
+        )
+        archived_user.archived_at = timezone.now()
+        archived_user.is_active = True
+        archived_user.save(update_fields=['archived_at', 'is_active'])
+        self.assertFalse(archived_user.can_login)
