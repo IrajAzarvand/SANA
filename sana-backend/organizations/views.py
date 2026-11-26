@@ -954,6 +954,14 @@ class SubscriptionDeviceViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         subscription = instance.subscription
         with transaction.atomic():
+            Device.objects.select_for_update().get(pk=instance.device_id)
+            subscription = Subscription.objects.select_for_update().get(pk=subscription.pk)
+            instance = SubscriptionDevice.objects.select_for_update().get(pk=instance.pk)
+            if instance.unassigned_at is not None:
+                return Response(
+                    {'detail': 'این دستگاه قبلاً از قرارداد خارج شده است.'},
+                    status=status.HTTP_409_CONFLICT,
+                )
             operation = SubscriptionOperation.objects.create(
                 subscription=subscription,
                 operation_type='remove_device',
