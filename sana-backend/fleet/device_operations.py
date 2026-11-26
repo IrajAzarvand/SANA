@@ -421,13 +421,22 @@ def _close_active_link(device, operation):
 def _add_to_subscription(device, subscription, operation, start_date=None, end_date=None):
     if not subscription:
         raise ValidationError({'target_subscription': 'انتخاب قرارداد مقصد الزامی است'})
+
+    # Re-read and lock the contract while the enclosing device operation is
+    # atomic. This prevents a concurrent suspend/cancel from racing assignment.
+    subscription = subscription.__class__.objects.select_for_update().select_related(
+        'organization', 'user'
+    ).get(pk=subscription.pk)
     if subscription.status != 'active' or subscription.end_date < timezone.localdate():
         raise ValidationError({'target_subscription': 'افزودن دستگاه به قرارداد غیرفعال یا منقضی مجاز نیست.'})
+
     start_date = start_date or subscription.start_date
     end_date = end_date or subscription.end_date
-    if start_date > end_date:
-        raise ValidationError({'target_subscription': 'بازه قرارداد مقصد نامعتبر است'})
+    if start_date < subscription.start_date or end_date > subscription.end_date or start_date > end_date:
+        raise ValidationError({'target_subscription': 'بازه اتصال دستگاه باید کاملاً داخل بازه قرارداد باشد.'})
+
     try:
+        _validate_device_customer_assignment(device, subscription)
         return SubscriptionDevice.objects.create(
             subscription=subscription,
             device=device,
