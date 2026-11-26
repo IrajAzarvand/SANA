@@ -531,7 +531,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                 link.save(update_fields=['added_by_operation'])
 
             # دستگاه‌های حذف‌شده
-            for link_id in request.data.get('remove_device_ids', []):
+            for link_id in remove_ids:
                 link = subscription.subscription_devices.filter(
                     id=link_id, unassigned_at__isnull=True
                 ).first()
