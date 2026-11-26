@@ -1262,6 +1262,28 @@ class SubscriptionDeviceCustomerAccessClosureTests(TestCase):
         self.assertIsNone(self.device.organization_id)
         self.assertEqual(self.device.management_status, 'installed')
 
+    def test_renew_rejects_non_string_date_without_server_error(self):
+        response = self.client.post(
+            f'/api/subscriptions/{self.subscription.pk}/renew/',
+            {'new_end_date': 12345},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.subscription.refresh_from_db()
+        self.assertEqual(self.subscription.end_date, timezone.localdate() + timedelta(days=90))
+
+    def test_modify_rejects_malformed_add_device_payload(self):
+        response = self.client.post(
+            f'/api/subscriptions/{self.subscription.pk}/modify/',
+            {'contract_changes': {}, 'add_devices': ['not-an-object']},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(
+            self.subscription.subscription_devices.filter(unassigned_at__isnull=True).count(),
+            1,
+        )
+
     def test_renew_closes_access_when_device_is_removed(self):
         new_end_date = timezone.localdate() + timedelta(days=180)
         with patch('organizations.views.record_device_lifecycle_event'):
