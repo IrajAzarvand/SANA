@@ -1272,6 +1272,16 @@ class SubscriptionDeviceCustomerAccessClosureTests(TestCase):
         self.subscription.refresh_from_db()
         self.assertEqual(self.subscription.end_date, timezone.localdate() + timedelta(days=90))
 
+    def test_modify_rejects_empty_contract_date_without_server_error(self):
+        response = self.client.post(
+            f'/api/subscriptions/{self.subscription.pk}/modify/',
+            {'contract_changes': {'end_date': ''}},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.subscription.refresh_from_db()
+        self.assertEqual(self.subscription.end_date, timezone.localdate() + timedelta(days=90))
+
     def test_modify_rejects_malformed_device_removal_ids(self):
         response = self.client.post(
             f'/api/subscriptions/{self.subscription.pk}/modify/',
