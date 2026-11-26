@@ -1189,6 +1189,89 @@ class OrganizationAndBranchDeletionPermissionTests(TestCase):
         self.assertIsNone(self.organization.archived_by)
 
 
+class SubscriptionPaymentMutationValidationTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.admin = User.objects.create_user(
+            username='payment-mutation-admin',
+            password='test-password-123',
+            account_type='admin',
+            role='site_admin',
+            is_staff=True,
+            is_superuser=True,
+        )
+        self.client.force_authenticate(user=self.admin)
+        user = User.objects.create_user(
+            username='payment-mutation-customer',
+            password='test-password-123',
+            account_type='personal',
+            role='personal_user',
+        )
+        today = timezone.localdate()
+        self.subscription = Subscription.objects.create(
+            contract_number='PAYMENT-MUTATION-CONTRACT',
+            customer_type='personal',
+            user=user,
+            start_date=today - timedelta(days=10),
+            end_date=today + timedelta(days=30),
+            status='active',
+            price=1000,
+        )
+        self.payment = SubscriptionPayment.objects.create(
+            subscription=self.subscription,
+            amount=500,
+            received_at=today,
+            description='Original receipt',
+        )
+
+    def test_payment_edit_rejects_non_positive_amount_without_partial_write(self):
+        response = self.client.post(
+            f'/api/subscriptions/{self.subscription.pk}/modify/',
+            {
+                'contract_changes': {},
+                'payment_changes': [{'id': self.payment.pk, 'amount': 0}],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.amount, 500)
+        self.assertEqual(self.payment.description, 'Original receipt')
+        self.assertEqual(self.subscription.operations.count(), 0)
+
+    def test_payment_edit_rejects_future_receipt_date_without_partial_write(self):
+        future_date = (timezone.localdate() + timedelta(days=1)).isoformat()
+        response = self.client.post(
+            f'/api/subscriptions/{self.subscription.pk}/modify/',
+            {
+                'contract_changes': {},
+                'payment_changes': [{'id': self.payment.pk, 'payment_date': future_date}],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.received_at, timezone.localdate())
+        self.assertEqual(self.subscription.operations.count(), 0)
+
+    def test_payment_edit_rejects_duplicate_receipt_ids(self):
+        response = self.client.post(
+            f'/api/subscriptions/{self.subscription.pk}/modify/',
+            {
+                'contract_changes': {},
+                'payment_changes': [
+                    {'id': self.payment.pk, 'description': 'First'},
+                    {'id': self.payment.pk, 'description': 'Second'},
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400, response.data)
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.description, 'Original receipt')
+        self.assertEqual(self.subscription.operations.count(), 0)
+
+
 class SubscriptionDeviceCustomerAccessClosureTests(TestCase):
     """Removing a device from a contract must close access without rewriting history or ownership."""
 
