@@ -42,13 +42,15 @@ from fleet.device_operations import _close_customer_access
 from fleet.customer_access import active_customer_access_periods, active_personal_contract_links, active_subscription_links
 
 
-def _lock_subscription_devices(subscription, add_devices=()):
+def _lock_subscription_devices(subscription, add_devices=None):
     """Lock device rows in stable order before locking their parent contract."""
     device_ids = set(
         subscription.subscription_devices.filter(
             unassigned_at__isnull=True
         ).values_list('device_id', flat=True)
     )
+    if add_devices is None:
+        add_devices = []
     if not isinstance(add_devices, list):
         raise serializers.ValidationError({
             'add_devices': 'فهرست دستگاه‌های جدید باید آرایه باشد.'
@@ -470,6 +472,9 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             notes = ''
         if not isinstance(notes, str):
             raise serializers.ValidationError({'notes': 'یادداشت باید متن باشد.'})
+        add_devices = request.data.get('add_devices', [])
+        if add_devices is None:
+            add_devices = []
         remove_ids = _validated_positive_id_list(
             request.data.get('remove_device_ids', []), 'remove_device_ids'
         )
@@ -493,7 +498,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             )
 
         with transaction.atomic():
-            _lock_subscription_devices(subscription, request.data.get('add_devices', []))
+            _lock_subscription_devices(subscription, add_devices)
             subscription = Subscription.objects.select_for_update().get(pk=subscription.pk)
             if new_end_date <= timezone.localdate() or new_end_date <= subscription.end_date:
                 raise serializers.ValidationError({
@@ -523,7 +528,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             subscription.save(update_fields=['end_date', 'updated_at'])
 
             # دستگاه‌های جدید
-            for item in request.data.get('add_devices', []):
+            for item in add_devices:
                 device_id = item.get('device_id')
                 if not device_id:
                     raise serializers.ValidationError({'add_devices': 'device_id الزامی است'})
@@ -589,6 +594,8 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         customer_changes = request.data.get('customer_changes', {})
         payment_changes = request.data.get('payment_changes', [])
         add_devices = request.data.get('add_devices', [])
+        if add_devices is None:
+            add_devices = []
         remove_device_ids = _validated_positive_id_list(
             request.data.get('remove_device_ids', []), 'remove_device_ids'
         )
