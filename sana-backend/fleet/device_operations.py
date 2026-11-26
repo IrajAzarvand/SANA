@@ -466,9 +466,21 @@ def execute_device_operation(
     reason='',
     description='',
 ):
-    device = Device.objects.select_for_update().get(pk=device.pk)
+    # Every operation that needs more than one device row must acquire
+    # locks in ascending primary-key order. Otherwise opposing source/replacement
+    # requests can deadlock before their business validation rejects one side.
+    requested_device_ids = {device.pk}
     if replacement_device:
-        replacement_device = Device.objects.select_for_update().get(pk=replacement_device.pk)
+        requested_device_ids.add(replacement_device.pk)
+    locked_devices = {
+        locked.pk: locked
+        for locked in Device.objects.select_for_update()
+        .filter(pk__in=requested_device_ids)
+        .order_by('pk')
+    }
+    device = locked_devices[device.pk]
+    if replacement_device:
+        replacement_device = locked_devices[replacement_device.pk]
 
     active_link = device.subscription_links.filter(
         unassigned_at__isnull=True
