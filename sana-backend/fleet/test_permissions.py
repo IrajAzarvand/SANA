@@ -805,7 +805,7 @@ class DevicePartyMetadataDisclosureTests(TestCase):
         self.assertIsNone(detail.data['organization'])
         self.assertIsNone(detail.data['organization_name'])
         self.assertIsNone(detail.data['owner_user'])
-        self.assertIsNone(detail.data['owner_name'])
+        self.assertIsNone(detail.data.get('owner_name'))
         self.assertIsNone(detail.data['vehicle'])
         self.assertIsNone(detail.data['vehicle_plate'])
         self.assertEqual(detail.data['current_holder_organization'], own_org.pk)
@@ -817,7 +817,7 @@ class DevicePartyMetadataDisclosureTests(TestCase):
         self.assertIsNone(rows[0]['organization'])
         self.assertIsNone(rows[0]['organization_name'])
         self.assertIsNone(rows[0]['owner_user'])
-        self.assertIsNone(rows[0]['owner_name'])
+        self.assertIsNone(rows[0].get('owner_name'))
         self.assertIsNone(rows[0]['vehicle_plate'])
 
     def test_personal_customer_cannot_see_another_persons_legal_ownership(self):
@@ -830,11 +830,11 @@ class DevicePartyMetadataDisclosureTests(TestCase):
 
         user = User.objects.create_user(
             username='device_party_personal_customer', password='test-password',
-            role='personal_user', account_type='personal', full_name='Personal Customer',
+            role='personal_user', account_type='personal', first_name='Personal', last_name='Customer',
         )
         other_owner = User.objects.create_user(
             username='device_party_other_owner', password='test-password',
-            role='personal_user', account_type='personal', full_name='Other Owner',
+            role='personal_user', account_type='personal', first_name='Other', last_name='Owner',
         )
         today = timezone.localdate()
         foreign_vehicle = Vehicle.objects.create(plate='55ه555', owner_user=other_owner)
@@ -859,7 +859,7 @@ class DevicePartyMetadataDisclosureTests(TestCase):
 
         self.assertEqual(response.status_code, 200, response.data)
         self.assertIsNone(response.data['owner_user'])
-        self.assertIsNone(response.data['owner_name'])
+        self.assertIsNone(response.data.get('owner_name'))
         self.assertIsNone(response.data['vehicle'])
         self.assertIsNone(response.data['vehicle_plate'])
         self.assertEqual(response.data['current_holder_user'], user.pk)
