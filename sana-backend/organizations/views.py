@@ -52,7 +52,12 @@ def _lock_subscription_devices(subscription, add_devices=()):
     for item in add_devices or ():
         device_id = item.get('device_id') if isinstance(item, dict) else None
         if device_id:
-            device_ids.add(int(device_id))
+            try:
+                device_ids.add(int(device_id))
+            except (TypeError, ValueError):
+                raise serializers.ValidationError({
+                    'add_devices': 'شناسه دستگاه نامعتبر است.'
+                })
     if device_ids:
         list(
             Device.objects.select_for_update()
