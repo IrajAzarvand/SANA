@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from decimal import Decimal, InvalidOperation
 from django.utils import timezone
@@ -892,6 +893,15 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                 raise serializers.ValidationError({
                     'password': 'برای ساخت حساب جدید، رمز عبور الزامی است'
                 })
+            password_user = User(
+                username=data.get('username', ''),
+                first_name=data.get('first_name', ''),
+                last_name=data.get('last_name', ''),
+            )
+            try:
+                validate_password(data['password'], user=password_user)
+            except DjangoValidationError as exc:
+                raise serializers.ValidationError({'password': exc.messages})
 
         if data['start_date'] > data['end_date']:
             raise serializers.ValidationError({

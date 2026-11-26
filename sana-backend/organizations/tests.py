@@ -86,6 +86,38 @@ class SubscriptionWizardExistingUserTests(TestCase):
         self.assertFalse(serializer.is_valid())
         self.assertIn('password', serializer.errors)
 
+    def test_new_user_rejects_weak_passwords(self):
+        for username, password in [
+            ('wizard-numeric-password', '12345678'),
+            ('wizard-common-password', 'password'),
+            ('wizard-similar-password', 'wizard-similar-password'),
+        ]:
+            with self.subTest(username=username):
+                payload = self._payload(
+                    existing_user_id=None,
+                    username=username,
+                    password=password,
+                    contract_number=f'PRS-{username.upper()}',
+                )
+                serializer = SubscriptionWizardSerializer(data=payload)
+                self.assertFalse(serializer.is_valid())
+                self.assertIn('password', serializer.errors)
+                self.assertFalse(User.objects.filter(username=username).exists())
+
+    def test_new_user_accepts_a_strong_password(self):
+        payload = self._payload(
+            existing_user_id=None,
+            username='wizard-strong-password-user',
+            password='N0t-Common-Password!739',
+            contract_number='PRS-WIZARD-STRONG-PASSWORD',
+        )
+        serializer = SubscriptionWizardSerializer(data=payload)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        subscription = serializer.save()
+        user = User.objects.get(username='wizard-strong-password-user')
+        self.assertEqual(subscription.user_id, user.pk)
+        self.assertTrue(user.check_password('N0t-Common-Password!739'))
+
 
     @patch('organizations.serializers.record_device_lifecycle_event')
     def test_wizard_records_upfront_receipt_and_creates_schedule_for_remaining_amount(self, _record_event):
