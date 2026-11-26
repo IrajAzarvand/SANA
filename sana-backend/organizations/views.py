@@ -82,6 +82,9 @@ def _apply_customer_profile_changes(subscription, customer_changes, operation):
 
     if target is None:
         raise serializers.ValidationError({'customer_changes': 'مشتری قرارداد یافت نشد'})
+    # The organization/user profile is shared by all contracts; lock it so
+    # concurrent edits cannot overwrite each other's validated changes.
+    target = target.__class__.objects.select_for_update().get(pk=target.pk)
 
     change_serializer = change_serializer_class(
         target, data=customer_changes, partial=True
