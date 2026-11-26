@@ -758,6 +758,7 @@ class DevicePartyMetadataDisclosureTests(TestCase):
     def test_company_customer_cannot_see_foreign_legal_owner_or_vehicle(self):
         from datetime import timedelta
         from unittest.mock import patch
+        from django.utils import timezone
         from rest_framework.test import APIClient
         from accounts.models import User
         from fleet.models import Device, DeviceCustomerAccessPeriod, Vehicle
@@ -821,6 +822,7 @@ class DevicePartyMetadataDisclosureTests(TestCase):
 
     def test_personal_customer_cannot_see_another_persons_legal_ownership(self):
         from datetime import timedelta
+        from django.utils import timezone
         from rest_framework.test import APIClient
         from accounts.models import User
         from fleet.models import Device, Vehicle
