@@ -1,12 +1,14 @@
-# Squashed fleet migrations 0003 through 0015.
+# Fleet schema baseline after the intentional database reset.
 #
-# Fresh installations get the final fleet schema directly. Historical GPS
-# telemetry tables and temporary free-text device fields are intentionally
-# absent. Existing databases that have applied the replaced migrations are
-# recognized by Django and do not rerun this migration.
+# This migration does NOT replace the former 0003-0015 migration graph:
+# the old migration files and their replaces metadata were removed when this
+# baseline was introduced. It is valid for a clean database created from the
+# current schema. Do not apply it to a database that still records the former
+# fleet migrations; that requires a separately planned migration bridge or a
+# verified, explicitly approved database reset.
 #
-# Keep the replaced migration files until every deployed database has crossed
-# this migration boundary; Django uses them for partially migrated databases.
+# The clean-install CI workflow validates this baseline, not an in-place
+# upgrade from the removed migration history.
 
 import django.db.models.deletion
 from django.db import migrations, models
