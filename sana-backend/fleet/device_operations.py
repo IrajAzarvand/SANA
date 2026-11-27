@@ -1130,18 +1130,21 @@ def execute_device_operation(
         _close_active_link(device, operation)
         _close_customer_access(device)
         _close_ownership(device)
+        resolved_branch = target_branch or (
+            target_vehicle.branch if target_vehicle else None
+        )
         device.organization = target_organization
         device.owner_user = target_user
         device.current_holder_organization = target_organization
         device.current_holder_user = target_user
-        device.branch = None
-        device.vehicle = None
+        device.branch = resolved_branch
+        device.vehicle = target_vehicle
         device.management_status = 'installed'
         device.save()
         if target_subscription:
             _add_to_subscription(device, target_subscription, operation)
         _open_ownership(device, organization=target_organization, user=target_user, reason='transfer_customer')
-        _open_customer_access(device, subscription=target_subscription, branch=target_branch, organization=target_organization, user=target_user, reason='transfer_customer')
+        _open_customer_access(device, subscription=target_subscription, branch=resolved_branch, organization=target_organization, user=target_user, reason='transfer_customer')
         record_device_lifecycle_event(
             device_operation=operation,
             device=device,
