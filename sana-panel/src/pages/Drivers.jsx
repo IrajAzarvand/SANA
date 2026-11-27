@@ -181,7 +181,8 @@ export default function Drivers() {
   const handleOpenAssignment = async (driver) => {
     setAssignmentDriver(driver);
     setAssignmentVehicle('');
-    setAssignmentStart('');
+    setAssignmentStartDate('');
+    setAssignmentStartTime('');
     setAssignmentModalOpen(true);
     try {
       await loadDriverAssignments(driver.id);
