@@ -255,14 +255,22 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
         return bool(request and getattr(request.user, 'is_site_admin', False))
 
     def _can_view_device_details(self, obj):
+        cache = getattr(self, '_device_visibility_cache', None)
+        if cache is None:
+            cache = self._device_visibility_cache = {}
+        if obj.device_id in cache:
+            return cache[obj.device_id]
+
         request = self.context.get('request')
-        if not request:
-            return False
-        if self._is_site_admin():
-            return True
-        return authorized_devices_for_user(request.user).filter(
-            pk=obj.device_id
-        ).exists()
+        if not request or not getattr(request.user, 'is_authenticated', False):
+            cache[obj.device_id] = False
+        elif self._is_site_admin():
+            cache[obj.device_id] = True
+        else:
+            cache[obj.device_id] = authorized_devices_for_user(request.user).filter(
+                pk=obj.device_id
+            ).exists()
+        return cache[obj.device_id]
 
     def get_device_imei(self, obj):
         return obj.device.imei if self._can_view_device_details(obj) else None
