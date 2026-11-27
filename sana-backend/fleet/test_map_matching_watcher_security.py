@@ -47,6 +47,7 @@ class MapMatchingWatcherOwnershipTests(TestCase):
         force_authenticate(request, user=user)
 
         cursor = MagicMock()
+        cursor.rowcount = 0
         cursor_context = MagicMock()
         cursor_context.__enter__.return_value = cursor
         cursor_context.__exit__.return_value = False
@@ -56,7 +57,8 @@ class MapMatchingWatcherOwnershipTests(TestCase):
                 {'post': 'map_matching_activity'}
             )(request)
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 409)
+        self.assertFalse(response.data['active'])
         sql = cursor.execute.call_args.args[0]
         self.assertIn(
             'WHERE watcher.user_id = EXCLUDED.user_id',
