@@ -1379,6 +1379,11 @@ class DeviceViewSet(viewsets.ModelViewSet):
             return Response({'detail': 'شناسه نشست نقشه نامعتبر است.'}, status=400)
         if not isinstance(active, bool):
             return Response({'detail': 'مقدار active باید بولی باشد.'}, status=400)
+        if active and not self.get_queryset().exists():
+            return Response(
+                {'detail': 'برای فعال‌سازی تطبیق نقشه، دست‌کم یک دستگاه مجاز باید در دسترس باشد.'},
+                status=403,
+            )
 
         with connection.cursor() as cursor:
             if active:
