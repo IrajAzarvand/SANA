@@ -136,7 +136,7 @@ class UserViewSet(viewsets.ModelViewSet):
             qs = qs.filter(archived_at__isnull=False)
         else:
             qs = qs.filter(archived_at__isnull=True)
-        return qs.select_related('organization', 'branch', 'archived_by')
+        return qs.select_related('organization', 'branch', 'archived_by').order_by('pk')
 
     @transaction.atomic
     def perform_update(self, serializer):
