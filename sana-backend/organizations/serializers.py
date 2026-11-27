@@ -259,23 +259,28 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
         )
 
     def _can_view_device_details(self, obj):
+        # Accept either a SubscriptionDevice row or a related Device row.
+        device_id = getattr(obj, 'device_id', getattr(obj, 'pk', None))
+        if device_id is None:
+            return False
+
         cache = getattr(self, '_device_visibility_cache', None)
         if cache is None:
             cache = self._device_visibility_cache = {}
-        if obj.device_id in cache:
-            return cache[obj.device_id]
+        if device_id in cache:
+            return cache[device_id]
 
         request = self.context.get('request')
         user = getattr(request, 'user', None) if request else None
         if not user or not getattr(user, 'is_authenticated', False):
-            cache[obj.device_id] = False
+            cache[device_id] = False
         elif self._is_site_admin():
-            cache[obj.device_id] = True
+            cache[device_id] = True
         else:
-            cache[obj.device_id] = authorized_devices_for_user(user).filter(
-                pk=obj.device_id
+            cache[device_id] = authorized_devices_for_user(user).filter(
+                pk=device_id
             ).exists()
-        return cache[obj.device_id]
+        return cache[device_id]
 
     def get_device_imei(self, obj):
         return obj.device.imei if self._can_view_device_details(obj) else None
@@ -312,11 +317,7 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
         def related_is_visible(related_device):
             if is_admin:
                 return True
-            if not request:
-                return False
-            return authorized_devices_for_user(request.user).filter(
-                pk=related_device.pk
-            ).exists()
+            return self._can_view_device_details(related_device)
 
         source_relations = list(device.replacement_relations_as_source.all())
         for relation in source_relations:
