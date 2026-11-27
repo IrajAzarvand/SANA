@@ -10,6 +10,7 @@ on:
     branches: [main]
     paths:
       - "sana-panel/**"
+      - "sana-map/**"
       - ".github/workflows/sana-panel-build.yml"
 
 jobs:
