@@ -112,7 +112,7 @@ class DeviceOperationCustomerTransferApiTests(TestCase):
                 'target_subscription': self.target_subscription.pk,
                 'target_branch': self.target_branch.pk,
                 'target_vehicle': self.target_vehicle.pk,
-                'reason': 'customer transfer regression test',
+                'reason': 'transfer test',
             },
             format='json',
         )
