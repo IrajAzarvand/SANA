@@ -1099,18 +1099,23 @@ class DeviceModelCountQueryEfficiencyTests(TestCase):
             account_type='organization',
             organization=organization,
         )
+        model_ids = []
         for index in range(8):
-            DeviceModel.objects.create(
+            model = DeviceModel.objects.create(
                 manufacturer='Query Efficiency',
                 name=f'Model {index}',
                 code=f'QUERY-EFFICIENCY-{index}',
                 protocol='gt06',
                 is_verified=True,
             )
+            model_ids.append(model.pk)
 
         view = DeviceModelViewSet()
         view.request = SimpleNamespace(user=manager)
-        queryset = view.get_queryset()
+        # The official Traccar catalog is seeded by migrations. Restrict this
+        # regression test to the eight rows it creates instead of assuming the
+        # global catalog contains no other verified models.
+        queryset = view.get_queryset().filter(pk__in=model_ids)
 
         with self.assertNumQueries(1):
             rows = DeviceModelSerializer(queryset, many=True).data
@@ -1150,8 +1155,11 @@ class DeviceModelCountQueryEfficiencyTests(TestCase):
 
         view = DeviceModelViewSet()
         view.request = SimpleNamespace(user=admin)
-        row = DeviceModelSerializer(view.get_queryset(), many=True).data[0]
-        self.assertEqual(row['devices_count'], 2)
+        rows = DeviceModelSerializer(
+            view.get_queryset().filter(pk=model.pk), many=True
+        ).data
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['devices_count'], 2)
 
 
 class BranchManagerReportHistoryDateUpperBoundTests(TestCase):
