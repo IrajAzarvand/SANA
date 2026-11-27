@@ -1175,7 +1175,7 @@ class BranchManagerReportHistoryDateUpperBoundTests(TestCase):
         manager = User.objects.create_user(
             username='branch_report_today_cap', password='test-password',
             role='branch_manager', account_type='organization',
-            organization=organization, branch=branch,
+            organization=None, branch=branch,
         )
         device = Device.objects.create(
             imei='860000000009933', organization=organization, branch=branch,
