@@ -1043,7 +1043,9 @@ class PersonalDeviceAccessQueryTests(TestCase):
         ]
 
         query_start = base_time.isoformat().replace('+00:00', 'Z')
-        query_end = (base_time + timedelta(hours=2)).isoformat().replace('+00:00', 'Z')
+        query_end = timezone.make_aware(
+            datetime.combine(today, datetime.max.time())
+        ).isoformat()
         first_request = APIRequestFactory().get(
             '/api/devices/report-history/',
             {
@@ -1113,7 +1115,7 @@ class PersonalDeviceAccessQueryTests(TestCase):
         self.assertIsNotNone(response.data['range_end'])
         self.assertFalse(response.data['unrestricted'])
 
-    def test_personal_report_range_uses_contract_dates_not_narrower_access_period(self):
+    def test_personal_report_range_uses_contract_dates_and_caps_at_today(self):
         today = timezone.localdate()
         contract_start = today - timedelta(days=12)
         contract_end = today + timedelta(days=18)
@@ -1172,7 +1174,7 @@ class PersonalDeviceAccessQueryTests(TestCase):
         )
         self.assertEqual(
             parse_datetime(response.data['range_end']).date(),
-            device_end,
+            today,
         )
 
     def test_personal_report_history_rejects_access_period_without_contract_link(self):
@@ -1811,6 +1813,6 @@ class OrganizationReportContractLinkConsistencyTests(TestCase):
         self.assertEqual(
             response.data['range_end'],
             timezone.make_aware(
-                datetime.combine(first_contract.end_date, datetime.max.time())
+                datetime.combine(timezone.localdate(), datetime.max.time())
             ).isoformat(),
         )

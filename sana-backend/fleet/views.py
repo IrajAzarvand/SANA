@@ -37,6 +37,28 @@ from .customer_access import active_customer_access_periods, active_personal_con
 
 
 
+
+def report_vehicle_plate_for_user(device, user):
+    """Return a vehicle plate only when its vehicle belongs to the caller's tenant."""
+    if not device.vehicle_id:
+        return None
+    if getattr(user, 'is_site_admin', False):
+        return device.vehicle.plate
+    vehicle = device.vehicle
+    if getattr(user, 'is_personal_user', False):
+        visible = vehicle.owner_user_id == user.pk
+    elif getattr(user, 'is_branch_manager', False) and user.branch_id:
+        visible = (
+            vehicle.organization_id == user.branch.organization_id
+            and vehicle.branch_id == user.branch_id
+        )
+    elif getattr(user, 'is_main_user', False) and user.organization_id:
+        visible = vehicle.organization_id == user.organization_id
+    else:
+        visible = False
+    return vehicle.plate if visible else None
+
+
 def traccar_position_timestamp(position):
     """Return only Traccar's server-side receipt time.
 
@@ -1125,10 +1147,13 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     )),
                     link.assigned_at,
                 )
-                range_end = timezone.make_aware(datetime.combine(
-                    min(link.end_date, link.subscription.end_date),
-                    datetime_time.max,
-                ))
+                range_end = min(
+                    timezone.make_aware(datetime.combine(
+                        min(link.end_date, link.subscription.end_date),
+                        datetime_time.max,
+                    )),
+                    timezone.make_aware(datetime.combine(today, datetime_time.max)),
+                )
             else:
                 if request.user.is_branch_manager:
                     # Legacy branch-manager accounts may have organization_id=NULL;
@@ -1181,6 +1206,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 contract_end = timezone.make_aware(datetime.combine(end_date, datetime_time.max))
                 range_start = max(contract_start, access.started_at, link.assigned_at)
                 range_end = min(contract_end, access.ended_at) if access.ended_at else contract_end
+                today_end = timezone.make_aware(datetime.combine(today, datetime_time.max))
+                range_end = min(range_end, today_end)
 
         if request.query_params.get('metadata') == 'true':
             return Response({
@@ -1188,7 +1215,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     'id': device.pk,
                     'imei': device.imei,
                     'sim_number': device.sim_number,
-                    'vehicle_plate': device.vehicle.plate if device.vehicle_id else None,
+                    'vehicle_plate': report_vehicle_plate_for_user(device, request.user),
                 },
                 'range_start': range_start.isoformat() if range_start else None,
                 'range_end': range_end.isoformat() if range_end else None,
@@ -1332,7 +1359,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 'id': device.pk,
                 'imei': device.imei,
                 'sim_number': device.sim_number,
-                'vehicle_plate': device.vehicle.plate if device.vehicle_id else None,
+                'vehicle_plate': report_vehicle_plate_for_user(device, request.user),
             },
             'points': points,
             'next_cursor': next_cursor,
