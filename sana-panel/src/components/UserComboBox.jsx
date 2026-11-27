@@ -27,6 +27,7 @@ export default function UserComboBox({
   const [allUsers, setAllUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [usernameAvailability, setUsernameAvailability] = useState('idle');
+  const [checkedUsername, setCheckedUsername] = useState('');
   const containerRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -84,7 +85,6 @@ export default function UserComboBox({
     }
 
     let cancelled = false;
-    setUsernameAvailability('checking');
     onUsernameAvailabilityChange?.('checking');
 
     const timer = setTimeout(async () => {
@@ -92,11 +92,13 @@ export default function UserComboBox({
         const result = await usersAPI.checkUsername(username);
         if (cancelled) return;
         const nextStatus = result.available ? 'available' : 'taken';
+        setCheckedUsername(username);
         setUsernameAvailability(nextStatus);
         onUsernameAvailabilityChange?.(nextStatus);
       } catch (e) {
         if (cancelled) return;
         console.error('Error checking username availability:', e);
+        setCheckedUsername(username);
         setUsernameAvailability('error');
         onUsernameAvailabilityChange?.('error');
       }
@@ -108,9 +110,14 @@ export default function UserComboBox({
     };
   }, [search, selectedUserId, onUsernameAvailabilityChange]);
 
-  const displayUsernameAvailability = search.trim()
-    ? usernameAvailability
-    : 'idle';
+  const normalizedUsernameSearch = search.trim();
+  const displayUsernameAvailability = selectedUserId
+    ? 'selected'
+    : !normalizedUsernameSearch
+      ? 'idle'
+      : checkedUsername === normalizedUsernameSearch
+        ? usernameAvailability
+        : 'checking';
 
   const openSuggestions = () => {
     if (allUsers.length === 0) setLoading(true);
