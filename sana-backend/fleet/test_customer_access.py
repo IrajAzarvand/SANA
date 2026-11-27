@@ -1868,7 +1868,7 @@ class SubscriptionDeviceSerializerVisibilityCacheTests(TestCase):
 
         with self.assertNumQueries(1):
             self.assertTrue(serializer._can_view_device_details(link))
-            self.assertTrue(serializer._can_view_device_details(link))
+            self.assertTrue(serializer._can_view_device_details(link.device))
 
     def test_subscription_device_serializer_without_request_fails_closed(self):
         from organizations.serializers import SubscriptionDeviceSerializer
