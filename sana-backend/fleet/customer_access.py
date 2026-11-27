@@ -92,7 +92,9 @@ def active_customer_access_periods(*, organization_id=None, user_id=None, branch
         )
 
     if branch_id is not None:
-        periods = periods.filter(branch_id=branch_id)
+        # A branch manager's authority ends immediately when their branch is
+        # deactivated, even if legacy access-period rows remain open.
+        periods = periods.filter(branch_id=branch_id, branch__status='active')
 
     if user_id:
         # A personal access period is valid only while its contract-device
@@ -109,3 +111,33 @@ def active_customer_access_periods(*, organization_id=None, user_id=None, branch
         )
 
     return periods
+
+
+def authorized_devices_for_user(user, *, now=None):
+    """Return the device queryset currently authorized for a customer account."""
+    from .models import Device
+
+    if not user or not getattr(user, 'is_authenticated', False):
+        return Device.objects.none()
+    if getattr(user, 'is_site_admin', False):
+        return Device.objects.all()
+
+    now = now or timezone.now()
+    if getattr(user, 'is_personal_user', False):
+        device_ids = active_personal_contract_links(
+            user_id=user.pk, now=now
+        ).values_list('device_id', flat=True)
+    elif getattr(user, 'is_main_user', False) and user.organization_id:
+        device_ids = active_customer_access_periods(
+            organization_id=user.organization_id, now=now
+        ).values_list('device_id', flat=True)
+    elif getattr(user, 'is_branch_manager', False) and user.branch_id:
+        device_ids = active_customer_access_periods(
+            organization_id=user.branch.organization_id,
+            branch_id=user.branch_id,
+            now=now,
+        ).values_list('device_id', flat=True)
+    else:
+        return Device.objects.none()
+
+    return Device.objects.filter(pk__in=device_ids)

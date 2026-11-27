@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from django.db.models import Q
 from django.utils import timezone
-from .customer_access import active_customer_access_periods, active_personal_contract_links
+from .customer_access import active_customer_access_periods, active_personal_contract_links, authorized_devices_for_user
 from organizations.models import SubscriptionDevice
 from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DriverVehicleAssignment, DeviceLifecycleEvent, DeviceReplacementRelation, DeviceOperation, DeviceCustomerAccessPeriod
 
@@ -140,7 +140,18 @@ class VehicleSerializer(serializers.ModelSerializer):
         }
 
     def get_device_imei(self, obj):
-        device = obj.devices.filter(management_status='active').first()
+        request = self.context.get('request')
+        if not request or not getattr(request.user, 'is_site_admin', False):
+            if not request:
+                return None
+            authorized_ids = authorized_devices_for_user(
+                request.user
+            ).values_list('pk', flat=True)
+            devices = obj.devices.filter(pk__in=authorized_ids)
+        else:
+            devices = obj.devices.all()
+
+        device = devices.filter(management_status='active').order_by('-updated_at', '-id').first()
         return device.imei if device else None
 
     def validate(self, attrs):
@@ -191,47 +202,15 @@ class VehicleListSerializer(serializers.ModelSerializer):
 
     def get_device_status(self, obj):
         request = self.context.get('request')
-        user = request.user if request else None
-        devices = obj.devices.all()
-        now = timezone.now()
-
-        if user and user.is_main_user and user.organization_id:
-            devices = devices.filter(
-                pk__in=active_customer_access_periods(
-                    organization_id=user.organization_id, now=now
-                ).values('device_id')
-            )
-        elif user and user.is_branch_manager and user.branch_id:
-            devices = devices.filter(
-                pk__in=active_customer_access_periods(
-                    organization_id=user.branch.organization_id,
-                    branch_id=user.branch_id,
-                    now=now,
-                ).values('device_id')
-            )
-        elif user and user.is_branch_manager:
-            devices = devices.none()
-        elif user and user.is_personal_user:
-            from django.db.models import Exists, OuterRef
-            from organizations.models import SubscriptionDevice
-
-            today = timezone.localdate()
-            active_access = active_customer_access_periods(
-                user_id=user.pk, now=now
-            ).filter(device=OuterRef('pk'))
-            active_contract_link = active_personal_contract_links(
-                user_id=user.pk, now=now
-            ).filter(device=OuterRef('pk'))
-            devices = devices.annotate(
-                has_personal_access=Exists(active_access) | Exists(active_contract_link)
-            ).filter(has_personal_access=True)
-        elif user and not user.is_site_admin:
-            devices = devices.none()
-
+        if not request:
+            return 'none'
+        devices = obj.devices.filter(
+            pk__in=authorized_devices_for_user(request.user).values_list('pk', flat=True)
+        )
         device = devices.order_by('-updated_at', '-id').first()
         if not device:
             return 'none'
-        return 'active' if device.is_data_active else 'offline'
+        return 'active' if _device_data_active_for_request(device, request) else 'offline'
 
 
 class DeviceModelSerializer(serializers.ModelSerializer):

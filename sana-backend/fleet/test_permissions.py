@@ -662,3 +662,93 @@ class PersonalReplacementHistoryFutureAssignmentTests(TestCase):
             relation.pk,
             set(view.get_queryset().values_list('id', flat=True)),
         )
+
+
+class VehicleDeviceDisclosureScopeTests(TestCase):
+    def test_company_vehicle_detail_hides_device_without_current_customer_access(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from rest_framework.test import APIClient
+        from accounts.models import User
+        from fleet.models import Device, Vehicle
+        from organizations.models import Organization, Subscription, SubscriptionDevice
+        from fleet.models import DeviceCustomerAccessPeriod
+
+        today = timezone.localdate()
+        own_org = Organization.objects.create(name='Vehicle Owner Org', code='VEH-OWNER-ORG')
+        other_org = Organization.objects.create(name='Vehicle Device Org', code='VEH-DEVICE-ORG')
+        manager = User.objects.create_user(
+            username='vehicle_device_scope_manager', password='test-password',
+            role='main_user', account_type='organization', organization=own_org,
+        )
+        vehicle = Vehicle.objects.create(plate='77الف777', organization=own_org)
+        device = Device.objects.create(
+            imei='860000000009701', organization=other_org, vehicle=vehicle,
+            management_status='active',
+        )
+        foreign_contract = Subscription.objects.create(
+            contract_number='VEHICLE-FOREIGN-CONTRACT', customer_type='organization',
+            organization=other_org, start_date=today-timedelta(days=2),
+            end_date=today+timedelta(days=20), status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=foreign_contract, device=device,
+            start_date=foreign_contract.start_date, end_date=foreign_contract.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device, organization=other_org, subscription=foreign_contract,
+            started_at=timezone.now()-timedelta(days=1),
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=manager)
+        detail = client.get(f'/api/vehicles/{vehicle.pk}/')
+        listing = client.get('/api/vehicles/')
+
+        self.assertEqual(detail.status_code, 200)
+        self.assertIsNone(detail.data['device_imei'])
+        self.assertEqual(listing.status_code, 200)
+        rows = listing.data['results'] if isinstance(listing.data, dict) else listing.data
+        self.assertEqual(rows[0]['device_status'], 'none')
+        self.assertNotIn(device.imei, str(detail.data))
+        self.assertNotIn(device.imei, str(rows))
+
+    def test_company_vehicle_detail_shows_device_with_current_customer_access(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from rest_framework.test import APIClient
+        from accounts.models import User
+        from fleet.models import Device, DeviceCustomerAccessPeriod, Vehicle
+        from organizations.models import Organization, Subscription, SubscriptionDevice
+
+        today = timezone.localdate()
+        organization = Organization.objects.create(name='Vehicle Authorized Org', code='VEH-AUTH-ORG')
+        manager = User.objects.create_user(
+            username='vehicle_device_authorized_manager', password='test-password',
+            role='main_user', account_type='organization', organization=organization,
+        )
+        vehicle = Vehicle.objects.create(plate='88ب888', organization=organization)
+        device = Device.objects.create(
+            imei='860000000009702', organization=organization, vehicle=vehicle,
+            management_status='active',
+        )
+        contract = Subscription.objects.create(
+            contract_number='VEHICLE-AUTH-CONTRACT', customer_type='organization',
+            organization=organization, start_date=today-timedelta(days=2),
+            end_date=today+timedelta(days=20), status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=contract, device=device,
+            start_date=contract.start_date, end_date=contract.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device, organization=organization, subscription=contract,
+            started_at=timezone.now()-timedelta(days=1),
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=manager)
+        response = client.get(f'/api/vehicles/{vehicle.pk}/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['device_imei'], device.imei)

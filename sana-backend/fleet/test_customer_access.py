@@ -1367,3 +1367,61 @@ class ArchivedOrganizationCustomerAccessTests(TestCase):
                 branch_id=branch.pk,
             ).filter(device=device).exists()
         )
+
+
+class InactiveBranchCustomerAccessTests(TestCase):
+    def test_inactive_branch_cannot_access_device_through_open_contract_period(self):
+        organization = Organization.objects.create(
+            name='Inactive Branch Access Organization',
+            code='INACTIVE-BRANCH-ACCESS-ORG',
+        )
+        branch = Branch.objects.create(
+            organization=organization,
+            name='Inactive Access Branch',
+            code='INACTIVE-ACCESS-BR',
+            status='inactive',
+        )
+        manager = User.objects.create_user(
+            username='inactive_branch_access_manager',
+            password='test-password',
+            role='branch_manager',
+            account_type='organization',
+            organization=organization,
+            branch=branch,
+        )
+        device = Device.objects.create(
+            imei='860000000009951',
+            organization=organization,
+            branch=branch,
+        )
+        today = timezone.localdate()
+        contract = Subscription.objects.create(
+            contract_number='INACTIVE-BRANCH-ACCESS-CONTRACT',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=2),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=contract,
+            device=device,
+            start_date=contract.start_date,
+            end_date=contract.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            branch=branch,
+            subscription=contract,
+            started_at=timezone.now() - timedelta(days=1),
+        )
+
+        self.assertFalse(
+            active_customer_access_periods(
+                organization_id=organization.pk,
+                branch_id=branch.pk,
+            ).filter(device=device).exists()
+        )
+        from fleet.customer_access import authorized_devices_for_user
+        self.assertFalse(authorized_devices_for_user(manager).filter(pk=device.pk).exists())
