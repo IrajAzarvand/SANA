@@ -137,7 +137,11 @@ class DeviceOperationCustomerTransferApiTests(TestCase):
         devices_response = branch_client.get('/api/devices/')
 
         self.assertEqual(devices_response.status_code, 200, devices_response.data)
-        rows = devices_response.data.get('results', devices_response.data)
+        rows = (
+            devices_response.data['results']
+            if isinstance(devices_response.data, dict) and 'results' in devices_response.data
+            else devices_response.data
+        )
         transferred = next(row for row in rows if row['id'] == self.device.pk)
         self.assertEqual(transferred['branch_name'], self.target_branch.name)
         self.assertEqual(transferred['vehicle_plate'], self.target_vehicle.plate)
