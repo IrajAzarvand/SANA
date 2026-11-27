@@ -79,7 +79,6 @@ export default function UserComboBox({
 
     const username = search.trim();
     if (!username) {
-      setUsernameAvailability('idle');
       onUsernameAvailabilityChange?.('idle');
       return undefined;
     }
@@ -108,6 +107,10 @@ export default function UserComboBox({
       clearTimeout(timer);
     };
   }, [search, selectedUserId, onUsernameAvailabilityChange]);
+
+  const displayUsernameAvailability = search.trim()
+    ? usernameAvailability
+    : 'idle';
 
   const openSuggestions = () => {
     if (allUsers.length === 0) setLoading(true);
@@ -248,9 +251,9 @@ export default function UserComboBox({
             </div>
           ) : filteredUsers.length === 0 ? (
             <div className="p-3 text-center text-xs text-text-muted">
-              {usernameAvailability === 'taken'
+              {displayUsernameAvailability === 'taken'
                 ? 'این نام کاربری قبلاً در سامانه استفاده شده است'
-                : usernameAvailability === 'checking'
+                : displayUsernameAvailability === 'checking'
                   ? 'در حال بررسی نام کاربری...'
                   : `کاربری از این نوع یافت نشد — «${search}» به عنوان کاربر جدید ثبت می‌شود`}
             </div>
@@ -285,15 +288,15 @@ export default function UserComboBox({
         </div>
       )}
 
-      {!selectedUserId && usernameAvailability === 'taken' && (
+      {!selectedUserId && displayUsernameAvailability === 'taken' && (
         <p className="text-xs text-danger mt-1.5">
           این نام کاربری قبلاً در سامانه استفاده شده است.
         </p>
       )}
-      {!selectedUserId && usernameAvailability === 'checking' && (
+      {!selectedUserId && displayUsernameAvailability === 'checking' && (
         <p className="text-xs text-text-muted mt-1.5">در حال بررسی سراسری نام کاربری...</p>
       )}
-      {!selectedUserId && usernameAvailability === 'error' && (
+      {!selectedUserId && displayUsernameAvailability === 'error' && (
         <p className="text-xs text-warning mt-1.5">
           بررسی نام کاربری انجام نشد؛ اعتبارسنجی نهایی همچنان در سرور انجام می‌شود.
         </p>
