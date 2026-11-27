@@ -1887,3 +1887,92 @@ class SubscriptionActiveDeviceCountTests(TestCase):
             0,
         )
         self.assertEqual(subscription.active_device_count, 0)
+
+
+class PersonalSubscriptionReplacementDisclosureTests(TestCase):
+    def _create_customer_and_contract(self, username, contract_number):
+        from datetime import timedelta
+        from django.utils import timezone
+        from accounts.models import User
+        from organizations.models import Subscription
+
+        user = User.objects.create_user(
+            username=username, password='test-password',
+            role='personal_user', account_type='personal',
+        )
+        today = timezone.localdate()
+        contract = Subscription.objects.create(
+            contract_number=contract_number, customer_type='personal', user=user,
+            start_date=today-timedelta(days=2), end_date=today+timedelta(days=20),
+            status='active',
+        )
+        return user, contract
+
+    def test_personal_contract_hides_replacement_device_owned_by_another_customer(self):
+        from rest_framework.test import APIClient
+        from fleet.models import Device, DeviceReplacementRelation
+        from organizations.models import SubscriptionDevice
+
+        user, own_contract = self._create_customer_and_contract(
+            'replacement_disclosure_owner', 'REPL-DISCLOSURE-OWN',
+        )
+        _other_user, other_contract = self._create_customer_and_contract(
+            'replacement_disclosure_other', 'REPL-DISCLOSURE-OTHER',
+        )
+        own_device = Device.objects.create(imei='860000000009801', management_status='active')
+        foreign_device = Device.objects.create(
+            imei='860000000009802', sim_number='09129998877', management_status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=own_contract, device=own_device,
+            start_date=own_contract.start_date, end_date=own_contract.end_date,
+        )
+        SubscriptionDevice.objects.create(
+            subscription=other_contract, device=foreign_device,
+            start_date=other_contract.start_date, end_date=other_contract.end_date,
+        )
+        DeviceReplacementRelation.objects.create(
+            source_device=own_device, replacement_device=foreign_device,
+            replacement_type='temporary_repair',
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.get(f'/api/subscriptions/{own_contract.pk}/')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(len(response.data['devices']), 1)
+        self.assertIsNone(response.data['devices'][0]['replacement_relation'])
+        self.assertNotIn(foreign_device.imei, str(response.data))
+        self.assertNotIn(foreign_device.sim_number, str(response.data))
+
+    def test_personal_contract_shows_replacement_when_both_devices_are_authorized(self):
+        from rest_framework.test import APIClient
+        from fleet.models import Device, DeviceReplacementRelation
+        from organizations.models import SubscriptionDevice
+
+        user, contract = self._create_customer_and_contract(
+            'replacement_disclosure_same', 'REPL-DISCLOSURE-SAME',
+        )
+        first = Device.objects.create(imei='860000000009803', management_status='active')
+        second = Device.objects.create(imei='860000000009804', management_status='active')
+        for device in (first, second):
+            SubscriptionDevice.objects.create(
+                subscription=contract, device=device,
+                start_date=contract.start_date, end_date=contract.end_date,
+            )
+        DeviceReplacementRelation.objects.create(
+            source_device=first, replacement_device=second,
+            replacement_type='temporary_repair',
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.get(f'/api/subscriptions/{contract.pk}/')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        relation = next(
+            item['replacement_relation'] for item in response.data['devices']
+            if item['device'] == first.pk
+        )
+        self.assertEqual(relation['related_device_imei'], second.imei)
