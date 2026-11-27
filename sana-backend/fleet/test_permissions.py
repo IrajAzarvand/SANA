@@ -1182,3 +1182,37 @@ class BranchManagerReportHistoryDateUpperBoundTests(TestCase):
             'to': future_end.isoformat(),
         })
         self.assertEqual(response.status_code, 403)
+
+
+    def test_site_admin_sees_catalog_counts_across_all_tenants(self):
+        from types import SimpleNamespace
+        from fleet.models import Device, DeviceModel
+        from fleet.serializers import DeviceModelSerializer
+        from fleet.views import DeviceModelViewSet
+
+        admin = User.objects.create_user(
+            username='model_count_site_admin',
+            password='test-password',
+            role='site_admin',
+            account_type='admin',
+        )
+        model = DeviceModel.objects.create(
+            manufacturer='Admin Count',
+            name='All Tenant Model',
+            code='ADMIN-COUNT-ALL',
+            protocol='gt06',
+            is_verified=True,
+        )
+        Device.objects.create(
+            imei='860000000009988',
+            device_model=model,
+        )
+        Device.objects.create(
+            imei='860000000009989',
+            device_model=model,
+        )
+
+        view = DeviceModelViewSet()
+        view.request = SimpleNamespace(user=admin)
+        row = DeviceModelSerializer(view.get_queryset(), many=True).data[0]
+        self.assertEqual(row['devices_count'], 2)
