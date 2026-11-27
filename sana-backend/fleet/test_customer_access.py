@@ -1619,11 +1619,14 @@ class ReportHistoryPlaybackVehiclePlateDisclosureTests(TestCase):
             end_date=today + timedelta(days=20),
             status='active',
         )
-        SubscriptionDevice.objects.create(
+        link = SubscriptionDevice.objects.create(
             subscription=contract,
             device=device,
             start_date=contract.start_date,
             end_date=contract.end_date,
+        )
+        SubscriptionDevice.objects.filter(pk=link.pk).update(
+            assigned_at=now - timedelta(days=2),
         )
         DeviceCustomerAccessPeriod.objects.create(
             device=device,
@@ -1726,6 +1729,7 @@ class DevicePartyDisclosureFailClosedTests(TestCase):
     def test_missing_or_anonymous_user_fails_closed_for_party_fields(self):
         from types import SimpleNamespace
         from fleet.serializers import (
+            _device_data_active_for_request,
             _device_vehicle_visible_to_user,
             _redact_unrelated_device_party_fields,
         )
@@ -1750,6 +1754,9 @@ class DevicePartyDisclosureFailClosedTests(TestCase):
             _redact_unrelated_device_party_fields(data, device, user)
             self.assertTrue(all(value is None for value in data.values()))
             self.assertFalse(_device_vehicle_visible_to_user(device, user))
+            self.assertFalse(
+                _device_data_active_for_request(device, SimpleNamespace(user=user))
+            )
 
 
 class LatestOrganizationAssignmentAccessTests(TestCase):
