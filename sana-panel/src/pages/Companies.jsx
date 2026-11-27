@@ -217,7 +217,7 @@ export default function Companies() {
     loadOrganizationCore(org, requestId);
   };
 
-  const handleViewOrganization = useCallback((org) => {
+  const handleViewOrganization = (org) => {
     const requestId = detailRequestIdRef.current + 1;
     detailRequestIdRef.current = requestId;
     setDetailOrganization(org);
@@ -233,7 +233,7 @@ export default function Companies() {
     Object.keys(organizationSectionLoaders).forEach((section) => {
       loadOrganizationSection(org, section, requestId);
     });
-  }, [organizationSectionLoaders, loadOrganizationCore, loadOrganizationSection]);
+  };
 
   const closeOrganizationDetails = () => {
     detailRequestIdRef.current += 1;
@@ -261,7 +261,7 @@ export default function Companies() {
     return null;
   };
 
-  const getMenuItems = useCallback((org) => {
+  const getMenuItems = (org) => {
     const items = [];
 
     if (isSiteAdmin) {
@@ -311,7 +311,7 @@ export default function Companies() {
     }
 
     return items;
-  }, [isSiteAdmin, refetch, handleViewOrganization, handleDelete]);
+  };
 
   if (loading) {
     return (
@@ -368,6 +368,7 @@ export default function Companies() {
         ) : (
           <>
           <div className="grid grid-cols-1 gap-3 sm:hidden">
+            {/* eslint-disable-next-line react-hooks/refs -- getMenuItems returns click callbacks; ref reads occur only after a user click. */}
             {filtered.map((c) => (
               <article key={c.id} className="rounded-card border border-border-base bg-bg-base p-3">
                 <div className="flex items-start justify-between gap-3">
@@ -398,6 +399,7 @@ export default function Companies() {
                 </tr>
               </thead>
               <tbody>
+                {/* eslint-disable-next-line react-hooks/refs -- getMenuItems returns click callbacks; ref reads occur only after a user click. */}
                 {filtered.map((c) => (
                   <tr key={c.id} className="border-b border-border-base last:border-0 hover:bg-bg-hover transition-colors">
                     <td className="py-3 px-4">
