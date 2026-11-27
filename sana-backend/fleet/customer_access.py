@@ -50,14 +50,8 @@ def active_customer_access_periods(*, organization_id=None, user_id=None, branch
     if bool(organization_id) == bool(user_id):
         return DeviceCustomerAccessPeriod.objects.none()
 
-    from organizations.models import SubscriptionDevice
-
     now = now or timezone.now()
     today = timezone.localdate(now)
-    latest_link_id = SubscriptionDevice.objects.filter(
-        device_id=OuterRef('device_id'),
-        assigned_at__lte=now,
-    ).order_by('-assigned_at', '-id').values('pk')[:1]
 
     # A device can have only one current customer/branch assignment.
     # If legacy data contains overlapping open periods, only the latest
@@ -76,7 +70,6 @@ def active_customer_access_periods(*, organization_id=None, user_id=None, branch
         subscription__status='active',
         subscription__start_date__lte=today,
         subscription__end_date__gte=today,
-        subscription__subscription_devices__pk=Subquery(latest_link_id),
         subscription__subscription_devices__device_id=F('device_id'),
         subscription__subscription_devices__assigned_at__lte=now,
         subscription__subscription_devices__unassigned_at__isnull=True,
@@ -102,6 +95,20 @@ def active_customer_access_periods(*, organization_id=None, user_id=None, branch
         # A branch manager's authority ends immediately when their branch is
         # deactivated, even if legacy access-period rows remain open.
         periods = periods.filter(branch_id=branch_id, branch__status='active')
+
+    if user_id:
+        # A personal access period is valid only while its contract-device
+        # link is the latest assignment that has actually started. A newer
+        # invalid/ended assignment must not revive an older personal link.
+        from organizations.models import SubscriptionDevice
+
+        latest_link_id = SubscriptionDevice.objects.filter(
+            device_id=OuterRef('device_id'),
+            assigned_at__lte=now,
+        ).order_by('-assigned_at', '-id').values('pk')[:1]
+        periods = periods.filter(
+            subscription__subscription_devices__pk=Subquery(latest_link_id)
+        )
 
     return periods
 
