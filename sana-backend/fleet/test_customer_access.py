@@ -1750,3 +1750,76 @@ class DevicePartyDisclosureFailClosedTests(TestCase):
             _redact_unrelated_device_party_fields(data, device, user)
             self.assertTrue(all(value is None for value in data.values()))
             self.assertFalse(_device_vehicle_visible_to_user(device, user))
+
+
+class LatestOrganizationAssignmentAccessTests(TestCase):
+    def test_ended_newer_assignment_does_not_reactivate_older_open_access_period(self):
+        now = timezone.now()
+        today = timezone.localdate(now)
+        organization = Organization.objects.create(
+            name='Latest Assignment Organization',
+            code='LATEST-ASSIGNMENT-ORG',
+        )
+        manager = User.objects.create_user(
+            username='latest_assignment_manager',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=organization,
+        )
+        device = Device.objects.create(
+            imei='860000000009986',
+            organization=organization,
+        )
+        old_contract = Subscription.objects.create(
+            contract_number='LATEST-ASSIGNMENT-OLD',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=10),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        new_contract = Subscription.objects.create(
+            contract_number='LATEST-ASSIGNMENT-NEW',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+            status='suspended',
+        )
+        old_link = SubscriptionDevice.objects.create(
+            subscription=old_contract,
+            device=device,
+            start_date=old_contract.start_date,
+            end_date=old_contract.end_date,
+        )
+        new_link = SubscriptionDevice.objects.create(
+            subscription=new_contract,
+            device=device,
+            start_date=new_contract.start_date,
+            end_date=new_contract.end_date,
+            unassigned_at=now - timedelta(minutes=1),
+        )
+        SubscriptionDevice.objects.filter(pk=old_link.pk).update(
+            assigned_at=now - timedelta(days=5),
+        )
+        SubscriptionDevice.objects.filter(pk=new_link.pk).update(
+            assigned_at=now - timedelta(days=2),
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            subscription=old_contract,
+            started_at=now - timedelta(days=4),
+        )
+
+        self.assertFalse(
+            active_customer_access_periods(
+                organization_id=organization.pk,
+                now=now,
+            ).filter(device=device).exists()
+        )
+        from fleet.customer_access import authorized_devices_for_user
+        self.assertFalse(
+            authorized_devices_for_user(manager, now=now).filter(pk=device.pk).exists()
+        )
