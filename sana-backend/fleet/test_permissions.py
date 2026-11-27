@@ -922,3 +922,57 @@ class LegacyBranchManagerDeviceMetadataTests(TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]['branch_name'], branch.name)
         self.assertEqual(rows[0]['vehicle_plate'], vehicle.plate)
+
+
+class DeviceModelCountTenantScopeTests(TestCase):
+    def test_customer_sees_only_count_of_devices_in_their_authorized_scope(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from rest_framework.test import APIClient
+        from accounts.models import User
+        from fleet.models import Device, DeviceCustomerAccessPeriod, DeviceModel
+        from organizations.models import Organization, Subscription, SubscriptionDevice
+
+        today = timezone.localdate()
+        model = DeviceModel.objects.create(
+            manufacturer='Count Scope', name='Shared Model', code='COUNT-SCOPE',
+            protocol='gt06', is_verified=True,
+        )
+        organization = Organization.objects.create(
+            name='Count Scope Org', code='COUNT-SCOPE-ORG',
+        )
+        other_organization = Organization.objects.create(
+            name='Count Scope Other Org', code='COUNT-SCOPE-OTHER',
+        )
+        manager = User.objects.create_user(
+            username='device_model_count_manager', password='test-password',
+            role='main_user', account_type='organization', organization=organization,
+        )
+        own_device = Device.objects.create(
+            imei='860000000009921', organization=organization, device_model=model,
+        )
+        Device.objects.create(
+            imei='860000000009922', organization=other_organization, device_model=model,
+        )
+        contract = Subscription.objects.create(
+            contract_number='DEVICE-MODEL-COUNT', customer_type='organization',
+            organization=organization, start_date=today-timedelta(days=2),
+            end_date=today+timedelta(days=20), status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=contract, device=own_device,
+            start_date=contract.start_date, end_date=contract.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=own_device, organization=organization, subscription=contract,
+            started_at=timezone.now()-timedelta(days=1),
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=manager)
+        response = client.get('/api/device-models/')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        payload = response.data['results'] if isinstance(response.data, dict) else response.data
+        row = next(item for item in payload if item['id'] == model.pk)
+        self.assertEqual(row['devices_count'], 1)
