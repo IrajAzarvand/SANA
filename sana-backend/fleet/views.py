@@ -223,6 +223,32 @@ class DeviceModelViewSet(viewsets.ReadOnlyModelViewSet):
     ordering_fields = ['manufacturer', 'name', 'created_at']
 
 
+def _map_matched_positions_by_traccar_ids(position_ids):
+    """Load Neshan matches for Traccar positions without coupling callers to SQL."""
+    if not position_ids:
+        return {}
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT traccar_position_id, matched_latitude, matched_longitude,
+                   match_provider, matched_at
+            FROM gps.map_matched_position
+            WHERE traccar_position_id = ANY(%s)
+            """,
+            [position_ids],
+        )
+        return {
+            int(row[0]): {
+                'matched_latitude': float(row[1]),
+                'matched_longitude': float(row[2]),
+                'match_provider': row[3],
+                'matched_at': row[4].isoformat() if row[4] else None,
+            }
+            for row in cursor.fetchall()
+        }
+
+
 class DeviceViewSet(viewsets.ModelViewSet):
     queryset = Device.objects.select_related('device_model', 'organization', 'branch', 'vehicle', 'owner_user').all()
     permission_classes = [IsAuthenticated]
@@ -1292,27 +1318,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
             page_positions, raw_start, raw_end,
         )
         point_ids = [row[1] for row in normalized]
-        matches = {}
-        if point_ids:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    """
-                    SELECT traccar_position_id, matched_latitude, matched_longitude,
-                           match_provider, matched_at
-                    FROM gps.map_matched_position
-                    WHERE traccar_position_id = ANY(%s)
-                    """,
-                    [point_ids],
-                )
-                matches = {
-                    int(row[0]): {
-                        'matched_latitude': float(row[1]),
-                        'matched_longitude': float(row[2]),
-                        'match_provider': row[3],
-                        'matched_at': row[4].isoformat() if row[4] else None,
-                    }
-                    for row in cursor.fetchall()
-                }
+        matches = _map_matched_positions_by_traccar_ids(point_ids)
 
         points = []
         for point_time, point_id, item, latitude, longitude in normalized:
