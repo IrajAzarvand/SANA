@@ -102,7 +102,8 @@ function DevicesTab() {
   const [saving, setSaving] = useState(false);
   const [editForm, setEditForm] = useState({ imei: '', sim_number: '', manufacturer: '', device_model: '' });
   const [models, setModels] = useState([]);
-  const [loadingModels, setLoadingModels] = useState(false);
+  const [modelsLoaded, setModelsLoaded] = useState(false);
+  const loadingModels = editModalOpen && !modelsLoaded;
   const [editError, setEditError] = useState('');
   const [editModelLoaded, setEditModelLoaded] = useState(false);
   const [deviceHistoryId, setDeviceHistoryId] = useState(null);
@@ -167,9 +168,8 @@ function DevicesTab() {
   }, []);
 
   useEffect(() => {
-    if (!editModalOpen) return;
+    if (!editModalOpen || modelsLoaded) return undefined;
     let cancelled = false;
-    setLoadingModels(true);
     deviceModelsAPI.list()
       .then((data) => {
         if (!cancelled) setModels(Array.isArray(data) ? data : (data.results || []));
@@ -178,10 +178,10 @@ function DevicesTab() {
         if (!cancelled) setEditError('دریافت فهرست برندها و مدل‌های Traccar ناموفق بود.');
       })
       .finally(() => {
-        if (!cancelled) setLoadingModels(false);
+        if (!cancelled) setModelsLoaded(true);
       });
     return () => { cancelled = true; };
-  }, [editModalOpen]);
+  }, [editModalOpen, modelsLoaded]);
 
   const brandOptions = useMemo(() => {
     return [...new Set(models.map((model) => model.manufacturer))]
@@ -703,7 +703,7 @@ const personalGpsStatus = {
   unknown: { label: 'وضعیت نامشخص', variant: 'neutral', icon: Wifi },
 };
 
-function PersonalDevicesView({ devices, onRefresh }) {
+function PersonalDevicesView({ devices }) {
   const [positions, setPositions] = useState([]);
   const [gpsAvailable, setGpsAvailable] = useState(null);
   const [gpsLoading, setGpsLoading] = useState(true);
