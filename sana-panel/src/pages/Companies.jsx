@@ -217,7 +217,7 @@ export default function Companies() {
     loadOrganizationCore(org, requestId);
   };
 
-  const handleViewOrganization = (org) => {
+  const handleViewOrganization = useCallback((org) => {
     const requestId = detailRequestIdRef.current + 1;
     detailRequestIdRef.current = requestId;
     setDetailOrganization(org);
@@ -233,7 +233,7 @@ export default function Companies() {
     Object.keys(organizationSectionLoaders).forEach((section) => {
       loadOrganizationSection(org, section, requestId);
     });
-  };
+  }, [organizationSectionLoaders, loadOrganizationCore, loadOrganizationSection]);
 
   const closeOrganizationDetails = () => {
     detailRequestIdRef.current += 1;
@@ -261,7 +261,7 @@ export default function Companies() {
     return null;
   };
 
-  const getMenuItems = (org) => {
+  const getMenuItems = useCallback((org) => {
     const items = [];
 
     if (isSiteAdmin) {
@@ -311,7 +311,7 @@ export default function Companies() {
     }
 
     return items;
-  };
+  }, [isSiteAdmin, refetch, handleViewOrganization, handleDelete]);
 
   if (loading) {
     return (
