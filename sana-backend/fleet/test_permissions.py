@@ -752,3 +752,173 @@ class VehicleDeviceDisclosureScopeTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['device_imei'], device.imei)
+
+
+class DevicePartyMetadataDisclosureTests(TestCase):
+    def test_company_customer_cannot_see_foreign_legal_owner_or_vehicle(self):
+        from datetime import timedelta
+        from unittest.mock import patch
+        from django.utils import timezone
+        from rest_framework.test import APIClient
+        from accounts.models import User
+        from fleet.models import Device, DeviceCustomerAccessPeriod, Vehicle
+        from organizations.models import Organization, Subscription, SubscriptionDevice
+
+        today = timezone.localdate()
+        own_org = Organization.objects.create(name='Device Holder Org', code='DEVICE-HOLDER-ORG')
+        legal_owner = Organization.objects.create(name='Device Legal Owner Org', code='DEVICE-LEGAL-OWNER')
+        manager = User.objects.create_user(
+            username='device_party_company_manager', password='test-password',
+            role='main_user', account_type='organization', organization=own_org,
+        )
+        foreign_vehicle = Vehicle.objects.create(
+            plate='66د666', organization=legal_owner,
+        )
+        device = Device.objects.create(
+            imei='860000000009911', organization=legal_owner,
+            current_holder_organization=own_org, vehicle=foreign_vehicle,
+            management_status='active',
+        )
+        contract = Subscription.objects.create(
+            contract_number='DEVICE-PARTY-CURRENT', customer_type='organization',
+            organization=own_org, start_date=today-timedelta(days=3),
+            end_date=today+timedelta(days=20), status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=contract, device=device,
+            start_date=contract.start_date, end_date=contract.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device, organization=own_org, subscription=contract,
+            started_at=timezone.now()-timedelta(days=1),
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=manager)
+        detail = client.get(f'/api/devices/{device.pk}/')
+        with patch('fleet.views.traccar_devices', return_value=[]), patch(
+            'fleet.views.traccar_current_positions', return_value=[],
+        ):
+            listing = client.get('/api/devices/')
+
+        self.assertEqual(detail.status_code, 200, detail.data)
+        self.assertIsNone(detail.data['organization'])
+        self.assertIsNone(detail.data['organization_name'])
+        self.assertIsNone(detail.data['owner_user'])
+        self.assertIsNone(detail.data.get('owner_name'))
+        self.assertIsNone(detail.data['vehicle'])
+        self.assertIsNone(detail.data['vehicle_plate'])
+        self.assertEqual(detail.data['current_holder_organization'], own_org.pk)
+        self.assertEqual(detail.data['current_holder_organization_name'], own_org.name)
+
+        self.assertEqual(listing.status_code, 200, listing.data)
+        rows = listing.data['results'] if isinstance(listing.data, dict) else listing.data
+        self.assertEqual(len(rows), 1)
+        self.assertIsNone(rows[0]['organization'])
+        self.assertIsNone(rows[0]['organization_name'])
+        self.assertIsNone(rows[0]['owner_user'])
+        self.assertIsNone(rows[0].get('owner_name'))
+        self.assertIsNone(rows[0]['vehicle_plate'])
+
+    def test_personal_customer_cannot_see_another_persons_legal_ownership(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from rest_framework.test import APIClient
+        from accounts.models import User
+        from fleet.models import Device, Vehicle
+        from organizations.models import Subscription, SubscriptionDevice
+
+        user = User.objects.create_user(
+            username='device_party_personal_customer', password='test-password',
+            role='personal_user', account_type='personal', first_name='Personal', last_name='Customer',
+        )
+        other_owner = User.objects.create_user(
+            username='device_party_other_owner', password='test-password',
+            role='personal_user', account_type='personal', first_name='Other', last_name='Owner',
+        )
+        today = timezone.localdate()
+        foreign_vehicle = Vehicle.objects.create(plate='55ه555', owner_user=other_owner)
+        device = Device.objects.create(
+            imei='860000000009912', owner_user=other_owner,
+            current_holder_user=user, vehicle=foreign_vehicle,
+            management_status='active',
+        )
+        contract = Subscription.objects.create(
+            contract_number='DEVICE-PARTY-PERSONAL', customer_type='personal',
+            user=user, start_date=today-timedelta(days=3),
+            end_date=today+timedelta(days=20), status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=contract, device=device,
+            start_date=contract.start_date, end_date=contract.end_date,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.get(f'/api/devices/{device.pk}/')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertIsNone(response.data['owner_user'])
+        self.assertIsNone(response.data.get('owner_name'))
+        self.assertIsNone(response.data['vehicle'])
+        self.assertIsNone(response.data['vehicle_plate'])
+        self.assertEqual(response.data['current_holder_user'], user.pk)
+        self.assertEqual(response.data['current_holder_user_name'], user.full_name)
+
+
+class LegacyBranchManagerDeviceMetadataTests(TestCase):
+    def test_legacy_branch_manager_keeps_own_branch_and_vehicle_labels(self):
+        from datetime import timedelta
+        from unittest.mock import patch
+        from django.utils import timezone
+        from rest_framework.test import APIClient
+        from accounts.models import User
+        from fleet.models import Device, DeviceCustomerAccessPeriod, Vehicle
+        from organizations.models import Branch, Organization, Subscription, SubscriptionDevice
+
+        today = timezone.localdate()
+        organization = Organization.objects.create(
+            name='Legacy Branch Device Metadata', code='LEGACY-BR-DEVICE-META',
+        )
+        branch = Branch.objects.create(
+            organization=organization, name='Legacy Metadata Branch',
+            code='LEGACY-META-BR',
+        )
+        manager = User.objects.create_user(
+            username='legacy_branch_device_metadata', password='test-password',
+            role='branch_manager', account_type='organization', branch=branch,
+        )
+        vehicle = Vehicle.objects.create(
+            plate='44ز444', organization=organization, branch=branch,
+        )
+        device = Device.objects.create(
+            imei='860000000009941', organization=organization, branch=branch,
+            vehicle=vehicle, current_holder_organization=organization,
+            management_status='active',
+        )
+        contract = Subscription.objects.create(
+            contract_number='LEGACY-BR-DEVICE-META', customer_type='organization',
+            organization=organization, start_date=today-timedelta(days=3),
+            end_date=today+timedelta(days=20), status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=contract, device=device,
+            start_date=contract.start_date, end_date=contract.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device, organization=organization, branch=branch,
+            subscription=contract, started_at=timezone.now()-timedelta(days=1),
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=manager)
+        with patch('fleet.views.traccar_devices', return_value=[]), patch(
+            'fleet.views.traccar_current_positions', return_value=[],
+        ):
+            response = client.get('/api/devices/')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        rows = response.data['results'] if isinstance(response.data, dict) else response.data
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['branch_name'], branch.name)
+        self.assertEqual(rows[0]['vehicle_plate'], vehicle.plate)
