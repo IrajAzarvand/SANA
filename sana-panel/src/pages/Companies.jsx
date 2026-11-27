@@ -207,6 +207,16 @@ export default function Companies() {
     }
   };
 
+  const retryOrganizationSection = (org, section) => {
+    const requestId = detailRequestIdRef.current;
+    loadOrganizationSection(org, section, requestId);
+  };
+
+  const retryOrganizationCore = (org) => {
+    const requestId = detailRequestIdRef.current;
+    loadOrganizationCore(org, requestId);
+  };
+
   const handleViewOrganization = (org) => {
     const requestId = detailRequestIdRef.current + 1;
     detailRequestIdRef.current = requestId;
@@ -242,7 +252,7 @@ export default function Companies() {
       return (
         <div className="space-y-2 py-2">
           <p className="text-red-500">{detailErrors[section]}</p>
-          <Button variant="secondary" size="sm" onClick={() => loadOrganizationSection(detailOrganization, section, detailRequestIdRef.current)}>
+          <Button variant="secondary" size="sm" onClick={() => retryOrganizationSection(detailOrganization, section)}>
             تلاش مجدد
           </Button>
         </div>
@@ -434,7 +444,7 @@ export default function Companies() {
                 {detailOrganizationError && (
                   <>
                     <p className="text-red-500">{detailOrganizationError}</p>
-                    <Button variant="secondary" size="sm" onClick={() => loadOrganizationCore(detailOrganization, detailRequestIdRef.current)}>تلاش مجدد</Button>
+                    <Button variant="secondary" size="sm" onClick={() => retryOrganizationCore(detailOrganization)}>تلاش مجدد</Button>
                   </>
                 )}
               </div>
