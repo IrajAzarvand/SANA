@@ -1082,6 +1082,7 @@ class ReportHistoryDateUpperBoundTests(TestCase):
 class DeviceModelCountQueryEfficiencyTests(TestCase):
     def test_device_model_counts_are_annotated_without_per_model_queries(self):
         from types import SimpleNamespace
+        from accounts.models import User
         from fleet.models import DeviceModel
         from fleet.serializers import DeviceModelSerializer
         from fleet.views import DeviceModelViewSet
