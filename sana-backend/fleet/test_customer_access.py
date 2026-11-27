@@ -1701,12 +1701,10 @@ class DevicePartyDisclosureFailClosedTests(TestCase):
         )
         same_tenant_device = Device.objects.create(
             imei='860000000009983',
-            organization=organization,
             owner_user=same_tenant_owner,
         )
         foreign_device = Device.objects.create(
             imei='860000000009984',
-            organization=organization,
             owner_user=foreign_owner,
         )
         same_data = {
