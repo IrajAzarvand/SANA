@@ -64,15 +64,11 @@ export default function CommandPalette({ open, onClose }) {
 
   useEffect(() => {
     if (!open) return undefined;
-    setQuery('');
-    setActiveIndex(0);
     const focusTimer = window.setTimeout(() => inputRef.current?.focus(), 0);
     return () => window.clearTimeout(focusTimer);
   }, [open]);
 
-  useEffect(() => {
-    setActiveIndex((index) => Math.min(index, Math.max(results.length - 1, 0)));
-  }, [results.length]);
+  const safeActiveIndex = Math.min(activeIndex, Math.max(results.length - 1, 0));
 
   const select = useCallback((item) => {
     if (!item) return;
@@ -85,20 +81,20 @@ export default function CommandPalette({ open, onClose }) {
     const onKeyDown = (event) => {
       if (event.key === 'ArrowDown') {
         event.preventDefault();
-        setActiveIndex((index) => results.length ? (index + 1) % results.length : 0);
+        setActiveIndex(results.length ? (safeActiveIndex + 1) % results.length : 0);
       } else if (event.key === 'ArrowUp') {
         event.preventDefault();
-        setActiveIndex((index) => results.length ? (index - 1 + results.length) % results.length : 0);
+        setActiveIndex(results.length ? (safeActiveIndex - 1 + results.length) % results.length : 0);
       } else if (event.key === 'Enter') {
         event.preventDefault();
-        select(results[activeIndex]);
+        select(results[safeActiveIndex]);
       } else if (event.key === 'Escape') {
         onClose();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, results, activeIndex, onClose, select]);
+  }, [open, results, safeActiveIndex, onClose, select]);
 
   if (!open) return null;
 
@@ -119,9 +115,9 @@ export default function CommandPalette({ open, onClose }) {
         </div>
         <div className="max-h-[55vh] overflow-y-auto p-2">
           {results.length ? results.map((item, index) => (
-            <button type="button" key={item.path} onClick={() => select(item)} onMouseEnter={() => setActiveIndex(index)} className={`flex w-full items-center justify-between rounded-lg px-3 py-3 text-right text-sm transition-colors ${activeIndex === index ? 'bg-bg-hover text-text-primary' : 'text-text-secondary hover:bg-bg-hover'}`}>
+            <button type="button" key={item.path} onClick={() => select(item)} onMouseEnter={() => setActiveIndex(index)} className={`flex w-full items-center justify-between rounded-lg px-3 py-3 text-right text-sm transition-colors ${safeActiveIndex === index ? 'bg-bg-hover text-text-primary' : 'text-text-secondary hover:bg-bg-hover'}`}>
               <span>{item.label}</span>
-              {activeIndex === index && <CornerDownLeft size={15} className="text-text-muted" />}
+              {safeActiveIndex === index && <CornerDownLeft size={15} className="text-text-muted" />}
             </button>
           )) : <div className="px-4 py-8 text-center text-sm text-text-muted">نتیجه‌ای پیدا نشد.</div>}
         </div>
