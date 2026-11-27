@@ -39,6 +39,8 @@ export default function UserComboBox({
 
   // با تغییر نوع حساب، فهرست قبلی نباید برای نوع جدید استفاده شود.
   useEffect(() => {
+    // Suggestions belong to one account type; clear them when the type changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setAllUsers([]);
     setLoading(false);
     setOpen(false);
@@ -51,7 +53,6 @@ export default function UserComboBox({
 
     let cancelled = false;
     const fetchUsers = async () => {
-      setLoading(true);
       try {
         const list = await fetchAllPages(usersAPI.list, {
           account_type: accountType,
@@ -108,6 +109,11 @@ export default function UserComboBox({
       clearTimeout(timer);
     };
   }, [search, selectedUserId, onUsernameAvailabilityChange]);
+
+  const openSuggestions = () => {
+    if (allUsers.length === 0) setLoading(true);
+    setOpen(true);
+  };
 
   // فیلتر توی Frontend
   const filteredUsers = useMemo(() => {
@@ -169,7 +175,7 @@ export default function UserComboBox({
       onClearUser();
     }
 
-    if (!open) setOpen(true);
+    if (!open) openSuggestions();
   };
 
   const matchedUser = allUsers.find((u) => u.id === selectedUserId);
@@ -193,7 +199,7 @@ export default function UserComboBox({
           type="text"
           value={search}
           onChange={handleInputChange}
-          onFocus={() => setOpen(true)}
+          onFocus={openSuggestions}
           placeholder={placeholder}
           className={`w-full bg-bg-base border rounded-field
                      pr-11 pl-10 py-2.5 text-sm
@@ -217,7 +223,7 @@ export default function UserComboBox({
           )}
           <button
             type="button"
-            onClick={() => setOpen(!open)}
+            onClick={() => (open ? setOpen(false) : openSuggestions())}
             className="text-text-muted hover:text-text-primary transition-colors"
           >
             <ChevronDown size={16} />
