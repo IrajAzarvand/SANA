@@ -1581,7 +1581,6 @@ class ReportHistoryVehiclePlateDisclosureTests(TestCase):
 class ReportHistoryPlaybackVehiclePlateDisclosureTests(TestCase):
     def test_report_history_playback_hides_vehicle_plate_outside_customer_tenant(self):
         from datetime import timedelta
-        from unittest.mock import MagicMock
         from fleet.models import Vehicle
 
         organization = Organization.objects.create(
@@ -1649,11 +1648,9 @@ class ReportHistoryPlaybackVehiclePlateDisclosureTests(TestCase):
             'attributes': {},
         }]
 
-        cursor_context = MagicMock()
-        cursor_context.__enter__.return_value.fetchall.return_value = []
         with patch('fleet.views.traccar_history_device_id', return_value=9982), patch(
             'fleet.views.traccar_device_positions', return_value=positions,
-        ), patch('fleet.views.connection.cursor', return_value=cursor_context):
+        ), patch('fleet.views._map_matched_positions_by_traccar_ids', return_value={}):
             response = client.get('/api/devices/report-history/', {
                 'device_id': device.pk,
                 'from': (now - timedelta(minutes=10)).isoformat(),
