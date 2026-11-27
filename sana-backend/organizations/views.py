@@ -459,7 +459,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
         subscription = serializer.save()
 
         # برگرداندن اطلاعات کامل
-        response_serializer = SubscriptionSerializer(subscription)
+        response_serializer = SubscriptionSerializer(subscription, context={'request': request})
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=['post'])
@@ -583,7 +583,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                 operation,
             )
 
-        return Response(SubscriptionSerializer(subscription).data)
+        return Response(SubscriptionSerializer(subscription, context={'request': request}).data)
 
     @action(detail=True, methods=['post'])
     def modify(self, request, pk=None):
@@ -792,7 +792,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                     )
                 payment_serializer.save()
 
-        return Response(SubscriptionSerializer(subscription).data)
+        return Response(SubscriptionSerializer(subscription, context={'request': request}).data)
 
     @action(detail=True, methods=['post'])
     def revise_installment_plan(self, request, pk=None):
@@ -829,13 +829,13 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                     old_value=str(old_price),
                     new_value=str(subscription.price),
                 )
-        return Response(SubscriptionSerializer(subscription).data)
+        return Response(SubscriptionSerializer(subscription, context={'request': request}).data)
 
     @action(detail=True, methods=['get'])
     def operations(self, request, pk=None):
         subscription = self.get_object()
         qs = subscription.operations.select_related('performed_by').prefetch_related('changes')
-        return Response(SubscriptionOperationSerializer(qs, many=True).data)
+        return Response(SubscriptionOperationSerializer(qs, many=True, context={'request': request}).data)
 
     
 
@@ -861,7 +861,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             )
             subscription.status = 'suspended'
             subscription.save(update_fields=['status', 'updated_at'])
-        return Response(SubscriptionSerializer(subscription).data)
+        return Response(SubscriptionSerializer(subscription, context={'request': request}).data)
 
     @action(detail=True, methods=['post'])
     def activate(self, request, pk=None):
@@ -885,7 +885,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
             )
             subscription.status = 'active'
             subscription.save(update_fields=['status', 'updated_at'])
-        return Response(SubscriptionSerializer(subscription).data)
+        return Response(SubscriptionSerializer(subscription, context={'request': request}).data)
 
     @action(detail=True, methods=['post'])
     def cancel(self, request, pk=None):
@@ -925,7 +925,7 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
                     user=subscription.user,
                     description=f'دستگاه به‌دلیل لغو قرارداد {subscription.contract_number} از قرارداد خارج شد؛ مالکیت دستگاه حفظ شد.',
                 )
-        return Response(SubscriptionSerializer(subscription).data)
+        return Response(SubscriptionSerializer(subscription, context={'request': request}).data)
 
     @action(detail=False, methods=['get'])
     def next_number(self, request):

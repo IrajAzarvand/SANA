@@ -1976,3 +1976,129 @@ class PersonalSubscriptionReplacementDisclosureTests(TestCase):
             if item['device'] == first.pk
         )
         self.assertEqual(relation['related_device_imei'], second.imei)
+
+ 
+class HistoricalSubscriptionDeviceRedactionTests(TestCase):
+    def test_expired_contract_keeps_own_history_but_redacts_current_device_identifiers(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from rest_framework.test import APIClient
+        from accounts.models import User
+        from fleet.models import Device, Vehicle
+        from organizations.models import Subscription, SubscriptionDevice
+
+        user = User.objects.create_user(
+            username='historical_device_redaction', password='test-password',
+            role='personal_user', account_type='personal',
+        )
+        today = timezone.localdate()
+        contract = Subscription.objects.create(
+            contract_number='HISTORICAL-DEVICE-REDACTION', customer_type='personal', user=user,
+            start_date=today-timedelta(days=40), end_date=today-timedelta(days=10),
+            status='active',
+        )
+        vehicle = Vehicle.objects.create(plate='99ج999', owner_user=user)
+        device = Device.objects.create(
+            imei='860000000009901', sim_number='09128887766',
+            vehicle=vehicle, management_status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=contract, device=device,
+            start_date=contract.start_date, end_date=contract.end_date,
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=user)
+        response = client.get(f'/api/subscriptions/{contract.pk}/')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(len(response.data['devices']), 1)
+        historical_link = response.data['devices'][0]
+        self.assertEqual(historical_link['device'], device.pk)
+        self.assertIsNone(historical_link['device_imei'])
+        self.assertIsNone(historical_link['device_sim'])
+        self.assertIsNone(historical_link['vehicle_plate'])
+        self.assertIsNone(historical_link['replacement_relation'])
+        self.assertNotIn(device.imei, str(response.data))
+        self.assertNotIn(device.sim_number, str(response.data))
+
+
+class HistoricalSubscriptionOperationDeviceDisclosureTests(TestCase):
+    def test_old_customer_cannot_see_device_identifiers_after_transfer(self):
+        from fleet.models import DeviceCustomerAccessPeriod
+        from organizations.serializers import SubscriptionOperationSerializer
+
+        old_org = Organization.objects.create(
+            name='Historical Operation Old Org',
+            code='HIST-OP-OLD-ORG',
+        )
+        new_org = Organization.objects.create(
+            name='Historical Operation New Org',
+            code='HIST-OP-NEW-ORG',
+        )
+        old_manager = User.objects.create_user(
+            username='historical_operation_old_manager',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=old_org,
+        )
+        device = Device.objects.create(
+            imei='860000000009961',
+            sim_number='09120009961',
+            organization=old_org,
+        )
+        today = timezone.localdate()
+        old_contract = Subscription.objects.create(
+            contract_number='HIST-OP-OLD-CONTRACT',
+            customer_type='organization',
+            organization=old_org,
+            start_date=today - timedelta(days=20),
+            end_date=today - timedelta(days=2),
+            status='active',
+        )
+        operation = SubscriptionOperation.objects.create(
+            subscription=old_contract,
+            operation_type='remove_device',
+        )
+        old_link = SubscriptionDevice.objects.create(
+            subscription=old_contract,
+            device=device,
+            start_date=old_contract.start_date,
+            end_date=old_contract.end_date,
+            unassigned_at=timezone.now() - timedelta(days=2),
+            removed_by_operation=operation,
+        )
+
+        new_contract = Subscription.objects.create(
+            contract_number='HIST-OP-NEW-CONTRACT',
+            customer_type='organization',
+            organization=new_org,
+            start_date=today - timedelta(days=1),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        SubscriptionDevice.objects.create(
+            subscription=new_contract,
+            device=device,
+            start_date=new_contract.start_date,
+            end_date=new_contract.end_date,
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=new_org,
+            subscription=new_contract,
+            started_at=timezone.now() - timedelta(days=1),
+        )
+
+        serializer = SubscriptionOperationSerializer(
+            operation,
+            context={'request': type('Request', (), {'user': old_manager})()}
+        )
+        rows = serializer.get_removed_devices(operation)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['device_id'], device.pk)
+        self.assertIsNone(rows[0]['device_imei'])
+        self.assertIsNone(rows[0]['device_sim'])
+        self.assertIsNone(rows[0]['vehicle_plate'])

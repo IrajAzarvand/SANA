@@ -224,11 +224,11 @@ class BranchListSerializer(serializers.ModelSerializer):
 # ═══════════════════════════════════════════════
 
 class SubscriptionDeviceSerializer(serializers.ModelSerializer):
-    device_imei = serializers.CharField(source='device.imei', read_only=True)
-    device_model = serializers.CharField(source='device.device_model.name', read_only=True, allow_null=True)
-    device_model_manufacturer = serializers.CharField(source='device.device_model.manufacturer', read_only=True, allow_null=True)
-    device_sim = serializers.CharField(source='device.sim_number', read_only=True)
-    vehicle_plate = serializers.CharField(source='device.vehicle.plate', read_only=True)
+    device_imei = serializers.SerializerMethodField()
+    device_model = serializers.SerializerMethodField()
+    device_model_manufacturer = serializers.SerializerMethodField()
+    device_sim = serializers.SerializerMethodField()
+    vehicle_plate = serializers.SerializerMethodField()
     management_status = serializers.SerializerMethodField()
     management_status_display = serializers.SerializerMethodField()
     replacement_relation = serializers.SerializerMethodField()
@@ -254,6 +254,35 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         return bool(request and getattr(request.user, 'is_site_admin', False))
 
+    def _can_view_device_details(self, obj):
+        request = self.context.get('request')
+        if not request:
+            return False
+        if self._is_site_admin():
+            return True
+        return authorized_devices_for_user(request.user).filter(
+            pk=obj.device_id
+        ).exists()
+
+    def get_device_imei(self, obj):
+        return obj.device.imei if self._can_view_device_details(obj) else None
+
+    def get_device_model(self, obj):
+        if not self._can_view_device_details(obj):
+            return None
+        return obj.device.device_model.name if obj.device.device_model else None
+
+    def get_device_model_manufacturer(self, obj):
+        if not self._can_view_device_details(obj):
+            return None
+        return obj.device.device_model.manufacturer if obj.device.device_model else None
+
+    def get_device_sim(self, obj):
+        return obj.device.sim_number if self._can_view_device_details(obj) else None
+
+    def get_vehicle_plate(self, obj):
+        return obj.device.vehicle.plate if self._can_view_device_details(obj) and obj.device.vehicle else None
+
     def get_management_status(self, obj):
         return obj.device.management_status if self._is_site_admin() else None
 
@@ -264,6 +293,8 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
         device = obj.device
         request = self.context.get('request')
         is_admin = self._is_site_admin()
+        if not self._can_view_device_details(obj):
+            return None
 
         def related_is_visible(related_device):
             if is_admin:
@@ -510,21 +541,44 @@ class SubscriptionOperationSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'performed_at', 'performed_by']
 
     def _serialize_device_links(self, links):
-        return [
-            {
+        request = self.context.get('request')
+        user = request.user if request else None
+        if user and getattr(user, 'is_site_admin', False):
+            visible_device_ids = None
+        elif user and getattr(user, 'is_authenticated', False):
+            from fleet.customer_access import authorized_devices_for_user
+            visible_device_ids = set(
+                authorized_devices_for_user(user).values_list('pk', flat=True)
+            )
+        else:
+            visible_device_ids = set()
+
+        serialized = []
+        for link in links.select_related('device__device_model', 'device__vehicle').all():
+            device = link.device
+            can_view_current_details = (
+                visible_device_ids is None
+                or device.pk in visible_device_ids
+            )
+            serialized.append({
                 'id': link.id,
                 'device_id': link.device_id,
-                'device_imei': link.device.imei,
-                'device_model': link.device.device_model.name if link.device.device_model else None,
-                'device_sim': link.device.sim_number,
-                'vehicle_plate': link.device.vehicle.plate if link.device.vehicle else None,
+                'device_imei': device.imei if can_view_current_details else None,
+                'device_model': (
+                    device.device_model.name
+                    if can_view_current_details and device.device_model else None
+                ),
+                'device_sim': device.sim_number if can_view_current_details else None,
+                'vehicle_plate': (
+                    device.vehicle.plate
+                    if can_view_current_details and device.vehicle else None
+                ),
                 'start_date': link.start_date,
                 'end_date': link.end_date,
                 'assigned_at': link.assigned_at,
                 'unassigned_at': link.unassigned_at,
-            }
-            for link in links.select_related('device__device_model', 'device__vehicle').all()
-        ]
+            })
+        return serialized
 
     def get_added_devices(self, obj):
         return self._serialize_device_links(obj.added_devices)
