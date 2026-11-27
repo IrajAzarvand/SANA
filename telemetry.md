@@ -615,7 +615,6 @@ SubscriptionPaymentAllocation مشخص می‌کند چه بخشی از یک د�
 - fleet/device_operations.py
 - fleet/lifecycle.py
 - fleet/traccar_api.py
-- fleet/traccar_attributes.py
 - fleet/management/commands/sync_traccar_device_catalog.py
 
 این ماژول مرکز مدیریت خودرو، دستگاه GPS، مدل دستگاه، راننده، تخصیص راننده و چرخه عمر دستگاه است.
@@ -963,7 +962,7 @@ Backend تاریخچه را با serverTime اعتبارسنجی و مرتب م�
 
 دو لایه ارائه Attribute وجود دارد:
 
-1. fleet/traccar_attributes.py: Registry سمت Backend برای نام فارسی، دسته‌بندی، نوع و واحدهایی که به‌صورت عمومی قابل اتکا هستند. Attribute ناشناخته حذف نمی‌شود و کلید اصلی آن حفظ می‌شود.
+1. sana-panel/src/utils/traccarAttributes.js: نگاشت نمایشی سمت پنل برای عنوان فارسی و دسته‌بندی ویژگی‌های Traccar. Backend داده‌های خام موقعیت را ذخیره یا بازتولید نمی‌کند و کلیدهای اصلی پاسخ Traccar را حفظ می‌کند.
 2. DeviceReportPlayback.jsx: نمایش مقادیر و عنوان‌های فارسی در جزئیات نقطه گزارش.
 
 در نمایش گزارش، مقادیر خام Attributes همچنان از Traccar می‌آیند. تغییر عنوان فارسی نباید مقدار خام یا کلید اصلی را تغییر دهد.
