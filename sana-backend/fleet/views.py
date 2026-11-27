@@ -6,7 +6,7 @@ from django.utils.dateparse import parse_datetime
 from datetime import datetime, timedelta, time as datetime_time
 import math
 from django.db import connection, transaction
-from django.db.models import Exists, OuterRef, Prefetch, Q, Value
+from django.db.models import Count, Exists, OuterRef, Prefetch, Q, Value
 from django.db.models.functions import Concat, Lower
 from rest_framework import viewsets, filters
 from rest_framework.decorators import action
@@ -33,7 +33,7 @@ from .serializers import (
 from organizations.models import SubscriptionDevice
 from accounts.permissions import IsSiteAdmin, IsMainUserOrSiteAdmin
 from .traccar_api import TraccarAPIError, traccar_current_positions, traccar_device_by_unique_id, traccar_device_positions, traccar_device_events, traccar_devices
-from .customer_access import active_customer_access_periods, active_personal_contract_links
+from .customer_access import active_customer_access_periods, active_personal_contract_links, authorized_devices_for_user
 
 
 
@@ -205,8 +205,17 @@ class VehicleViewSet(viewsets.ModelViewSet):
 
 class DeviceModelViewSet(viewsets.ReadOnlyModelViewSet):
     """Legacy model metadata is readable, but model CRUD is no longer part of device registration."""
-    queryset = DeviceModel.objects.filter(is_verified=True)
     serializer_class = DeviceModelSerializer
+
+    def get_queryset(self):
+        authorized_devices = authorized_devices_for_user(self.request.user)
+        return DeviceModel.objects.filter(is_verified=True).annotate(
+            devices_count=Count(
+                'devices',
+                filter=Q(devices__in=authorized_devices),
+                distinct=True,
+            )
+        )
     pagination_class = None
     permission_classes = [IsAuthenticated]
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]

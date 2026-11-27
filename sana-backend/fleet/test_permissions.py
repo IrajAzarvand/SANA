@@ -1077,3 +1077,145 @@ class ReportHistoryDateUpperBoundTests(TestCase):
             'to': future_end.isoformat(),
         })
         self.assertEqual(response.status_code, 403)
+
+
+class DeviceModelCountQueryEfficiencyTests(TestCase):
+    def test_device_model_counts_are_annotated_without_per_model_queries(self):
+        from types import SimpleNamespace
+        from accounts.models import User
+        from organizations.models import Organization
+        from fleet.models import DeviceModel
+        from fleet.serializers import DeviceModelSerializer
+        from fleet.views import DeviceModelViewSet
+
+        organization = Organization.objects.create(
+            name='Model Count Query Organization',
+            code='MODEL-COUNT-QUERY-ORG',
+        )
+        manager = User.objects.create_user(
+            username='model_count_query_manager',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=organization,
+        )
+        for index in range(8):
+            DeviceModel.objects.create(
+                manufacturer='Query Efficiency',
+                name=f'Model {index}',
+                code=f'QUERY-EFFICIENCY-{index}',
+                protocol='gt06',
+                is_verified=True,
+            )
+
+        view = DeviceModelViewSet()
+        view.request = SimpleNamespace(user=manager)
+        queryset = view.get_queryset()
+
+        with self.assertNumQueries(1):
+            rows = DeviceModelSerializer(queryset, many=True).data
+
+        self.assertEqual(len(rows), 8)
+        self.assertTrue(all(row['devices_count'] == 0 for row in rows))
+
+
+    def test_site_admin_sees_catalog_counts_across_all_tenants(self):
+        from types import SimpleNamespace
+        from accounts.models import User
+        from fleet.models import Device, DeviceModel
+        from fleet.serializers import DeviceModelSerializer
+        from fleet.views import DeviceModelViewSet
+
+        admin = User.objects.create_user(
+            username='model_count_site_admin',
+            password='test-password',
+            role='site_admin',
+            account_type='admin',
+        )
+        model = DeviceModel.objects.create(
+            manufacturer='Admin Count',
+            name='All Tenant Model',
+            code='ADMIN-COUNT-ALL',
+            protocol='gt06',
+            is_verified=True,
+        )
+        Device.objects.create(
+            imei='860000000009988',
+            device_model=model,
+        )
+        Device.objects.create(
+            imei='860000000009989',
+            device_model=model,
+        )
+
+        view = DeviceModelViewSet()
+        view.request = SimpleNamespace(user=admin)
+        row = DeviceModelSerializer(view.get_queryset(), many=True).data[0]
+        self.assertEqual(row['devices_count'], 2)
+
+
+class BranchManagerReportHistoryDateUpperBoundTests(TestCase):
+    def test_branch_manager_report_history_is_capped_at_today(self):
+        from datetime import timedelta, datetime, time
+        from django.utils import timezone
+        from rest_framework.test import APIClient
+        from accounts.models import User
+        from fleet.models import Device, DeviceCustomerAccessPeriod
+        from organizations.models import Branch, Organization, Subscription, SubscriptionDevice
+
+        today = timezone.localdate()
+        organization = Organization.objects.create(
+            name='Branch Report Today Cap', code='BRANCH-REPORT-TODAY-CAP',
+        )
+        branch = Branch.objects.create(
+            organization=organization,
+            name='Branch Report Today Cap',
+            code='BRANCH-REPORT-TODAY-CAP',
+        )
+        manager = User.objects.create_user(
+            username='branch_report_today_cap', password='test-password',
+            role='branch_manager', account_type='organization',
+            organization=None, branch=branch,
+        )
+        device = Device.objects.create(
+            imei='860000000009933', organization=organization, branch=branch,
+        )
+        contract = Subscription.objects.create(
+            contract_number='BRANCH-REPORT-TODAY-CAP', customer_type='organization',
+            organization=organization, start_date=today-timedelta(days=5),
+            end_date=today+timedelta(days=30), status='active',
+        )
+        link = SubscriptionDevice.objects.create(
+            subscription=contract, device=device,
+            start_date=contract.start_date, end_date=contract.end_date,
+        )
+        SubscriptionDevice.objects.filter(pk=link.pk).update(
+            assigned_at=timezone.now()-timedelta(days=2),
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device, organization=organization, branch=branch,
+            subscription=contract, started_at=timezone.now()-timedelta(days=1),
+        )
+        client = APIClient()
+        client.force_authenticate(user=manager)
+
+        metadata = client.get(
+            '/api/devices/report-history/',
+            {'device_id': device.pk, 'metadata': 'true'},
+        )
+        self.assertEqual(metadata.status_code, 200, metadata.data)
+        self.assertEqual(
+            timezone.localtime(datetime.fromisoformat(metadata.data['range_end'])).date(),
+            today,
+        )
+
+        future_start = timezone.now() + timedelta(minutes=1)
+        future_end = timezone.make_aware(
+            datetime.combine(today + timedelta(days=1), time.max)
+        )
+        response = client.get('/api/devices/report-history/', {
+            'device_id': device.pk,
+            'from': future_start.isoformat(),
+            'to': future_end.isoformat(),
+        })
+        self.assertEqual(response.status_code, 403)

@@ -10,7 +10,9 @@ from .models import VehicleType, Vehicle, DeviceModel, Device, Driver, DriverVeh
 
 def _device_vehicle_visible_to_user(device, user):
     """Whether the vehicle's identifying details belong to the caller's tenant."""
-    if not user or getattr(user, 'is_site_admin', False):
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    if getattr(user, 'is_site_admin', False):
         return True
     vehicle = device.vehicle if device.vehicle_id else None
     if vehicle is None:
@@ -29,7 +31,18 @@ def _device_vehicle_visible_to_user(device, user):
 
 def _redact_unrelated_device_party_fields(data, device, user):
     """Hide legal-owner, holder, branch, and vehicle details outside the caller's tenant."""
-    if not user or getattr(user, 'is_site_admin', False):
+    party_fields = (
+        'organization', 'organization_name', 'owner_user', 'owner_name',
+        'current_holder_organization', 'current_holder_organization_name',
+        'current_holder_user', 'current_holder_user_name',
+        'branch', 'branch_name', 'vehicle', 'vehicle_plate',
+    )
+    if not user or not getattr(user, 'is_authenticated', False):
+        for field in party_fields:
+            if field in data:
+                data[field] = None
+        return data
+    if getattr(user, 'is_site_admin', False):
         return data
 
     if getattr(user, 'is_branch_manager', False) and user.branch_id:
@@ -49,7 +62,18 @@ def _redact_unrelated_device_party_fields(data, device, user):
             if field in data:
                 data[field] = None
 
-    if device.owner_user_id != user.pk:
+    owner_user = device.owner_user if device.owner_user_id else None
+    owner_visible = bool(
+        owner_user and (
+            owner_user.pk == user.pk
+            or (
+                organization_id
+                and owner_user.organization_id == organization_id
+                and (branch_id is None or owner_user.branch_id == branch_id)
+            )
+        )
+    )
+    if not owner_visible:
         for field in ('owner_user', 'owner_name'):
             if field in data:
                 data[field] = None
@@ -66,7 +90,11 @@ def _redact_unrelated_device_party_fields(data, device, user):
     holder_user_visible = bool(
         holder_user and (
             holder_user.pk == user.pk
-            or (organization_id and holder_user.organization_id == organization_id)
+            or (
+                organization_id
+                and holder_user.organization_id == organization_id
+                and (branch_id is None or holder_user.branch_id == branch_id)
+            )
         )
     )
     if not holder_user_visible:
@@ -96,10 +124,14 @@ def _redact_unrelated_device_party_fields(data, device, user):
 
 def _device_data_active_for_request(device, request):
     """Evaluate service status against the exact contract granting this user access."""
-    if not request or getattr(request.user, 'is_site_admin', False):
+    if not request:
+        return False
+    user = getattr(request, 'user', None)
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    if getattr(user, 'is_site_admin', False):
         return device.is_data_active
 
-    user = request.user
     now = timezone.now()
     today = timezone.localdate(now)
 
@@ -302,15 +334,8 @@ class VehicleListSerializer(serializers.ModelSerializer):
 
 
 class DeviceModelSerializer(serializers.ModelSerializer):
-    devices_count = serializers.SerializerMethodField()
-
-    def get_devices_count(self, obj):
-        request = self.context.get('request')
-        if not request:
-            return 0
-        return authorized_devices_for_user(request.user).filter(
-            device_model=obj
-        ).count()
+    # The view annotates this value with one tenant-scoped aggregate query.
+    devices_count = serializers.IntegerField(read_only=True, default=0)
 
     class Meta:
         model = DeviceModel

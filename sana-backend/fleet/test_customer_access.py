@@ -1576,3 +1576,321 @@ class ReportHistoryVehiclePlateDisclosureTests(TestCase):
         self.assertEqual(response.data['device']['imei'], device.imei)
         self.assertEqual(response.data['device']['sim_number'], device.sim_number)
         self.assertIsNone(response.data['device']['vehicle_plate'])
+
+
+class ReportHistoryPlaybackVehiclePlateDisclosureTests(TestCase):
+    def test_report_history_playback_hides_vehicle_plate_outside_customer_tenant(self):
+        from datetime import timedelta
+        from unittest.mock import MagicMock
+        from fleet.models import Vehicle
+
+        organization = Organization.objects.create(
+            name='Playback Plate Access Customer',
+            code='PLAYBACK-PLATE-ACCESS-CUSTOMER',
+        )
+        foreign_organization = Organization.objects.create(
+            name='Playback Plate Legal Owner',
+            code='PLAYBACK-PLATE-LEGAL-OWNER',
+        )
+        manager = User.objects.create_user(
+            username='playback_plate_access_manager',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=organization,
+        )
+        vehicle = Vehicle.objects.create(
+            plate='44د444',
+            organization=foreign_organization,
+        )
+        device = Device.objects.create(
+            imei='860000000009982',
+            sim_number='09120009982',
+            organization=organization,
+            vehicle=vehicle,
+        )
+        now = timezone.now()
+        today = timezone.localdate(now)
+        contract = Subscription.objects.create(
+            contract_number='PLAYBACK-PLATE-ACCESS-CONTRACT',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=3),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        link = SubscriptionDevice.objects.create(
+            subscription=contract,
+            device=device,
+            start_date=contract.start_date,
+            end_date=contract.end_date,
+        )
+        SubscriptionDevice.objects.filter(pk=link.pk).update(
+            assigned_at=now - timedelta(days=2),
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            subscription=contract,
+            started_at=now - timedelta(days=1),
+        )
+        client = APIClient()
+        client.force_authenticate(user=manager)
+        point_time = now - timedelta(minutes=5)
+        positions = [{
+            'id': 9982001,
+            'fixTime': point_time.isoformat(),
+            'serverTime': point_time.isoformat(),
+            'latitude': 35.7,
+            'longitude': 51.4,
+            'valid': True,
+            'speed': 0,
+            'course': 0,
+            'attributes': {},
+        }]
+
+        cursor_context = MagicMock()
+        cursor_context.__enter__.return_value.fetchall.return_value = []
+        with patch('fleet.views.traccar_history_device_id', return_value=9982), patch(
+            'fleet.views.traccar_device_positions', return_value=positions,
+        ), patch('fleet.views.connection.cursor', return_value=cursor_context):
+            response = client.get('/api/devices/report-history/', {
+                'device_id': device.pk,
+                'from': (now - timedelta(minutes=10)).isoformat(),
+                'to': (now - timedelta(minutes=1)).isoformat(),
+            })
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(len(response.data['points']), 1)
+        self.assertEqual(response.data['device']['imei'], device.imei)
+        self.assertIsNone(response.data['device']['vehicle_plate'])
+
+
+class DevicePartyDisclosureFailClosedTests(TestCase):
+    def test_owner_is_visible_to_same_organization_but_not_foreign_tenant(self):
+        from fleet.serializers import _redact_unrelated_device_party_fields
+
+        organization = Organization.objects.create(
+            name='Owner Disclosure Organization',
+            code='OWNER-DISCLOSURE-ORG',
+        )
+        foreign_organization = Organization.objects.create(
+            name='Owner Disclosure Foreign',
+            code='OWNER-DISCLOSURE-FOREIGN',
+        )
+        manager = User.objects.create_user(
+            username='owner_disclosure_manager',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=organization,
+        )
+        same_tenant_owner = User.objects.create_user(
+            username='owner_disclosure_same_tenant',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+            organization=organization,
+        )
+        foreign_owner = User.objects.create_user(
+            username='owner_disclosure_foreign',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+            organization=foreign_organization,
+        )
+        same_tenant_device = Device.objects.create(
+            imei='860000000009983',
+            owner_user=same_tenant_owner,
+        )
+        foreign_device = Device.objects.create(
+            imei='860000000009984',
+            owner_user=foreign_owner,
+        )
+        same_data = {
+            'owner_user': same_tenant_owner.pk,
+            'owner_name': same_tenant_owner.full_name,
+        }
+        foreign_data = {
+            'owner_user': foreign_owner.pk,
+            'owner_name': foreign_owner.full_name,
+        }
+
+        _redact_unrelated_device_party_fields(same_data, same_tenant_device, manager)
+        _redact_unrelated_device_party_fields(foreign_data, foreign_device, manager)
+
+        self.assertEqual(same_data['owner_user'], same_tenant_owner.pk)
+        self.assertEqual(same_data['owner_name'], same_tenant_owner.full_name)
+        self.assertIsNone(foreign_data['owner_user'])
+        self.assertIsNone(foreign_data['owner_name'])
+
+    def test_missing_or_anonymous_user_fails_closed_for_party_fields(self):
+        from types import SimpleNamespace
+        from fleet.serializers import (
+            _device_data_active_for_request,
+            _device_vehicle_visible_to_user,
+            _redact_unrelated_device_party_fields,
+        )
+
+        device = Device.objects.create(imei='860000000009985')
+        anonymous = SimpleNamespace(is_authenticated=False)
+        for user in (None, anonymous):
+            data = {
+                'organization': 10,
+                'organization_name': 'Tenant',
+                'owner_user': 11,
+                'owner_name': 'Owner',
+                'current_holder_organization': 12,
+                'current_holder_organization_name': 'Holder',
+                'current_holder_user': 13,
+                'current_holder_user_name': 'Holder User',
+                'branch': 14,
+                'branch_name': 'Branch',
+                'vehicle': 15,
+                'vehicle_plate': '55ه555',
+            }
+            _redact_unrelated_device_party_fields(data, device, user)
+            self.assertTrue(all(value is None for value in data.values()))
+            self.assertFalse(_device_vehicle_visible_to_user(device, user))
+            self.assertFalse(
+                _device_data_active_for_request(device, SimpleNamespace(user=user))
+            )
+
+
+    def test_branch_manager_cannot_see_owner_or_holder_from_another_branch(self):
+        from fleet.serializers import _redact_unrelated_device_party_fields
+
+        organization = Organization.objects.create(
+            name='Branch Party Disclosure Organization',
+            code='BRANCH-PARTY-DISCLOSURE-ORG',
+        )
+        own_branch = Branch.objects.create(
+            organization=organization,
+            name='Own Disclosure Branch',
+            code='OWN-DISCLOSURE-BR',
+        )
+        other_branch = Branch.objects.create(
+            organization=organization,
+            name='Other Disclosure Branch',
+            code='OTHER-DISCLOSURE-BR',
+        )
+        manager = User.objects.create_user(
+            username='branch_party_disclosure_manager',
+            password='test-password',
+            role='branch_manager',
+            account_type='organization',
+            organization=organization,
+            branch=own_branch,
+        )
+        other_branch_user = User.objects.create_user(
+            username='branch_party_disclosure_other_user',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+            organization=organization,
+            branch=other_branch,
+        )
+        device = Device.objects.create(
+            imei='860000000009992',
+            owner_user=other_branch_user,
+            current_holder_user=other_branch_user,
+            branch=own_branch,
+        )
+        data = {
+            'owner_user': other_branch_user.pk,
+            'owner_name': other_branch_user.full_name,
+            'current_holder_user': other_branch_user.pk,
+            'current_holder_user_name': other_branch_user.full_name,
+            'branch': own_branch.pk,
+            'branch_name': own_branch.name,
+        }
+
+        _redact_unrelated_device_party_fields(data, device, manager)
+
+        self.assertIsNone(data['owner_user'])
+        self.assertIsNone(data['owner_name'])
+        self.assertIsNone(data['current_holder_user'])
+        self.assertIsNone(data['current_holder_user_name'])
+        self.assertEqual(data['branch'], own_branch.pk)
+        self.assertEqual(data['branch_name'], own_branch.name)
+
+
+
+class SubscriptionDeviceSerializerVisibilityCacheTests(TestCase):
+    def test_repeated_device_visibility_checks_use_one_authorization_query(self):
+        from types import SimpleNamespace
+        from organizations.serializers import SubscriptionDeviceSerializer
+
+        organization = Organization.objects.create(
+            name='Visibility Cache Organization',
+            code='VISIBILITY-CACHE-ORG',
+        )
+        manager = User.objects.create_user(
+            username='visibility_cache_manager',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=organization,
+        )
+        device = Device.objects.create(
+            imei='860000000009990',
+            organization=organization,
+        )
+        today = timezone.localdate()
+        now = timezone.now()
+        contract = Subscription.objects.create(
+            contract_number='VISIBILITY-CACHE-CONTRACT',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        link = SubscriptionDevice.objects.create(
+            subscription=contract,
+            device=device,
+            start_date=contract.start_date,
+            end_date=contract.end_date,
+        )
+        SubscriptionDevice.objects.filter(pk=link.pk).update(
+            assigned_at=now - timedelta(days=2),
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            subscription=contract,
+            started_at=now - timedelta(days=1),
+        )
+        serializer = SubscriptionDeviceSerializer(
+            instance=link,
+            context={'request': SimpleNamespace(user=manager)},
+        )
+
+        with self.assertNumQueries(1):
+            self.assertTrue(serializer._can_view_device_details(link))
+            self.assertTrue(serializer._can_view_device_details(device))
+
+    def test_subscription_device_serializer_without_request_fails_closed(self):
+        from organizations.serializers import SubscriptionDeviceSerializer
+
+        device = Device.objects.create(imei='860000000009991')
+        today = timezone.localdate()
+        contract = Subscription.objects.create(
+            contract_number='VISIBILITY-CACHE-NO-REQUEST',
+            customer_type='organization',
+            organization=Organization.objects.create(
+                name='No Request Organization',
+                code='NO-REQUEST-ORG',
+            ),
+            start_date=today - timedelta(days=1),
+            end_date=today + timedelta(days=10),
+            status='active',
+        )
+        link = SubscriptionDevice.objects.create(
+            subscription=contract,
+            device=device,
+            start_date=contract.start_date,
+            end_date=contract.end_date,
+        )
+        serializer = SubscriptionDeviceSerializer(instance=link)
+        self.assertFalse(serializer._can_view_device_details(link))
