@@ -1757,6 +1757,65 @@ class DevicePartyDisclosureFailClosedTests(TestCase):
             )
 
 
+    def test_branch_manager_cannot_see_owner_or_holder_from_another_branch(self):
+        from fleet.serializers import _redact_unrelated_device_party_fields
+
+        organization = Organization.objects.create(
+            name='Branch Party Disclosure Organization',
+            code='BRANCH-PARTY-DISCLOSURE-ORG',
+        )
+        own_branch = Branch.objects.create(
+            organization=organization,
+            name='Own Disclosure Branch',
+            code='OWN-DISCLOSURE-BR',
+        )
+        other_branch = Branch.objects.create(
+            organization=organization,
+            name='Other Disclosure Branch',
+            code='OTHER-DISCLOSURE-BR',
+        )
+        manager = User.objects.create_user(
+            username='branch_party_disclosure_manager',
+            password='test-password',
+            role='branch_manager',
+            account_type='organization',
+            organization=organization,
+            branch=own_branch,
+        )
+        other_branch_user = User.objects.create_user(
+            username='branch_party_disclosure_other_user',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+            organization=organization,
+            branch=other_branch,
+        )
+        device = Device.objects.create(
+            imei='860000000009992',
+            owner_user=other_branch_user,
+            current_holder_user=other_branch_user,
+            branch=own_branch,
+        )
+        data = {
+            'owner_user': other_branch_user.pk,
+            'owner_name': other_branch_user.full_name,
+            'current_holder_user': other_branch_user.pk,
+            'current_holder_user_name': other_branch_user.full_name,
+            'branch': own_branch.pk,
+            'branch_name': own_branch.name,
+        }
+
+        _redact_unrelated_device_party_fields(data, device, manager)
+
+        self.assertIsNone(data['owner_user'])
+        self.assertIsNone(data['owner_name'])
+        self.assertIsNone(data['current_holder_user'])
+        self.assertIsNone(data['current_holder_user_name'])
+        self.assertEqual(data['branch'], own_branch.pk)
+        self.assertEqual(data['branch_name'], own_branch.name)
+
+
+
 class LatestOrganizationAssignmentAccessTests(TestCase):
     def test_ended_newer_assignment_does_not_reactivate_older_open_access_period(self):
         now = timezone.now()
