@@ -252,7 +252,11 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
 
     def _is_site_admin(self):
         request = self.context.get('request')
-        return bool(request and getattr(request.user, 'is_site_admin', False))
+        user = getattr(request, 'user', None) if request else None
+        return bool(
+            user and getattr(user, 'is_authenticated', False)
+            and getattr(user, 'is_site_admin', False)
+        )
 
     def _can_view_device_details(self, obj):
         cache = getattr(self, '_device_visibility_cache', None)
@@ -262,12 +266,13 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
             return cache[obj.device_id]
 
         request = self.context.get('request')
-        if not request or not getattr(request.user, 'is_authenticated', False):
+        user = getattr(request, 'user', None) if request else None
+        if not user or not getattr(user, 'is_authenticated', False):
             cache[obj.device_id] = False
         elif self._is_site_admin():
             cache[obj.device_id] = True
         else:
-            cache[obj.device_id] = authorized_devices_for_user(request.user).filter(
+            cache[obj.device_id] = authorized_devices_for_user(user).filter(
                 pk=obj.device_id
             ).exists()
         return cache[obj.device_id]
