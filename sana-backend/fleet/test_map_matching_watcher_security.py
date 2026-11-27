@@ -8,6 +8,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from accounts.models import User
 from fleet.models import Device
 from organizations.models import Subscription, SubscriptionDevice
+from fleet.customer_access import authorized_devices_for_user
 from fleet.views import DeviceViewSet
 
 
@@ -75,6 +76,7 @@ class MapMatchingWatcherAccessTests(TestCase):
             account_type='personal',
             role='personal_user',
         )
+        self.assertFalse(authorized_devices_for_user(user).exists())
         request = APIRequestFactory().post(
             '/api/devices/map-matching-activity/',
             {'session_id': 'no-device-session', 'active': True},
