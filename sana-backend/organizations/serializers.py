@@ -299,7 +299,14 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
         return obj.device.sim_number if self._can_view_device_details(obj) else None
 
     def get_vehicle_plate(self, obj):
-        return obj.device.vehicle.plate if self._can_view_device_details(obj) and obj.device.vehicle else None
+        if not self._can_view_device_details(obj) or not obj.device.vehicle_id:
+            return None
+        request = self.context.get('request')
+        user = getattr(request, 'user', None) if request else None
+        from fleet.serializers import _device_vehicle_visible_to_user
+        if not _device_vehicle_visible_to_user(obj.device, user):
+            return None
+        return obj.device.vehicle.plate
 
     def get_management_status(self, obj):
         return obj.device.management_status if self._is_site_admin() else None
@@ -555,6 +562,8 @@ class SubscriptionOperationSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'performed_at', 'performed_by']
 
     def _serialize_device_links(self, links):
+        from fleet.serializers import _device_vehicle_visible_to_user
+
         request = self.context.get('request')
         user = request.user if request else None
         if user and getattr(user, 'is_site_admin', False):
@@ -585,7 +594,11 @@ class SubscriptionOperationSerializer(serializers.ModelSerializer):
                 'device_sim': device.sim_number if can_view_current_details else None,
                 'vehicle_plate': (
                     device.vehicle.plate
-                    if can_view_current_details and device.vehicle else None
+                    if (
+                        can_view_current_details
+                        and device.vehicle_id
+                        and _device_vehicle_visible_to_user(device, user)
+                    ) else None
                 ),
                 'start_date': link.start_date,
                 'end_date': link.end_date,
