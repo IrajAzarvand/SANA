@@ -1077,3 +1077,41 @@ class ReportHistoryDateUpperBoundTests(TestCase):
             'to': future_end.isoformat(),
         })
         self.assertEqual(response.status_code, 403)
+
+
+class DeviceModelCountQueryEfficiencyTests(TestCase):
+    def test_device_model_counts_are_annotated_without_per_model_queries(self):
+        from types import SimpleNamespace
+        from fleet.models import DeviceModel
+        from fleet.serializers import DeviceModelSerializer
+        from fleet.views import DeviceModelViewSet
+
+        organization = Organization.objects.create(
+            name='Model Count Query Organization',
+            code='MODEL-COUNT-QUERY-ORG',
+        )
+        manager = User.objects.create_user(
+            username='model_count_query_manager',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=organization,
+        )
+        for index in range(8):
+            DeviceModel.objects.create(
+                manufacturer='Query Efficiency',
+                name=f'Model {index}',
+                code=f'QUERY-EFFICIENCY-{index}',
+                protocol='gt06',
+                is_verified=True,
+            )
+
+        view = DeviceModelViewSet()
+        view.request = SimpleNamespace(user=manager)
+        queryset = view.get_queryset()
+
+        with self.assertNumQueries(1):
+            rows = DeviceModelSerializer(queryset, many=True).data
+
+        self.assertEqual(len(rows), 8)
+        self.assertTrue(all(row['devices_count'] == 0 for row in rows))
