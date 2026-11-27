@@ -1909,3 +1909,83 @@ class LatestOrganizationAssignmentAccessTests(TestCase):
         self.assertFalse(
             authorized_devices_for_user(manager, now=now).filter(pk=device.pk).exists()
         )
+
+
+class SubscriptionDeviceSerializerVisibilityCacheTests(TestCase):
+    def test_repeated_device_visibility_checks_use_one_authorization_query(self):
+        from types import SimpleNamespace
+        from organizations.serializers import SubscriptionDeviceSerializer
+
+        organization = Organization.objects.create(
+            name='Visibility Cache Organization',
+            code='VISIBILITY-CACHE-ORG',
+        )
+        manager = User.objects.create_user(
+            username='visibility_cache_manager',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=organization,
+        )
+        device = Device.objects.create(
+            imei='860000000009990',
+            organization=organization,
+        )
+        today = timezone.localdate()
+        now = timezone.now()
+        contract = Subscription.objects.create(
+            contract_number='VISIBILITY-CACHE-CONTRACT',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+        link = SubscriptionDevice.objects.create(
+            subscription=contract,
+            device=device,
+            start_date=contract.start_date,
+            end_date=contract.end_date,
+        )
+        SubscriptionDevice.objects.filter(pk=link.pk).update(
+            assigned_at=now - timedelta(days=2),
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            subscription=contract,
+            started_at=now - timedelta(days=1),
+        )
+        serializer = SubscriptionDeviceSerializer(
+            instance=link,
+            context={'request': SimpleNamespace(user=manager)},
+        )
+
+        with self.assertNumQueries(1):
+            self.assertTrue(serializer._can_view_device_details(link))
+            self.assertTrue(serializer._can_view_device_details(link))
+
+    def test_subscription_device_serializer_without_request_fails_closed(self):
+        from organizations.serializers import SubscriptionDeviceSerializer
+
+        device = Device.objects.create(imei='860000000009991')
+        today = timezone.localdate()
+        contract = Subscription.objects.create(
+            contract_number='VISIBILITY-CACHE-NO-REQUEST',
+            customer_type='organization',
+            organization=Organization.objects.create(
+                name='No Request Organization',
+                code='NO-REQUEST-ORG',
+            ),
+            start_date=today - timedelta(days=1),
+            end_date=today + timedelta(days=10),
+            status='active',
+        )
+        link = SubscriptionDevice.objects.create(
+            subscription=contract,
+            device=device,
+            start_date=contract.start_date,
+            end_date=contract.end_date,
+        )
+        serializer = SubscriptionDeviceSerializer(instance=link)
+        self.assertFalse(serializer._can_view_device_details(link))
