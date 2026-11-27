@@ -90,7 +90,11 @@ def _redact_unrelated_device_party_fields(data, device, user):
     holder_user_visible = bool(
         holder_user and (
             holder_user.pk == user.pk
-            or (organization_id and holder_user.organization_id == organization_id)
+            or (
+                organization_id
+                and holder_user.organization_id == organization_id
+                and (branch_id is None or holder_user.branch_id == branch_id)
+            )
         )
     )
     if not holder_user_visible:
