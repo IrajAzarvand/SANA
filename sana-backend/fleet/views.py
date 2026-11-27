@@ -28,6 +28,7 @@ from .serializers import (
     DeviceReplacementRelationSerializer,
     DeviceOperationSerializer,
     DriverVehicleAssignmentSerializer,
+    _device_vehicle_visible_to_user,
 )
 from organizations.models import SubscriptionDevice
 from accounts.permissions import IsSiteAdmin, IsMainUserOrSiteAdmin
@@ -1064,7 +1065,11 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     'id': state.traccar_event_id,
                     'device_id': device.pk,
                     'device_imei': device.imei,
-                    'vehicle_plate': device.vehicle.plate if device.vehicle_id else None,
+                    'vehicle_plate': (
+                        device.vehicle.plate
+                        if device.vehicle_id and _device_vehicle_visible_to_user(device, request.user)
+                        else None
+                    ),
                     'type': state.event_type,
                     'event_time': state.event_time,
                     'status': state.status,
@@ -1549,7 +1554,11 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 'imei': device.imei,
                 'phone': (traccar_device or {}).get('phone'),
                 'vehicle_id': device.vehicle_id,
-                'vehicle_plate': device.vehicle.plate if device.vehicle_id else None,
+                'vehicle_plate': (
+                    device.vehicle.plate
+                    if device.vehicle_id and _device_vehicle_visible_to_user(device, request.user)
+                    else None
+                ),
                 'latitude': latitude,
                 'longitude': longitude,
                 'has_position': has_position,
