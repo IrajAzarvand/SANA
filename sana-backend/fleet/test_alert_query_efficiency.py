@@ -80,7 +80,7 @@ class OrganizationAlertsQueryEfficiencyTests(TestCase):
         top_level_link_queries = []
         for query in captured.captured_queries:
             match = re.search(
-                r'\\bFROM\\s+"?([A-Za-z0-9_]+)"?',
+                r'\bFROM\s+"?([A-Za-z0-9_]+)"?',
                 query['sql'],
                 re.IGNORECASE,
             )
