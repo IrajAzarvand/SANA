@@ -73,7 +73,6 @@ export default function UserComboBox({
   // Check uniqueness globally, independently from the account-type-filtered suggestions.
   useEffect(() => {
     if (selectedUserId) {
-      setUsernameAvailability('selected');
       onUsernameAvailabilityChange?.('selected');
       return undefined;
     }
