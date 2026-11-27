@@ -14,17 +14,15 @@ export function SearchablePicker({
 
   const selected = options.find((option) => String(option.value) === String(value));
 
-  useEffect(() => {
-    if (!isEditing) setQuery(selected?.label || '');
-  }, [selected?.value, selected?.label, isEditing]);
+  const displayQuery = isEditing ? query : (selected?.label || '');
 
   const filteredOptions = useMemo(() => {
-    const normalized = query.trim().toLocaleLowerCase();
+    const normalized = displayQuery.trim().toLocaleLowerCase();
     if (!normalized || normalized === selected?.label?.toLocaleLowerCase()) return options;
     return options.filter((option) =>
       option.label.toLocaleLowerCase().includes(normalized)
     );
-  }, [options, query, selected?.label]);
+  }, [options, displayQuery, selected?.label]);
 
   return (
     <div className="relative">
@@ -41,7 +39,7 @@ export function SearchablePicker({
           role="combobox"
           aria-expanded={open}
           aria-autocomplete="list"
-          value={query}
+          value={displayQuery}
           onChange={(event) => {
             const nextQuery = event.target.value;
             setQuery(nextQuery);
@@ -49,8 +47,15 @@ export function SearchablePicker({
             if (selected && nextQuery !== selected.label) onChange('');
             setOpen(true);
           }}
-          onFocus={() => setOpen(true)}
-          onBlur={() => setOpen(false)}
+          onFocus={() => {
+            setQuery(selected?.label || '');
+            setIsEditing(true);
+            setOpen(true);
+          }}
+          onBlur={() => {
+            setOpen(false);
+            setIsEditing(false);
+          }}
           onKeyDown={(event) => {
             if (event.key === 'Escape') setOpen(false);
             if (event.key === 'Enter' && open && filteredOptions.length) {
@@ -108,14 +113,14 @@ export function SearchablePicker({
 export default function AddDeviceModal({ open, onClose, onSuccess }) {
   const [form, setForm] = useState({ imei: '', sim_number: '', manufacturer: '', device_model: '' });
   const [models, setModels] = useState([]);
-  const [loadingModels, setLoadingModels] = useState(false);
+  const [modelsLoaded, setModelsLoaded] = useState(false);
+  const loadingModels = open && !modelsLoaded;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || modelsLoaded) return undefined;
     let cancelled = false;
-    setLoadingModels(true);
     deviceModelsAPI.list()
       .then((data) => {
         if (!cancelled) setModels(Array.isArray(data) ? data : (data.results || []));
@@ -124,10 +129,10 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
         if (!cancelled) setError('دریافت فهرست برندها و مدل‌های Traccar ناموفق بود.');
       })
       .finally(() => {
-        if (!cancelled) setLoadingModels(false);
+        if (!cancelled) setModelsLoaded(true);
       });
     return () => { cancelled = true; };
-  }, [open]);
+  }, [open, modelsLoaded]);
 
   const brandOptions = useMemo(() => {
     return [...new Set(models.map((model) => model.manufacturer))]
