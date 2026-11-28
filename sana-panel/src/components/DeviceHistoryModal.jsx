@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Plus, RotateCcw } from 'lucide-react';
 import Badge from './Badge';
 import Button from './Button';
@@ -62,6 +62,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
   const [operationTargets, setOperationTargets] = useState({ organizations: [], users: [], branches: [], vehicles: [], subscriptions: [] });
   const [replacementModalOpen, setReplacementModalOpen] = useState(false);
   const [operationSaving, setOperationSaving] = useState(false);
+  const transferTargetsRequestRef = useRef(0);
   const [operationForm, setOperationForm] = useState({
     operation_type: 'return_for_repair',
     replacement_type: 'temporary_repair',
@@ -148,8 +149,9 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
   };
 
   const loadOrganizationTransferTargets = async (organizationId, branchId = '') => {
+    const requestId = ++transferTargetsRequestRef.current;
     if (!organizationId) {
-      setOperationTargets((current) => ({ ...current, branches: [], vehicles: [] }));
+      setOperationTargets((current) => ({ ...current, branches: [], vehicles: [], subscriptions: [] }));
       return;
     }
     try {
@@ -158,14 +160,18 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
         fetchAllPages((params) => vehiclesAPI.list({ ...params, organization: organizationId, ...(branchId ? { branch: branchId } : {}) })),
         fetchAllPages((params) => subscriptionsAPI.list({ ...params, status: 'active', customer_type: 'organization', organization: organizationId })),
       ]);
+      if (requestId !== transferTargetsRequestRef.current) return;
       setOperationTargets((current) => ({ ...current, branches, vehicles, subscriptions }));
     } catch (err) {
       console.error('Error loading target organization branches and vehicles:', err);
-      setOperationTargets((current) => ({ ...current, branches: [], vehicles: [] }));
+      if (requestId === transferTargetsRequestRef.current) {
+        setOperationTargets((current) => ({ ...current, branches: [], vehicles: [], subscriptions: [] }));
+      }
     }
   };
 
   const loadPersonalTransferSubscriptions = async (userId) => {
+    const requestId = ++transferTargetsRequestRef.current;
     if (!userId) {
       setOperationTargets((current) => ({ ...current, subscriptions: [] }));
       return;
@@ -177,10 +183,13 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
         customer_type: 'personal',
         user: userId,
       }));
+      if (requestId !== transferTargetsRequestRef.current) return;
       setOperationTargets((current) => ({ ...current, subscriptions }));
     } catch (err) {
       console.error('Error loading target personal subscriptions:', err);
-      setOperationTargets((current) => ({ ...current, subscriptions: [] }));
+      if (requestId === transferTargetsRequestRef.current) {
+        setOperationTargets((current) => ({ ...current, subscriptions: [] }));
+      }
     }
   };
 
