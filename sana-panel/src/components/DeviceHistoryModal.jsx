@@ -169,7 +169,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
     }
     try {
       const [vehicles, subscriptions] = await Promise.all([
-        fetchAllPages((params) => vehiclesAPI.list({ ...params, organization: organizationId })), 
+        fetchAllPages((params) => vehiclesAPI.list({ ...params, organization: organizationId })),
         fetchAllPages((params) => subscriptionsAPI.list({ ...params, status: 'active', customer_type: 'organization', organization: organizationId })),
       ]);
       if (requestId !== transferTargetsRequestRef.current) return;
