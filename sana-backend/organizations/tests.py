@@ -1833,6 +1833,16 @@ class SubscriptionComputedStatusFilterTests(TestCase):
         self.assertNotIn(self.pending.pk, self.get_contract_ids('active'))
 
 
+    def test_user_filter_returns_only_selected_personal_customer_contracts(self):
+        response = self.client.get(
+            '/api/subscriptions/',
+            {'status': 'active', 'customer_type': 'personal', 'user': self.active.user_id},
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        results = response.data.get('results', response.data)
+        self.assertEqual({item['id'] for item in results}, {self.active.pk})
+
+
 class SubscriptionActiveDeviceCountTests(TestCase):
     def test_active_device_count_requires_active_contract_and_active_link_window(self):
         today = timezone.localdate()
