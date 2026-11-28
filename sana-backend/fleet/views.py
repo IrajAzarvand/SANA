@@ -1752,6 +1752,164 @@ class DeviceViewSet(viewsets.ModelViewSet):
             ),
         }, status=201)
 
+    @action(detail=True, methods=['post'], url_path='change-branch')
+    def change_branch(self, request, pk=None):
+        """Change or clear the current branch assignment without rewriting history."""
+        from datetime import datetime
+        from django.utils.dateparse import parse_date
+
+        user = request.user
+        if not user.is_main_user or not user.organization_id:
+            return Response(
+                {'detail': 'فقط مدیر اصلی سازمان می‌تواند تخصیص شعبه دستگاه را تغییر دهد.'},
+                status=403,
+            )
+        if user.organization.status != 'active':
+            return Response(
+                {'detail': 'سازمان غیرفعال است و امکان تغییر تخصیص شعبه وجود ندارد.'},
+                status=403,
+            )
+
+        raw_branch_id = request.data.get('branch_id')
+        branch = None
+        if raw_branch_id not in (None, ''):
+            try:
+                branch_id = int(raw_branch_id)
+            except (TypeError, ValueError):
+                return Response({'branch_id': 'شناسه شعبه معتبر نیست.'}, status=400)
+            branch = user.organization.branches.filter(
+                pk=branch_id, status='active'
+            ).first()
+            if branch is None:
+                return Response(
+                    {'branch_id': 'شعبه فعال و متعلق به سازمان شما یافت نشد.'},
+                    status=400,
+                )
+
+        raw_end_date = request.data.get('end_date')
+        end_date = None
+        if raw_end_date not in (None, ''):
+            end_date = parse_date(str(raw_end_date))
+            if end_date is None:
+                return Response(
+                    {'end_date': 'تاریخ پایان باید با قالب YYYY-MM-DD ارسال شود.'},
+                    status=400,
+                )
+
+        with transaction.atomic():
+            visible_device = self.get_object()
+            device = Device.objects.select_for_update().get(pk=visible_device.pk)
+            now = timezone.now()
+            today = timezone.localdate(now)
+
+            current_period = active_customer_access_periods(
+                organization_id=user.organization_id,
+                now=now,
+            ).filter(device_id=device.pk).select_related('subscription').first()
+            if (
+                current_period is None
+                or current_period.branch_id is None
+                or current_period.subscription_id is None
+            ):
+                return Response(
+                    {'detail': 'دستگاه در حال حاضر به شعبه‌ای تخصیص ندارد.'},
+                    status=409,
+                )
+
+            link = SubscriptionDevice.objects.filter(
+                device_id=device.pk,
+                subscription_id=current_period.subscription_id,
+                assigned_at__lte=now,
+                unassigned_at__isnull=True,
+                start_date__lte=today,
+                end_date__gte=today,
+            ).select_related('subscription').order_by('-assigned_at', '-id').first()
+            if link is None:
+                return Response(
+                    {'detail': 'اتصال فعال دستگاه به قرارداد پیدا نشد.'},
+                    status=409,
+                )
+
+            # An omitted end_date preserves the current branch allocation end.
+            # A supplied date explicitly replaces it.
+            assignment_end_date = (
+                end_date if end_date is not None
+                else (
+                    timezone.localtime(current_period.ended_at).date()
+                    if current_period.ended_at is not None else None
+                )
+            )
+            assignment_end = None
+            fallback_start = None
+            if branch is not None and assignment_end_date is not None:
+                if assignment_end_date < today:
+                    return Response(
+                        {'end_date': 'تاریخ پایان تخصیص نمی‌تواند در گذشته باشد.'},
+                        status=400,
+                    )
+                latest_allowed_end = min(link.end_date, link.subscription.end_date)
+                if assignment_end_date > latest_allowed_end:
+                    return Response(
+                        {'end_date': 'تاریخ پایان تخصیص نمی‌تواند بعد از پایان قرارداد یا تخصیص دستگاه باشد.'},
+                        status=400,
+                    )
+                from datetime import time as datetime_time, timedelta
+                assignment_end = timezone.make_aware(
+                    datetime.combine(assignment_end_date, datetime_time.max)
+                )
+                fallback_start = timezone.make_aware(
+                    datetime.combine(assignment_end_date + timedelta(days=1), datetime_time.min)
+                )
+
+            # Close the effective branch period now, then retire any scheduled
+            # no-branch fallback from the previous assignment. Keep both rows
+            # as history; the partial unique constraint permits only one open row.
+            DeviceCustomerAccessPeriod.objects.filter(
+                pk=current_period.pk,
+                ended_at__isnull=False,
+            ).update(ended_at=now)
+            DeviceCustomerAccessPeriod.objects.filter(
+                device_id=device.pk,
+                subscription_id=current_period.subscription_id,
+                branch__isnull=True,
+                ended_at__isnull=True,
+                started_at__gt=now,
+            ).update(ended_at=F('started_at'))
+
+            new_period = DeviceCustomerAccessPeriod.objects.create(
+                device=device,
+                organization=current_period.organization,
+                user=current_period.user,
+                subscription=current_period.subscription,
+                branch=branch,
+                started_at=now,
+                ended_at=assignment_end,
+                reason='branch_changed' if branch is not None else 'branch_cleared',
+            )
+
+            fallback_period = None
+            if fallback_start is not None:
+                fallback_period = DeviceCustomerAccessPeriod.objects.create(
+                    device=device,
+                    organization=current_period.organization,
+                    user=current_period.user,
+                    subscription=current_period.subscription,
+                    branch=None,
+                    started_at=fallback_start,
+                    reason='branch_assignment_end',
+                )
+
+        return Response({
+            'device_id': device.pk,
+            'branch_id': branch.pk if branch else None,
+            'access_period_id': new_period.pk,
+            'started_at': new_period.started_at,
+            'ended_at': new_period.ended_at,
+            'organization_access_resumes_at': (
+                fallback_period.started_at if fallback_period else None
+            ),
+        }, status=201)
+
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
             return [IsSiteAdmin()]
