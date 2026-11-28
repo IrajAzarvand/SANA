@@ -528,7 +528,7 @@ def execute_device_operation(
         raise ValidationError({'replacement_device': 'دستگاه جایگزین نمی‌تواند همان دستگاه قبلی باشد.'})
 
     old_status = device.management_status
-    if outcome_action == 'transfer_customer' and old_status in _TRANSFER_BLOCKED_DEVICE_STATUSES:
+    if operation_type == 'transfer_customer' and old_status in _TRANSFER_BLOCKED_DEVICE_STATUSES:
         raise ValidationError({
             'device': 'دستگاه با وضعیت عملیاتی فعلی قابل انتقال به مشتری دیگر نیست؛ ابتدا وضعیت آن را تعیین تکلیف کنید.'
         })
