@@ -147,7 +147,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
     }
   };
 
-  const loadOrganizationTransferTargets = async (organizationId) => {
+  const loadOrganizationTransferTargets = async (organizationId, branchId = '') => {
     if (!organizationId) {
       setOperationTargets((current) => ({ ...current, branches: [], vehicles: [] }));
       return;
@@ -155,7 +155,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
     try {
       const [branches, vehicles] = await Promise.all([
         fetchAllPages((params) => branchesAPI.list({ ...params, organization: organizationId })),
-        fetchAllPages((params) => vehiclesAPI.list({ ...params, organization: organizationId })),
+        fetchAllPages((params) => vehiclesAPI.list({ ...params, organization: organizationId, ...(branchId ? { branch: branchId } : {}) })),
       ]);
       setOperationTargets((current) => ({ ...current, branches, vehicles }));
     } catch (err) {
@@ -519,8 +519,12 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
                         }} options={operationTargets.users.filter((item) => item.account_type === 'personal').map((item) => ({ value: item.id, label: item.full_name || item.username }))} />
                         {operationForm.target_organization && (
                           <>
-                            <Select label="شعبه مقصد (اختیاری)" placeholder="بدون تعیین شعبه" value={operationForm.target_branch} onChange={(e) => setOperationForm((current) => ({ ...current, target_branch: e.target.value, target_vehicle: '' }))} options={operationTargets.branches.map((item) => ({ value: item.id, label: item.name }))} />
-                            <Select label="خودروی مقصد (اختیاری)" placeholder="بدون اتصال به خودرو" value={operationForm.target_vehicle} onChange={(e) => setOperationForm((current) => ({ ...current, target_vehicle: e.target.value }))} options={operationTargets.vehicles.filter((item) => !operationForm.target_branch || !item.branch || String(item.branch) === String(operationForm.target_branch)).map((item) => ({ value: item.id, label: item.plate }))} />
+                            <Select label="شعبه مقصد (اختیاری)" placeholder="بدون تعیین شعبه" value={operationForm.target_branch} onChange={async (e) => {
+                              const branchId = e.target.value;
+                              setOperationForm((current) => ({ ...current, target_branch: branchId, target_vehicle: '' }));
+                              await loadOrganizationTransferTargets(operationForm.target_organization, branchId);
+                            }} options={operationTargets.branches.map((item) => ({ value: item.id, label: item.name }))} />
+                            <Select label="خودروی مقصد (اختیاری)" placeholder="بدون اتصال به خودرو" value={operationForm.target_vehicle} onChange={(e) => setOperationForm((current) => ({ ...current, target_vehicle: e.target.value }))} options={operationTargets.vehicles.map((item) => ({ value: item.id, label: item.plate }))} />
                           </>
                         )}
                         <Select label="قرارداد مقصد (اختیاری)" placeholder="انتخاب قرارداد" value={operationForm.target_subscription} onChange={(e) => setOperationForm((current) => ({ ...current, target_subscription: e.target.value }))} options={operationTargets.subscriptions.filter((item) => operationForm.target_organization
