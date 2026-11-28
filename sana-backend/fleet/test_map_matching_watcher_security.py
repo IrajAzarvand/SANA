@@ -84,12 +84,17 @@ class MapMatchingWatcherAccessTests(TestCase):
         )
         force_authenticate(request, user=user)
 
-        with patch('fleet.views.connection.cursor') as cursor:
+        with (
+            patch('fleet.views.authorized_devices_for_user', return_value=Device.objects.none) as authorized_scope,
+            patch('fleet.views.connection.cursor') as cursor,
+        ):
             response = DeviceViewSet.as_view(
                 {'post': 'map_matching_activity'}
             )(request)
 
         self.assertEqual(response.status_code, 403)
+        authorized_scope.assert_called_once()
+        self.assertEqual(authorized_scope.call_args.args[0].pk, user.pk)
         cursor.assert_not_called()
 
     def test_user_can_stop_own_watcher_after_access_has_been_revoked(self):
