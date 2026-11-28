@@ -11,6 +11,7 @@ from django.db.models.functions import Concat, Lower
 from rest_framework import viewsets, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.throttling import ScopedRateThrottle
 
@@ -201,6 +202,29 @@ class VehicleViewSet(viewsets.ModelViewSet):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
             return [IsMainUserOrSiteAdmin()]
         return super().get_permissions()
+
+    def perform_update(self, serializer):
+        # Keep vehicle-branch changes serialized with device operations. Lock
+        # attached devices first, then the vehicle, matching the shared
+        # device -> vehicle lock order used by assignment/transfer flows.
+        with transaction.atomic():
+            vehicle_id = serializer.instance.pk
+            list(
+                Device.objects.select_for_update()
+                .filter(vehicle_id=vehicle_id)
+                .order_by('pk')
+                .values_list('pk', flat=True)
+            )
+            vehicle = Vehicle.objects.select_for_update().get(pk=vehicle_id)
+            target_branch = serializer.validated_data.get('branch', vehicle.branch)
+            if target_branch is not None and Device.objects.filter(
+                vehicle_id=vehicle_id
+            ).exclude(branch_id=target_branch.pk).exists():
+                raise ValidationError({
+                    'branch': 'شعبه خودرو باید با شعبه تمام دستگاه‌های متصل یکسان باشد.'
+                })
+            serializer.instance = vehicle
+            serializer.save()
 
 
 class DeviceModelViewSet(viewsets.ReadOnlyModelViewSet):
