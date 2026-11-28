@@ -1659,6 +1659,18 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     status=400,
                 )
 
+            # A vehicle with a branch constrains the device to that exact
+            # branch. An unbranched vehicle does not constrain device access.
+            if device.vehicle_id:
+                vehicle = Vehicle.objects.select_for_update().only(
+                    'pk', 'branch_id'
+                ).get(pk=device.vehicle_id)
+                if vehicle.branch_id is not None and vehicle.branch_id != branch.pk:
+                    return Response(
+                        {'branch_id': 'شعبه دستگاه باید با شعبه خودروی متصل یکسان باشد.'},
+                        status=409,
+                    )
+
             now = timezone.now()
             today = timezone.localdate(now)
             current_period = active_customer_access_periods(
@@ -1806,6 +1818,17 @@ class DeviceViewSet(viewsets.ModelViewSet):
         with transaction.atomic():
             visible_device = self.get_object()
             device = Device.objects.select_for_update().get(pk=visible_device.pk)
+            # Lock the related vehicle after the device, matching the lock order
+            # used by device operations.
+            if device.vehicle_id:
+                vehicle = Vehicle.objects.select_for_update().only(
+                    'pk', 'branch_id'
+                ).get(pk=device.vehicle_id)
+                if vehicle.branch_id is not None and vehicle.branch_id != getattr(branch, 'pk', None):
+                    return Response(
+                        {'branch_id': 'شعبه دستگاه باید با شعبه خودروی متصل یکسان باشد.'},
+                        status=409,
+                    )
             now = timezone.now()
             today = timezone.localdate(now)
 
