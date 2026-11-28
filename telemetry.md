@@ -2,7 +2,7 @@
 ## معماری، جریان داده، اجزای نرم‌افزار، پایگاه داده و عملیات
 
 > **وضعیت سند:** بازبینی بر اساس کد شاخه main و وضعیت اجرایی موجود در مخزن  
-> **Commit مبنا:** 7bb69d82f1101ba5885829e4e1e4af61f4b70237  
+> **Commit مبنا:** 89ba530a2ea705299ea32ad27f5ed73c72049478  
 > **تاریخ بازبینی:** 2026-11-28  
 > **اصل نگارش:** این سند وضعیت پیاده‌سازی موجود در مخزن را توصیف می‌کند؛ تصمیم‌های قدیمی، طرح‌های اجرا‌نشده و قابلیت‌های صرفاً نمایشی، به‌عنوان قابلیت فعال معرفی نمی‌شوند.
 
@@ -615,7 +615,7 @@ SubscriptionPaymentAllocation مشخص می‌کند چه بخشی از یک د�
 - fleet/lifecycle.py
 - fleet/traccar_api.py
 - fleet/management/commands/sync_traccar_device_catalog.py
-- fleet/traccar_attributes.py (ماژول قدیمی و بدون استفاده اجرایی در Backend؛ نگاشت فعال UI در Panel است)
+- sana-panel/src/utils/traccarAttributes.js (نگاشت نمایشی فعال در Panel؛ registry قدیمی Backend حذف شده است)
 
 این ماژول مرکز مدیریت خودرو، دستگاه GPS، مدل دستگاه، راننده، تخصیص راننده و چرخه عمر دستگاه است.
 
@@ -945,7 +945,7 @@ Backend تاریخچه را با serverTime اعتبارسنجی و مرتب م�
 
 `sana-panel/src/utils/traccarAttributes.js`
 
-کامپوننت `DeviceReportPlayback.jsx` از این نگاشت استفاده می‌کند و برای کلیدهای ناشناخته، خود کلید اصلی را نمایش می‌دهد. فایل قدیمی `sana-backend/fleet/traccar_attributes.py` در شاخه main وجود دارد، اما در مسیر اجرایی و importهای Backend استفاده نمی‌شود و مرجع نمایش پنل نیست.
+کامپوننت `DeviceReportPlayback.jsx` از این نگاشت استفاده می‌کند و برای کلیدهای ناشناخته، خود کلید اصلی را نمایش می‌دهد. registry قدیمی Backend در PR #193 حذف شده است و مرجع نمایش پنل نیست.
 
 در نمایش گزارش، مقادیر خام Attributes همچنان از Traccar می‌آیند. تغییر عنوان فارسی نباید مقدار خام یا کلید اصلی را تغییر دهد.
 
@@ -1528,7 +1528,7 @@ Workflow:
 - آزمون به‌روزرسانی protocol توسط نقش `sana_user`.
 - اجرای PostgreSQL integration test برای دسترسی نقش برنامه و schema GPS.
 
-در نسخه فعلی main، اجرای خودکار روی push فقط برای شاخه `fix/gps-stages-1-3-telemetry-compliance` تعریف شده است؛ اجرای PR با تغییر فایل‌های GPS، fleet و workflow نیز فعال است. اضافه‌شدن push به main هنوز در workflow شاخه main اعمال نشده است.
+در workflow فعلی، اجرای خودکار روی push برای شاخه‌های `main` و `fix/gps-stages-1-3-telemetry-compliance` تعریف شده است؛ اجرای PR با تغییر فایل‌های GPS، fleet و workflow نیز فعال است.
 
 ## ۱۴.۶. CI پنل
 
@@ -1538,9 +1538,8 @@ Workflow:
 
 Workflow فعلی در GitHub:
 
-- روی تغییرات `sana-panel/**` و فایل workflow اجرا می‌شود.
-- در CI فعلی فقط `npm ci` و `npm run build` اجرا می‌شوند؛ lint در این workflow هنوز اضافه نشده است.
-- تغییرات `sana-map/**` به‌تنهایی در path filter فعلی trigger نمی‌شوند.
+- روی تغییرات `sana-panel/**`، `sana-map/**` و فایل workflow اجرا می‌شود.
+- پس از نصب وابستگی‌ها، هر دو دستور `npm run lint` و `npm run build` در CI اجرا می‌شوند.
 
 کنترل محلی پنل:
 
@@ -1616,7 +1615,7 @@ npm run build
 | قرارداد و امور مالی | organizations/models.py، views.py، serializers.py |
 | چرخه عمر دستگاه | fleet/device_operations.py، fleet/lifecycle.py، fleet/models.py |
 | نگاشت Traccar به Device | fleet/traccar_api.py، fleet/views.py، sana-gps/app/traccar/ |
-| نگاشت Attributeهای ترکار در UI | sana-panel/src/utils/traccarAttributes.js؛ فایل Backend قدیمی در main وجود دارد اما استفاده اجرایی ندارد |
+| نگاشت Attributeهای ترکار در UI | sana-panel/src/utils/traccarAttributes.js؛ registry قدیمی Backend در PR #193 حذف شده است |
 | گزارش مسیر | fleet/views.py، DeviceReportPlayback.jsx، DeviceTripReport.jsx |
 | نقشه زنده | fleet/views.py، Map.jsx، sana-map/src/ |
 | Map Matching | sana-gps/app/processing/map_matching.py، sana-gps/sql/0001... |
@@ -1661,7 +1660,7 @@ npm run build
 - Traccar تنها منبع داده خام GPS، Position و Event است. SANA برای هر کاربر فقط وضعیت خواندن/پیگیری هشدارها را در `fleet.DeviceAlertState` نگه می‌دارد.
 - Feed اعلان‌های تجاری/مدیریتی و یادآوری‌های مالی از `accounts/views.py` ساخته می‌شود و state کاربرمحور آن در همان مدل اعلان نگهداری می‌شود.
 - فیلتر انواع هشدار قابل نمایش با `fleet.PersonalAlertPreference` ذخیره می‌شود؛ کانال‌های ارسال Email، SMS و Push فعال نیستند.
-- نگاشت فعال Attributeها در `sana-panel/src/utils/traccarAttributes.js` است. ماژول قدیمی Backend در main وجود دارد، اما در مسیر اجرایی import یا استفاده نمی‌شود.
+- نگاشت فعال Attributeها در `sana-panel/src/utils/traccarAttributes.js` است؛ registry قدیمی Backend در PR #193 حذف شده است.
 - اپلیکیشن `decoder_discovery` و صفحه/route مربوط به AIManagement در کد فعلی main وجود ندارند؛ نباید برای آن‌ها مدل، جدول یا قابلیت اجرایی در نظر گرفت.
 - مالکیت قانونی (`organization` یا `owner_user`)، تحویل‌گیرنده فعلی (`current_holder_*`)، دوره دسترسی مشتری (`DeviceCustomerAccessPeriod`) و اتصال قرارداد (`SubscriptionDevice`) چهار مفهوم مجزا هستند.
 - اتصال دستگاه به قرارداد، مالکیت قانونی را تغییر نمی‌دهد؛ فقط تحویل‌گیرنده و دسترسی قراردادی را تنظیم می‌کند. انتقال مالکیت باید از عملیات رسمی و ثبت تاریخچه انجام شود.
