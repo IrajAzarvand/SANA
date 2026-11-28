@@ -62,9 +62,17 @@ def active_customer_access_periods(*, organization_id=None, user_id=None, branch
         started_at__lte=now,
     ).order_by('-started_at', '-id').values('pk')[:1]
 
+    from organizations.models import SubscriptionDevice
+
+    latest_link_id = SubscriptionDevice.objects.filter(
+        device_id=OuterRef('device_id'),
+        assigned_at__lte=now,
+    ).order_by('-assigned_at', '-id').values('pk')[:1]
+
     periods = DeviceCustomerAccessPeriod.objects.filter(
         pk=Subquery(latest_period_id),
         started_at__lte=now,
+        subscription__subscription_devices__pk=Subquery(latest_link_id),
     ).filter(
         Q(ended_at__isnull=True) | Q(ended_at__gte=now),
         subscription__status='active',
@@ -95,20 +103,6 @@ def active_customer_access_periods(*, organization_id=None, user_id=None, branch
         # A branch manager's authority ends immediately when their branch is
         # deactivated, even if legacy access-period rows remain open.
         periods = periods.filter(branch_id=branch_id, branch__status='active')
-
-    if user_id:
-        # A personal access period is valid only while its contract-device
-        # link is the latest assignment that has actually started. A newer
-        # invalid/ended assignment must not revive an older personal link.
-        from organizations.models import SubscriptionDevice
-
-        latest_link_id = SubscriptionDevice.objects.filter(
-            device_id=OuterRef('device_id'),
-            assigned_at__lte=now,
-        ).order_by('-assigned_at', '-id').values('pk')[:1]
-        periods = periods.filter(
-            subscription__subscription_devices__pk=Subquery(latest_link_id)
-        )
 
     return periods
 
