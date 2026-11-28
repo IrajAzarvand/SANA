@@ -614,8 +614,8 @@ SubscriptionPaymentAllocation مشخص می‌کند چه بخشی از یک د�
 - fleet/device_operations.py
 - fleet/lifecycle.py
 - fleet/traccar_api.py
-- fleet/traccar_attributes.py
 - fleet/management/commands/sync_traccar_device_catalog.py
+- fleet/traccar_attributes.py (ماژول قدیمی و بدون استفاده اجرایی در Backend؛ نگاشت فعال UI در Panel است)
 
 این ماژول مرکز مدیریت خودرو، دستگاه GPS، مدل دستگاه، راننده، تخصیص راننده و چرخه عمر دستگاه است.
 
@@ -1490,7 +1490,7 @@ python -m pytest -q
 
 ## ۱۴.۳. تست یکپارچه PostgreSQL/PostGIS
 
-test_gps_postgres_integration.py دسترسی نقش sana_user، schema GPS و امکان به‌روزرسانی protocol در جدول fleet_device را بررسی می‌کند.
+فایل `sana-gps/tests/test_gps_postgres_integration.py` دسترسی نقش sana_user، schema GPS و امکان به‌روزرسانی protocol در جدول fleet_device را بررسی می‌کند.
 
 این تست از دیتابیس آزمایشی PostGIS استفاده می‌کند و نباید به دیتابیس عملیاتی متصل شود.
 
