@@ -1,4 +1,4 @@
-from django.db.models import F, OuterRef, Q, Subquery
+from django.db.models import Exists, F, OuterRef, Q, Subquery
 from django.utils import timezone
 
 from .models import DeviceCustomerAccessPeriod
@@ -62,6 +62,27 @@ def active_customer_access_periods(*, organization_id=None, user_id=None, branch
         started_at__lte=now,
     ).order_by('-started_at', '-id').values('pk')[:1]
 
+    from organizations.models import SubscriptionDevice
+
+    latest_link_id = SubscriptionDevice.objects.filter(
+        device_id=OuterRef('device_id'),
+        assigned_at__lte=now,
+    ).order_by('-assigned_at', '-id').values('pk')[:1]
+
+    # Keep every link predicate on one exact SubscriptionDevice row.
+    # Filtering the reverse relation in separate queryset.filter() calls can
+    # create independent joins, allowing a closed latest link and an older
+    # open link on the same contract to satisfy different parts of the query.
+    valid_latest_link = SubscriptionDevice.objects.filter(
+        device_id=OuterRef('device_id'),
+        subscription_id=OuterRef('subscription_id'),
+        pk=Subquery(latest_link_id),
+        assigned_at__lte=now,
+        unassigned_at__isnull=True,
+        start_date__lte=today,
+        end_date__gte=today,
+    )
+
     periods = DeviceCustomerAccessPeriod.objects.filter(
         pk=Subquery(latest_period_id),
         started_at__lte=now,
@@ -70,11 +91,8 @@ def active_customer_access_periods(*, organization_id=None, user_id=None, branch
         subscription__status='active',
         subscription__start_date__lte=today,
         subscription__end_date__gte=today,
-        subscription__subscription_devices__device_id=F('device_id'),
-        subscription__subscription_devices__assigned_at__lte=now,
-        subscription__subscription_devices__unassigned_at__isnull=True,
-        subscription__subscription_devices__start_date__lte=today,
-        subscription__subscription_devices__end_date__gte=today,
+    ).filter(
+        Exists(valid_latest_link)
     )
 
     if organization_id:
@@ -95,20 +113,6 @@ def active_customer_access_periods(*, organization_id=None, user_id=None, branch
         # A branch manager's authority ends immediately when their branch is
         # deactivated, even if legacy access-period rows remain open.
         periods = periods.filter(branch_id=branch_id, branch__status='active')
-
-    if user_id:
-        # A personal access period is valid only while its contract-device
-        # link is the latest assignment that has actually started. A newer
-        # invalid/ended assignment must not revive an older personal link.
-        from organizations.models import SubscriptionDevice
-
-        latest_link_id = SubscriptionDevice.objects.filter(
-            device_id=OuterRef('device_id'),
-            assigned_at__lte=now,
-        ).order_by('-assigned_at', '-id').values('pk')[:1]
-        periods = periods.filter(
-            subscription__subscription_devices__pk=Subquery(latest_link_id)
-        )
 
     return periods
 

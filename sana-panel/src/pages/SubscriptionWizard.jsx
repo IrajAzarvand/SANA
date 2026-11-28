@@ -635,13 +635,14 @@ function Step2({ form, updateForm, setForm, onUsernameAvailabilityChange }) {
 
           <div className="space-y-4">
             <h4 className="text-xs font-medium text-text-muted">
-              {form.organization_id ? 'اطلاعات سازمان انتخاب‌شده (قابل ویرایش)' : 'اطلاعات سازمان جدید'}
+              {form.organization_id ? 'اطلاعات سازمان انتخاب‌شده (فقط نمایش)' : 'اطلاعات سازمان جدید'}
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input
                 label="نام سازمان"
                 value={form.organization_name}
                 onChange={(e) => updateForm('organization_name', e.target.value)}
+                disabled={Boolean(form.organization_id)}
                 placeholder="نام کامل شرکت"
                 required
               />
@@ -649,28 +650,33 @@ function Step2({ form, updateForm, setForm, onUsernameAvailabilityChange }) {
                 label="شماره ثبت"
                 value={form.registration_number}
                 onChange={(e) => updateForm('registration_number', e.target.value)}
+                disabled={Boolean(form.organization_id)}
               />
               <Input
                 label="کد اقتصادی"
                 value={form.economy_code}
                 onChange={(e) => updateForm('economy_code', e.target.value)}
+                disabled={Boolean(form.organization_id)}
               />
               <Input
                 label="تلفن سازمان"
                 icon={Phone}
                 value={form.organization_phone}
                 onChange={(e) => updateForm('organization_phone', e.target.value)}
+                disabled={Boolean(form.organization_id)}
               />
               <Input
                 label="ایمیل سازمان"
                 value={form.organization_email}
                 onChange={(e) => updateForm('organization_email', e.target.value)}
+                disabled={Boolean(form.organization_id)}
               />
             </div>
             <Input
               label="آدرس سازمان"
               value={form.organization_address}
               onChange={(e) => updateForm('organization_address', e.target.value)}
+              disabled={Boolean(form.organization_id)}
             />
           </div>
         </div>
@@ -751,7 +757,7 @@ function Step2({ form, updateForm, setForm, onUsernameAvailabilityChange }) {
             <div className="bg-info/10 border border-info/30 rounded-field p-3 flex items-start gap-2">
               <Check size={16} className="text-info flex-shrink-0 mt-0.5" />
               <p className="text-xs text-text-secondary leading-relaxed">
-                کاربر موجود انتخاب شده — رمز عبور فعلی حفظ می‌شود. می‌توانید اطلاعات زیر را ویرایش کنید.
+                کاربر موجود انتخاب شده است. اطلاعات حساب فقط نمایش داده می‌شود و در فرایند ایجاد قرارداد تغییر نمی‌کند.
               </p>
             </div>
           )}
@@ -760,12 +766,14 @@ function Step2({ form, updateForm, setForm, onUsernameAvailabilityChange }) {
             label="نام"
             value={form.first_name}
             onChange={(e) => updateForm('first_name', e.target.value)}
+            disabled={Boolean(form.existing_user_id)}
             required
           />
           <Input
             label="نام خانوادگی"
             value={form.last_name}
             onChange={(e) => updateForm('last_name', e.target.value)}
+            disabled={Boolean(form.existing_user_id)}
             required
           />
           <Input
@@ -773,6 +781,7 @@ function Step2({ form, updateForm, setForm, onUsernameAvailabilityChange }) {
             icon={Phone}
             value={form.mobile}
             onChange={(e) => updateForm('mobile', e.target.value)}
+            disabled={Boolean(form.existing_user_id)}
             placeholder="۰۹xxxxxxxxx"
             required
           />
@@ -780,6 +789,7 @@ function Step2({ form, updateForm, setForm, onUsernameAvailabilityChange }) {
             label="کد ملی"
             value={form.national_id}
             onChange={(e) => updateForm('national_id', e.target.value)}
+            disabled={Boolean(form.existing_user_id)}
             placeholder="۱۰ رقم"
           />
 
@@ -788,6 +798,7 @@ function Step2({ form, updateForm, setForm, onUsernameAvailabilityChange }) {
               label="آدرس"
               value={form.address}
               onChange={(e) => updateForm('address', e.target.value)}
+              disabled={Boolean(form.existing_user_id)}
               placeholder="آدرس محل سکونت"
             />
           )}

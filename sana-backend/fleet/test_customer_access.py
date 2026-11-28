@@ -15,7 +15,7 @@ from organizations.models import Branch, Organization, Subscription, Subscriptio
 
 
 class ContractBackedDeviceAccessTests(TestCase):
-    def test_device_detail_service_status_uses_exact_organization_access_contract(self):
+    def test_newer_started_organization_assignment_blocks_older_access(self):
         organization = Organization.objects.create(
             name='Exact Device Status Organization',
             code='EXACT-DEVICE-STATUS-ORG',
@@ -93,15 +93,87 @@ class ContractBackedDeviceAccessTests(TestCase):
 
         main_request = SimpleNamespace(user=main_user)
         branch_request = SimpleNamespace(user=branch_user)
-        self.assertTrue(
+        # A newer started assignment supersedes the older contract for
+        # both organization and personal access, even when the newer link
+        # has already been unassigned or its contract is suspended.
+        self.assertFalse(
             DeviceSerializer(context={'request': main_request}).get_data_active(device)
         )
-        self.assertTrue(
+        self.assertFalse(
             BranchManagerDeviceSerializer(
                 context={'request': branch_request}
             ).get_data_active(device)
         )
 
+
+    def test_latest_closed_link_cannot_be_satisfied_by_older_open_link_on_same_contract(self):
+        organization = Organization.objects.create(
+            name='Same Contract Historical Links Organization',
+            code='SAME-CONTRACT-HISTORICAL-LINKS',
+        )
+        branch = Branch.objects.create(
+            organization=organization,
+            name='Same Contract Historical Links Branch',
+            code='SAME-CONTRACT-HISTORICAL-BRANCH',
+        )
+        device = Device.objects.create(
+            imei='860000000001245',
+            organization=organization,
+            branch=branch,
+            management_status='installed',
+        )
+        today = timezone.localdate()
+        now = timezone.now()
+        subscription = Subscription.objects.create(
+            contract_number='SAME-CONTRACT-HISTORICAL-LINKS-001',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=10),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+
+        older_link = SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
+        )
+        SubscriptionDevice.objects.filter(pk=older_link.pk).update(
+            assigned_at=now - timedelta(days=3),
+            unassigned_at=now - timedelta(days=2),
+        )
+        newer_link = SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
+            unassigned_at=now - timedelta(minutes=1),
+        )
+        SubscriptionDevice.objects.filter(pk=newer_link.pk).update(
+            assigned_at=now - timedelta(days=1),
+        )
+
+        # Recreate a legacy inconsistent state: the older row is open even
+        # though a later assignment for this same device and contract exists
+        # and is already closed. The latest row must remain authoritative.
+        SubscriptionDevice.objects.filter(pk=older_link.pk).update(
+            unassigned_at=None,
+        )
+        period = DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            branch=branch,
+            subscription=subscription,
+            started_at=now - timedelta(days=4),
+        )
+
+        self.assertFalse(
+            active_customer_access_periods(
+                organization_id=organization.pk,
+                now=now,
+            ).filter(pk=period.pk).exists()
+        )
 
     def test_organization_device_detail_does_not_treat_future_assignment_as_active(self):
         organization = Organization.objects.create(
@@ -744,7 +816,7 @@ class DeviceActiveAssignmentSelectionTests(TestCase):
 
 
 class DispositionCustomerAccessTests(TestCase):
-    def test_disposition_transfer_moves_access_to_target_customer_and_branch(self):
+    def test_disposition_transfer_moves_access_to_target_customer_without_branch(self):
         old_organization = Organization.objects.create(
             name='Disposition Old Organization',
             code='DISPOSITION-OLD-ORG',
@@ -812,7 +884,6 @@ class DispositionCustomerAccessTests(TestCase):
             performed_by=admin,
             target_subscription=new_subscription,
             target_organization=new_organization,
-            target_branch=new_branch,
             outcome_action='transfer_customer',
             reason='customer_transfer',
         )
@@ -828,9 +899,16 @@ class DispositionCustomerAccessTests(TestCase):
         self.assertTrue(
             active_customer_access_periods(
                 organization_id=new_organization.pk,
+            ).filter(device=device).exists()
+        )
+        self.assertFalse(
+            active_customer_access_periods(
+                organization_id=new_organization.pk,
                 branch_id=new_branch.pk,
             ).filter(device=device).exists()
         )
+        device.refresh_from_db()
+        self.assertIsNone(device.branch_id)
         self.assertEqual(
             SubscriptionDevice.objects.filter(
                 device=device,
@@ -1964,6 +2042,8 @@ class OrganizationDeviceBranchAssignmentApiTests(TestCase):
         self.original_period.refresh_from_db()
 
         self.assertEqual(branch_period.branch_id, self.branch.pk)
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.branch_id, self.branch.pk)
         self.assertEqual(branch_period.organization_id, self.organization.pk)
         self.assertEqual(branch_period.subscription_id, self.subscription.pk)
         self.assertIsNotNone(branch_period.ended_at)
@@ -2008,6 +2088,8 @@ class OrganizationDeviceBranchAssignmentApiTests(TestCase):
             pk=response.data['access_period_id']
         )
         self.assertEqual(period.branch_id, self.branch.pk)
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.branch_id, self.branch.pk)
         self.assertIsNone(period.ended_at)
         self.assertFalse(
             DeviceCustomerAccessPeriod.objects.filter(
@@ -2295,6 +2377,8 @@ class OrganizationDeviceBranchChangeApiTests(TestCase):
         self.assertLessEqual(self.old_period.ended_at, timezone.now())
         self.assertEqual(self.old_fallback.ended_at, self.old_fallback.started_at)
         self.assertEqual(new_period.branch_id, self.new_branch.pk)
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.branch_id, self.new_branch.pk)
         self.assertEqual(
             timezone.localtime(new_period.ended_at).date(),
             self.assignment_end,
@@ -2353,6 +2437,8 @@ class OrganizationDeviceBranchChangeApiTests(TestCase):
         self.assertLessEqual(self.old_period.ended_at, timezone.now())
         self.assertEqual(self.old_fallback.ended_at, self.old_fallback.started_at)
         self.assertIsNone(new_period.branch_id)
+        self.device.refresh_from_db()
+        self.assertIsNone(self.device.branch_id)
         self.assertIsNone(new_period.ended_at)
         self.assertTrue(
             active_customer_access_periods(

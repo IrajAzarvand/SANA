@@ -1783,14 +1783,15 @@ class OrganizationReportContractLinkConsistencyTests(TestCase):
             unassigned_at=now - timedelta(minutes=1),
         )
 
-        # The access period remains explicitly tied to the older contract,
-        # while the newer assignment is already closed.
+        # The closed link belongs to an older assignment event. The first
+        # contract is therefore still the latest started assignment and must
+        # remain the exact contract backing this access period.
 
         SubscriptionDevice.objects.filter(pk=first_link.pk).update(
             assigned_at=now - timedelta(days=10)
         )
         SubscriptionDevice.objects.filter(pk=second_link.pk).update(
-            assigned_at=now - timedelta(days=2)
+            assigned_at=now - timedelta(days=12)
         )
         access_started_at = now - timedelta(days=8)
         DeviceCustomerAccessPeriod.objects.create(

@@ -29,6 +29,7 @@ class SubscriptionWizardExistingUserTests(TestCase):
             first_name='نام قبلی',
             last_name='نام خانوادگی قبلی',
             mobile='09120000000',
+            national_id='0098765432',
             account_type='personal',
             role='personal_user',
         )
@@ -58,17 +59,17 @@ class SubscriptionWizardExistingUserTests(TestCase):
         return payload
 
     @patch('organizations.serializers.record_device_lifecycle_event')
-    def test_existing_user_is_updated_without_changing_password(self, _record_event):
+    def test_existing_user_profile_is_unchanged_when_creating_contract(self, _record_event):
         serializer = SubscriptionWizardSerializer(data=self._payload())
         self.assertTrue(serializer.is_valid(), serializer.errors)
         serializer.save()
 
         self.user.refresh_from_db()
-        self.assertEqual(self.user.first_name, 'نام جدید')
-        self.assertEqual(self.user.last_name, 'نام خانوادگی جدید')
-        self.assertEqual(self.user.mobile, '09121111111')
-        self.assertEqual(self.user.national_id, '0012345678')
-        self.assertEqual(self.user.address, 'نشانی جدید')
+        self.assertEqual(self.user.first_name, 'نام قبلی')
+        self.assertEqual(self.user.last_name, 'نام خانوادگی قبلی')
+        self.assertEqual(self.user.mobile, '09120000000')
+        self.assertEqual(self.user.national_id, '0098765432')
+        self.assertEqual(self.user.address, '')
         self.assertTrue(self.user.check_password('Original-Password-123'))
 
     def test_existing_user_username_must_match_selected_account(self):
@@ -165,6 +166,11 @@ class SubscriptionWizardOrganizationSelectionTests(TestCase):
             code='ORG-EXISTING-01',
             phone='02111111111',
         )
+        self.branch = Branch.objects.create(
+            organization=self.organization,
+            name='شعبه اولیه',
+            code='ORG-EXISTING-BRANCH-01',
+        )
         self.manager = User.objects.create_user(
             username='existing-manager',
             password='Original-Password-123',
@@ -208,7 +214,7 @@ class SubscriptionWizardOrganizationSelectionTests(TestCase):
         payload.update(overrides)
         return payload
 
-    def test_existing_organization_is_reused_and_updated(self):
+    def test_existing_organization_profile_is_unchanged_when_creating_contract(self):
         serializer = SubscriptionWizardSerializer(data=self._payload())
         self.assertTrue(serializer.is_valid(), serializer.errors)
         subscription = serializer.save()
@@ -216,11 +222,31 @@ class SubscriptionWizardOrganizationSelectionTests(TestCase):
         self.organization.refresh_from_db()
         self.manager.refresh_from_db()
         self.assertEqual(subscription.organization_id, self.organization.id)
-        self.assertEqual(self.organization.name, 'نام ویرایش‌شده سازمان')
-        self.assertEqual(self.organization.registration_number, '12345')
-        self.assertEqual(self.organization.phone, '02122222222')
+        self.assertEqual(self.organization.name, 'سازمان اولیه')
+        self.assertEqual(self.organization.registration_number, '')
+        self.assertEqual(self.organization.phone, '02111111111')
+        self.assertEqual(self.manager.first_name, 'مدیر')
+        self.assertEqual(self.manager.last_name, 'شرکت')
+        self.assertEqual(self.manager.mobile, '09120000001')
         self.assertEqual(self.manager.organization_id, self.organization.id)
         self.assertTrue(self.manager.check_password('Original-Password-123'))
+
+    def test_new_contract_starts_device_without_branch_even_if_warehouse_record_has_one(self):
+        self.device.branch = self.branch
+        self.device.save(update_fields=['branch', 'updated_at'])
+
+        serializer = SubscriptionWizardSerializer(data=self._payload())
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        subscription = serializer.save()
+
+        self.device.refresh_from_db()
+        access = DeviceCustomerAccessPeriod.objects.get(
+            device=self.device,
+            ended_at__isnull=True,
+        )
+        self.assertEqual(subscription.organization_id, self.organization.pk)
+        self.assertIsNone(self.device.branch_id)
+        self.assertIsNone(access.branch_id)
 
     def test_existing_organization_requires_a_non_empty_name(self):
         serializer = SubscriptionWizardSerializer(

@@ -102,7 +102,7 @@ class DeviceOperationCustomerTransferApiTests(TestCase):
         self.admin_client = APIClient()
         self.admin_client.force_authenticate(user=self.site_admin)
 
-    def test_customer_transfer_applies_target_branch_and_vehicle(self):
+    def test_customer_transfer_keeps_device_unbranched_until_separate_assignment(self):
         response = self.admin_client.post(
             '/api/device-operations/',
             {
@@ -110,7 +110,6 @@ class DeviceOperationCustomerTransferApiTests(TestCase):
                 'operation_type': 'transfer_customer',
                 'target_organization': self.target_organization.pk,
                 'target_subscription': self.target_subscription.pk,
-                # Omitting target_branch must infer it from the selected vehicle.
                 'target_vehicle': self.target_vehicle.pk,
                 'reason': 'transfer test',
             },
@@ -120,13 +119,13 @@ class DeviceOperationCustomerTransferApiTests(TestCase):
         self.assertEqual(response.status_code, 201, response.data)
         self.device.refresh_from_db()
         self.assertEqual(self.device.organization_id, self.target_organization.pk)
-        self.assertEqual(self.device.branch_id, self.target_branch.pk)
+        self.assertIsNone(self.device.branch_id)
         self.assertEqual(self.device.vehicle_id, self.target_vehicle.pk)
         self.assertTrue(
             DeviceCustomerAccessPeriod.objects.filter(
                 device=self.device,
                 organization=self.target_organization,
-                branch=self.target_branch,
+                branch__isnull=True,
                 subscription=self.target_subscription,
                 ended_at__isnull=True,
             ).exists()
@@ -142,6 +141,4 @@ class DeviceOperationCustomerTransferApiTests(TestCase):
             if isinstance(devices_response.data, dict) and 'results' in devices_response.data
             else devices_response.data
         )
-        transferred = next(row for row in rows if row['id'] == self.device.pk)
-        self.assertEqual(transferred['branch_name'], self.target_branch.name)
-        self.assertEqual(transferred['vehicle_plate'], self.target_vehicle.plate)
+        self.assertNotIn(self.device.pk, [row['id'] for row in rows])
