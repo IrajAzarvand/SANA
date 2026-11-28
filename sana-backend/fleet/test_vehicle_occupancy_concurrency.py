@@ -71,14 +71,14 @@ class VehicleOccupancyConcurrencyTests(TransactionTestCase):
         def controlled_check(vehicle, **kwargs):
             original_check(vehicle, **kwargs)
             thread_name = threading.current_thread().name
-            if thread_name == 'vehicle-claim-first':
+            if thread_name.endswith('_0'):
                 first_checked_vehicle.set()
                 if not release_first_operation.wait(timeout=10):
                     raise AssertionError('Timed out waiting to release the first vehicle claim.')
-            elif thread_name == 'vehicle-claim-second':
+            elif thread_name.endswith('_1'):
                 second_reached_availability_check.set()
 
-        def claim_device(device_id, thread_name):
+        def claim_device(device_id):
             close_old_connections()
             try:
                 device = Device.objects.get(pk=device_id)
@@ -96,10 +96,10 @@ class VehicleOccupancyConcurrencyTests(TransactionTestCase):
 
         with patch.object(device_operations, '_ensure_vehicle_available', side_effect=controlled_check):
             with ThreadPoolExecutor(max_workers=2, thread_name_prefix='vehicle-claim') as pool:
-                first = pool.submit(claim_device, self.devices[0].pk, 'vehicle-claim-first')
+                first = pool.submit(claim_device, self.devices[0].pk)
                 self.assertTrue(first_checked_vehicle.wait(timeout=5))
 
-                second = pool.submit(claim_device, self.devices[1].pk, 'vehicle-claim-second')
+                second = pool.submit(claim_device, self.devices[1].pk)
                 # The second operation must be blocked on the Vehicle row lock,
                 # so it cannot reach the occupancy query while the first holds it.
                 self.assertFalse(second_reached_availability_check.wait(timeout=0.5))
