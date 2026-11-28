@@ -15,7 +15,7 @@ from organizations.models import Branch, Organization, Subscription, Subscriptio
 
 
 class ContractBackedDeviceAccessTests(TestCase):
-    def test_device_detail_service_status_uses_exact_organization_access_contract(self):
+    def test_newer_started_organization_assignment_blocks_older_access(self):
         organization = Organization.objects.create(
             name='Exact Device Status Organization',
             code='EXACT-DEVICE-STATUS-ORG',
