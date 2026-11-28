@@ -5,7 +5,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from accounts.models import User
-from fleet.models import Device, DeviceCustomerAccessPeriod, Vehicle
+from fleet.models import Device, DeviceCustomerAccessPeriod, DeviceOperation, Vehicle
 from organizations.models import Branch, Organization, Subscription, SubscriptionDevice
 
 
@@ -142,3 +142,59 @@ class DeviceOperationCustomerTransferApiTests(TestCase):
             else devices_response.data
         )
         self.assertNotIn(self.device.pk, [row['id'] for row in rows])
+
+    def test_customer_transfer_rejects_devices_in_blocked_operational_statuses_without_mutation(self):
+        blocked_statuses = (
+            'faulty',
+            'in_repair',
+            'ready',
+            'lost',
+            'stolen',
+            'unusable',
+            'disposed',
+        )
+        initial_operation_count = DeviceOperation.objects.count()
+
+        for status in blocked_statuses:
+            with self.subTest(status=status):
+                Device.objects.filter(pk=self.device.pk).update(management_status=status)
+
+                response = self.admin_client.post(
+                    '/api/device-operations/',
+                    {
+                        'device': self.device.pk,
+                        'operation_type': 'transfer_customer',
+                        'target_organization': self.target_organization.pk,
+                        'target_subscription': self.target_subscription.pk,
+                        'target_vehicle': self.target_vehicle.pk,
+                        'reason': 'blocked status transfer test',
+                    },
+                    format='json',
+                )
+
+                self.assertEqual(response.status_code, 400, response.data)
+                self.device.refresh_from_db()
+                self.assertEqual(self.device.management_status, status)
+                self.assertEqual(self.device.organization_id, self.source_organization.pk)
+                self.assertEqual(
+                    self.device.current_holder_organization_id,
+                    self.source_organization.pk,
+                )
+                self.assertEqual(self.device.branch_id, self.source_branch.pk)
+                self.assertEqual(self.device.vehicle_id, self.source_vehicle.pk)
+                self.assertTrue(
+                    SubscriptionDevice.objects.filter(
+                        device=self.device,
+                        subscription=self.source_subscription,
+                        unassigned_at__isnull=True,
+                    ).exists()
+                )
+                self.assertTrue(
+                    DeviceCustomerAccessPeriod.objects.filter(
+                        device=self.device,
+                        subscription=self.source_subscription,
+                        ended_at__isnull=True,
+                    ).exists()
+                )
+                self.assertEqual(DeviceOperation.objects.count(), initial_operation_count)
+
