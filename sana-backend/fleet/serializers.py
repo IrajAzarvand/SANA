@@ -277,9 +277,9 @@ class VehicleSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         request = self.context.get('request')
         user = request.user if request else None
+        branch = attrs.get('branch', getattr(self.instance, 'branch', None))
         if user and user.is_main_user:
             organization = attrs.get('organization', getattr(self.instance, 'organization', None))
-            branch = attrs.get('branch', getattr(self.instance, 'branch', None))
             owner = attrs.get('owner_user', getattr(self.instance, 'owner_user', None))
             vehicle_type = attrs.get('vehicle_type', getattr(self.instance, 'vehicle_type', None))
             if organization and organization.pk != user.organization_id:
@@ -291,6 +291,14 @@ class VehicleSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({'owner_user': 'مالک انتخاب‌شده متعلق به سازمان شما نیست.'})
             if vehicle_type and vehicle_type.organization_id not in (None, user.organization_id):
                 raise serializers.ValidationError({'vehicle_type': 'نوع خودرو متعلق به سازمان دیگری است.'})
+
+        # A branched vehicle must remain aligned with every attached device.
+        # Clearing the vehicle branch removes this constraint.
+        if self.instance is not None and branch is not None:
+            if self.instance.devices.exclude(branch_id=branch.pk).exists():
+                raise serializers.ValidationError({
+                    'branch': 'شعبه خودرو باید با شعبه تمام دستگاه‌های متصل یکسان باشد.'
+                })
         return attrs
 
     def create(self, validated_data):

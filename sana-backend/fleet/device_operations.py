@@ -84,7 +84,7 @@ def _validate_transfer_target(*, organization, user, branch=None, vehicle=None, 
             vehicle.organization_id != organization.id
             or vehicle.owner_user_id is not None
             or (vehicle.branch_id and vehicle.branch.status != 'active')
-            or (branch and vehicle.branch_id != branch.id)
+            or vehicle.branch_id != getattr(branch, 'pk', None)
         ):
             raise ValidationError({'target_vehicle': 'خودروی مقصد متعلق به سازمان یا شعبه انتخاب‌شده نیست.'})
         if subscription and (
