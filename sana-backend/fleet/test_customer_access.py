@@ -2175,7 +2175,9 @@ class OrganizationDeviceBranchAssignmentApiTests(TestCase):
                     format='json',
                 )
 
-                self.assertEqual(response.status_code, 409, response.data)
+                # Inactive contracts are excluded by DeviceViewSet.get_queryset(),
+                # so the device is intentionally hidden before the action runs.
+                self.assertEqual(response.status_code, 404, response.data)
                 self.assertTrue(
                     DeviceCustomerAccessPeriod.objects.filter(
                         pk=self.original_period.pk,
