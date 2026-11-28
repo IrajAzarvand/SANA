@@ -1724,6 +1724,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 ended_at=assignment_end,
                 reason='branch_assignment',
             )
+            device.branch = branch
+            device.save(update_fields=['branch', 'updated_at'])
 
             # If the manager selected an end date, schedule the device's
             # organization-wide (no-branch) access period to resume afterwards.
@@ -1891,6 +1893,8 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 ended_at=assignment_end,
                 reason='branch_changed' if branch is not None else 'branch_cleared',
             )
+            device.branch = branch
+            device.save(update_fields=['branch', 'updated_at'])
 
             fallback_period = None
             if fallback_start is not None:
