@@ -80,6 +80,8 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
     let cancelled = false;
 
     if (!open || !deviceId) {
+      transferTargetsRequestRef.current += 1;
+      setOperationTargets({ organizations: [], users: [], branches: [], vehicles: [], subscriptions: [] });
       // This effect intentionally resets modal-local state when the modal closes.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setHistoryDevice(null);
@@ -89,6 +91,11 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
       setHistoryError('');
       return undefined;
     }
+
+    transferTargetsRequestRef.current += 1;
+    // Do not carry target choices from a previously selected device.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setOperationTargets({ organizations: [], users: [], branches: [], vehicles: [], subscriptions: [] });
 
     const loadHistory = async () => {
       setHistoryLoading(true);
@@ -133,6 +140,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
 
     return () => {
       cancelled = true;
+      transferTargetsRequestRef.current += 1;
     };
   }, [open, deviceId]);
 
@@ -150,6 +158,12 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
 
   const loadOrganizationTransferTargets = async (organizationId, branchId = '') => {
     const requestId = ++transferTargetsRequestRef.current;
+    setOperationTargets((current) => ({
+      ...current,
+      branches: [],
+      vehicles: [],
+      subscriptions: [],
+    }));
     if (!organizationId) {
       setOperationTargets((current) => ({ ...current, branches: [], vehicles: [], subscriptions: [] }));
       return;
@@ -172,6 +186,12 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
 
   const loadPersonalTransferSubscriptions = async (userId) => {
     const requestId = ++transferTargetsRequestRef.current;
+    setOperationTargets((current) => ({
+      ...current,
+      branches: [],
+      vehicles: [],
+      subscriptions: [],
+    }));
     if (!userId) {
       setOperationTargets((current) => ({ ...current, subscriptions: [] }));
       return;
@@ -314,7 +334,10 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
   const operationNeedsReplacementType = operationNeedsReplacement && Boolean(operationForm.replacement_device);
 
   const closeModal = () => {
-    if (!historyLoading) onClose();
+    if (historyLoading) return;
+    transferTargetsRequestRef.current += 1;
+    setOperationTargets({ organizations: [], users: [], branches: [], vehicles: [], subscriptions: [] });
+    onClose();
   };
 
   return (
@@ -322,7 +345,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
       open={open}
       onClose={closeModal}
       title={historyDevice ? 'تاریخچه دستگاه ' + historyDevice.imei : 'تاریخچه دستگاه'}
-      footer={<Button variant="secondary" onClick={onClose}>بستن</Button>}
+      footer={<Button variant="secondary" onClick={closeModal}>بستن</Button>}
     >
       <div className="space-y-5">
         {historyLoading && <LoadingSpinner />}
@@ -541,6 +564,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
                         <Select label="سازمان مقصد" placeholder="انتخاب سازمان" value={operationForm.target_organization} onChange={async (e) => {
                           const organizationId = e.target.value;
                           setOperationForm((current) => ({ ...current, target_organization: organizationId, target_user: '', target_branch: '', target_vehicle: '', target_subscription: '' }));
+                          setOperationTargets((current) => ({ ...current, branches: [], vehicles: [], subscriptions: [] }));
                           await loadOrganizationTransferTargets(organizationId);
                         }} options={operationTargets.organizations.map((item) => ({ value: item.id, label: item.name }))} />
                         <Select label="کاربر شخصی مقصد" placeholder="در صورت انتقال به مشتری شخصی" value={operationForm.target_user} onChange={async (e) => {
@@ -554,6 +578,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
                             <Select label="شعبه مقصد (اختیاری)" placeholder="بدون تعیین شعبه" value={operationForm.target_branch} onChange={async (e) => {
                               const branchId = e.target.value;
                               setOperationForm((current) => ({ ...current, target_branch: branchId, target_vehicle: '' }));
+                              setOperationTargets((current) => ({ ...current, vehicles: [] }));
                               await loadOrganizationTransferTargets(operationForm.target_organization, branchId);
                             }} options={operationTargets.branches.map((item) => ({ value: item.id, label: item.name }))} />
                             <Select label="خودروی مقصد (اختیاری)" placeholder="بدون اتصال به خودرو" value={operationForm.target_vehicle} onChange={(e) => setOperationForm((current) => ({ ...current, target_vehicle: e.target.value }))} options={operationTargets.vehicles.map((item) => ({ value: item.id, label: item.plate }))} />
