@@ -416,6 +416,10 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
             device = instance.device
             subscription = instance.subscription
 
+            # A new contract assignment starts without a branch. Branch access
+            # is granted later through the organization branch-assignment API.
+            device.branch = None
+
             # Contract assignment changes the current holder, never legal ownership.
             if subscription.organization:
                 device.current_holder_organization = subscription.organization
@@ -438,7 +442,7 @@ class SubscriptionDeviceSerializer(serializers.ModelSerializer):
             _open_customer_access(
                 device,
                 subscription=subscription,
-                branch=device.branch,
+                branch=None,
                 organization=subscription.organization,
                 user=subscription.user,
                 reason='contract_assignment',
@@ -1155,17 +1159,9 @@ class SubscriptionWizardSerializer(serializers.Serializer):
             if customer_type == 'organization':
                 if organization_id:
                     organization = Organization.objects.select_for_update().get(id=organization_id)
-                    organization_fields = {
-                        'name': validated_data.get('organization_name', organization.name),
-                        'registration_number': validated_data.get('registration_number', organization.registration_number),
-                        'economy_code': validated_data.get('economy_code', organization.economy_code),
-                        'phone': validated_data.get('organization_phone', organization.phone),
-                        'email': validated_data.get('organization_email', organization.email),
-                        'address': validated_data.get('organization_address', organization.address),
-                    }
-                    for field, value in organization_fields.items():
-                        setattr(organization, field, value)
-                    organization.save(update_fields=list(organization_fields.keys()) + ['updated_at'])
+                    # Selecting an existing organization for a new contract
+                    # must never mutate its shared profile. Profile edits belong
+                    # to the dedicated organization settings workflow.
                 else:
                     org_code = validated_data.get('organization_code', '').strip()
                     if not org_code:
@@ -1191,21 +1187,10 @@ class SubscriptionWizardSerializer(serializers.Serializer):
             existing_user_id = validated_data.pop('existing_user_id', None)
 
             if existing_user_id:
-                # حساب موجود حفظ می‌شود؛ فقط اطلاعات مجاز فرم به‌روزرسانی می‌شوند.
-                # رمز عبور عمداً دست‌نخورده باقی می‌ماند.
+                # Selecting an existing account for a new contract must not
+                # mutate its shared profile. Profile edits belong to the
+                # dedicated account-management workflow.
                 user = User.objects.select_for_update().get(id=existing_user_id)
-                editable_fields = (
-                    'first_name', 'last_name', 'mobile', 'national_id', 'address',
-                )
-                changed_fields = []
-                for field in editable_fields:
-                    if field in validated_data:
-                        value = validated_data[field]
-                        if getattr(user, field) != value:
-                            setattr(user, field, value)
-                            changed_fields.append(field)
-                if changed_fields:
-                    user.save(update_fields=changed_fields)
 
                 # مدیر موجود فقط در صورت نداشتن سازمان به سازمان انتخاب‌شده وصل می‌شود.
                 # انتقال از یک سازمان به سازمان دیگر عمداً مجاز نیست.
@@ -1284,6 +1269,8 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                     device.current_holder_user = user
 
                 device.management_status = 'installed'
+                # Initial allocation to a contract is intentionally unbranched.
+                device.branch = None
                 device.save()
                 if device.organization_id or device.owner_user_id:
                     _open_ownership(
@@ -1295,7 +1282,7 @@ class SubscriptionWizardSerializer(serializers.Serializer):
                 _open_customer_access(
                     device,
                     subscription=subscription,
-                    branch=device.branch,
+                    branch=None,
                     organization=organization,
                     user=user if customer_type == 'personal' else None,
                     reason='contract_assignment',
