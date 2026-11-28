@@ -799,6 +799,29 @@ class DeviceViewSet(viewsets.ModelViewSet):
             for period in access_periods.order_by('started_at', 'id'):
                 access_by_device.setdefault(period.device_id, []).append(period)
 
+        active_links_by_key = {}
+        if access_by_device:
+            subscription_ids = {
+                period.subscription_id
+                for periods in access_by_device.values()
+                for period in periods
+                if period.subscription_id
+            }
+            if subscription_ids:
+                active_links = SubscriptionDevice.objects.filter(
+                    subscription_id__in=subscription_ids,
+                    device_id__in=access_by_device.keys(),
+                    assigned_at__lte=now,
+                    unassigned_at__isnull=True,
+                    start_date__lte=today,
+                    end_date__gte=today,
+                ).order_by('-assigned_at', '-id')
+                for link in active_links:
+                    active_links_by_key.setdefault(
+                        (link.subscription_id, link.device_id),
+                        link,
+                    )
+
         if request.user.is_personal_user or request.user.is_branch_manager:
             preference = PersonalAlertPreference.objects.filter(user=request.user).only('disabled_event_types').first()
             disabled_event_types = set(preference.disabled_event_types or []) if preference else set()
@@ -832,18 +855,10 @@ class DeviceViewSet(viewsets.ModelViewSet):
                     if event_start <= event_end:
                         periods.append({'start': event_start, 'end': event_end})
                 else:
-                    # Check every historical access interval for this customer.
-                    # This blocks events before assignment and after access ended,
-                    # while preserving events from a previous valid assignment.
+                    # Use the exact current contract link for this access period.
                     for access_period in access_by_device.get(device.pk, []):
                         subscription = access_period.subscription
-                        link = subscription.subscription_devices.filter(
-                            device=device,
-                            assigned_at__lte=now,
-                            unassigned_at__isnull=True,
-                            start_date__lte=today,
-                            end_date__gte=today,
-                        ).order_by('-assigned_at', '-id').first()
+                        link = active_links_by_key.get((subscription.pk, device.pk))
                         if link is None:
                             continue
                         contract_start = timezone.make_aware(datetime.combine(
