@@ -89,7 +89,7 @@ class VehicleOccupancyConcurrencyTests(TransactionTestCase):
                     performed_by=self.admin,
                     subscription=self.subscription,
                     target_vehicle=vehicle,
-                    reason='concurrent vehicle occupancy test',
+                    reason='concurrent claim test',
                 )
             finally:
                 close_old_connections()
