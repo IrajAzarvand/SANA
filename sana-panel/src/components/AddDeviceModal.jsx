@@ -114,7 +114,9 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
   const [form, setForm] = useState({ imei: '', sim_number: '', manufacturer: '', device_model: '' });
   const [models, setModels] = useState([]);
   const [modelsLoaded, setModelsLoaded] = useState(false);
-  const loadingModels = open && !modelsLoaded;
+  const [modelsLoadError, setModelsLoadError] = useState('');
+  const [modelsRetry, setModelsRetry] = useState(0);
+  const loadingModels = open && !modelsLoaded && !modelsLoadError;
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -123,16 +125,21 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
     let cancelled = false;
     deviceModelsAPI.list()
       .then((data) => {
-        if (!cancelled) setModels(Array.isArray(data) ? data : (data.results || []));
+        if (cancelled) return;
+        setModels(Array.isArray(data) ? data : (data.results || []));
+        setModelsLoadError('');
+        setModelsLoaded(true);
       })
       .catch(() => {
-        if (!cancelled) setError('دریافت فهرست برندها و مدل‌های Traccar ناموفق بود.');
-      })
-      .finally(() => {
-        if (!cancelled) setModelsLoaded(true);
+        if (!cancelled) setModelsLoadError('دریافت فهرست برندها و مدل‌های Traccar ناموفق بود.');
       });
     return () => { cancelled = true; };
-  }, [open, modelsLoaded]);
+  }, [open, modelsLoaded, modelsRetry]);
+
+  const retryModelsLoad = () => {
+    setModelsLoadError('');
+    setModelsRetry((attempt) => attempt + 1);
+  };
 
   const brandOptions = useMemo(() => {
     return [...new Set(models.map((model) => model.manufacturer))]
@@ -233,6 +240,14 @@ export default function AddDeviceModal({ open, onClose, onSuccess }) {
         {error && (
           <div className="bg-danger/10 border border-danger/30 rounded-field p-3">
             <p className="text-xs text-danger whitespace-pre-line">{error}</p>
+          </div>
+        )}
+        {modelsLoadError && (
+          <div className="bg-danger/10 border border-danger/30 rounded-field p-3 space-y-2">
+            <p className="text-xs text-danger">{modelsLoadError}</p>
+            <Button type="button" size="sm" variant="secondary" onClick={retryModelsLoad}>
+              تلاش دوباره برای دریافت مدل‌ها
+            </Button>
           </div>
         )}
 
