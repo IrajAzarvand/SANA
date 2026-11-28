@@ -1644,8 +1644,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
             # assignments. The scoped get_object() prevents cross-tenant IDs.
             visible_device = self.get_object()
             device = Device.objects.select_for_update().get(pk=visible_device.pk)
-            if device.organization_id != user.organization_id:
-                return Response({'detail': 'دستگاه متعلق به سازمان شما نیست.'}, status=404)
             if device.branch_id is not None:
                 return Response(
                     {'detail': 'این دستگاه قبلاً به شعبه‌ای اختصاص یافته است.'},
