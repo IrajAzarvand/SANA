@@ -1,4 +1,4 @@
-from django.db.models import F, OuterRef, Q, Subquery
+from django.db.models import Exists, F, OuterRef, Q, Subquery
 from django.utils import timezone
 
 from .models import DeviceCustomerAccessPeriod
@@ -69,20 +69,30 @@ def active_customer_access_periods(*, organization_id=None, user_id=None, branch
         assigned_at__lte=now,
     ).order_by('-assigned_at', '-id').values('pk')[:1]
 
+    # Keep every link predicate on one exact SubscriptionDevice row.
+    # Filtering the reverse relation in separate queryset.filter() calls can
+    # create independent joins, allowing a closed latest link and an older
+    # open link on the same contract to satisfy different parts of the query.
+    valid_latest_link = SubscriptionDevice.objects.filter(
+        device_id=OuterRef('device_id'),
+        subscription_id=OuterRef('subscription_id'),
+        pk=Subquery(latest_link_id),
+        assigned_at__lte=now,
+        unassigned_at__isnull=True,
+        start_date__lte=today,
+        end_date__gte=today,
+    )
+
     periods = DeviceCustomerAccessPeriod.objects.filter(
         pk=Subquery(latest_period_id),
         started_at__lte=now,
-        subscription__subscription_devices__pk=Subquery(latest_link_id),
     ).filter(
         Q(ended_at__isnull=True) | Q(ended_at__gte=now),
         subscription__status='active',
         subscription__start_date__lte=today,
         subscription__end_date__gte=today,
-        subscription__subscription_devices__device_id=F('device_id'),
-        subscription__subscription_devices__assigned_at__lte=now,
-        subscription__subscription_devices__unassigned_at__isnull=True,
-        subscription__subscription_devices__start_date__lte=today,
-        subscription__subscription_devices__end_date__gte=today,
+    ).filter(
+        Exists(valid_latest_link)
     )
 
     if organization_id:
