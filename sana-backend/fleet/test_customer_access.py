@@ -1973,6 +1973,8 @@ class OrganizationDeviceBranchAssignmentApiTests(TestCase):
         self.original_period.refresh_from_db()
 
         self.assertEqual(branch_period.branch_id, self.branch.pk)
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.branch_id, self.branch.pk)
         self.assertEqual(branch_period.organization_id, self.organization.pk)
         self.assertEqual(branch_period.subscription_id, self.subscription.pk)
         self.assertIsNotNone(branch_period.ended_at)
@@ -2017,6 +2019,8 @@ class OrganizationDeviceBranchAssignmentApiTests(TestCase):
             pk=response.data['access_period_id']
         )
         self.assertEqual(period.branch_id, self.branch.pk)
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.branch_id, self.branch.pk)
         self.assertIsNone(period.ended_at)
         self.assertFalse(
             DeviceCustomerAccessPeriod.objects.filter(
@@ -2304,6 +2308,8 @@ class OrganizationDeviceBranchChangeApiTests(TestCase):
         self.assertLessEqual(self.old_period.ended_at, timezone.now())
         self.assertEqual(self.old_fallback.ended_at, self.old_fallback.started_at)
         self.assertEqual(new_period.branch_id, self.new_branch.pk)
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.branch_id, self.new_branch.pk)
         self.assertEqual(
             timezone.localtime(new_period.ended_at).date(),
             self.assignment_end,
@@ -2362,6 +2368,8 @@ class OrganizationDeviceBranchChangeApiTests(TestCase):
         self.assertLessEqual(self.old_period.ended_at, timezone.now())
         self.assertEqual(self.old_fallback.ended_at, self.old_fallback.started_at)
         self.assertIsNone(new_period.branch_id)
+        self.device.refresh_from_db()
+        self.assertIsNone(self.device.branch_id)
         self.assertIsNone(new_period.ended_at)
         self.assertTrue(
             active_customer_access_periods(
