@@ -274,6 +274,7 @@ function DevicesTab() {
 
   const handleEdit = async (device) => {
     setEditError('');
+    setModelsLoadError('');
     setEditModelLoaded(false);
     setEditingDevice(device);
     setEditForm({
