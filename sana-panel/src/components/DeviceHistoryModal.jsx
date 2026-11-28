@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Plus, RotateCcw } from 'lucide-react';
 import Badge from './Badge';
 import Button from './Button';
@@ -62,6 +62,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
   const [operationTargets, setOperationTargets] = useState({ organizations: [], users: [], branches: [], vehicles: [], subscriptions: [] });
   const [replacementModalOpen, setReplacementModalOpen] = useState(false);
   const [operationSaving, setOperationSaving] = useState(false);
+  const transferTargetsRequestRef = useRef(0);
   const [operationForm, setOperationForm] = useState({
     operation_type: 'return_for_repair',
     replacement_type: 'temporary_repair',
@@ -79,7 +80,10 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
     let cancelled = false;
 
     if (!open || !deviceId) {
+      transferTargetsRequestRef.current += 1;
       // This effect intentionally resets modal-local state when the modal closes.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setOperationTargets({ organizations: [], users: [], branches: [], vehicles: [], subscriptions: [] });
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setHistoryDevice(null);
       setHistoryEvents([]);
@@ -88,6 +92,11 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
       setHistoryError('');
       return undefined;
     }
+
+    transferTargetsRequestRef.current += 1;
+    // Do not carry target choices from a previously selected device.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setOperationTargets({ organizations: [], users: [], branches: [], vehicles: [], subscriptions: [] });
 
     const loadHistory = async () => {
       setHistoryLoading(true);
@@ -132,6 +141,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
 
     return () => {
       cancelled = true;
+      transferTargetsRequestRef.current += 1;
     };
   }, [open, deviceId]);
 
@@ -147,8 +157,77 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
     }
   };
 
+  const loadOrganizationTransferTargets = async (organizationId, branchId = '') => {
+    const requestId = ++transferTargetsRequestRef.current;
+    setOperationTargets((current) => ({
+      ...current,
+      ...(branchId ? {} : { branches: [] }),
+      vehicles: [],
+      subscriptions: [],
+    }));
+    if (!organizationId) {
+      setOperationTargets((current) => ({ ...current, branches: [], vehicles: [], subscriptions: [] }));
+      return;
+    }
+    try {
+      const [branches, vehicles, subscriptions] = await Promise.all([
+        fetchAllPages((params) => branchesAPI.list({ ...params, organization: organizationId })),
+        fetchAllPages((params) => vehiclesAPI.list({ ...params, organization: organizationId, ...(branchId ? { branch: branchId } : {}) })),
+        fetchAllPages((params) => subscriptionsAPI.list({ ...params, status: 'active', customer_type: 'organization', organization: organizationId })),
+      ]);
+      if (requestId !== transferTargetsRequestRef.current) return;
+      setOperationTargets((current) => ({ ...current, branches, vehicles, subscriptions }));
+    } catch (err) {
+      console.error('Error loading target organization branches and vehicles:', err);
+      if (requestId === transferTargetsRequestRef.current) {
+        setOperationTargets((current) => ({ ...current, branches: [], vehicles: [], subscriptions: [] }));
+      }
+    }
+  };
+
+  const loadPersonalTransferSubscriptions = async (userId) => {
+    const requestId = ++transferTargetsRequestRef.current;
+    setOperationTargets((current) => ({
+      ...current,
+      branches: [],
+      vehicles: [],
+      subscriptions: [],
+    }));
+    if (!userId) {
+      setOperationTargets((current) => ({ ...current, subscriptions: [] }));
+      return;
+    }
+    try {
+      const subscriptions = await fetchAllPages((params) => subscriptionsAPI.list({
+        ...params,
+        status: 'active',
+        customer_type: 'personal',
+        user: userId,
+      }));
+      if (requestId !== transferTargetsRequestRef.current) return;
+      setOperationTargets((current) => ({ ...current, subscriptions }));
+    } catch (err) {
+      console.error('Error loading target personal subscriptions:', err);
+      if (requestId === transferTargetsRequestRef.current) {
+        setOperationTargets((current) => ({ ...current, subscriptions: [] }));
+      }
+    }
+  };
+
   const loadOperationTargets = async (operationType) => {
     if (!historyDevice) return;
+    const requestId = ++transferTargetsRequestRef.current;
+    const deviceIdForRequest = historyDevice.id;
+    if (operationType === 'transfer_customer') {
+      setOperationTargets((current) => ({
+        ...current,
+        organizations: [],
+        users: [],
+        branches: [],
+        vehicles: [],
+        subscriptions: [],
+      }));
+    }
     try {
       const normalize = (result) => Array.isArray(result) ? result : result.results || [];
       if (operationType === 'disposition') {
@@ -158,6 +237,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
           fetchAllPages((params) => subscriptionsAPI.list({ ...params, status: 'active' })),
           vehiclesAPI.list(historyDevice.organization ? { organization: historyDevice.organization } : {}),
         ]);
+        if (requestId !== transferTargetsRequestRef.current || deviceIdForRequest !== historyDevice.id) return;
         setOperationTargets((current) => ({
           ...current,
           organizations: orgs,
@@ -166,26 +246,32 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
           vehicles: normalize(vehicles),
         }));
       } else if (operationType === 'transfer_customer') {
-        const [orgs, users, subs] = await Promise.all([
+        const [orgs, users] = await Promise.all([
           fetchAllPages(organizationsAPI.list),
           fetchAllPages(usersAPI.list),
-          fetchAllPages((params) => subscriptionsAPI.list({ ...params, status: 'active' })),
         ]);
+        if (requestId !== transferTargetsRequestRef.current || deviceIdForRequest !== historyDevice.id) return;
         setOperationTargets((current) => ({
           ...current,
           organizations: orgs,
           users,
-          subscriptions: normalize(subs),
+          branches: [],
+          vehicles: [],
+          subscriptions: [],
         }));
       } else if (operationType === 'transfer_branch') {
         const result = await branchesAPI.list(historyDevice.organization ? { organization: historyDevice.organization } : {});
+        if (requestId !== transferTargetsRequestRef.current || deviceIdForRequest !== historyDevice.id) return;
         setOperationTargets((current) => ({ ...current, branches: normalize(result) }));
       } else if (operationType === 'transfer_vehicle') {
         const result = await vehiclesAPI.list(historyDevice.organization ? { organization: historyDevice.organization } : {});
+        if (requestId !== transferTargetsRequestRef.current || deviceIdForRequest !== historyDevice.id) return;
         setOperationTargets((current) => ({ ...current, vehicles: normalize(result) }));
       }
     } catch (err) {
-      console.error('Error loading operation targets:', err);
+      if (requestId === transferTargetsRequestRef.current) {
+        console.error('Error loading operation targets:', err);
+      }
     }
   };
 
@@ -266,8 +352,14 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
   const operationNeedsReplacement = ['return_for_repair', 'lost', 'temporary_replacement', 'permanent_replacement'].includes(operationForm.operation_type);
   const operationNeedsReplacementType = operationNeedsReplacement && Boolean(operationForm.replacement_device);
 
+  const handleClose = () => {
+    transferTargetsRequestRef.current += 1;
+    setOperationTargets({ organizations: [], users: [], branches: [], vehicles: [], subscriptions: [] });
+    onClose();
+  };
+
   const closeModal = () => {
-    if (!historyLoading) onClose();
+    if (!historyLoading) handleClose();
   };
 
   return (
@@ -275,7 +367,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
       open={open}
       onClose={closeModal}
       title={historyDevice ? 'تاریخچه دستگاه ' + historyDevice.imei : 'تاریخچه دستگاه'}
-      footer={<Button variant="secondary" onClick={onClose}>بستن</Button>}
+      footer={<Button variant="secondary" onClick={handleClose}>بستن</Button>}
     >
       <div className="space-y-5">
         {historyLoading && <LoadingSpinner />}
@@ -468,6 +560,9 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
                       value={operationForm.operation_type}
                       onChange={async (e) => {
                         const value = e.target.value;
+                        if (value !== 'transfer_customer') {
+                          transferTargetsRequestRef.current += 1;
+                        }
                         setOperationForm((current) => ({
                           ...current,
                           operation_type: value,
@@ -491,8 +586,29 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
                     />
                     {operationForm.operation_type === 'transfer_customer' && (
                       <div className="space-y-3 rounded-card border border-border-base bg-bg-base p-3">
-                        <Select label="سازمان مقصد" placeholder="انتخاب سازمان" value={operationForm.target_organization} onChange={(e) => setOperationForm((current) => ({ ...current, target_organization: e.target.value, target_user: '' }))} options={operationTargets.organizations.map((item) => ({ value: item.id, label: item.name }))} />
-                        <Select label="کاربر شخصی مقصد" placeholder="در صورت انتقال به مشتری شخصی" value={operationForm.target_user} onChange={(e) => setOperationForm((current) => ({ ...current, target_user: e.target.value, target_organization: '' }))} options={operationTargets.users.filter((item) => item.account_type === 'personal').map((item) => ({ value: item.id, label: item.full_name || item.username }))} />
+                        <Select label="سازمان مقصد" placeholder="انتخاب سازمان" value={operationForm.target_organization} onChange={async (e) => {
+                          const organizationId = e.target.value;
+                          setOperationForm((current) => ({ ...current, target_organization: organizationId, target_user: '', target_branch: '', target_vehicle: '', target_subscription: '' }));
+                          setOperationTargets((current) => ({ ...current, branches: [], vehicles: [], subscriptions: [] }));
+                          await loadOrganizationTransferTargets(organizationId);
+                        }} options={operationTargets.organizations.map((item) => ({ value: item.id, label: item.name }))} />
+                        <Select label="کاربر شخصی مقصد" placeholder="در صورت انتقال به مشتری شخصی" value={operationForm.target_user} onChange={async (e) => {
+                          const userId = e.target.value;
+                          setOperationForm((current) => ({ ...current, target_user: userId, target_organization: '', target_branch: '', target_vehicle: '', target_subscription: '' }));
+                          setOperationTargets((current) => ({ ...current, branches: [], vehicles: [], subscriptions: [] }));
+                          await loadPersonalTransferSubscriptions(userId);
+                        }} options={operationTargets.users.filter((item) => item.account_type === 'personal').map((item) => ({ value: item.id, label: item.full_name || item.username }))} />
+                        {operationForm.target_organization && (
+                          <>
+                            <Select label="شعبه مقصد (اختیاری)" placeholder="بدون تعیین شعبه" value={operationForm.target_branch} onChange={async (e) => {
+                              const branchId = e.target.value;
+                              setOperationForm((current) => ({ ...current, target_branch: branchId, target_vehicle: '' }));
+                              setOperationTargets((current) => ({ ...current, vehicles: [] }));
+                              await loadOrganizationTransferTargets(operationForm.target_organization, branchId);
+                            }} options={operationTargets.branches.map((item) => ({ value: item.id, label: item.name }))} />
+                            <Select label="خودروی مقصد (اختیاری)" placeholder="بدون اتصال به خودرو" value={operationForm.target_vehicle} onChange={(e) => setOperationForm((current) => ({ ...current, target_vehicle: e.target.value }))} options={operationTargets.vehicles.map((item) => ({ value: item.id, label: item.plate }))} />
+                          </>
+                        )}
                         <Select label="قرارداد مقصد (اختیاری)" placeholder="انتخاب قرارداد" value={operationForm.target_subscription} onChange={(e) => setOperationForm((current) => ({ ...current, target_subscription: e.target.value }))} options={operationTargets.subscriptions.map((item) => ({ value: item.id, label: item.contract_number }))} />
                       </div>
                     )}
