@@ -9,6 +9,7 @@ on:
       - ".github/workflows/sana-gps-tests.yml"
   push:
     branches:
+      - main
       - "fix/gps-stages-1-3-telemetry-compliance"
     paths:
       - "sana-gps/**"
