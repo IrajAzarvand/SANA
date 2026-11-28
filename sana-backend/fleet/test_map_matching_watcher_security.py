@@ -85,7 +85,7 @@ class MapMatchingWatcherAccessTests(TestCase):
         force_authenticate(request, user=user)
 
         with (
-            patch('fleet.views.authorized_devices_for_user', return_value=Device.objects.none) as authorized_scope,
+            patch('fleet.views.authorized_devices_for_user', return_value=Device.objects.none()) as authorized_scope,
             patch('fleet.views.connection.cursor') as cursor,
         ):
             response = DeviceViewSet.as_view(
