@@ -6,7 +6,7 @@ from django.utils.dateparse import parse_datetime
 from datetime import datetime, timedelta, time as datetime_time
 import math
 from django.db import connection, transaction
-from django.db.models import Count, Exists, OuterRef, Prefetch, Q, Value
+from django.db.models import Count, Exists, F, OuterRef, Prefetch, Q, Value
 from django.db.models.functions import Concat, Lower
 from rest_framework import viewsets, filters
 from rest_framework.decorators import action
@@ -1866,7 +1866,6 @@ class DeviceViewSet(viewsets.ModelViewSet):
             # as history; the partial unique constraint permits only one open row.
             DeviceCustomerAccessPeriod.objects.filter(
                 pk=current_period.pk,
-                ended_at__isnull=False,
             ).update(ended_at=now)
             DeviceCustomerAccessPeriod.objects.filter(
                 device_id=device.pk,
