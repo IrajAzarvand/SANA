@@ -161,7 +161,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
     const requestId = ++transferTargetsRequestRef.current;
     setOperationTargets((current) => ({
       ...current,
-      branches: [],
+      ...(branchId ? {} : { branches: [] }),
       vehicles: [],
       subscriptions: [],
     }));
