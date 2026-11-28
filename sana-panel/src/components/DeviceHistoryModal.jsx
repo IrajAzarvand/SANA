@@ -71,7 +71,6 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
     description: '',
     target_organization: '',
     target_user: '',
-    target_branch: '',
     target_vehicle: '',
     target_subscription: '',
   });
@@ -157,11 +156,10 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
     }
   };
 
-  const loadOrganizationTransferTargets = async (organizationId, branchId = '') => {
+  const loadOrganizationTransferTargets = async (organizationId) => {
     const requestId = ++transferTargetsRequestRef.current;
     setOperationTargets((current) => ({
       ...current,
-      ...(branchId ? {} : { branches: [] }),
       vehicles: [],
       subscriptions: [],
     }));
@@ -170,13 +168,12 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
       return;
     }
     try {
-      const [branches, vehicles, subscriptions] = await Promise.all([
-        fetchAllPages((params) => branchesAPI.list({ ...params, organization: organizationId })),
-        fetchAllPages((params) => vehiclesAPI.list({ ...params, organization: organizationId, ...(branchId ? { branch: branchId } : {}) })),
+      const [vehicles, subscriptions] = await Promise.all([
+        fetchAllPages((params) => vehiclesAPI.list({ ...params, organization: organizationId })),
         fetchAllPages((params) => subscriptionsAPI.list({ ...params, status: 'active', customer_type: 'organization', organization: organizationId })),
       ]);
       if (requestId !== transferTargetsRequestRef.current) return;
-      setOperationTargets((current) => ({ ...current, branches, vehicles, subscriptions }));
+      setOperationTargets((current) => ({ ...current, vehicles, subscriptions }));
     } catch (err) {
       console.error('Error loading target organization branches and vehicles:', err);
       if (requestId === transferTargetsRequestRef.current) {
@@ -287,7 +284,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
         description: operationForm.description || '',
       };
 
-      ['target_organization', 'target_user', 'target_branch', 'target_vehicle', 'target_subscription'].forEach((key) => {
+      ['target_organization', 'target_user', 'target_vehicle', 'target_subscription'].forEach((key) => {
         if (operationForm[key]) payload[key] = Number(operationForm[key]);
       });
 
@@ -306,7 +303,6 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
         description: '',
         target_organization: '',
         target_user: '',
-        target_branch: '',
         target_vehicle: '',
         target_subscription: '',
       });
@@ -588,26 +584,18 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
                       <div className="space-y-3 rounded-card border border-border-base bg-bg-base p-3">
                         <Select label="سازمان مقصد" placeholder="انتخاب سازمان" value={operationForm.target_organization} onChange={async (e) => {
                           const organizationId = e.target.value;
-                          setOperationForm((current) => ({ ...current, target_organization: organizationId, target_user: '', target_branch: '', target_vehicle: '', target_subscription: '' }));
+                          setOperationForm((current) => ({ ...current, target_organization: organizationId, target_user: '', target_vehicle: '', target_subscription: '' }));
                           setOperationTargets((current) => ({ ...current, branches: [], vehicles: [], subscriptions: [] }));
                           await loadOrganizationTransferTargets(organizationId);
                         }} options={operationTargets.organizations.map((item) => ({ value: item.id, label: item.name }))} />
                         <Select label="کاربر شخصی مقصد" placeholder="در صورت انتقال به مشتری شخصی" value={operationForm.target_user} onChange={async (e) => {
                           const userId = e.target.value;
-                          setOperationForm((current) => ({ ...current, target_user: userId, target_organization: '', target_branch: '', target_vehicle: '', target_subscription: '' }));
+                          setOperationForm((current) => ({ ...current, target_user: userId, target_organization: '', target_vehicle: '', target_subscription: '' }));
                           setOperationTargets((current) => ({ ...current, branches: [], vehicles: [], subscriptions: [] }));
                           await loadPersonalTransferSubscriptions(userId);
                         }} options={operationTargets.users.filter((item) => item.account_type === 'personal').map((item) => ({ value: item.id, label: item.full_name || item.username }))} />
                         {operationForm.target_organization && (
-                          <>
-                            <Select label="شعبه مقصد (اختیاری)" placeholder="بدون تعیین شعبه" value={operationForm.target_branch} onChange={async (e) => {
-                              const branchId = e.target.value;
-                              setOperationForm((current) => ({ ...current, target_branch: branchId, target_vehicle: '' }));
-                              setOperationTargets((current) => ({ ...current, vehicles: [] }));
-                              await loadOrganizationTransferTargets(operationForm.target_organization, branchId);
-                            }} options={operationTargets.branches.map((item) => ({ value: item.id, label: item.name }))} />
-                            <Select label="خودروی مقصد (اختیاری)" placeholder="بدون اتصال به خودرو" value={operationForm.target_vehicle} onChange={(e) => setOperationForm((current) => ({ ...current, target_vehicle: e.target.value }))} options={operationTargets.vehicles.map((item) => ({ value: item.id, label: item.plate }))} />
-                          </>
+                          <Select label="خودروی مقصد (اختیاری)" placeholder="بدون اتصال به خودرو" value={operationForm.target_vehicle} onChange={(e) => setOperationForm((current) => ({ ...current, target_vehicle: e.target.value }))} options={operationTargets.vehicles.map((item) => ({ value: item.id, label: item.plate }))} />
                         )}
                         <Select label="قرارداد مقصد (اختیاری)" placeholder="انتخاب قرارداد" value={operationForm.target_subscription} onChange={(e) => setOperationForm((current) => ({ ...current, target_subscription: e.target.value }))} options={operationTargets.subscriptions.map((item) => ({ value: item.id, label: item.contract_number }))} />
                       </div>
