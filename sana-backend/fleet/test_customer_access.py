@@ -93,10 +93,13 @@ class ContractBackedDeviceAccessTests(TestCase):
 
         main_request = SimpleNamespace(user=main_user)
         branch_request = SimpleNamespace(user=branch_user)
-        self.assertTrue(
+        # A newer started assignment supersedes the older contract for
+        # both organization and personal access, even when the newer link
+        # has already been unassigned or its contract is suspended.
+        self.assertFalse(
             DeviceSerializer(context={'request': main_request}).get_data_active(device)
         )
-        self.assertTrue(
+        self.assertFalse(
             BranchManagerDeviceSerializer(
                 context={'request': branch_request}
             ).get_data_active(device)
@@ -744,7 +747,7 @@ class DeviceActiveAssignmentSelectionTests(TestCase):
 
 
 class DispositionCustomerAccessTests(TestCase):
-    def test_disposition_transfer_moves_access_to_target_customer_and_branch(self):
+    def test_disposition_transfer_moves_access_to_target_customer_without_branch(self):
         old_organization = Organization.objects.create(
             name='Disposition Old Organization',
             code='DISPOSITION-OLD-ORG',
@@ -812,7 +815,6 @@ class DispositionCustomerAccessTests(TestCase):
             performed_by=admin,
             target_subscription=new_subscription,
             target_organization=new_organization,
-            target_branch=new_branch,
             outcome_action='transfer_customer',
             reason='customer_transfer',
         )
@@ -828,9 +830,16 @@ class DispositionCustomerAccessTests(TestCase):
         self.assertTrue(
             active_customer_access_periods(
                 organization_id=new_organization.pk,
+            ).filter(device=device).exists()
+        )
+        self.assertFalse(
+            active_customer_access_periods(
+                organization_id=new_organization.pk,
                 branch_id=new_branch.pk,
             ).filter(device=device).exists()
         )
+        device.refresh_from_db()
+        self.assertIsNone(device.branch_id)
         self.assertEqual(
             SubscriptionDevice.objects.filter(
                 device=device,
