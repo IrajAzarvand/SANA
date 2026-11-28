@@ -2102,3 +2102,88 @@ class HistoricalSubscriptionOperationDeviceDisclosureTests(TestCase):
         self.assertIsNone(rows[0]['device_imei'])
         self.assertIsNone(rows[0]['device_sim'])
         self.assertIsNone(rows[0]['vehicle_plate'])
+
+
+class SubscriptionVehiclePlateTenantVisibilityTests(TestCase):
+    def setUp(self):
+        self.organization = Organization.objects.create(
+            name='Subscription Vehicle Visibility Customer',
+            code='SUB-VEH-VIS-CUSTOMER',
+        )
+        self.foreign_organization = Organization.objects.create(
+            name='Subscription Vehicle Visibility Foreign',
+            code='SUB-VEH-VIS-FOREIGN',
+        )
+        self.manager = User.objects.create_user(
+            username='subscription_vehicle_visibility_manager',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=self.organization,
+        )
+        self.vehicle = Vehicle.objects.create(
+            plate='77الف777',
+            organization=self.foreign_organization,
+        )
+        self.device = Device.objects.create(
+            imei='860000000009977',
+            sim_number='09120009977',
+            organization=self.organization,
+            vehicle=self.vehicle,
+        )
+        now = timezone.now()
+        today = timezone.localdate(now)
+        self.contract = Subscription.objects.create(
+            contract_number='SUB-VEH-VIS-CONTRACT',
+            customer_type='organization',
+            organization=self.organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        self.operation = SubscriptionOperation.objects.create(
+            subscription=self.contract,
+            operation_type='modify',
+            performed_by=self.manager,
+        )
+        self.link = SubscriptionDevice.objects.create(
+            subscription=self.contract,
+            device=self.device,
+            start_date=self.contract.start_date,
+            end_date=self.contract.end_date,
+            added_by_operation=self.operation,
+        )
+        SubscriptionDevice.objects.filter(pk=self.link.pk).update(
+            assigned_at=now - timedelta(minutes=5),
+        )
+        DeviceCustomerAccessPeriod.objects.create(
+            device=self.device,
+            organization=self.organization,
+            subscription=self.contract,
+            started_at=now - timedelta(minutes=5),
+        )
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.manager)
+
+    def test_subscription_detail_hides_vehicle_plate_from_another_tenant(self):
+        response = self.client.get(f'/api/subscriptions/{self.contract.pk}/')
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(len(response.data['devices']), 1)
+        row = response.data['devices'][0]
+        self.assertEqual(row['device_imei'], self.device.imei)
+        self.assertIsNone(row['vehicle_plate'])
+        self.assertNotIn(self.vehicle.plate, str(response.data))
+
+    def test_subscription_operation_history_hides_foreign_vehicle_plate(self):
+        response = self.client.get(
+            f'/api/subscriptions/{self.contract.pk}/operations/'
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(len(response.data[0]['added_devices']), 1)
+        row = response.data[0]['added_devices'][0]
+        self.assertEqual(row['device_imei'], self.device.imei)
+        self.assertIsNone(row['vehicle_plate'])
+        self.assertNotIn(self.vehicle.plate, str(response.data))
