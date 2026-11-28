@@ -3,7 +3,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils import timezone
 from rest_framework.exceptions import ValidationError
 
-from .models import Device, DeviceOperation, DeviceReplacementRelation, DeviceLifecycleEvent, DeviceOwnershipHistory, DeviceCustomerAccessPeriod
+from .models import Device, Vehicle, DeviceOperation, DeviceReplacementRelation, DeviceLifecycleEvent, DeviceOwnershipHistory, DeviceCustomerAccessPeriod
 from .lifecycle import record_device_lifecycle_event
 from organizations.models import SubscriptionDevice
 
@@ -14,6 +14,29 @@ _CUSTOMER_UNSET = object()
 _TRANSFER_BLOCKED_DEVICE_STATUSES = {
     'faulty', 'in_repair', 'ready', 'lost', 'stolen', 'unusable', 'disposed',
 }
+
+_VEHICLE_OCCUPANCY_EXEMPT_STATUSES = {
+    'faulty', 'in_repair', 'lost', 'stolen', 'unusable', 'disposed',
+}
+
+
+def _ensure_vehicle_available(
+    vehicle,
+    *,
+    excluding_device_ids=(),
+    field='target_vehicle',
+    message='خودروی مقصد در حال حاضر دستگاه دیگری دارد.',
+):
+    """Reject an occupied vehicle; callers must hold its row lock first."""
+    if vehicle is None:
+        return
+    occupied = Device.objects.filter(vehicle_id=vehicle.pk).exclude(
+        management_status__in=_VEHICLE_OCCUPANCY_EXEMPT_STATUSES
+    )
+    if excluding_device_ids:
+        occupied = occupied.exclude(pk__in=excluding_device_ids)
+    if occupied.exists():
+        raise ValidationError({field: message})
 
 
 def _customer_kwargs(device=None, organization=_CUSTOMER_UNSET, user=_CUSTOMER_UNSET):
@@ -519,6 +542,35 @@ def execute_device_operation(
     if replacement_device:
         replacement_device = locked_devices[replacement_device.pk]
 
+    # Serialize every installation against other operations targeting the same
+    # vehicle. Device-row locks alone cannot prevent two different devices
+    # from concurrently claiming one vehicle.
+    previous_event_vehicle_id = None
+    if operation_type in {'temporary_replacement', 'permanent_replacement', 'disposition'}:
+        previous_event_vehicle_id = DeviceLifecycleEvent.objects.filter(
+            device_id=device.pk,
+            event_type__in=['sent_to_repair', 'lost', 'stolen'],
+        ).order_by('-event_date', '-id').values_list('vehicle_id', flat=True).first()
+
+    vehicle_ids_to_lock = {
+        vehicle_id for vehicle_id in (
+            device.vehicle_id,
+            replacement_device.vehicle_id if replacement_device else None,
+            target_vehicle.pk if target_vehicle else None,
+            previous_event_vehicle_id,
+        ) if vehicle_id is not None
+    }
+    locked_vehicles = {
+        vehicle.pk: vehicle
+        for vehicle in Vehicle.objects.select_for_update()
+        .filter(pk__in=vehicle_ids_to_lock)
+        .order_by('pk')
+    }
+    if target_vehicle is not None:
+        target_vehicle = locked_vehicles.get(target_vehicle.pk)
+        if target_vehicle is None:
+            raise ValidationError({'target_vehicle': 'خودروی مقصد دیگر در دسترس نیست؛ دوباره تلاش کنید.'})
+
     active_link = device.subscription_links.filter(
         unassigned_at__isnull=True
     ).select_related('subscription').first()
@@ -567,6 +619,7 @@ def execute_device_operation(
                 raise ValidationError({'replacement_device': 'دستگاه جایگزین باید در انبار آزاد سانا باشد.'})
 
             old_vehicle = device.vehicle
+            _ensure_vehicle_available(old_vehicle, excluding_device_ids=(device.pk, replacement_device.pk))
             old_branch = device.branch
             customer = _current_customer(device, subscription)
             old_org = customer['organization']
@@ -687,6 +740,7 @@ def execute_device_operation(
             event_type__in=['sent_to_repair', 'lost', 'stolen'],
         ).order_by('-event_date', '-id').first()
         previous_vehicle = previous_event.vehicle if previous_event else None
+        _ensure_vehicle_available(previous_vehicle, excluding_device_ids=(device.pk, replacement_device.pk))
         previous_branch = previous_event.branch if previous_event else None
         customer = _current_customer(device, subscription)
         _close_customer_access(device)
@@ -784,6 +838,8 @@ def execute_device_operation(
                 raise ValidationError({'replacement_device': 'دستگاه جایگزین باید در انبار آزاد سانا باشد.'})
 
         old_vehicle = device.vehicle
+        if replacement_device:
+            _ensure_vehicle_available(old_vehicle, excluding_device_ids=(device.pk, replacement_device.pk))
         old_branch = device.branch
         customer = _current_customer(device, subscription)
         _close_customer_access(device)
@@ -938,12 +994,13 @@ def execute_device_operation(
                 raise ValidationError({
                     'outcome_action': 'خودروی قبلی برای بازگشت مشخص نیست؛ خودروی مقصد را انتخاب کنید.'
                 })
-            if Device.objects.filter(vehicle=target).exclude(pk=device.pk).exclude(
-                management_status__in=['faulty', 'in_repair', 'lost', 'stolen', 'unusable', 'disposed']
-            ).exists():
-                raise ValidationError({
-                    'outcome_action': 'خودروی قبلی هنوز دستگاه دیگری دارد؛ ابتدا تکلیف آن دستگاه را مشخص کنید.'
-                })
+            _ensure_vehicle_available(
+                target,
+                excluding_device_ids=(device.pk,),
+                field='outcome_action',
+                message='خودروی قبلی هنوز دستگاه دیگری دارد؛ ابتدا تکلیف آن دستگاه را مشخص کنید.',
+            )
+
             device.vehicle = target
             device.branch = target.branch
             device.current_holder_organization = previous_org
@@ -996,10 +1053,7 @@ def execute_device_operation(
                     })
             else:
                 raise ValidationError({'device': 'مشتری قبلی دستگاه مشخص نیست.'})
-            if Device.objects.filter(vehicle=target_vehicle).exclude(pk=device.pk).exclude(
-                management_status__in=['faulty', 'in_repair', 'lost', 'stolen', 'unusable', 'disposed']
-            ).exists():
-                raise ValidationError({'target_vehicle': 'خودروی مقصد در حال حاضر دستگاه دیگری دارد.'})
+            _ensure_vehicle_available(target_vehicle, excluding_device_ids=(device.pk,))
             device.vehicle = target_vehicle
             device.branch = target_vehicle.branch
             device.current_holder_organization = previous_org
@@ -1018,6 +1072,7 @@ def execute_device_operation(
                 vehicle=target_vehicle,
                 subscription=target_subscription,
             )
+            _ensure_vehicle_available(target_vehicle, excluding_device_ids=(device.pk,))
             _close_active_link(device, operation)
             _close_customer_access(device)
             _close_ownership(device)
@@ -1152,6 +1207,7 @@ def execute_device_operation(
             vehicle=target_vehicle,
             subscription=target_subscription,
         )
+        _ensure_vehicle_available(target_vehicle, excluding_device_ids=(device.pk,))
         _close_active_link(device, operation)
         _close_customer_access(device)
         _close_ownership(device)
@@ -1226,10 +1282,7 @@ def execute_device_operation(
                 raise ValidationError({'target_vehicle': 'خودرو مقصد باید متعلق به همان مشتری شخصی باشد.'})
         else:
             raise ValidationError({'device': 'مشتری فعلی دستگاه مشخص نیست.'})
-        if Device.objects.filter(vehicle=target_vehicle).exclude(pk=device.pk).exclude(
-            management_status__in=['faulty', 'in_repair', 'lost', 'stolen', 'unusable', 'disposed']
-        ).exists():
-            raise ValidationError({'target_vehicle': 'خودروی مقصد در حال حاضر دستگاه دیگری دارد.'})
+        _ensure_vehicle_available(target_vehicle, excluding_device_ids=(device.pk,))
         old_vehicle = device.vehicle
         device.vehicle = target_vehicle
         device.branch = target_vehicle.branch
