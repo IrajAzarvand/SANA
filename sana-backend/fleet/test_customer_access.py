@@ -7,7 +7,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from accounts.models import User
-from fleet.models import Device, DeviceCustomerAccessPeriod
+from fleet.models import Device, DeviceCustomerAccessPeriod, Vehicle
 from fleet.customer_access import active_customer_access_periods
 from fleet.device_operations import _close_active_link, _open_customer_access, execute_device_operation
 from fleet.serializers import BranchManagerDeviceSerializer, DeviceSerializer
@@ -2076,6 +2076,62 @@ class OrganizationDeviceBranchAssignmentApiTests(TestCase):
             ).filter(device=self.device).exists()
         )
 
+    def test_assign_branch_rejects_branch_different_from_connected_vehicle(self):
+        vehicle_branch = Branch.objects.create(
+            organization=self.organization,
+            name='Vehicle Branch',
+            code='BRANCH-ASSIGN-VEHICLE',
+        )
+        vehicle = Vehicle.objects.create(
+            organization=self.organization,
+            branch=vehicle_branch,
+            plate='88ب881',
+        )
+        self.device.vehicle = vehicle
+        self.device.save(update_fields=['vehicle'])
+
+        response = self.client.post(
+            f'/api/devices/{self.device.pk}/assign-branch/',
+            {'branch_id': self.branch.pk},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 409, response.data)
+        self.device.refresh_from_db()
+        self.assertIsNone(self.device.branch_id)
+        self.assertEqual(self.device.vehicle_id, vehicle.pk)
+        self.assertTrue(
+            DeviceCustomerAccessPeriod.objects.filter(
+                pk=self.original_period.pk,
+                ended_at__isnull=True,
+            ).exists()
+        )
+        self.assertFalse(
+            DeviceCustomerAccessPeriod.objects.filter(
+                device=self.device,
+                branch=self.branch,
+            ).exists()
+        )
+
+    def test_assign_branch_allows_matching_connected_vehicle_branch(self):
+        vehicle = Vehicle.objects.create(
+            organization=self.organization,
+            branch=self.branch,
+            plate='88ب882',
+        )
+        self.device.vehicle = vehicle
+        self.device.save(update_fields=['vehicle'])
+
+        response = self.client.post(
+            f'/api/devices/{self.device.pk}/assign-branch/',
+            {'branch_id': self.branch.pk},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.branch_id, self.branch.pk)
+
     def test_manager_can_assign_without_a_predefined_end_date(self):
         response = self.client.post(
             f'/api/devices/{self.device.pk}/assign-branch/',
@@ -2399,6 +2455,77 @@ class OrganizationDeviceBranchChangeApiTests(TestCase):
                 branch_id=self.old_branch.pk,
             ).filter(device=self.device).exists()
         )
+
+    def test_change_branch_rejects_branch_different_from_connected_vehicle(self):
+        vehicle = Vehicle.objects.create(
+            organization=self.organization,
+            branch=self.old_branch,
+            plate='88ب883',
+        )
+        self.device.vehicle = vehicle
+        self.device.branch = self.old_branch
+        self.device.save(update_fields=['vehicle', 'branch'])
+
+        response = self.client.post(
+            f'/api/devices/{self.device.pk}/change-branch/',
+            {'branch_id': self.new_branch.pk},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 409, response.data)
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.branch_id, self.old_branch.pk)
+        self.assertEqual(self.device.vehicle_id, vehicle.pk)
+        self.old_period.refresh_from_db()
+        self.assertGreater(self.old_period.ended_at, timezone.now())
+        self.assertFalse(
+            DeviceCustomerAccessPeriod.objects.filter(
+                device=self.device,
+                branch=self.new_branch,
+                started_at__gte=timezone.now(),
+            ).exists()
+        )
+
+    def test_change_branch_cannot_clear_branch_while_vehicle_has_one(self):
+        vehicle = Vehicle.objects.create(
+            organization=self.organization,
+            branch=self.old_branch,
+            plate='88ب884',
+        )
+        self.device.vehicle = vehicle
+        self.device.branch = self.old_branch
+        self.device.save(update_fields=['vehicle', 'branch'])
+
+        response = self.client.post(
+            f'/api/devices/{self.device.pk}/change-branch/',
+            {'branch_id': None},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 409, response.data)
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.branch_id, self.old_branch.pk)
+        self.old_period.refresh_from_db()
+        self.assertGreater(self.old_period.ended_at, timezone.now())
+
+    def test_change_branch_allows_same_branch_as_connected_vehicle(self):
+        vehicle = Vehicle.objects.create(
+            organization=self.organization,
+            branch=self.new_branch,
+            plate='88ب885',
+        )
+        self.device.vehicle = vehicle
+        self.device.save(update_fields=['vehicle'])
+
+        response = self.client.post(
+            f'/api/devices/{self.device.pk}/change-branch/',
+            {'branch_id': self.new_branch.pk},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.branch_id, self.new_branch.pk)
 
     def test_change_branch_replaces_end_date_when_new_date_is_supplied(self):
         new_end_date = timezone.localdate() + timedelta(days=8)
