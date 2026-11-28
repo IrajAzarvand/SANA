@@ -106,6 +106,75 @@ class ContractBackedDeviceAccessTests(TestCase):
         )
 
 
+    def test_latest_closed_link_cannot_be_satisfied_by_older_open_link_on_same_contract(self):
+        organization = Organization.objects.create(
+            name='Same Contract Historical Links Organization',
+            code='SAME-CONTRACT-HISTORICAL-LINKS',
+        )
+        branch = Branch.objects.create(
+            organization=organization,
+            name='Same Contract Historical Links Branch',
+            code='SAME-CONTRACT-HISTORICAL-BRANCH',
+        )
+        device = Device.objects.create(
+            imei='860000000001245',
+            organization=organization,
+            branch=branch,
+            management_status='installed',
+        )
+        today = timezone.localdate()
+        now = timezone.now()
+        subscription = Subscription.objects.create(
+            contract_number='SAME-CONTRACT-HISTORICAL-LINKS-001',
+            customer_type='organization',
+            organization=organization,
+            start_date=today - timedelta(days=10),
+            end_date=today + timedelta(days=20),
+            status='active',
+        )
+
+        older_link = SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
+        )
+        SubscriptionDevice.objects.filter(pk=older_link.pk).update(
+            assigned_at=now - timedelta(days=3),
+            unassigned_at=now - timedelta(days=2),
+        )
+        newer_link = SubscriptionDevice.objects.create(
+            subscription=subscription,
+            device=device,
+            start_date=subscription.start_date,
+            end_date=subscription.end_date,
+            unassigned_at=now - timedelta(minutes=1),
+        )
+        SubscriptionDevice.objects.filter(pk=newer_link.pk).update(
+            assigned_at=now - timedelta(days=1),
+        )
+
+        # Recreate a legacy inconsistent state: the older row is open even
+        # though a later assignment for this same device and contract exists
+        # and is already closed. The latest row must remain authoritative.
+        SubscriptionDevice.objects.filter(pk=older_link.pk).update(
+            unassigned_at=None,
+        )
+        period = DeviceCustomerAccessPeriod.objects.create(
+            device=device,
+            organization=organization,
+            branch=branch,
+            subscription=subscription,
+            started_at=now - timedelta(days=4),
+        )
+
+        self.assertFalse(
+            active_customer_access_periods(
+                organization_id=organization.pk,
+                now=now,
+            ).filter(pk=period.pk).exists()
+        )
+
     def test_organization_device_detail_does_not_treat_future_assignment_as_active(self):
         organization = Organization.objects.create(
             name='Future Duplicate Detail Organization',
