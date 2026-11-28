@@ -140,10 +140,17 @@ def _validate_device_customer_assignment(device, subscription):
         if device.vehicle_id and (
             device.vehicle.organization_id != target_organization_id
             or device.vehicle.owner_user_id is not None
-            or device.vehicle.branch_id != device.branch_id
+            or (
+                device.branch_id is not None
+                and device.vehicle.branch_id != device.branch_id
+            )
+            or (
+                device.vehicle.branch_id is not None
+                and device.vehicle.branch.organization_id != target_organization_id
+            )
         ):
             raise ValidationError({
-                'device': 'خودروی متصل به دستگاه باید متعلق به سازمان قرارداد و در همان شعبه باشد.'
+                'device': 'خودروی متصل به دستگاه باید متعلق به سازمان قرارداد باشد و در صورت تخصیص شعبه، با شعبه دستگاه سازگار باشد.'
             })
     else:
         if device.branch_id:
