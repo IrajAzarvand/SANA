@@ -14,6 +14,86 @@ from fleet.serializers import BranchManagerDeviceSerializer, DeviceSerializer
 from organizations.models import Branch, Organization, Subscription, SubscriptionDevice
 
 
+
+class VehicleBranchDeviceConsistencyApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.organization = Organization.objects.create(
+            name='Vehicle Branch Consistency Org',
+            code='VEHICLE-BRANCH-CONSISTENCY',
+        )
+        self.manager = User.objects.create_user(
+            username='vehicle_branch_consistency_manager',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=self.organization,
+        )
+        self.branch = Branch.objects.create(
+            organization=self.organization,
+            name='Vehicle Consistency Branch A',
+            code='VEHICLE-CONSISTENCY-A',
+        )
+        self.other_branch = Branch.objects.create(
+            organization=self.organization,
+            name='Vehicle Consistency Branch B',
+            code='VEHICLE-CONSISTENCY-B',
+        )
+        self.vehicle = Vehicle.objects.create(
+            organization=self.organization,
+            branch=self.branch,
+            plate='88ب991',
+        )
+        self.device = Device.objects.create(
+            imei='860000000009991',
+            organization=self.organization,
+            branch=self.branch,
+            vehicle=self.vehicle,
+            management_status='installed',
+        )
+        self.client.force_authenticate(user=self.manager)
+
+    def test_vehicle_branch_cannot_change_away_from_attached_device_branch(self):
+        response = self.client.patch(
+            f'/api/vehicles/{self.vehicle.pk}/',
+            {'branch': self.other_branch.pk},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.vehicle.refresh_from_db()
+        self.device.refresh_from_db()
+        self.assertEqual(self.vehicle.branch_id, self.branch.pk)
+        self.assertEqual(self.device.branch_id, self.branch.pk)
+
+    def test_vehicle_branch_can_be_cleared_without_changing_device_branch(self):
+        response = self.client.patch(
+            f'/api/vehicles/{self.vehicle.pk}/',
+            {'branch': None},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.vehicle.refresh_from_db()
+        self.device.refresh_from_db()
+        self.assertIsNone(self.vehicle.branch_id)
+        self.assertEqual(self.device.branch_id, self.branch.pk)
+
+    def test_vehicle_branch_can_change_when_attached_device_already_matches(self):
+        self.device.branch = self.other_branch
+        self.device.save(update_fields=['branch'])
+
+        response = self.client.patch(
+            f'/api/vehicles/{self.vehicle.pk}/',
+            {'branch': self.other_branch.pk},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.vehicle.refresh_from_db()
+        self.assertEqual(self.vehicle.branch_id, self.other_branch.pk)
+
+
 class ContractBackedDeviceAccessTests(TestCase):
     def test_newer_started_organization_assignment_blocks_older_access(self):
         organization = Organization.objects.create(
