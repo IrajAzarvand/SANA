@@ -291,6 +291,14 @@ class VehicleSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({'owner_user': 'مالک انتخاب‌شده متعلق به سازمان شما نیست.'})
             if vehicle_type and vehicle_type.organization_id not in (None, user.organization_id):
                 raise serializers.ValidationError({'vehicle_type': 'نوع خودرو متعلق به سازمان دیگری است.'})
+
+        # A branched vehicle must remain aligned with every attached device.
+        # Clearing the vehicle branch removes this constraint.
+        if self.instance is not None and branch is not None:
+            if self.instance.devices.exclude(branch_id=branch.pk).exists():
+                raise serializers.ValidationError({
+                    'branch': 'شعبه خودرو باید با شعبه تمام دستگاه‌های متصل یکسان باشد.'
+                })
         return attrs
 
     def create(self, validated_data):
