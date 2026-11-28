@@ -38,7 +38,7 @@ class DeviceOperationCustomerTransferApiTests(TestCase):
         )
         self.target_vehicle = Vehicle.objects.create(
             organization=self.target_organization,
-            branch=self.target_branch,
+            branch=None,
             plate='22ب222',
         )
         self.site_admin = User.objects.create_user(
@@ -142,6 +142,60 @@ class DeviceOperationCustomerTransferApiTests(TestCase):
             else devices_response.data
         )
         self.assertNotIn(self.device.pk, [row['id'] for row in rows])
+
+    def test_customer_transfer_rejects_branched_target_vehicle_without_mutation(self):
+        branched_target_vehicle = Vehicle.objects.create(
+            organization=self.target_organization,
+            branch=self.target_branch,
+            plate='22ب223',
+        )
+        initial_operation_count = DeviceOperation.objects.count()
+
+        response = self.admin_client.post(
+            '/api/device-operations/',
+            {
+                'device': self.device.pk,
+                'operation_type': 'transfer_customer',
+                'target_organization': self.target_organization.pk,
+                'target_subscription': self.target_subscription.pk,
+                'target_vehicle': branched_target_vehicle.pk,
+                'reason': 'branched target vehicle rejection test',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.organization_id, self.source_organization.pk)
+        self.assertEqual(
+            self.device.current_holder_organization_id,
+            self.source_organization.pk,
+        )
+        self.assertEqual(self.device.branch_id, self.source_branch.pk)
+        self.assertEqual(self.device.vehicle_id, self.source_vehicle.pk)
+        self.assertTrue(
+            SubscriptionDevice.objects.filter(
+                device=self.device,
+                subscription=self.source_subscription,
+                unassigned_at__isnull=True,
+            ).exists()
+        )
+        self.assertTrue(
+            DeviceCustomerAccessPeriod.objects.filter(
+                device=self.device,
+                subscription=self.source_subscription,
+                branch=self.source_branch,
+                ended_at__isnull=True,
+            ).exists()
+        )
+        self.assertFalse(
+            SubscriptionDevice.objects.filter(
+                device=self.device,
+                subscription=self.target_subscription,
+                unassigned_at__isnull=True,
+            ).exists()
+        )
+        self.assertEqual(DeviceOperation.objects.count(), initial_operation_count)
 
     def test_customer_transfer_rejects_devices_in_blocked_operational_statuses_without_mutation(self):
         blocked_statuses = (
