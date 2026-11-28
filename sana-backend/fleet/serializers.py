@@ -277,9 +277,9 @@ class VehicleSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         request = self.context.get('request')
         user = request.user if request else None
+        branch = attrs.get('branch', getattr(self.instance, 'branch', None))
         if user and user.is_main_user:
             organization = attrs.get('organization', getattr(self.instance, 'organization', None))
-            branch = attrs.get('branch', getattr(self.instance, 'branch', None))
             owner = attrs.get('owner_user', getattr(self.instance, 'owner_user', None))
             vehicle_type = attrs.get('vehicle_type', getattr(self.instance, 'vehicle_type', None))
             if organization and organization.pk != user.organization_id:
