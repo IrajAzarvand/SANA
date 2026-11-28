@@ -1770,9 +1770,14 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 status=403,
             )
 
+        if 'branch_id' not in request.data:
+            return Response(
+                {'branch_id': 'شناسه شعبه را ارسال کنید؛ برای خروج از شعبه مقدار null بفرستید.'},
+                status=400,
+            )
         raw_branch_id = request.data.get('branch_id')
         branch = None
-        if raw_branch_id not in (None, ''):
+        if raw_branch_id is not None:
             try:
                 branch_id = int(raw_branch_id)
             except (TypeError, ValueError):
