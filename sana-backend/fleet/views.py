@@ -1876,6 +1876,7 @@ class DeviceViewSet(viewsets.ModelViewSet):
                 device_id=device.pk,
                 subscription_id=current_period.subscription_id,
                 branch__isnull=True,
+                reason='branch_assignment_end',
                 ended_at__isnull=True,
                 started_at__gt=now,
             ).update(ended_at=F('started_at'))
