@@ -147,6 +147,23 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
     }
   };
 
+  const loadOrganizationTransferTargets = async (organizationId) => {
+    if (!organizationId) {
+      setOperationTargets((current) => ({ ...current, branches: [], vehicles: [] }));
+      return;
+    }
+    try {
+      const [branches, vehicles] = await Promise.all([
+        fetchAllPages((params) => branchesAPI.list({ ...params, organization: organizationId })),
+        fetchAllPages((params) => vehiclesAPI.list({ ...params, organization: organizationId })),
+      ]);
+      setOperationTargets((current) => ({ ...current, branches, vehicles }));
+    } catch (err) {
+      console.error('Error loading target organization branches and vehicles:', err);
+      setOperationTargets((current) => ({ ...current, branches: [], vehicles: [] }));
+    }
+  };
+
   const loadOperationTargets = async (operationType) => {
     if (!historyDevice) return;
     try {
@@ -491,9 +508,27 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
                     />
                     {operationForm.operation_type === 'transfer_customer' && (
                       <div className="space-y-3 rounded-card border border-border-base bg-bg-base p-3">
-                        <Select label="سازمان مقصد" placeholder="انتخاب سازمان" value={operationForm.target_organization} onChange={(e) => setOperationForm((current) => ({ ...current, target_organization: e.target.value, target_user: '' }))} options={operationTargets.organizations.map((item) => ({ value: item.id, label: item.name }))} />
-                        <Select label="کاربر شخصی مقصد" placeholder="در صورت انتقال به مشتری شخصی" value={operationForm.target_user} onChange={(e) => setOperationForm((current) => ({ ...current, target_user: e.target.value, target_organization: '' }))} options={operationTargets.users.filter((item) => item.account_type === 'personal').map((item) => ({ value: item.id, label: item.full_name || item.username }))} />
-                        <Select label="قرارداد مقصد (اختیاری)" placeholder="انتخاب قرارداد" value={operationForm.target_subscription} onChange={(e) => setOperationForm((current) => ({ ...current, target_subscription: e.target.value }))} options={operationTargets.subscriptions.map((item) => ({ value: item.id, label: item.contract_number }))} />
+                        <Select label="سازمان مقصد" placeholder="انتخاب سازمان" value={operationForm.target_organization} onChange={async (e) => {
+                          const organizationId = e.target.value;
+                          setOperationForm((current) => ({ ...current, target_organization: organizationId, target_user: '', target_branch: '', target_vehicle: '', target_subscription: '' }));
+                          await loadOrganizationTransferTargets(organizationId);
+                        }} options={operationTargets.organizations.map((item) => ({ value: item.id, label: item.name }))} />
+                        <Select label="کاربر شخصی مقصد" placeholder="در صورت انتقال به مشتری شخصی" value={operationForm.target_user} onChange={(e) => {
+                          setOperationForm((current) => ({ ...current, target_user: e.target.value, target_organization: '', target_branch: '', target_vehicle: '', target_subscription: '' }));
+                          setOperationTargets((current) => ({ ...current, branches: [], vehicles: [] }));
+                        }} options={operationTargets.users.filter((item) => item.account_type === 'personal').map((item) => ({ value: item.id, label: item.full_name || item.username }))} />
+                        {operationForm.target_organization && (
+                          <>
+                            <Select label="شعبه مقصد (اختیاری)" placeholder="بدون تعیین شعبه" value={operationForm.target_branch} onChange={(e) => setOperationForm((current) => ({ ...current, target_branch: e.target.value, target_vehicle: '' }))} options={operationTargets.branches.map((item) => ({ value: item.id, label: item.name }))} />
+                            <Select label="خودروی مقصد (اختیاری)" placeholder="بدون اتصال به خودرو" value={operationForm.target_vehicle} onChange={(e) => setOperationForm((current) => ({ ...current, target_vehicle: e.target.value }))} options={operationTargets.vehicles.filter((item) => !operationForm.target_branch || !item.branch || String(item.branch) === String(operationForm.target_branch)).map((item) => ({ value: item.id, label: item.plate }))} />
+                          </>
+                        )}
+                        <Select label="قرارداد مقصد (اختیاری)" placeholder="انتخاب قرارداد" value={operationForm.target_subscription} onChange={(e) => setOperationForm((current) => ({ ...current, target_subscription: e.target.value }))} options={operationTargets.subscriptions.filter((item) => operationForm.target_organization
+                          ? item.customer_type === 'organization' && String(item.organization) === String(operationForm.target_organization)
+                          : operationForm.target_user
+                            ? item.customer_type === 'personal' && String(item.user) === String(operationForm.target_user)
+                            : false
+                        ).map((item) => ({ value: item.id, label: item.contract_number }))} />
                       </div>
                     )}
                     {operationNeedsReplacement && (
