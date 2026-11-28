@@ -990,10 +990,14 @@ def execute_device_operation(
             device.management_status = 'installed'
 
         elif outcome_action == 'transfer_customer':
+            if target_branch is not None:
+                raise ValidationError({
+                    'target_branch': 'دستگاه پس از انتقال مشتری ابتدا بدون شعبه ثبت می‌شود؛ تخصیص شعبه باید جداگانه انجام شود.'
+                })
             _validate_transfer_target(
                 organization=target_organization,
                 user=target_user,
-                branch=target_branch,
+                branch=None,
                 vehicle=target_vehicle,
                 subscription=target_subscription,
             )
@@ -1005,7 +1009,7 @@ def execute_device_operation(
             device.current_holder_organization = target_organization
             device.current_holder_user = target_user
             device.vehicle = target_vehicle
-            device.branch = target_vehicle.branch if target_vehicle else target_branch
+            device.branch = None
             device.management_status = 'installed'
 
         elif outcome_action == 'retire':
@@ -1052,7 +1056,7 @@ def execute_device_operation(
                 _open_customer_access(
                     device,
                     subscription=target_subscription,
-                    branch=device.branch,
+                    branch=None,
                     organization=target_organization,
                     user=target_user,
                     reason='customer_transfer',
