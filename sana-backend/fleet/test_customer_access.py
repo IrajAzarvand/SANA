@@ -1891,3 +1891,304 @@ class SubscriptionDeviceSerializerVisibilityCacheTests(TestCase):
         )
         serializer = SubscriptionDeviceSerializer(instance=link)
         self.assertFalse(serializer._can_view_device_details(link))
+
+
+class OrganizationDeviceBranchAssignmentApiTests(TestCase):
+    def setUp(self):
+        from datetime import timedelta
+
+        self.client = APIClient()
+        today = timezone.localdate()
+        self.organization = Organization.objects.create(
+            name='Branch Assignment API Org',
+            code='BRANCH-ASSIGNMENT-API-ORG',
+        )
+        self.manager = User.objects.create_user(
+            username='branch_assignment_api_manager',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=self.organization,
+        )
+        self.branch = Branch.objects.create(
+            organization=self.organization,
+            name='Branch Assignment API Branch',
+            code='BRANCH-ASSIGNMENT-API',
+        )
+        self.device = Device.objects.create(
+            imei='860000000009971',
+            organization=self.organization,
+            management_status='installed',
+        )
+        self.subscription = Subscription.objects.create(
+            contract_number='BRANCH-ASSIGNMENT-API-CONTRACT',
+            customer_type='organization',
+            organization=self.organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        self.link = SubscriptionDevice.objects.create(
+            subscription=self.subscription,
+            device=self.device,
+            start_date=self.subscription.start_date,
+            end_date=self.subscription.end_date,
+        )
+        self.original_period = DeviceCustomerAccessPeriod.objects.create(
+            device=self.device,
+            organization=self.organization,
+            subscription=self.subscription,
+            branch=None,
+            started_at=timezone.now() - timedelta(days=2),
+        )
+        self.client.force_authenticate(user=self.manager)
+
+    def test_manager_assigns_unbranched_device_and_organization_access_resumes_after_end_date(self):
+        from datetime import datetime, timedelta, time as datetime_time
+
+        end_date = timezone.localdate() + timedelta(days=5)
+        response = self.client.post(
+            f'/api/devices/{self.device.pk}/assign-branch/',
+            {'branch_id': self.branch.pk, 'end_date': end_date.isoformat()},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        branch_period = DeviceCustomerAccessPeriod.objects.get(
+            pk=response.data['access_period_id']
+        )
+        fallback_period = DeviceCustomerAccessPeriod.objects.get(
+            device=self.device,
+            reason='branch_assignment_end',
+        )
+        self.original_period.refresh_from_db()
+
+        self.assertEqual(branch_period.branch_id, self.branch.pk)
+        self.assertEqual(branch_period.organization_id, self.organization.pk)
+        self.assertEqual(branch_period.subscription_id, self.subscription.pk)
+        self.assertIsNotNone(branch_period.ended_at)
+        self.assertIsNotNone(self.original_period.ended_at)
+        self.assertEqual(
+            fallback_period.started_at,
+            timezone.make_aware(datetime.combine(
+                end_date + timedelta(days=1),
+                datetime_time.min,
+            )),
+        )
+
+        now_period = active_customer_access_periods(
+            organization_id=self.organization.pk,
+            now=timezone.now(),
+        ).get(device=self.device)
+        self.assertEqual(now_period.branch_id, self.branch.pk)
+
+        after_assignment = fallback_period.started_at + timedelta(seconds=1)
+        organization_period = active_customer_access_periods(
+            organization_id=self.organization.pk,
+            now=after_assignment,
+        ).get(device=self.device)
+        self.assertIsNone(organization_period.branch_id)
+        self.assertFalse(
+            active_customer_access_periods(
+                organization_id=self.organization.pk,
+                branch_id=self.branch.pk,
+                now=after_assignment,
+            ).filter(device=self.device).exists()
+        )
+
+    def test_manager_can_assign_without_a_predefined_end_date(self):
+        response = self.client.post(
+            f'/api/devices/{self.device.pk}/assign-branch/',
+            {'branch_id': self.branch.pk},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        period = DeviceCustomerAccessPeriod.objects.get(
+            pk=response.data['access_period_id']
+        )
+        self.assertEqual(period.branch_id, self.branch.pk)
+        self.assertIsNone(period.ended_at)
+        self.assertFalse(
+            DeviceCustomerAccessPeriod.objects.filter(
+                device=self.device,
+                reason='branch_assignment_end',
+            ).exists()
+        )
+
+    def test_manager_cannot_assign_device_to_another_organizations_branch(self):
+        other_organization = Organization.objects.create(
+            name='External Branch Assignment Org',
+            code='EXTERNAL-BRANCH-ASSIGNMENT-ORG',
+        )
+        foreign_branch = Branch.objects.create(
+            organization=other_organization,
+            name='External Branch Assignment',
+            code='EXTERNAL-BRANCH-ASSIGNMENT',
+        )
+
+        response = self.client.post(
+            f'/api/devices/{self.device.pk}/assign-branch/',
+            {'branch_id': foreign_branch.pk},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertEqual(
+            DeviceCustomerAccessPeriod.objects.filter(
+                device=self.device,
+                branch=foreign_branch,
+            ).count(),
+            0,
+        )
+        self.original_period.refresh_from_db()
+        self.assertIsNone(self.original_period.ended_at)
+
+    def test_manager_cannot_assign_a_device_that_already_has_a_branch(self):
+        self.device.branch = self.branch
+        self.device.save(update_fields=['branch'])
+
+        response = self.client.post(
+            f'/api/devices/{self.device.pk}/assign-branch/',
+            {'branch_id': self.branch.pk},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 409, response.data)
+        self.assertEqual(
+            DeviceCustomerAccessPeriod.objects.filter(
+                device=self.device,
+                branch=self.branch,
+            ).count(),
+            0,
+        )
+
+    def test_branch_manager_cannot_assign_device_to_branch(self):
+        branch_manager = User.objects.create_user(
+            username='branch_assignment_api_branch_manager',
+            password='test-password',
+            role='branch_manager',
+            account_type='organization',
+            organization=self.organization,
+            branch=self.branch,
+        )
+        self.client.force_authenticate(user=branch_manager)
+
+        response = self.client.post(
+            f'/api/devices/{self.device.pk}/assign-branch/',
+            {'branch_id': self.branch.pk},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 403, response.data)
+        self.assertTrue(
+            DeviceCustomerAccessPeriod.objects.filter(
+                pk=self.original_period.pk,
+                ended_at__isnull=True,
+            ).exists()
+        )
+
+    def test_personal_customer_cannot_assign_device_to_branch(self):
+        personal_user = User.objects.create_user(
+            username='branch_assignment_api_personal',
+            password='test-password',
+            role='personal_user',
+            account_type='personal',
+        )
+        self.client.force_authenticate(user=personal_user)
+
+        response = self.client.post(
+            f'/api/devices/{self.device.pk}/assign-branch/',
+            {'branch_id': self.branch.pk},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 403, response.data)
+        self.assertTrue(
+            DeviceCustomerAccessPeriod.objects.filter(
+                pk=self.original_period.pk,
+                ended_at__isnull=True,
+            ).exists()
+        )
+
+    def test_assignment_rejects_malformed_and_past_end_dates(self):
+        from datetime import timedelta
+
+        invalid_dates = [
+            'not-a-date',
+            (timezone.localdate() - timedelta(days=1)).isoformat(),
+        ]
+        for end_date in invalid_dates:
+            with self.subTest(end_date=end_date):
+                response = self.client.post(
+                    f'/api/devices/{self.device.pk}/assign-branch/',
+                    {'branch_id': self.branch.pk, 'end_date': end_date},
+                    format='json',
+                )
+                self.assertEqual(response.status_code, 400, response.data)
+                self.assertTrue(
+                    DeviceCustomerAccessPeriod.objects.filter(
+                        pk=self.original_period.pk,
+                        ended_at__isnull=True,
+                    ).exists()
+                )
+                self.assertFalse(
+                    DeviceCustomerAccessPeriod.objects.filter(
+                        device=self.device,
+                        branch=self.branch,
+                    ).exists()
+                )
+
+    def test_assignment_rejects_end_date_after_contract_or_device_assignment(self):
+        from datetime import timedelta
+
+        too_late = max(self.subscription.end_date, self.link.end_date) + timedelta(days=1)
+        response = self.client.post(
+            f'/api/devices/{self.device.pk}/assign-branch/',
+            {'branch_id': self.branch.pk, 'end_date': too_late.isoformat()},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertTrue(
+            DeviceCustomerAccessPeriod.objects.filter(
+                pk=self.original_period.pk,
+                ended_at__isnull=True,
+            ).exists()
+        )
+        self.assertFalse(
+            DeviceCustomerAccessPeriod.objects.filter(
+                device=self.device,
+                branch=self.branch,
+            ).exists()
+        )
+
+    def test_assignment_rejects_suspended_or_expired_contract(self):
+        for status in ('suspended', 'expired'):
+            with self.subTest(subscription_status=status):
+                self.subscription.status = status
+                self.subscription.save(update_fields=['status'])
+
+                response = self.client.post(
+                    f'/api/devices/{self.device.pk}/assign-branch/',
+                    {'branch_id': self.branch.pk},
+                    format='json',
+                )
+
+                # Inactive contracts are excluded by DeviceViewSet.get_queryset(),
+                # so the device is intentionally hidden before the action runs.
+                self.assertEqual(response.status_code, 404, response.data)
+                self.assertTrue(
+                    DeviceCustomerAccessPeriod.objects.filter(
+                        pk=self.original_period.pk,
+                        ended_at__isnull=True,
+                    ).exists()
+                )
+                self.assertFalse(
+                    DeviceCustomerAccessPeriod.objects.filter(
+                        device=self.device,
+                        branch=self.branch,
+                    ).exists()
+                )
+                self.subscription.status = 'active'
+                self.subscription.save(update_fields=['status'])
