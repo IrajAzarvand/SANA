@@ -10,6 +10,11 @@ from organizations.models import SubscriptionDevice
 
 _CUSTOMER_UNSET = object()
 
+# Keep customer transfers aligned with the statuses rejected by contract assignment.
+_TRANSFER_BLOCKED_DEVICE_STATUSES = {
+    'faulty', 'in_repair', 'ready', 'lost', 'stolen', 'unusable', 'disposed',
+}
+
 
 def _customer_kwargs(device=None, organization=_CUSTOMER_UNSET, user=_CUSTOMER_UNSET):
     if organization is _CUSTOMER_UNSET:
@@ -92,7 +97,7 @@ def _validate_transfer_target(*, organization, user, branch=None, vehicle=None, 
 
 def _validate_device_customer_assignment(device, subscription):
     """Validate a warehouse device against the exact contract customer and its current holder."""
-    if device.management_status in {'faulty', 'in_repair', 'ready', 'lost', 'stolen', 'unusable', 'disposed'}:
+    if device.management_status in _TRANSFER_BLOCKED_DEVICE_STATUSES:
         raise ValidationError({
             'device': 'دستگاه در وضعیت فعلی قابل اتصال به قرارداد نیست؛ ابتدا وضعیت عملیاتی آن را تعیین تکلیف کنید.'
         })
@@ -523,6 +528,11 @@ def execute_device_operation(
         raise ValidationError({'replacement_device': 'دستگاه جایگزین نمی‌تواند همان دستگاه قبلی باشد.'})
 
     old_status = device.management_status
+    if outcome_action == 'transfer_customer' and old_status in _TRANSFER_BLOCKED_DEVICE_STATUSES:
+        raise ValidationError({
+            'device': 'دستگاه با وضعیت عملیاتی فعلی قابل انتقال به مشتری دیگر نیست؛ ابتدا وضعیت آن را تعیین تکلیف کنید.'
+        })
+
     if device.organization_id or device.owner_user_id:
         _open_ownership(device, reason='customer_assignment')
         if active_link:
