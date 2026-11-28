@@ -391,6 +391,8 @@ function OrganizationSection() {
   useEffect(() => {
     if (!selectedId) return undefined;
     let active = true;
+    // This effect clears stale organization data before requesting the newly selected record.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setForm(null);
     setSavedForm(null);
@@ -1104,13 +1106,15 @@ function TraccarPortManager() {
     return () => { active = false; controller?.abort(); if (statusPoll) window.clearInterval(statusPoll); };
   }, []);
 
+  const hasCaptureTimeRemaining = captureRemainingSeconds > 0;
+
   useEffect(() => {
-    if (!captureRunning || captureRemainingSeconds <= 0) return undefined;
+    if (!captureRunning || !hasCaptureTimeRemaining) return undefined;
     const timer = window.setInterval(() => {
       setCaptureRemainingSeconds((value) => Math.max(0, value - 1));
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [captureRunning, captureRemainingSeconds > 0]);
+  }, [captureRunning, hasCaptureTimeRemaining]);
 
   const formatCaptureTime = (seconds) => {
     const safeSeconds = Math.max(0, Number(seconds) || 0);

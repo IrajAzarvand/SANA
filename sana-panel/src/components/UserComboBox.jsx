@@ -27,6 +27,7 @@ export default function UserComboBox({
   const [allUsers, setAllUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [usernameAvailability, setUsernameAvailability] = useState('idle');
+  const [checkedUsername, setCheckedUsername] = useState('');
   const containerRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -39,6 +40,8 @@ export default function UserComboBox({
 
   // با تغییر نوع حساب، فهرست قبلی نباید برای نوع جدید استفاده شود.
   useEffect(() => {
+    // Suggestions belong to one account type; clear them when the type changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setAllUsers([]);
     setLoading(false);
     setOpen(false);
@@ -51,7 +54,6 @@ export default function UserComboBox({
 
     let cancelled = false;
     const fetchUsers = async () => {
-      setLoading(true);
       try {
         const list = await fetchAllPages(usersAPI.list, {
           account_type: accountType,
@@ -72,20 +74,17 @@ export default function UserComboBox({
   // Check uniqueness globally, independently from the account-type-filtered suggestions.
   useEffect(() => {
     if (selectedUserId) {
-      setUsernameAvailability('selected');
       onUsernameAvailabilityChange?.('selected');
       return undefined;
     }
 
     const username = search.trim();
     if (!username) {
-      setUsernameAvailability('idle');
       onUsernameAvailabilityChange?.('idle');
       return undefined;
     }
 
     let cancelled = false;
-    setUsernameAvailability('checking');
     onUsernameAvailabilityChange?.('checking');
 
     const timer = setTimeout(async () => {
@@ -93,11 +92,13 @@ export default function UserComboBox({
         const result = await usersAPI.checkUsername(username);
         if (cancelled) return;
         const nextStatus = result.available ? 'available' : 'taken';
+        setCheckedUsername(username);
         setUsernameAvailability(nextStatus);
         onUsernameAvailabilityChange?.(nextStatus);
       } catch (e) {
         if (cancelled) return;
         console.error('Error checking username availability:', e);
+        setCheckedUsername(username);
         setUsernameAvailability('error');
         onUsernameAvailabilityChange?.('error');
       }
@@ -108,6 +109,20 @@ export default function UserComboBox({
       clearTimeout(timer);
     };
   }, [search, selectedUserId, onUsernameAvailabilityChange]);
+
+  const normalizedUsernameSearch = search.trim();
+  const displayUsernameAvailability = selectedUserId
+    ? 'selected'
+    : !normalizedUsernameSearch
+      ? 'idle'
+      : checkedUsername === normalizedUsernameSearch
+        ? usernameAvailability
+        : 'checking';
+
+  const openSuggestions = () => {
+    if (allUsers.length === 0) setLoading(true);
+    setOpen(true);
+  };
 
   // فیلتر توی Frontend
   const filteredUsers = useMemo(() => {
@@ -169,7 +184,7 @@ export default function UserComboBox({
       onClearUser();
     }
 
-    if (!open) setOpen(true);
+    if (!open) openSuggestions();
   };
 
   const matchedUser = allUsers.find((u) => u.id === selectedUserId);
@@ -193,7 +208,7 @@ export default function UserComboBox({
           type="text"
           value={search}
           onChange={handleInputChange}
-          onFocus={() => setOpen(true)}
+          onFocus={openSuggestions}
           placeholder={placeholder}
           className={`w-full bg-bg-base border rounded-field
                      pr-11 pl-10 py-2.5 text-sm
@@ -217,7 +232,7 @@ export default function UserComboBox({
           )}
           <button
             type="button"
-            onClick={() => setOpen(!open)}
+            onClick={() => (open ? setOpen(false) : openSuggestions())}
             className="text-text-muted hover:text-text-primary transition-colors"
           >
             <ChevronDown size={16} />
@@ -243,9 +258,9 @@ export default function UserComboBox({
             </div>
           ) : filteredUsers.length === 0 ? (
             <div className="p-3 text-center text-xs text-text-muted">
-              {usernameAvailability === 'taken'
+              {displayUsernameAvailability === 'taken'
                 ? 'این نام کاربری قبلاً در سامانه استفاده شده است'
-                : usernameAvailability === 'checking'
+                : displayUsernameAvailability === 'checking'
                   ? 'در حال بررسی نام کاربری...'
                   : `کاربری از این نوع یافت نشد — «${search}» به عنوان کاربر جدید ثبت می‌شود`}
             </div>
@@ -280,15 +295,15 @@ export default function UserComboBox({
         </div>
       )}
 
-      {!selectedUserId && usernameAvailability === 'taken' && (
+      {!selectedUserId && displayUsernameAvailability === 'taken' && (
         <p className="text-xs text-danger mt-1.5">
           این نام کاربری قبلاً در سامانه استفاده شده است.
         </p>
       )}
-      {!selectedUserId && usernameAvailability === 'checking' && (
+      {!selectedUserId && displayUsernameAvailability === 'checking' && (
         <p className="text-xs text-text-muted mt-1.5">در حال بررسی سراسری نام کاربری...</p>
       )}
-      {!selectedUserId && usernameAvailability === 'error' && (
+      {!selectedUserId && displayUsernameAvailability === 'error' && (
         <p className="text-xs text-warning mt-1.5">
           بررسی نام کاربری انجام نشد؛ اعتبارسنجی نهایی همچنان در سرور انجام می‌شود.
         </p>

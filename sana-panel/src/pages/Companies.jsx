@@ -207,6 +207,16 @@ export default function Companies() {
     }
   };
 
+  const retryOrganizationSection = (org, section) => {
+    const requestId = detailRequestIdRef.current;
+    loadOrganizationSection(org, section, requestId);
+  };
+
+  const retryOrganizationCore = (org) => {
+    const requestId = detailRequestIdRef.current;
+    loadOrganizationCore(org, requestId);
+  };
+
   const handleViewOrganization = (org) => {
     const requestId = detailRequestIdRef.current + 1;
     detailRequestIdRef.current = requestId;
@@ -242,7 +252,7 @@ export default function Companies() {
       return (
         <div className="space-y-2 py-2">
           <p className="text-red-500">{detailErrors[section]}</p>
-          <Button variant="secondary" size="sm" onClick={() => loadOrganizationSection(detailOrganization, section, detailRequestIdRef.current)}>
+          <Button variant="secondary" size="sm" onClick={() => retryOrganizationSection(detailOrganization, section)}>
             تلاش مجدد
           </Button>
         </div>
@@ -358,6 +368,7 @@ export default function Companies() {
         ) : (
           <>
           <div className="grid grid-cols-1 gap-3 sm:hidden">
+            {/* eslint-disable-next-line react-hooks/refs -- getMenuItems returns click callbacks; ref reads occur only after a user click. */}
             {filtered.map((c) => (
               <article key={c.id} className="rounded-card border border-border-base bg-bg-base p-3">
                 <div className="flex items-start justify-between gap-3">
@@ -388,6 +399,7 @@ export default function Companies() {
                 </tr>
               </thead>
               <tbody>
+                {/* eslint-disable-next-line react-hooks/refs -- getMenuItems returns click callbacks; ref reads occur only after a user click. */}
                 {filtered.map((c) => (
                   <tr key={c.id} className="border-b border-border-base last:border-0 hover:bg-bg-hover transition-colors">
                     <td className="py-3 px-4">
@@ -434,7 +446,7 @@ export default function Companies() {
                 {detailOrganizationError && (
                   <>
                     <p className="text-red-500">{detailOrganizationError}</p>
-                    <Button variant="secondary" size="sm" onClick={() => loadOrganizationCore(detailOrganization, detailRequestIdRef.current)}>تلاش مجدد</Button>
+                    <Button variant="secondary" size="sm" onClick={() => retryOrganizationCore(detailOrganization)}>تلاش مجدد</Button>
                   </>
                 )}
               </div>

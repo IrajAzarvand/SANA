@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Command, Bell, Menu, ChevronDown, LogOut, User } from 'lucide-react';
+import { Command, Menu, ChevronDown, LogOut, User } from 'lucide-react';
 import SanaLogo from './SanaLogo';
 import CommandPalette from './CommandPalette';
 import NotificationCenter from './NotificationCenter';
@@ -75,7 +75,7 @@ export default function Header({ onMenuClick }) {
           </div>
         </div>
       </header>
-      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      {paletteOpen && <CommandPalette open onClose={() => setPaletteOpen(false)} />}
     </>
   );
 }
