@@ -153,14 +153,34 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
       return;
     }
     try {
-      const [branches, vehicles] = await Promise.all([
+      const [branches, vehicles, subscriptions] = await Promise.all([
         fetchAllPages((params) => branchesAPI.list({ ...params, organization: organizationId })),
         fetchAllPages((params) => vehiclesAPI.list({ ...params, organization: organizationId, ...(branchId ? { branch: branchId } : {}) })),
+        fetchAllPages((params) => subscriptionsAPI.list({ ...params, status: 'active', customer_type: 'organization', organization: organizationId })),
       ]);
-      setOperationTargets((current) => ({ ...current, branches, vehicles }));
+      setOperationTargets((current) => ({ ...current, branches, vehicles, subscriptions }));
     } catch (err) {
       console.error('Error loading target organization branches and vehicles:', err);
       setOperationTargets((current) => ({ ...current, branches: [], vehicles: [] }));
+    }
+  };
+
+  const loadPersonalTransferSubscriptions = async (userId) => {
+    if (!userId) {
+      setOperationTargets((current) => ({ ...current, subscriptions: [] }));
+      return;
+    }
+    try {
+      const subscriptions = await fetchAllPages((params) => subscriptionsAPI.list({
+        ...params,
+        status: 'active',
+        customer_type: 'personal',
+        user: userId,
+      }));
+      setOperationTargets((current) => ({ ...current, subscriptions }));
+    } catch (err) {
+      console.error('Error loading target personal subscriptions:', err);
+      setOperationTargets((current) => ({ ...current, subscriptions: [] }));
     }
   };
 
@@ -183,16 +203,17 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
           vehicles: normalize(vehicles),
         }));
       } else if (operationType === 'transfer_customer') {
-        const [orgs, users, subs] = await Promise.all([
+        const [orgs, users] = await Promise.all([
           fetchAllPages(organizationsAPI.list),
           fetchAllPages(usersAPI.list),
-          fetchAllPages((params) => subscriptionsAPI.list({ ...params, status: 'active' })),
         ]);
         setOperationTargets((current) => ({
           ...current,
           organizations: orgs,
           users,
-          subscriptions: normalize(subs),
+          branches: [],
+          vehicles: [],
+          subscriptions: [],
         }));
       } else if (operationType === 'transfer_branch') {
         const result = await branchesAPI.list(historyDevice.organization ? { organization: historyDevice.organization } : {});
@@ -513,9 +534,11 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
                           setOperationForm((current) => ({ ...current, target_organization: organizationId, target_user: '', target_branch: '', target_vehicle: '', target_subscription: '' }));
                           await loadOrganizationTransferTargets(organizationId);
                         }} options={operationTargets.organizations.map((item) => ({ value: item.id, label: item.name }))} />
-                        <Select label="کاربر شخصی مقصد" placeholder="در صورت انتقال به مشتری شخصی" value={operationForm.target_user} onChange={(e) => {
-                          setOperationForm((current) => ({ ...current, target_user: e.target.value, target_organization: '', target_branch: '', target_vehicle: '', target_subscription: '' }));
-                          setOperationTargets((current) => ({ ...current, branches: [], vehicles: [] }));
+                        <Select label="کاربر شخصی مقصد" placeholder="در صورت انتقال به مشتری شخصی" value={operationForm.target_user} onChange={async (e) => {
+                          const userId = e.target.value;
+                          setOperationForm((current) => ({ ...current, target_user: userId, target_organization: '', target_branch: '', target_vehicle: '', target_subscription: '' }));
+                          setOperationTargets((current) => ({ ...current, branches: [], vehicles: [], subscriptions: [] }));
+                          await loadPersonalTransferSubscriptions(userId);
                         }} options={operationTargets.users.filter((item) => item.account_type === 'personal').map((item) => ({ value: item.id, label: item.full_name || item.username }))} />
                         {operationForm.target_organization && (
                           <>
@@ -527,12 +550,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
                             <Select label="خودروی مقصد (اختیاری)" placeholder="بدون اتصال به خودرو" value={operationForm.target_vehicle} onChange={(e) => setOperationForm((current) => ({ ...current, target_vehicle: e.target.value }))} options={operationTargets.vehicles.map((item) => ({ value: item.id, label: item.plate }))} />
                           </>
                         )}
-                        <Select label="قرارداد مقصد (اختیاری)" placeholder="انتخاب قرارداد" value={operationForm.target_subscription} onChange={(e) => setOperationForm((current) => ({ ...current, target_subscription: e.target.value }))} options={operationTargets.subscriptions.filter((item) => operationForm.target_organization
-                          ? item.customer_type === 'organization' && String(item.organization) === String(operationForm.target_organization)
-                          : operationForm.target_user
-                            ? item.customer_type === 'personal' && String(item.user) === String(operationForm.target_user)
-                            : false
-                        ).map((item) => ({ value: item.id, label: item.contract_number }))} />
+                        <Select label="قرارداد مقصد (اختیاری)" placeholder="انتخاب قرارداد" value={operationForm.target_subscription} onChange={(e) => setOperationForm((current) => ({ ...current, target_subscription: e.target.value }))} options={operationTargets.subscriptions.map((item) => ({ value: item.id, label: item.contract_number }))} />
                       </div>
                     )}
                     {operationNeedsReplacement && (
