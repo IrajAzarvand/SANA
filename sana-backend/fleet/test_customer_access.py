@@ -2132,6 +2132,25 @@ class OrganizationDeviceBranchAssignmentApiTests(TestCase):
         self.device.refresh_from_db()
         self.assertEqual(self.device.branch_id, self.branch.pk)
 
+    def test_assign_branch_allows_vehicle_without_a_branch(self):
+        vehicle = Vehicle.objects.create(
+            organization=self.organization,
+            branch=None,
+            plate='88ب886',
+        )
+        self.device.vehicle = vehicle
+        self.device.save(update_fields=['vehicle'])
+
+        response = self.client.post(
+            f'/api/devices/{self.device.pk}/assign-branch/',
+            {'branch_id': self.branch.pk},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.branch_id, self.branch.pk)
+
     def test_manager_can_assign_without_a_predefined_end_date(self):
         response = self.client.post(
             f'/api/devices/{self.device.pk}/assign-branch/',
@@ -2513,6 +2532,25 @@ class OrganizationDeviceBranchChangeApiTests(TestCase):
             organization=self.organization,
             branch=self.new_branch,
             plate='88ب885',
+        )
+        self.device.vehicle = vehicle
+        self.device.save(update_fields=['vehicle'])
+
+        response = self.client.post(
+            f'/api/devices/{self.device.pk}/change-branch/',
+            {'branch_id': self.new_branch.pk},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.device.refresh_from_db()
+        self.assertEqual(self.device.branch_id, self.new_branch.pk)
+
+    def test_change_branch_allows_vehicle_without_a_branch(self):
+        vehicle = Vehicle.objects.create(
+            organization=self.organization,
+            branch=None,
+            plate='88ب887',
         )
         self.device.vehicle = vehicle
         self.device.save(update_fields=['vehicle'])
