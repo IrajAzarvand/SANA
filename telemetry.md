@@ -1,9 +1,9 @@
 # مستند فنی جامع SANA
 ## معماری، جریان داده، اجزای نرم‌افزار، پایگاه داده و عملیات
 
-> **وضعیت سند:** بازنویسی و بازبینی بر اساس کد شاخه main پس از ادغام PR شماره ۱۶۵  
-> **Commit مبنا:** a253c5fe1609f4bc3ca3a35d5047d401dc43ade1  
-> **تاریخ بازبینی:** 2026-11-25  
+> **وضعیت سند:** بازبینی بر اساس کد شاخه main و وضعیت اجرایی موجود در مخزن  
+> **Commit مبنا:** 89ba530a2ea705299ea32ad27f5ed73c72049478  
+> **تاریخ بازبینی:** 2026-11-28  
 > **اصل نگارش:** این سند وضعیت پیاده‌سازی موجود در مخزن را توصیف می‌کند؛ تصمیم‌های قدیمی، طرح‌های اجرا‌نشده و قابلیت‌های صرفاً نمایشی، به‌عنوان قابلیت فعال معرفی نمی‌شوند.
 
 ---
@@ -21,7 +21,7 @@ SANA سامانه مدیریت ناوگان و خدمات ردیابی خودر�
 - ثبت عملیات مالی قرارداد، دریافت وجه، برنامه اقساط و تخصیص مبالغ.
 - ثبت چرخه عمر و عملیات تعمیر، جایگزینی، انتقال و تعیین تکلیف دستگاه.
 - ارائه ابزارهای مدیریتی برای بررسی سرویس‌ها، لاگ‌ها و پورت‌های Traccar.
-- نگهداری مدل داده و ابزارهای اولیه بررسی پروتکل‌های ناشناخته.
+- نگهداری وضعیت کاربرمحور اعلان‌ها و تنظیمات فیلتر هشدارهای GPS؛ داده خام رویدادها همچنان از Traccar دریافت می‌شود.
 
 SANA از چند جزء مستقل تشکیل شده است. Backend منطق تجاری و API را اجرا می‌کند، Panel رابط کاربری است، Traccar دریافت و رمزگشایی پروتکل GPS و نگهداری موقعیت‌ها را انجام می‌دهد و سرویس sana-gps کارهای هماهنگ‌سازی دستگاه و تطبیق نقشه را بر عهده دارد.
 
@@ -54,7 +54,6 @@ SANA/
 │   ├── fleet/                    # خودرو، دستگاه، راننده و عملیات ناوگان
 │   ├── dashboard/                # داشبورد و تنظیمات سراسری
 │   ├── ops_monitoring/           # لاگ زنده و ابزارهای مدیریتی Traccar
-│   ├── decoder_discovery/        # مدل داده و تحلیل اولیه پروتکل ناشناخته
 │   └── sana_core/                # تنظیمات و URLهای اصلی Django
 │
 ├── sana-gps/                     # سرویس پشتیبان GPS
@@ -616,6 +615,7 @@ SubscriptionPaymentAllocation مشخص می‌کند چه بخشی از یک د�
 - fleet/lifecycle.py
 - fleet/traccar_api.py
 - fleet/management/commands/sync_traccar_device_catalog.py
+- sana-panel/src/utils/traccarAttributes.js (نگاشت نمایشی فعال در Panel؛ registry قدیمی Backend حذف شده است)
 
 این ماژول مرکز مدیریت خودرو، دستگاه GPS، مدل دستگاه، راننده، تخصیص راننده و چرخه عمر دستگاه است.
 
@@ -839,43 +839,25 @@ APIها:
 - POST /api/gps-monitor/ports/
 - GET /api/gps-monitor/ports/capture/1256/
 
-## ۶.۷. decoder_discovery
+## ۶.۷. اعلان‌ها و هشدارها
 
-فایل‌ها:
+مرکز اعلان‌ها از دو جریان Backend استفاده می‌کند:
 
-- decoder_discovery/models.py
-- decoder_discovery/discovery_engine.py
-- decoder_discovery/sample_analysis.py
-- decoder_discovery/internet_research.py
-- decoder_discovery/tests.py
+- `GET/POST /api/users/notifications/`: رویدادهای تجاری و مدیریتیِ متناسب با نقش و محدوده سازمانی کاربر، از جمله یادآوری‌های مالی و رویدادهای مربوط به کاربران، شعب، دستگاه‌ها و عملیات.
+- `GET/POST /api/devices/alerts/`: رویدادهای GPS دریافت‌شده از API ترکار. SANA داده خام Event یا Position را کپی نمی‌کند؛ فقط وضعیت پیگیری هر رویداد برای هر کاربر را نگه می‌دارد.
+- `GET/PUT /api/devices/alert-preferences/`: تنظیمات انواع رویدادهای قابل نمایش در مرکز هشدار برای نقش‌های پشتیبانی‌شده.
 
-این ماژول مدل داده و ابزارهای اولیه برای بررسی پروتکل ناشناخته را فراهم می‌کند.
+مدل `fleet.DeviceAlertState` وضعیت کاربرمحور اعلان‌ها (خوانده‌نشده، خوانده‌شده، بررسی‌شده و رفع‌شده) و کلید یکتای رویداد را ذخیره می‌کند. این مدل مخزن Telemetry نیست. رویدادهای GPS همچنان از Traccar می‌آیند و وضعیت خواندن/پیگیری آن‌ها در SANA نگهداری می‌شود.
 
-مدل‌ها:
+مدل `fleet.PersonalAlertPreference` فهرست انواع رویدادهای غیرفعال‌شده را برای کاربر نگه می‌دارد. در رابط Settings، کانال‌های Email، SMS و Push غیرفعال و غیرقابل انتخاب‌اند؛ سرویس ارسال این کانال‌ها در مسیر اجرایی فعلی پیاده‌سازی نشده است.
 
-- ReferenceSource: منبع مرجع برای جست‌وجوی Decoder.
-- DiscoveryCase: پرونده بررسی شناسه/نمونه ناشناخته.
-- DecoderCandidate: نامزد Decoder و اطلاعات منبع، نسخه، زبان، runtime، وابستگی و مجوز.
-- CandidateTestRun: اجرای آزمون نامزد و گزارش نتیجه.
-- PublishedDecoderVersion: نسخه Decoder منتشرشده با تأییدکننده و وضعیت فعال/غیرفعال.
+فایل‌های مرجع:
 
-ابزار تحلیل نمونه:
-
-- طول داده.
-- SHA-256.
-- entropy.
-- نسبت ASCII قابل چاپ.
-- prefix و suffix به صورت hex.
-- رشته‌های قابل چاپ.
-- شمارش byteهای متمایز و صفر.
-
-برای فریم‌های شبیه JT/T 808، کد می‌تواند شواهد اولیه framing و شناسه‌های احتمالی را استخراج کند؛ این شواهد به‌تنهایی تأیید پروتکل نیستند و checksum یا بدنه کامل پیام را اعتبارسنجی نمی‌کنند.
-
-جست‌وجوی مرجع از DuckDuckGo و GitHub repository search استفاده می‌کند. طبق کد، کل payload خام برای جست‌وجوی وب ارسال نمی‌شود؛ فقط سرنخ‌های محدود و signature کوتاه استفاده می‌شوند.
-
-**محدودیت وضعیت فعلی:** این ماژول در مخزن دارای مدل‌ها، توابع تحلیل و تست مدل است، اما در sana_core/urls.py مسیر API برای decoder_discovery ثبت نشده و سرویس sana-gps نیز در main.py این ماژول را به دریافت زنده متصل نمی‌کند. صفحه AIManagement فعلی نیز یک گردش‌کار نمایشی/مقدماتی است و اتصال کامل عملیاتی آن به API و Worker از کد فعلی تأیید نمی‌شود. بنابراین نباید آن را Decoder خودکار فعال در مسیر دریافت GPS معرفی کرد.
-
-همچنین مسیر AI/auto_decoder_generator در وضعیت فعلی فقط فایل آغازین ماژول دارد و به‌تنهایی نشان‌دهنده یک سرویس اجرایی کامل نیست.
+- `accounts/views.py` — ساخت Feed تجاری/مدیریتی و API اعلان‌های پنل.
+- `fleet/views.py` — دریافت رویدادهای Traccar و API هشدار/تنظیمات.
+- `fleet/models.py` — وضعیت و تنظیمات اعلان.
+- `sana-panel/src/pages/Alerts.jsx` و `sana-panel/src/components/NotificationCenter.jsx` — نمایش و پیگیری اعلان‌ها.
+- `sana-panel/src/pages/Settings.jsx` — تنظیم انواع هشدارهای قابل نمایش.
 
 ---
 
@@ -902,7 +884,7 @@ sana-panel/src/api/client.js
 | /panel/reports | Reports | بخش گزارش‌ها |
 | /panel/reports/trips | DeviceTripReport | گزارش مسیر و بازپخش |
 | /panel/reports/live-logs | LiveLogs | لاگ زنده مدیریتی |
-| /panel/alerts | Alerts | صفحه هشدار فعلی |
+| /panel/alerts | Alerts | مرکز اعلان‌های تجاری/مدیریتی و هشدارهای GPS متصل به Backend |
 | /panel/settings | Settings | تنظیمات و ابزارهای مدیریتی |
 | /panel/companies | Companies | سازمان‌ها |
 | /panel/branches | Branches | شعب |
@@ -910,7 +892,6 @@ sana-panel/src/api/client.js
 | /panel/subscriptions | Subscriptions | قراردادها |
 | /panel/subscriptions/new | SubscriptionWizard | ساخت قرارداد |
 | /panel/subscriptions/:id | SubscriptionDetail | جزئیات و عملیات قرارداد |
-| /panel/ai | AIManagement | صفحه مقدماتی مدیریت کشف Decoder |
 
 دسترسی هر صفحه علاوه بر ProtectedRoute باید با مجوز API متناظر Backend هماهنگ باشد.
 
@@ -960,10 +941,11 @@ Backend تاریخچه را با serverTime اعتبارسنجی و مرتب م�
 
 ## ۷.۵. نمایش Attributeها و راهنمای پارامترها
 
-دو لایه ارائه Attribute وجود دارد:
+نگاشت فعال عنوان‌های نمایشی در فایل:
 
-1. sana-panel/src/utils/traccarAttributes.js: نگاشت نمایشی سمت پنل برای عنوان فارسی و دسته‌بندی ویژگی‌های Traccar. Backend داده‌های خام موقعیت را ذخیره یا بازتولید نمی‌کند و کلیدهای اصلی پاسخ Traccar را حفظ می‌کند.
-2. DeviceReportPlayback.jsx: نمایش مقادیر و عنوان‌های فارسی در جزئیات نقطه گزارش.
+`sana-panel/src/utils/traccarAttributes.js`
+
+کامپوننت `DeviceReportPlayback.jsx` از این نگاشت استفاده می‌کند و برای کلیدهای ناشناخته، خود کلید اصلی را نمایش می‌دهد. registry قدیمی Backend در PR #193 حذف شده است و مرجع نمایش پنل نیست.
 
 در نمایش گزارش، مقادیر خام Attributes همچنان از Traccar می‌آیند. تغییر عنوان فارسی نباید مقدار خام یا کلید اصلی را تغییر دهد.
 
@@ -984,16 +966,16 @@ Backend تاریخچه را با serverTime اعتبارسنجی و مرتب م�
 
 ## ۷.۶. هشدار و اعلان
 
-صفحه Alerts فعلی از داده اولیه محلی در sana-panel/src/data/alertsData.js استفاده می‌کند. صفحه تنظیمات اعلان نیز از داده تنظیمات محلی استفاده می‌کند.
+صفحه Alerts و منوی اعلان Header از APIهای Backend داده دریافت می‌کنند؛ داده اولیه محلی `alertsData.js` مرجع صفحه فعال نیست.
 
-در کد فعلی:
+دو Feed به‌صورت مجزا دریافت و در UI ترکیب می‌شوند:
 
-- مدل Django اختصاصی برای Notification وجود ندارد.
-- API مرکزی اعلان ثبت نشده است.
-- سرویس ارسال Push، SMS یا Email در این مخزن به‌عنوان مسیر فعال اعلان تعریف نشده است.
-- صفحه Alerts را نباید سامانه اعلان عملیاتی و متصل به رخدادهای مالی یا GPS تلقی کرد.
+- Feed تجاری/مدیریتی از `/api/users/notifications/`؛ Backend رویدادها و یادآوری‌های مرتبط با محدوده دسترسی کاربر را می‌سازد.
+- Feed هشدار GPS از `/api/devices/alerts/`؛ رخدادها از Traccar خوانده می‌شوند و SANA فقط وضعیت پیگیری مختص هر کاربر را نگه می‌دارد.
 
-پیاده‌سازی اعلان‌های واقعی، از جمله اعلان مالی، هشدار دستگاه و توزیع اعلان بر اساس نقش و مجوز، نیازمند طراحی و اتصال Backend، ذخیره‌سازی، سیاست گیرنده و کانال ارسال است.
+وضعیت خواندن و پیگیری هر دو Feed در `fleet.DeviceAlertState` ذخیره می‌شود. این جدول شامل نسخه کپی‌شده Telemetry یا Event خام نیست. تنظیم فیلتر انواع هشدار با `fleet.PersonalAlertPreference` انجام می‌شود.
+
+کانال‌های ارسال Email، SMS و Push در رابط کاربری غیرفعال‌اند و سرویس ارسال آن‌ها در کد فعلی فعال نیست؛ اعلان‌های موجود در مرکز پنل، Feedهای داخل برنامه هستند.
 
 ---
 
@@ -1010,6 +992,7 @@ Backend تاریخچه را با serverTime اعتبارسنجی و مرتب م�
 | accounts_user | User | حساب کاربری سفارشی SANA |
 | accounts_user_groups | رابطه User و Group | گروه‌های مجوز Django |
 | accounts_user_user_permissions | رابطه User و Permission | مجوزهای مستقیم کاربر |
+| accounts_usersession | UserSession | نشست‌های ثبت‌شده کاربر |
 
 به‌دلیل استفاده از AbstractBaseUser و PermissionsMixin، جداول احراز هویت Django نیز وجود دارند.
 
@@ -1095,17 +1078,14 @@ DeviceOwnershipHistory، DeviceCustomerAccessPeriod و SubscriptionDevice سه �
 |---|---|---|
 | dashboard_sitesettings | SiteSettings | تنظیمات singleton سراسری سایت |
 
-## ۸.۵. جداول decoder_discovery
+## ۸.۵. جداول اعلان و تنظیمات هشدار
 
 | جدول | مدل | کاربرد |
 |---|---|---|
-| decoder_discovery_referencesource | ReferenceSource | منابع جست‌وجوی Decoder |
-| decoder_discovery_discoverycase | DiscoveryCase | پرونده بررسی نمونه/شناسه |
-| decoder_discovery_decodercandidate | DecoderCandidate | نامزد Decoder |
-| decoder_discovery_candidatetestrun | CandidateTestRun | گزارش اجرای آزمون |
-| decoder_discovery_publisheddecoderversion | PublishedDecoderVersion | نسخه منتشرشده و تأییدشده |
+| fleet_devicealertstate | DeviceAlertState | وضعیت خواندن/پیگیری اعلان برای هر کاربر؛ بدون ذخیره Telemetry خام |
+| fleet_personalalertpreference | PersonalAlertPreference | انواع هشدار GPS غیرفعال‌شده برای کاربر |
 
-این جداول در مدل Django تعریف شده‌اند؛ اما وجود آن‌ها به معنی فعال بودن API یا Worker عملیاتی کشف Decoder نیست.
+`DeviceAlertState` برای Feed تجاری/مدیریتی و Feed رویدادهای GPS استفاده می‌شود. منبع رویدادهای GPS همچنان Traccar است؛ SANA فقط state مربوط به کاربر را نگه می‌دارد.
 
 ## ۸.۶. جداول پیش‌فرض Django
 
@@ -1467,20 +1447,30 @@ Panel در محیط توسعه با Vite اجرا می‌شود و در اسکر
 
 ## ۱۴.۱. تست‌های Backend
 
-پوشه‌های تست شامل موارد زیر هستند:
+پوشه‌های تست Backend در شاخه main شامل فایل‌های زیر هستند:
 
 - accounts/tests.py
+- accounts/test_auth_rate_limits.py
+- accounts/test_sessions.py
+- accounts/test_user_admin_deletion.py
+- accounts/test_user_management_roles.py
+- accounts/test_user_password_validation.py
 - dashboard/tests.py
+- dashboard/test_personal_dashboard_contract.py
 - fleet/tests.py
 - fleet/test_permissions.py
 - fleet/test_customer_access.py
 - fleet/test_personal_contract_access_bounds.py
 - fleet/test_contract_integrity_constraints.py
+- fleet/test_device_management_status_semantics.py
+- fleet/test_driver_mutation_security.py
+- fleet/test_map_matching_watcher_security.py
+- fleet/test_personal_alert_query_bounds.py
 - organizations/tests.py
+- organizations/test_organization_settings.py
+- organizations/test_personal_mutation_security.py
 - ops_monitoring/tests.py
-- decoder_discovery/tests.py
-- decoder_discovery/test_discovery_engine.py
-- decoder_discovery/test_sample_intake.py
+- sana_core/test_settings.py
 
 اجرای کامل:
 
@@ -1500,7 +1490,7 @@ python -m pytest -q
 
 ## ۱۴.۳. تست یکپارچه PostgreSQL/PostGIS
 
-test_gps_postgres_integration.py دسترسی نقش sana_user، schema GPS و امکان به‌روزرسانی protocol در جدول fleet_device را بررسی می‌کند.
+فایل `sana-gps/tests/test_gps_postgres_integration.py` دسترسی نقش sana_user، schema GPS و امکان به‌روزرسانی protocol در جدول fleet_device را بررسی می‌کند.
 
 این تست از دیتابیس آزمایشی PostGIS استفاده می‌کند و نباید به دیتابیس عملیاتی متصل شود.
 
@@ -1510,17 +1500,18 @@ Workflow:
 
 .github/workflows/sana-django-migrations.yml
 
-موارد بررسی‌شده در Workflow:
+موارد بررسی‌شده در Workflow فعلی:
 
-- نصب Python 3.12 و وابستگی‌های Django.
-- PostgreSQL/PostGIS.
-- اجرای Migration روی دیتابیس تازه.
-- اجرای makemigrations --check --dry-run.
-- اجرای کامل تست Backend.
-- بررسی وجود جدول‌های اصلی و نبود جدول‌های بازنشسته GPS.
-- بررسی کاتالوگ DeviceModel.
-- بررسی ارتقا از زنجیره تاریخی Migrationها.
-- بررسی وضعیت‌های نیمه‌اعمال‌شده تاریخی fleet و حفظ داده Device.
+- نصب Python 3.12 و وابستگی‌های Backend.
+- راه‌اندازی PostgreSQL/PostGIS آزمایشی.
+- اجرای تمام Migrationها روی دیتابیس تازه.
+- اجرای `makemigrations --check --dry-run` برای تشخیص اختلاف state مدل‌ها و Migrationها.
+- اجرای تست‌های یکپارچگی قیود قرارداد.
+- اجرای کامل تست‌های Django.
+
+این Workflow فعلی آزمون ارتقای درجا از تاریخچه قدیمی fleet، بررسی جداگانه جدول‌های بازنشسته یا آزمون کاتالوگ مستقل انجام نمی‌دهد. موفقیت نصب تمیز و `makemigrations --check` اثبات می‌کند زنجیره فعلی برای دیتابیس تازه ساخته می‌شود و مدل‌های فعلی با state Migrationها هم‌خوان‌اند؛ اما مسیر upgrade از Migrationهای حذف‌شده را اثبات نمی‌کند.
+
+`fleet.0003_current_state` یک baseline برای ساخت دیتابیس از صفر است و metadata از نوع `replaces` ندارد؛ بنابراین نباید آن را squash migration سازگار با تاریخچه قبلی فرض کرد. برای این پروژه، پس از نهایی‌شدن اصلاحات، دیتابیس از ابتدا با همین زنجیره فعلی ساخته خواهد شد.
 
 ## ۱۴.۵. CI سرویس GPS
 
@@ -1528,14 +1519,16 @@ Workflow:
 
 .github/workflows/sana-gps-tests.yml
 
-موارد بررسی‌شده:
+موارد بررسی‌شده در Workflow فعلی:
 
-- نصب وابستگی‌های sana-gps.
-- اجرای pytest.
-- ایجاد جداول حداقلی ناوگان در PostgreSQL آزمایشی.
-- اجرای SQL نقش و PostGIS.
-- اجرای SQL schema نهایی GPS.
-- آزمون دسترسی sana_user و Integration Test.
+- نصب وابستگی‌های sana-gps و اجرای pytest.
+- ایجاد جدول‌های حداقلی `fleet_device`، `fleet_devicemodel` و `fleet_vehicle` در PostgreSQL آزمایشی.
+- اجرای SQL نقش برنامه و فعال‌سازی PostGIS.
+- اجرای SQL schema فعلی GPS.
+- آزمون به‌روزرسانی protocol توسط نقش `sana_user`.
+- اجرای PostgreSQL integration test برای دسترسی نقش برنامه و schema GPS.
+
+در workflow فعلی، اجرای خودکار روی push برای شاخه‌های `main` و `fix/gps-stages-1-3-telemetry-compliance` تعریف شده است؛ اجرای PR با تغییر فایل‌های GPS، fleet و workflow نیز فعال است.
 
 ## ۱۴.۶. CI پنل
 
@@ -1543,7 +1536,12 @@ Workflow:
 
 .github/workflows/sana-panel-build.yml
 
-اسکریپت‌های محلی پنل:
+Workflow فعلی در GitHub:
+
+- روی تغییرات `sana-panel/**`، `sana-map/**` و فایل workflow اجرا می‌شود.
+- پس از نصب وابستگی‌ها، هر دو دستور `npm run lint` و `npm run build` در CI اجرا می‌شوند.
+
+کنترل محلی پنل:
 
 ~~~bash
 cd sana-panel
@@ -1552,7 +1550,6 @@ npm run build
 ~~~
 
 تست Build پنل جایگزین بررسی عملکرد UI با داده واقعی و API عملیاتی نیست.
-
 ---
 
 # ۱۵. قابلیت‌های موجود و مواردی که هنوز نباید فعال فرض شوند
@@ -1574,11 +1571,13 @@ npm run build
 | نگهداری Position خام در SANA | عمداً انجام نمی‌شود |
 | نگهداری نتیجه Map Matching در SANA | پیاده‌سازی شده |
 | عملیات مالی قرارداد و تخصیص پرداخت/قسط | مدل و منطق Backend پیاده‌سازی شده |
-| اعلان واقعی مالی/GPS با کانال ارسال | در کد فعلی پیاده‌سازی نشده |
-| صفحه Alerts | داده اولیه محلی/نمایشی |
-| تنظیمات اعلان | در وضعیت فعلی محلی/نمایشی |
-| Decoder Discovery | مدل‌ها و ابزارهای تحلیل اولیه موجود؛ اتصال کامل به Runtime و API تأیید نشده |
-| صفحه AIManagement | صفحه مقدماتی؛ گردش‌کار اجرایی کامل از کد فعلی تأیید نمی‌شود |
+| Feed اعلان‌های تجاری/مدیریتی | از API Backend و محدود به محدوده دسترسی کاربر؛ state خواندن در DeviceAlertState |
+| هشدارهای GPS | رویدادها از Traccar؛ state خواندن/پیگیری در SANA |
+| صفحه Alerts و منوی اعلان | متصل به Feedهای Backend، نه داده محلی نمایشی |
+| تنظیم فیلتر هشدار | PersonalAlertPreference؛ فقط انواع هشدار قابل نمایش |
+| ارسال Email/SMS/Push | در کد فعلی فعال/پیاده‌سازی نشده؛ گزینه‌ها در UI غیرفعال‌اند |
+| Decoder Discovery | در شاخه main فعلی اپ، مدل، API، تست یا Worker اجرایی ندارد |
+| صفحه AIManagement | صفحه و route فعالی در Panel فعلی وجود ندارد |
 | لاگ زنده سرویس‌ها برای ادمین | پیاده‌سازی شده |
 | Capture خام شبکه | ابزار تشخیصی محدود و صریحاً آغازشونده توسط ادمین |
 | Redis | در معماری فعلی استفاده نمی‌شود |
@@ -1616,13 +1615,12 @@ npm run build
 | قرارداد و امور مالی | organizations/models.py، views.py، serializers.py |
 | چرخه عمر دستگاه | fleet/device_operations.py، fleet/lifecycle.py، fleet/models.py |
 | نگاشت Traccar به Device | fleet/traccar_api.py، fleet/views.py، sana-gps/app/traccar/ |
-| نگاشت Attributeهای ترکار | fleet/traccar_attributes.py |
+| نگاشت Attributeهای ترکار در UI | sana-panel/src/utils/traccarAttributes.js؛ registry قدیمی Backend در PR #193 حذف شده است |
 | گزارش مسیر | fleet/views.py، DeviceReportPlayback.jsx، DeviceTripReport.jsx |
 | نقشه زنده | fleet/views.py، Map.jsx، sana-map/src/ |
 | Map Matching | sana-gps/app/processing/map_matching.py، sana-gps/sql/0001... |
 | تنظیمات سراسری | dashboard/models.py، dashboard/views.py، Settings.jsx |
 | لاگ و Capture | ops_monitoring/views.py، scripts/sana-traccar-live-capture، scripts/sana-traccar-port-manager |
-| کشف پروتکل | decoder_discovery/ |
 | بازسازی دیتابیس | scripts/reset_sana_db.sh، sana-gps/sql/، Django migrations |
 | تست مهاجرت | .github/workflows/sana-django-migrations.yml |
 | تست GPS | .github/workflows/sana-gps-tests.yml |
@@ -1655,18 +1653,21 @@ npm run build
 
 ---
 
-# ۱۹. آخرین تغییرات پیاده‌سازی — ۲۰۲۶-۱۱-۲۵
+# ۱۹. آخرین بازبینی پیاده‌سازی — ۲۰۲۶-۱۱-۲۸
 
-این بازبینی پس از ادغام PR #165 و بررسی کد و تست‌های شاخه main انجام شده است.
+این بازبینی بر اساس کد شاخه main در Commit مبنای ابتدای سند انجام شده است؛ PRهای باز و ادغام‌نشده جزو وضعیت توصیف‌شده main محسوب نمی‌شوند.
 
+- Traccar تنها منبع داده خام GPS، Position و Event است. SANA برای هر کاربر فقط وضعیت خواندن/پیگیری هشدارها را در `fleet.DeviceAlertState` نگه می‌دارد.
+- Feed اعلان‌های تجاری/مدیریتی و یادآوری‌های مالی از `accounts/views.py` ساخته می‌شود و state کاربرمحور آن در همان مدل اعلان نگهداری می‌شود.
+- فیلتر انواع هشدار قابل نمایش با `fleet.PersonalAlertPreference` ذخیره می‌شود؛ کانال‌های ارسال Email، SMS و Push فعال نیستند.
+- نگاشت فعال Attributeها در `sana-panel/src/utils/traccarAttributes.js` است؛ registry قدیمی Backend در PR #193 حذف شده است.
+- اپلیکیشن `decoder_discovery` و صفحه/route مربوط به AIManagement در کد فعلی main وجود ندارند؛ نباید برای آن‌ها مدل، جدول یا قابلیت اجرایی در نظر گرفت.
 - مالکیت قانونی (`organization` یا `owner_user`)، تحویل‌گیرنده فعلی (`current_holder_*`)، دوره دسترسی مشتری (`DeviceCustomerAccessPeriod`) و اتصال قرارداد (`SubscriptionDevice`) چهار مفهوم مجزا هستند.
 - اتصال دستگاه به قرارداد، مالکیت قانونی را تغییر نمی‌دهد؛ فقط تحویل‌گیرنده و دسترسی قراردادی را تنظیم می‌کند. انتقال مالکیت باید از عملیات رسمی و ثبت تاریخچه انجام شود.
-- API و Django admin اجازه تغییر مستقیم روابط مالکیت، تحویل‌گیرنده، شعبه، خودرو و وضعیت چرخه عمر را نمی‌دهند. تغییرات حساس قرارداد، اتصال دستگاه و پرداخت نیز از مسیر عملیات حسابرسی‌شده انجام می‌شود.
-- ایجاد اتصال باز دوم برای یک دستگاه از مسیر ذخیره مدل رد می‌شود؛ اتصال قبلی باید در گردش‌کار رسمی صریحاً بسته شود. داده‌های تکراری تاریخی پاک‌سازی خودکار نمی‌شوند و انتخاب‌های فعلی باید تقدم زمانی را رعایت کنند.
-- تخصیص دستگاه به قرارداد فعال با تاریخ شروع آینده مجاز است؛ دوره دسترسی می‌تواند از قبل ثبت شود، اما تا رسیدن تاریخ شروع قرارداد و بازه دستگاه، مشتری مجاز به مشاهده دستگاه نیست.
-- در جایگزینی موقت برای تعمیر، پس از بازگشت دستگاه اصلی به مشتری، دستگاه امانی مرتبط در صورت تعلق به همان مشتری/قرارداد به انبار برمی‌گردد. زمان این بازگشت در `DeviceReplacementRelation.returned_at` ثبت می‌شود و مالک قانونی دستگاه امانی حفظ می‌شود.
+- تخصیص دستگاه به قرارداد فعال با تاریخ شروع آینده مجاز است؛ تا رسیدن تاریخ شروع قرارداد و بازه دستگاه، مشتری مجاز به مشاهده دستگاه نیست.
+- در جایگزینی موقت برای تعمیر، زمان بازگشت دستگاه جایگزین در `DeviceReplacementRelation.returned_at` ثبت می‌شود و مالک قانونی دستگاه جایگزین حفظ می‌شود.
 - Migration افزوده‌شده برای این رفتار: `fleet.0010_device_replacement_returned_at`.
-- تست‌های Backend شامل `fleet/test_contract_integrity_constraints.py`، `fleet/test_customer_access.py` و `fleet/test_personal_contract_access_bounds.py` هستند. در آخرین اجرای CI مربوط به PR #165، ۳۲۳ تست Django موفق شدند؛ تست‌های GPS نیز با ۳۴ موفق، ۱ مورد skip و تست PostgreSQL integration موفق شدند.
+- `fleet.0003_current_state` baseline نصب تمیز است، نه migration دارای `replaces` برای جایگزینی خودکار تاریخچه قدیمی. CI فعلی نصب تمیز و هم‌خوانی مدل/Migration را بررسی می‌کند، نه upgrade از graph حذف‌شده قبلی.
 
 ## ۲۰. قاعده نهایی مرجعیت
 
