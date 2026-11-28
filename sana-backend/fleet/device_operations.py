@@ -1120,19 +1120,23 @@ def execute_device_operation(
         )
 
     elif operation_type == 'transfer_customer':
+        if target_branch is not None:
+            raise ValidationError({
+                'target_branch': 'دستگاه پس از انتقال مشتری ابتدا بدون شعبه ثبت می‌شود؛ تخصیص شعبه باید جداگانه انجام شود.'
+            })
         _validate_transfer_target(
             organization=target_organization,
             user=target_user,
-            branch=target_branch,
+            branch=None,
             vehicle=target_vehicle,
             subscription=target_subscription,
         )
         _close_active_link(device, operation)
         _close_customer_access(device)
         _close_ownership(device)
-        resolved_branch = target_branch or (
-            target_vehicle.branch if target_vehicle else None
-        )
+        # A customer transfer always starts with no branch. The new
+        # organization manager may assign one after the transfer is complete.
+        resolved_branch = None
         device.organization = target_organization
         device.owner_user = target_user
         device.current_holder_organization = target_organization
