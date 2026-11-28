@@ -110,7 +110,7 @@ class DeviceOperationCustomerTransferApiTests(TestCase):
                 'operation_type': 'transfer_customer',
                 'target_organization': self.target_organization.pk,
                 'target_subscription': self.target_subscription.pk,
-                'target_branch': self.target_branch.pk,
+                # Omitting target_branch must infer it from the selected vehicle.
                 'target_vehicle': self.target_vehicle.pk,
                 'reason': 'transfer test',
             },
