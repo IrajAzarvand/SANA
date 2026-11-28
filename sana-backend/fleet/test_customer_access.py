@@ -1944,7 +1944,7 @@ class OrganizationDeviceBranchAssignmentApiTests(TestCase):
         self.client.force_authenticate(user=self.manager)
 
     def test_manager_assigns_unbranched_device_and_organization_access_resumes_after_end_date(self):
-        from datetime import timedelta
+        from datetime import datetime, timedelta, time as datetime_time
 
         end_date = timezone.localdate() + timedelta(days=5)
         response = self.client.post(
