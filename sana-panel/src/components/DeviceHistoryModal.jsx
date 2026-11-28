@@ -216,6 +216,18 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
 
   const loadOperationTargets = async (operationType) => {
     if (!historyDevice) return;
+    const requestId = ++transferTargetsRequestRef.current;
+    const deviceIdForRequest = historyDevice.id;
+    if (operationType === 'transfer_customer') {
+      setOperationTargets((current) => ({
+        ...current,
+        organizations: [],
+        users: [],
+        branches: [],
+        vehicles: [],
+        subscriptions: [],
+      }));
+    }
     try {
       const normalize = (result) => Array.isArray(result) ? result : result.results || [];
       if (operationType === 'disposition') {
@@ -225,6 +237,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
           fetchAllPages((params) => subscriptionsAPI.list({ ...params, status: 'active' })),
           vehiclesAPI.list(historyDevice.organization ? { organization: historyDevice.organization } : {}),
         ]);
+        if (requestId !== transferTargetsRequestRef.current || deviceIdForRequest !== historyDevice.id) return;
         setOperationTargets((current) => ({
           ...current,
           organizations: orgs,
@@ -237,6 +250,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
           fetchAllPages(organizationsAPI.list),
           fetchAllPages(usersAPI.list),
         ]);
+        if (requestId !== transferTargetsRequestRef.current || deviceIdForRequest !== historyDevice.id) return;
         setOperationTargets((current) => ({
           ...current,
           organizations: orgs,
@@ -247,13 +261,17 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
         }));
       } else if (operationType === 'transfer_branch') {
         const result = await branchesAPI.list(historyDevice.organization ? { organization: historyDevice.organization } : {});
+        if (requestId !== transferTargetsRequestRef.current || deviceIdForRequest !== historyDevice.id) return;
         setOperationTargets((current) => ({ ...current, branches: normalize(result) }));
       } else if (operationType === 'transfer_vehicle') {
         const result = await vehiclesAPI.list(historyDevice.organization ? { organization: historyDevice.organization } : {});
+        if (requestId !== transferTargetsRequestRef.current || deviceIdForRequest !== historyDevice.id) return;
         setOperationTargets((current) => ({ ...current, vehicles: normalize(result) }));
       }
     } catch (err) {
-      console.error('Error loading operation targets:', err);
+      if (requestId === transferTargetsRequestRef.current) {
+        console.error('Error loading operation targets:', err);
+      }
     }
   };
 
@@ -542,6 +560,9 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
                       value={operationForm.operation_type}
                       onChange={async (e) => {
                         const value = e.target.value;
+                        if (value !== 'transfer_customer') {
+                          transferTargetsRequestRef.current += 1;
+                        }
                         setOperationForm((current) => ({
                           ...current,
                           operation_type: value,
