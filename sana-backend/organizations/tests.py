@@ -29,6 +29,7 @@ class SubscriptionWizardExistingUserTests(TestCase):
             first_name='نام قبلی',
             last_name='نام خانوادگی قبلی',
             mobile='09120000000',
+            national_id='0098765432',
             account_type='personal',
             role='personal_user',
         )
@@ -67,7 +68,7 @@ class SubscriptionWizardExistingUserTests(TestCase):
         self.assertEqual(self.user.first_name, 'نام قبلی')
         self.assertEqual(self.user.last_name, 'نام خانوادگی قبلی')
         self.assertEqual(self.user.mobile, '09120000000')
-        self.assertEqual(self.user.national_id, '')
+        self.assertEqual(self.user.national_id, '0098765432')
         self.assertEqual(self.user.address, '')
         self.assertTrue(self.user.check_password('Original-Password-123'))
 
