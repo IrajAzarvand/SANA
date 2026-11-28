@@ -2192,3 +2192,224 @@ class OrganizationDeviceBranchAssignmentApiTests(TestCase):
                 )
                 self.subscription.status = 'active'
                 self.subscription.save(update_fields=['status'])
+
+
+class OrganizationDeviceBranchChangeApiTests(TestCase):
+    def setUp(self):
+        self.client = APIClient()
+        today = timezone.localdate()
+        now = timezone.now()
+        self.organization = Organization.objects.create(
+            name='Branch Change API Organization',
+            code='BRANCH-CHANGE-API-ORG',
+        )
+        self.manager = User.objects.create_user(
+            username='branch_change_api_manager',
+            password='test-password',
+            role='main_user',
+            account_type='organization',
+            organization=self.organization,
+        )
+        self.old_branch = Branch.objects.create(
+            organization=self.organization,
+            name='Old Branch',
+            code='BRANCH-CHANGE-OLD',
+        )
+        self.new_branch = Branch.objects.create(
+            organization=self.organization,
+            name='New Branch',
+            code='BRANCH-CHANGE-NEW',
+        )
+        self.device = Device.objects.create(
+            imei='860000000009972',
+            organization=self.organization,
+            management_status='installed',
+        )
+        self.subscription = Subscription.objects.create(
+            contract_number='BRANCH-CHANGE-API-CONTRACT',
+            customer_type='organization',
+            organization=self.organization,
+            start_date=today - timedelta(days=5),
+            end_date=today + timedelta(days=30),
+            status='active',
+        )
+        self.link = SubscriptionDevice.objects.create(
+            subscription=self.subscription,
+            device=self.device,
+            start_date=self.subscription.start_date,
+            end_date=self.subscription.end_date,
+        )
+        SubscriptionDevice.objects.filter(pk=self.link.pk).update(
+            assigned_at=now - timedelta(days=3)
+        )
+        self.assignment_end = today + timedelta(days=5)
+        self.old_period = DeviceCustomerAccessPeriod.objects.create(
+            device=self.device,
+            organization=self.organization,
+            subscription=self.subscription,
+            branch=self.old_branch,
+            started_at=now - timedelta(days=2),
+            ended_at=timezone.make_aware(
+                __import__('datetime').datetime.combine(
+                    self.assignment_end,
+                    __import__('datetime').time.max,
+                )
+            ),
+            reason='branch_assignment',
+        )
+        self.old_fallback = DeviceCustomerAccessPeriod.objects.create(
+            device=self.device,
+            organization=self.organization,
+            subscription=self.subscription,
+            branch=None,
+            started_at=timezone.make_aware(
+                __import__('datetime').datetime.combine(
+                    self.assignment_end + timedelta(days=1),
+                    __import__('datetime').time.min,
+                )
+            ),
+            reason='branch_assignment_end',
+        )
+        self.client.force_authenticate(user=self.manager)
+
+    def test_change_branch_preserves_existing_end_date_and_retires_old_fallback(self):
+        response = self.client.post(
+            f'/api/devices/{self.device.pk}/change-branch/',
+            {'branch_id': self.new_branch.pk},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.old_period.refresh_from_db()
+        self.old_fallback.refresh_from_db()
+        new_period = DeviceCustomerAccessPeriod.objects.get(
+            pk=response.data['access_period_id']
+        )
+        new_fallback = DeviceCustomerAccessPeriod.objects.get(
+            device=self.device,
+            reason='branch_assignment_end',
+            started_at__gt=timezone.now(),
+            ended_at__isnull=True,
+        )
+
+        self.assertLessEqual(self.old_period.ended_at, timezone.now())
+        self.assertEqual(self.old_fallback.ended_at, self.old_fallback.started_at)
+        self.assertEqual(new_period.branch_id, self.new_branch.pk)
+        self.assertEqual(
+            timezone.localtime(new_period.ended_at).date(),
+            self.assignment_end,
+        )
+        self.assertEqual(
+            timezone.localtime(new_fallback.started_at).date(),
+            self.assignment_end + timedelta(days=1),
+        )
+        self.assertTrue(
+            active_customer_access_periods(
+                organization_id=self.organization.pk,
+                branch_id=self.new_branch.pk,
+            ).filter(device=self.device).exists()
+        )
+        self.assertFalse(
+            active_customer_access_periods(
+                organization_id=self.organization.pk,
+                branch_id=self.old_branch.pk,
+            ).filter(device=self.device).exists()
+        )
+
+    def test_change_branch_replaces_end_date_when_new_date_is_supplied(self):
+        new_end_date = timezone.localdate() + timedelta(days=8)
+        response = self.client.post(
+            f'/api/devices/{self.device.pk}/change-branch/',
+            {
+                'branch_id': self.new_branch.pk,
+                'end_date': new_end_date.isoformat(),
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        new_period = DeviceCustomerAccessPeriod.objects.get(
+            pk=response.data['access_period_id']
+        )
+        self.assertEqual(
+            timezone.localtime(new_period.ended_at).date(),
+            new_end_date,
+        )
+
+    def test_clearing_branch_restores_main_user_access_immediately(self):
+        response = self.client.post(
+            f'/api/devices/{self.device.pk}/change-branch/',
+            {'branch_id': None},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        self.old_period.refresh_from_db()
+        self.old_fallback.refresh_from_db()
+        new_period = DeviceCustomerAccessPeriod.objects.get(
+            pk=response.data['access_period_id']
+        )
+
+        self.assertLessEqual(self.old_period.ended_at, timezone.now())
+        self.assertEqual(self.old_fallback.ended_at, self.old_fallback.started_at)
+        self.assertIsNone(new_period.branch_id)
+        self.assertIsNone(new_period.ended_at)
+        self.assertTrue(
+            active_customer_access_periods(
+                organization_id=self.organization.pk,
+            ).filter(device=self.device).exists()
+        )
+        self.assertFalse(
+            active_customer_access_periods(
+                organization_id=self.organization.pk,
+                branch_id=self.old_branch.pk,
+            ).filter(device=self.device).exists()
+        )
+
+    def test_change_branch_rejects_branch_from_another_organization(self):
+        foreign_organization = Organization.objects.create(
+            name='Foreign Branch Change Organization',
+            code='FOREIGN-BRANCH-CHANGE-ORG',
+        )
+        foreign_branch = Branch.objects.create(
+            organization=foreign_organization,
+            name='Foreign Branch',
+            code='FOREIGN-BRANCH-CHANGE',
+        )
+
+        response = self.client.post(
+            f'/api/devices/{self.device.pk}/change-branch/',
+            {'branch_id': foreign_branch.pk},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400, response.data)
+        self.old_period.refresh_from_db()
+        self.assertGreater(self.old_period.ended_at, timezone.now())
+        self.assertFalse(
+            DeviceCustomerAccessPeriod.objects.filter(
+                device=self.device,
+                branch=foreign_branch,
+            ).exists()
+        )
+
+    def test_branch_manager_cannot_change_or_clear_branch_assignment(self):
+        branch_manager = User.objects.create_user(
+            username='branch_change_api_branch_manager',
+            password='test-password',
+            role='branch_manager',
+            account_type='organization',
+            organization=self.organization,
+            branch=self.old_branch,
+        )
+        self.client.force_authenticate(user=branch_manager)
+
+        response = self.client.post(
+            f'/api/devices/{self.device.pk}/change-branch/',
+            {'branch_id': None},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 403, response.data)
+        self.old_period.refresh_from_db()
+        self.assertGreater(self.old_period.ended_at, timezone.now())
