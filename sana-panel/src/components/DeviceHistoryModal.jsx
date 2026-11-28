@@ -81,8 +81,9 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
 
     if (!open || !deviceId) {
       transferTargetsRequestRef.current += 1;
-      setOperationTargets({ organizations: [], users: [], branches: [], vehicles: [], subscriptions: [] });
       // This effect intentionally resets modal-local state when the modal closes.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setOperationTargets({ organizations: [], users: [], branches: [], vehicles: [], subscriptions: [] });
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setHistoryDevice(null);
       setHistoryEvents([]);
@@ -333,11 +334,14 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
   const operationNeedsReplacement = ['return_for_repair', 'lost', 'temporary_replacement', 'permanent_replacement'].includes(operationForm.operation_type);
   const operationNeedsReplacementType = operationNeedsReplacement && Boolean(operationForm.replacement_device);
 
-  const closeModal = () => {
-    if (historyLoading) return;
+  const handleClose = () => {
     transferTargetsRequestRef.current += 1;
     setOperationTargets({ organizations: [], users: [], branches: [], vehicles: [], subscriptions: [] });
     onClose();
+  };
+
+  const closeModal = () => {
+    if (!historyLoading) handleClose();
   };
 
   return (
@@ -345,7 +349,7 @@ export default function DeviceHistoryModal({ open, deviceId, onClose, onOperatio
       open={open}
       onClose={closeModal}
       title={historyDevice ? 'تاریخچه دستگاه ' + historyDevice.imei : 'تاریخچه دستگاه'}
-      footer={<Button variant="secondary" onClick={closeModal}>بستن</Button>}
+      footer={<Button variant="secondary" onClick={handleClose}>بستن</Button>}
     >
       <div className="space-y-5">
         {historyLoading && <LoadingSpinner />}
